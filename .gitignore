@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# UI
+*.log
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# VS Code / IDE
+.vscode/
+.idea/
+
+# --- ここから追加：Visual Studio & C# (BVEプラグイン用) ---
+.vs/
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.dll.config
