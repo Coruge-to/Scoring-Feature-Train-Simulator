@@ -12,16 +12,19 @@ import keyboard
 # ==========================================
 # ★ 採点システム カスタマイズ設定 ★
 # ==========================================
-BASIC_BRAKE_APPLY_LIMIT = 3   
-BASIC_BRAKE_RELEASE_LIMIT = 2 
+BASIC_BRAKE_APPLY_LIMIT = 0   
+BASIC_BRAKE_RELEASE_LIMIT = 0 
 
 STATION_MARGIN = 200.0
 
 IGNORE_INITIAL_BRAKE = "NONE"
 IGNORE_RELEASE_BRAKE = "NONE"
+
+# ★ Ecb車のEBペナルティ判定用タイマー閾値（秒）
+ECB_EB_ACCUM_THRESHOLD = 0.3    
+ECB_EB_COOLING_THRESHOLD = 1.0  
 # ==========================================
 
-# --- 描画・UI 設定項目 ---
 FONT_PATH = r"C:\WINDOWS\FONTS\UDDIGIKYOKASHON-R.TTC"
 FONT_SIZE_NORMAL = 35  
 FONT_SIZE_BIG = 55
@@ -48,21 +51,10 @@ MARGIN_RIGHT = 50
 MARGIN_TOP_UI = 100       
 LABEL_WIDTH = 380         
 
-STRICT_BLUE_CAP = True  
-
 CATEGORY_ORDER = {
-    "システム": 0,
-    "停止位置": 1,
-    "基本制動": 2,
-    "運転時分": 3,
-    "ボーナス": 4,
-    "ATS信号無視": 5,
-    "速度制限超過": 6,
-    "初動ブレーキ": 7,
-    "非常ブレーキ": 8,
-    "緩和ブレーキ": 9,
-    "停車時衝動": 10,
-    "転動": 11
+    "システム": 0, "停止位置": 1, "基本制動": 2, "運転時分": 3, "ボーナス": 4,
+    "ATS信号無視": 5, "速度制限超過": 6, "初動ブレーキ": 7, "非常ブレーキ": 8,
+    "緩和ブレーキ": 9, "停車時衝動": 10, "転動": 11
 }
 
 def calculate_warning_distance(current_speed, next_limit):
@@ -96,11 +88,7 @@ def calculate_apex_speed(v_start_kmh, v_target_kmh, dist_m, lower_limit_kmh):
 class Overlay(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowTransparentForInput |
-            Qt.WindowType.Tool
-        )
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowTransparentForInput | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setGeometry(0, 0, 1920, 1080)
 
@@ -111,21 +99,31 @@ class Overlay(QWidget):
             self.font_big = QFont(family, FONT_SIZE_BIG, QFont.Weight.Bold)
             self.font_ui = QFont(family, FONT_SIZE_UI, QFont.Weight.Bold)
         else:
-            self.font_normal = QFont("sans-serif", FONT_SIZE_NORMAL, QFont.Weight.Bold)
-            self.font_big = QFont("sans-serif", FONT_SIZE_BIG, QFont.Weight.Bold)
-            self.font_ui = QFont("sans-serif", FONT_SIZE_UI, QFont.Weight.Bold)
+            self.font_normal, self.font_big, self.font_ui = QFont("sans-serif", 35, QFont.Weight.Bold), QFont("sans-serif", 55, QFont.Weight.Bold), QFont("sans-serif", 40, QFont.Weight.Bold)
 
         self.popups = []
         self.score = 0
         
         self.is_speed_penalty = False
         self.speed_penalty_score = 0
-        self.last_penalty_time = 0
+        self.last_penalty_time = 0.0
         self.key_states = {str(i): False for i in range(1, 8)}
         
         self.eb_applied = False
+        self.smee_eb_frozen = False
 
         self.bve_btype = "Ecb"
+        self.bcPressure = 0.0
+        self.bpPressure = 0.0  
+        self.bve_bp_initial = 490.0
+        self.bcp_history = []
+        self.bve_pressure_rates = []
+        self.bve_max_pressure = 440.0
+        self.eb_freeze_threshold = 20.0
+
+        self.ecb_eb_accum_time = 0.0
+        self.ecb_eb_cooling_time = 0.0
+
         self.bb_state = "IDLE"
         self.bb_apply_count = 0
         self.bb_release_count = 0
@@ -138,15 +136,16 @@ class Overlay(QWidget):
 
         self.door_open_loc = 0.0
         self.roll_penalized = False
-
         self.bve_jump_count = 0
         self.last_jump_count = 0
-        self.has_jumped_current_station = False
+        self.jump_lock = False
+        
+        # ★ V55追加：ジャンプ直後の駅での採点を防ぐ「汚染フラグ」
+        self.is_jump_tainted = False
 
         self.blink_phase = 0.0
         self.blink_active = False
-        self.last_update_time = time.time()
-
+        self.last_update_time = 0.0
         self.show_graph = False
         self.g_history = []  
 
@@ -177,7 +176,6 @@ class Overlay(QWidget):
         self.bve_brk_notch = 0
         self.bve_brk_max = 8 
         self.is_single_handle = False
-        
         self.all_brk_texts = []
 
         self.max_rev_w = 40
@@ -187,10 +185,8 @@ class Overlay(QWidget):
         self.bve_signal_limit = 1000.0
         self.bve_train_length = 20.0
         self.bve_map_limits = []
-        
         self.bve_fwd_sig_limit = 1000.0
         self.bve_fwd_sig_loc = -1.0
-
         self.disp_limit = 1000.0
         self.limit_color = COLOR_WHITE
         self.last_bve_time_ms = 0
@@ -199,13 +195,11 @@ class Overlay(QWidget):
         self.current_base_limit = 1000.0
         self.prev_base_limit = 1000.0
         self.limit_changed_loc = -1.0
-        
         self.base_limit_type = "map"
         self.target_type = "map"
         
         self.bve_door = 0
         self.bve_term = 0
-        
         self.is_first_udp = True
         self.is_first_station = True
         self.prev_next_loc = -1.0
@@ -229,8 +223,6 @@ class Overlay(QWidget):
         self.is_stopping_zone = False
         self.max_stop_g = 0.0
         self.last_stop_g = 0.0
-        
-        # ★ V40.3: 停車瞬間のノッチを記録する変数
         self.stop_notch_state = "IDLE"
 
         self.cab_brk_count = 8
@@ -297,18 +289,12 @@ class Overlay(QWidget):
                                 rev_list = [s.strip() for s in vals[1].split('_') if s.strip()]
                                 pow_list = [s.strip() for s in vals[2].split('_') if s.strip()]
                                 brk_list = [s.strip() for s in vals[3].split('_') if s.strip()]
-                                
                                 self.all_brk_texts = brk_list
-                                
                                 brk_eval_list = brk_list[1:] if self.is_single_handle and len(brk_list) > 1 else brk_list
                                 fm = QFontMetrics(self.font_ui)
                                 self.max_rev_w = max([fm.horizontalAdvance(s) for s in rev_list] + [40])
                                 self.max_pow_w = max([fm.horizontalAdvance(s) for s in pow_list] + [40])
                                 self.max_brk_w = max([fm.horizontalAdvance(s) for s in brk_eval_list] + [40])
-                                if len(vals) >= 5 and vals[4]:
-                                    hld_list = [s.strip() for s in vals[4].split('_') if s.strip()]
-                                    max_hld_w = max([fm.horizontalAdvance(s) for s in hld_list] + [0])
-                                    self.max_pow_w = max(self.max_pow_w, max_hld_w)
                         elif part.startswith("SIGLIMIT:"): self.bve_signal_limit = float(part.split(':')[1])
                         elif part.startswith("TRAINLEN:"): self.bve_train_length = max(float(part.split(':')[1]), 20.0)
                         elif part.startswith("FWDSIGLIMIT:"): self.bve_fwd_sig_limit = float(part.split(':')[1])
@@ -324,25 +310,58 @@ class Overlay(QWidget):
                             if len(vals) >= 3:
                                 self.cab_brk_count = int(vals[1])
                                 self.has_holding_brake = (vals[2] == "1")
-                                self.svc_brk_count = self.cab_brk_count - (1 if self.has_holding_brake else 0)
+                        elif part.startswith("BCP:"):
+                            self.bcPressure = float(part.split(':')[1])
+                        elif part.startswith("BPP:"):
+                            vals = part.split(':')
+                            if len(vals) >= 2:
+                                self.bpPressure = float(vals[1])
+                            if len(vals) >= 3:
+                                self.bve_bp_initial = float(vals[2])
+                        elif part.startswith("PRATES:"):
+                            vals = part.split(':')
+                            if len(vals) >= 3 and vals[1]:
+                                rates = [float(x) for x in vals[1].split('_')]
+                                self.bve_pressure_rates = rates
+                                self.bve_max_pressure = float(vals[2])
+                                
+                                search_end = min(len(rates), self.cab_brk_count + 1)
+                                invalid_count = 0
+                                min_valid = 1
+                                found_min_valid = False
+                                
+                                for i in range(1, search_end):
+                                    if rates[i] <= 0.0:
+                                        invalid_count += 1
+                                    else:
+                                        if not found_min_valid:
+                                            min_valid = i
+                                            found_min_valid = True
+                                
+                                self.cushion_min = min_valid
+                                self.svc_brk_count = self.cab_brk_count - invalid_count
+                                
                                 if self.svc_brk_count <= 3:
                                     self.cushion_count = 1
                                 else:
                                     self.cushion_count = (self.svc_brk_count - 2) // 2
-                                self.cushion_min = 2 if self.has_holding_brake else 1
                                 self.cushion_max = self.cushion_min + self.cushion_count - 1
+                                
+                                if min_valid < len(rates):
+                                    self.eb_freeze_threshold = (self.bve_max_pressure * rates[min_valid]) - 5.0
+                                else:
+                                    self.eb_freeze_threshold = 20.0
+                                if self.eb_freeze_threshold < 5.0: self.eb_freeze_threshold = 5.0
+
                         elif part.startswith("MAPLIMITS:"):
-                            limits_str = part.split(':', 1)[1]
-                            limits_str = limits_str.replace('∞', '1000').replace('Infinity', '1000')
+                            limits_str = part.split(':', 1)[1].replace('∞', '1000').replace('Infinity', '1000')
                             self.bve_map_limits = []
                             if limits_str:
                                 for pair in limits_str.split('_'):
                                     if '=' in pair:
                                         loc_s, val_s = pair.split('=')
-                                        try:
-                                            self.bve_map_limits.append((float(loc_s), float(val_s)))
-                                        except ValueError:
-                                            pass
+                                        try: self.bve_map_limits.append((float(loc_s), float(val_s)))
+                                        except ValueError: pass
                     except Exception:
                         continue 
             except Exception:
@@ -359,7 +378,7 @@ class Overlay(QWidget):
         win32gui.EnumWindows(callback, None)
         return found_hwnd
 
-    def apply_time_score(self, diff_s):
+    def apply_time_score(self, diff_s, current_time):
         abs_diff = abs(diff_s)
         if abs_diff <= 9: add = 300
         elif abs_diff <= 19: add = 200
@@ -367,9 +386,9 @@ class Overlay(QWidget):
         else: add = 0
         if add > 0:
             self.score += add
-            self.popups.append({"text": f"運転時分 +{add}", "color": COLOR_N, "expire_time": time.time() + 5.0, "type": "pos", "category": "運転時分"})
+            self.popups.append({"text": f"運転時分 +{add}", "color": COLOR_N, "expire_time": current_time + 5.0, "type": "pos", "category": "運転時分"})
 
-    def apply_stop_score(self, d_m):
+    def apply_stop_score(self, d_m, current_time):
         if self.is_stopped_out_of_range: return False
         if not (-self.bve_margin_f <= d_m <= self.bve_margin_b): return False
         d_m_rounded = round(d_m, 2)
@@ -378,17 +397,15 @@ class Overlay(QWidget):
             add = 5 * (100 - x_cm)
             if add > 0:
                 self.score += add
-                self.popups.append({"text": f"停止位置 +{add}", "color": COLOR_N, "expire_time": time.time() + 5.0, "type": "pos", "category": "停止位置"})
-            if x_cm < 1: 
-                return True
+                self.popups.append({"text": f"停止位置 +{add}", "color": COLOR_N, "expire_time": current_time + 5.0, "type": "pos", "category": "停止位置"})
+            if x_cm < 1: return True
         return False
 
     def process_bb_transition(self, stable_notch):
         if stable_notch != self.bb_prev_stable_notch:
             if self.bve_btype == "Cl":
                 if stable_notch >= 2 and self.bb_prev_stable_notch in [0, 1]:
-                    if self.bb_state == "RELEASING":
-                        self.bb_state = "FAILED"
+                    if self.bb_state == "RELEASING": self.bb_state = "FAILED"
                     elif self.bb_state != "FAILED":
                         self.bb_state = "APPLYING"
                         self.bb_apply_count += 1
@@ -398,8 +415,7 @@ class Overlay(QWidget):
                         self.bb_release_count += 1
             else:
                 if stable_notch > self.bb_prev_stable_notch:
-                    if self.bb_state == "RELEASING":
-                        self.bb_state = "FAILED"
+                    if self.bb_state == "RELEASING": self.bb_state = "FAILED"
                     elif self.bb_state != "FAILED":
                         self.bb_state = "APPLYING"
                         self.bb_apply_count += 1
@@ -420,8 +436,7 @@ class Overlay(QWidget):
             else: return "STRONG"
 
     def update_logic(self):
-        if keyboard.is_pressed('esc'):
-            QApplication.quit()
+        if keyboard.is_pressed('esc'): QApplication.quit()
 
         if self.bve_hwnd is None or not win32gui.IsWindow(self.bve_hwnd):
             self.bve_hwnd = self.find_bve_window()
@@ -437,9 +452,7 @@ class Overlay(QWidget):
                     win32gui.SetWindowLong(int(self.winId()), win32con.GWL_HWNDPARENT, self.bve_hwnd)
                     self.is_linked = True
                     self.show()
-                except Exception:
-                    pass
-
+                except Exception: pass
             try:
                 if win32gui.IsIconic(self.bve_hwnd):
                     if self.isVisible(): self.hide()
@@ -452,8 +465,7 @@ class Overlay(QWidget):
                         if (current_geom.x() != client_x or current_geom.y() != client_y or 
                             current_geom.width() != w or current_geom.height() != h):
                             self.setGeometry(client_x, client_y, w, h)
-                    if not self.isVisible(): 
-                        self.show()
+                    if not self.isVisible(): self.show()
             except Exception:
                 self.bve_hwnd = None
                 self.is_linked = False
@@ -461,26 +473,62 @@ class Overlay(QWidget):
         else:
             self.hide()
 
-        current_time = time.time()
-        dt = current_time - self.last_update_time
-        self.last_update_time = current_time
+        current_time = self.bve_time_ms / 1000.0
+        
+        if self.last_update_time == 0.0 or current_time < self.last_update_time:
+            dt = 0.0
+            self.g_history.clear()
+            self.bcp_history.clear()
+            self.popups.clear()
+            self.ecb_eb_accum_time = 0.0
+            self.ecb_eb_cooling_time = 0.0
+            self.smee_eb_frozen = False
+            self.eb_applied = False
+            self.jump_lock = False
+            self.is_jump_tainted = False  # ★ 追加：初期化
+            self.bb_state = "IDLE"
+            self.bb_apply_count = 0
+            self.bb_release_count = 0
+            self.last_update_time = current_time
+        else:
+            dt = current_time - self.last_update_time
+            self.last_update_time = current_time
         self.last_bve_time_ms = self.bve_time_ms
 
         decel_g = -self.bve_calc_g
-
         self.g_history.append((current_time, decel_g, self.bve_brk_notch, self.bve_brk_max))
         cutoff_time = current_time - 10.0
         self.g_history = [h for h in self.g_history if h[0] > cutoff_time]
 
-        just_jumped = False
+        # ==========================================
+        # ★ V55：ジャンプ検知 ＆ 汚染フラグON ＆ 同期
+        # ==========================================
         if self.bve_jump_count != self.last_jump_count:
-            self.has_jumped_current_station = True
-            just_jumped = True
+            self.jump_lock = True
+            
+            # 汚染フラグをONにし、次の1駅目の採点を確実に無視させる
+            self.is_jump_tainted = True
+            
+            # 逆戻りジャンプによる駅切り替わり判定の誤爆を防ぐため、
+            # ジャンプ先の駅座標を prev_next_loc に強制同期（上書き）する
+            self.prev_next_loc = self.bve_next_loc
+                
             self.blink_active = False
             self.blink_phase = 0.0
             if self.bve_door == 1:
                 self.door_open_loc = self.bve_location
             self.last_jump_count = self.bve_jump_count
+            
+            self.g_history.clear()
+            self.bcp_history.clear()
+            self.popups.clear()
+            self.ecb_eb_accum_time = 0.0
+            self.ecb_eb_cooling_time = 0.0
+            self.smee_eb_frozen = False
+            self.eb_applied = False
+            self.bb_state = "IDLE"
+            self.bb_apply_count = 0
+            self.bb_release_count = 0
 
         in_station_zone = False
         if self.bve_next_loc >= 0:
@@ -494,7 +542,6 @@ class Overlay(QWidget):
                 self.max_stop_g = decel_g
         elif self.bve_speed == 0.0:
             if self.is_stopping_zone:
-                # ★ V40.3: 速度が0になった瞬間のノッチ帯域を記録
                 self.stop_notch_state = self.get_notch_state(self.bve_brk_notch)
                 self.last_stop_g = self.max_stop_g
                 if self.max_stop_g >= 0.10:
@@ -509,13 +556,75 @@ class Overlay(QWidget):
             self.max_stop_g = 0.0
 
         if self.bve_speed > 0.0:
-            if self.bve_brk_notch >= self.bve_brk_max or "非常" in self.bve_brk_text or "EB" in self.bve_brk_text.upper():
+            is_eb_handle = (self.bve_brk_notch >= self.bve_brk_max or "非常" in self.bve_brk_text or "EB" in self.bve_brk_text.upper())
+            
+            physical_eb_tripped = False
+            
+            if self.bve_btype == "Smee":
+                physical_eb_tripped = (self.bpPressure <= self.bve_bp_initial - 5.0)
+            elif self.bve_btype == "Cl":
+                physical_eb_tripped = is_eb_handle
+            else:
+                if is_eb_handle:
+                    self.ecb_eb_accum_time += dt
+                    if self.ecb_eb_accum_time >= ECB_EB_ACCUM_THRESHOLD:
+                        self.ecb_eb_accum_time = ECB_EB_ACCUM_THRESHOLD
+                    self.ecb_eb_cooling_time = 0.0
+                else:
+                    if self.ecb_eb_accum_time > 0.0:
+                        self.ecb_eb_cooling_time += dt
+                        if self.ecb_eb_cooling_time >= ECB_EB_COOLING_THRESHOLD:
+                            self.ecb_eb_accum_time = 0.0
+                            self.ecb_eb_cooling_time = 0.0
+                    else:
+                        self.ecb_eb_cooling_time = 0.0
+                        
+                physical_eb_tripped = (self.ecb_eb_accum_time >= ECB_EB_ACCUM_THRESHOLD)
+
+            if physical_eb_tripped:
                 if not self.eb_applied:
                     self.score -= 500
                     self.popups.append({"text": "非常ブレーキ使用 -500", "color": COLOR_B_EMG, "expire_time": current_time + 5.0, "type": "neg", "category": "非常ブレーキ"})
                     self.eb_applied = True
+                    
+                    if self.bve_btype == "Smee":
+                        self.smee_eb_frozen = True
+                        self.bcp_history.clear() 
             else:
                 self.eb_applied = False
+
+            if self.bve_btype == "Smee" and self.smee_eb_frozen and not is_eb_handle:
+                
+                is_bp_recharging = (self.bpPressure < self.bve_bp_initial * 0.9)
+                
+                if not is_bp_recharging:
+                    self.bcp_history.append((current_time, self.bcPressure))
+                    
+                    HISTORY_SEC = 0.6 
+                    STABLE_SEC = 0.5
+                    
+                    self.bcp_history = [h for h in self.bcp_history if current_time - h[0] <= HISTORY_SEC]
+                    
+                    is_stabilized = False
+                    if len(self.bcp_history) >= 5 and (current_time - self.bcp_history[0][0]) >= STABLE_SEC:
+                        max_p = max(h[1] for h in self.bcp_history)
+                        min_p = min(h[1] for h in self.bcp_history)
+                        if (max_p - min_p) < 2.0: 
+                            is_stabilized = True
+
+                    curr_state_unfrozen = self.get_notch_state(self.bve_brk_notch)
+
+                    if self.bcPressure <= self.eb_freeze_threshold and curr_state_unfrozen == "IDLE":
+                        self.smee_eb_frozen = False
+                        self.score -= 100
+                        self.popups.append({"text": "緩和ブレーキ -100", "color": COLOR_B_EMG, "expire_time": current_time + 5.0, "type": "neg", "category": "緩和ブレーキ"})
+                    elif is_stabilized:
+                        self.smee_eb_frozen = False
+                        if curr_state_unfrozen == "IDLE": 
+                            self.score -= 100
+                            self.popups.append({"text": "緩和ブレーキ -100", "color": COLOR_B_EMG, "expire_time": current_time + 5.0, "type": "neg", "category": "緩和ブレーキ"})
+                else:
+                    self.bcp_history.clear()
 
             curr_n = self.bve_brk_notch
             curr_state = self.get_notch_state(curr_n)
@@ -531,30 +640,39 @@ class Overlay(QWidget):
             if curr_state == "STRONG" and prev_state != "STRONG":
                 is_initial_exempt = (IGNORE_INITIAL_BRAKE == "ALL") or (IGNORE_INITIAL_BRAKE == "STATION" and in_station_zone)
                 if not is_initial_exempt:
-                    if prev_state == "CUSHION":
-                        stay_time = current_time - self.hb_cushion_entry_time
-                        g_check = True
-                        if self.bve_btype != "Cl":
-                            g_check = (self.hb_cushion_max_g >= 0.010)
-                        
-                        if stay_time < 0.5 or not g_check:
+                    if self.bve_btype == "Cl":
+                        if is_eb_handle:
                             self.score -= 100
                             self.popups.append({"text": "初動ブレーキ -100", "color": COLOR_B_EMG, "expire_time": current_time + 5.0, "type": "neg", "category": "初動ブレーキ"})
+                    elif self.bve_btype == "Smee" and self.smee_eb_frozen and not is_eb_handle:
+                        pass 
                     else:
-                        self.score -= 100
-                        self.popups.append({"text": "初動ブレーキ -100", "color": COLOR_B_EMG, "expire_time": current_time + 5.0, "type": "neg", "category": "初動ブレーキ"})
+                        if prev_state == "CUSHION":
+                            stay_time = current_time - self.hb_cushion_entry_time
+                            g_check = (self.hb_cushion_max_g >= 0.010)
+                            if stay_time < 0.5 or not g_check:
+                                self.score -= 100
+                                self.popups.append({"text": "初動ブレーキ -100", "color": COLOR_B_EMG, "expire_time": current_time + 5.0, "type": "neg", "category": "初動ブレーキ"})
+                        else:
+                            self.score -= 100
+                            self.popups.append({"text": "初動ブレーキ -100", "color": COLOR_B_EMG, "expire_time": current_time + 5.0, "type": "neg", "category": "初動ブレーキ"})
 
             if curr_state == "IDLE" and prev_state != "IDLE":
                 is_release_exempt = (IGNORE_RELEASE_BRAKE == "ALL") or (IGNORE_RELEASE_BRAKE == "STATION" and in_station_zone)
                 if not is_release_exempt:
-                    if prev_state == "CUSHION":
-                        stay_time = current_time - self.hb_cushion_entry_time
-                        if stay_time < 0.5:
+                    if self.bve_btype == "Cl":
+                        pass 
+                    elif self.bve_btype == "Smee" and self.smee_eb_frozen and not is_eb_handle:
+                        pass 
+                    else:
+                        if prev_state == "CUSHION":
+                            stay_time = current_time - self.hb_cushion_entry_time
+                            if stay_time < 0.5:
+                                self.score -= 100
+                                self.popups.append({"text": "緩和ブレーキ -100", "color": COLOR_B_EMG, "expire_time": current_time + 5.0, "type": "neg", "category": "緩和ブレーキ"})
+                        else:
                             self.score -= 100
                             self.popups.append({"text": "緩和ブレーキ -100", "color": COLOR_B_EMG, "expire_time": current_time + 5.0, "type": "neg", "category": "緩和ブレーキ"})
-                    else:
-                        self.score -= 100
-                        self.popups.append({"text": "緩和ブレーキ -100", "color": COLOR_B_EMG, "expire_time": current_time + 5.0, "type": "neg", "category": "緩和ブレーキ"})
 
             self.hb_prev_notch = curr_n
         else:
@@ -562,8 +680,11 @@ class Overlay(QWidget):
             self.hb_cushion_entry_time = 0.0
             self.hb_cushion_max_g = 0.0
             self.eb_applied = False
+            self.smee_eb_frozen = False
+            self.bcp_history.clear()
+            self.ecb_eb_accum_time = 0.0
+            self.ecb_eb_cooling_time = 0.0
 
-        # ★ V40.3: 駅ジャンプ制限を解除し、純粋な位置変化だけで転動を判定
         if self.bve_door == 1:
             if self.prev_door == 0:
                 self.door_open_loc = self.bve_location
@@ -625,27 +746,39 @@ class Overlay(QWidget):
             self.prev_next_loc = self.bve_next_loc
             self.is_first_udp = False
             
-        if self.bve_speed > 1.0:
+        if self.bve_speed >= 1.0 and self.bve_door == 0:
             self.has_departed = True
-            self.stop_notch_state = "IDLE"  # ★ 発車したら記録をリセット
+            self.stop_notch_state = "IDLE"
+            if self.jump_lock:
+                self.jump_lock = False
             
         current_s = self.bve_time_ms // 1000
         target_s = self.bve_next_time // 1000
         diff_s = target_s - current_s
         
+        # ==========================================
+        # ★ V55：駅更新時（切り替わり）の採点処理
+        # ==========================================
         if self.prev_next_loc != -1.0 and self.bve_next_loc != self.prev_next_loc:
+            
+            # 通過駅の採点
             if self.prev_is_timing == 1 and self.prev_is_pass == 1 and not self.has_scored_time_this_station:
-                if not self.has_jumped_current_station:
-                    self.apply_time_score(self.prev_diff_s)
+                
+                # ★ 汚染フラグが立っている場合は、ジャンプ直後の通過駅とみなして採点を無視（パス）する
+                if self.is_jump_tainted:
+                    pass 
+                else:
+                    if not self.jump_lock:
+                        self.apply_time_score(self.prev_diff_s, current_time)
+            
+            # ★ 次の駅に切り替わった（＝ジャンプ先の駅を無事に処理した）ので、汚染フラグを解除して通常採点に戻す
+            self.is_jump_tainted = False
                 
             self.is_first_station = False
             self.is_approaching = False
             self.is_stopped_out_of_range = False
             self.has_scored_time_this_station = False
             self.has_scored_stop_this_station = False
-            
-            if not just_jumped:
-                self.has_jumped_current_station = False 
             
         if not self.is_approaching and self.bve_next_loc >= 0:
             if 0 < (self.bve_next_loc - self.bve_location) < (self.bve_train_length + STATION_MARGIN):
@@ -656,51 +789,53 @@ class Overlay(QWidget):
             if not (-self.bve_margin_f <= d <= self.bve_margin_b):
                 self.is_stopped_out_of_range = True
 
+        # 駅停車時の処理（ここは通常通り、自力で停まるためブロックしない）
         if self.prev_door == 1 and self.bve_door == 0:
             if self.prev_term == 0 and self.prev_is_timing == 1 and self.prev_is_pass == 0 and not self.has_scored_time_this_station:
-                if not self.has_jumped_current_station:
-                    self.apply_time_score(self.prev_diff_s)
+                if not self.jump_lock:
+                    self.apply_time_score(self.prev_diff_s, current_time)
                 self.has_scored_time_this_station = True
 
         if self.prev_door == 0 and self.bve_door == 1:
             if self.bve_term == 1 and self.bve_is_timing == 1 and self.bve_is_pass == 0 and not self.has_scored_time_this_station:
-                if not self.has_jumped_current_station:
-                    self.apply_time_score(diff_s)
+                if not self.jump_lock:
+                    self.apply_time_score(diff_s, current_time)
                 self.has_scored_time_this_station = True
                 
             is_zero_stop = False
             if not self.is_first_station and self.has_departed and not self.has_scored_stop_this_station:
-                if not self.has_jumped_current_station:
-                    is_zero_stop = self.apply_stop_score(self.bve_next_loc - self.bve_location)
+                if not self.jump_lock:
+                    is_zero_stop = self.apply_stop_score(self.bve_next_loc - self.bve_location, current_time)
                 self.has_scored_stop_this_station = True
                 
-            if self.bb_is_in_zone and not self.bb_evaluated and not self.has_jumped_current_station:
+            if self.bb_is_in_zone and not self.bb_evaluated and not self.jump_lock:
                 if not self.bb_is_stable:
                     self.bb_is_stable = True
                     self.process_bb_transition(self.bb_current_notch)
 
                 self.bb_evaluated = True
                 dist_to_stop = self.bve_next_loc - self.bve_location
+                
                 if -self.bve_margin_f <= dist_to_stop <= self.bve_margin_b:
-                    # ★ V40.3: 停車時に強ブレーキ（STRONG）に入っていたら、基本制動のフラグを折る
-                    if self.stop_notch_state == "STRONG":
-                        self.bb_state = "FAILED"
-
-                    if self.bb_state != "FAILED" and (self.bb_apply_count > 0 or self.bb_release_count > 0):
-                        apply_ok = (BASIC_BRAKE_APPLY_LIMIT == 0) or (self.bb_apply_count <= BASIC_BRAKE_APPLY_LIMIT)
-                        release_ok = (BASIC_BRAKE_RELEASE_LIMIT == 0) or (self.bb_release_count <= BASIC_BRAKE_RELEASE_LIMIT)
-                        
-                        if apply_ok and release_ok:
-                            self.score += 500
-                            apply_str = f"{BASIC_BRAKE_APPLY_LIMIT}段制動" if BASIC_BRAKE_APPLY_LIMIT > 0 else "階段制動"
-                            release_str = f"{BASIC_BRAKE_RELEASE_LIMIT}段緩め" if BASIC_BRAKE_RELEASE_LIMIT > 0 else "階段緩め"
+                    if self.bb_state != "FAILED" and not self.is_stopped_out_of_range and self.stop_notch_state != "STRONG":
+                        if (self.bb_apply_count > 0 or self.bb_release_count > 0):
+                            apply_ok = (BASIC_BRAKE_APPLY_LIMIT == 0) or (self.bb_apply_count <= BASIC_BRAKE_APPLY_LIMIT)
+                            release_ok = (BASIC_BRAKE_RELEASE_LIMIT == 0) or (self.bb_release_count <= BASIC_BRAKE_RELEASE_LIMIT)
                             
-                            self.popups.append({"text": f"{apply_str}{release_str}成功!!!", "color": COLOR_N, "expire_time": current_time + 5.0, "type": "big", "category": "基本制動"})
-                            self.popups.append({"text": "基本制動 +500", "color": COLOR_N, "expire_time": current_time + 5.0, "type": "pos", "category": "基本制動"})
-                            
-                            if is_zero_stop:
+                            if apply_ok and release_ok:
                                 self.score += 500
-                                self.popups.append({"text": "ボーナス +500", "color": COLOR_N, "expire_time": current_time + 5.0, "type": "pos", "category": "ボーナス"})
+                                apply_str = f"{BASIC_BRAKE_APPLY_LIMIT}段制動" if BASIC_BRAKE_APPLY_LIMIT > 0 else "階段制動"
+                                release_str = f"{BASIC_BRAKE_RELEASE_LIMIT}段緩め" if BASIC_BRAKE_RELEASE_LIMIT > 0 else "階段緩め"
+                                
+                                self.popups.append({"text": f"{apply_str}{release_str}成功!!!", "color": COLOR_N, "expire_time": current_time + 5.0, "type": "big", "category": "基本制動"})
+                                self.popups.append({"text": "基本制動 +500", "color": COLOR_N, "expire_time": current_time + 5.0, "type": "pos", "category": "基本制動"})
+                                
+                                if is_zero_stop:
+                                    self.score += 500
+                                    self.popups.append({"text": "ボーナス +500", "color": COLOR_N, "expire_time": current_time + 5.0, "type": "pos", "category": "ボーナス"})
+            
+            # 停車駅の場合も、次の駅に向かうための浄化をここで行う（念のため）
+            self.is_jump_tainted = False
 
         self.prev_next_loc = self.bve_next_loc
         self.prev_door = self.bve_door
@@ -793,12 +928,10 @@ class Overlay(QWidget):
                             active_red = {'val': val, 'dist': dist_to_limit, 'decel_dist': decel_dist, 'urgency': urgency, 'type': l_type}
 
         active_blue = None
-        
         if target_val > self.effective_limit and target_val < 999.0:
             is_capped = (target_val != min(self.map_head_limit, self.bve_signal_limit)) if is_waiting_tail else (target_val != base_limit)
             dist_for_blue = (target_loc - self.bve_location) if is_capped else max(1.0, self.bve_clear_dist)
             active_blue = {'val': target_val, 'dist': max(1.0, dist_for_blue), 'type': target_type}
-            
         elif not is_waiting_tail and target_val < self.effective_limit and target_val < 999.0:
             dist_for_blue = target_loc - self.bve_location
             active_blue = {'val': target_val, 'dist': max(1.0, dist_for_blue), 'type': target_type}
@@ -820,7 +953,6 @@ class Overlay(QWidget):
             else:
                 progress = active_red['dist'] / max(1.0, active_red['decel_dist'])
                 blink_cycle = 1.0 + 0.5 * max(0.0, progress)
-                
         elif active_blue:
             self.disp_limit = active_blue['val']
             self.limit_color = COLOR_P
@@ -828,7 +960,6 @@ class Overlay(QWidget):
             self.target_type = active_blue['type']
             progress = active_blue['dist'] / max(1.0, self.bve_train_length)
             blink_cycle = 1.0 + 0.5 * max(0.0, min(1.0, progress))
-            
         else:
             self.disp_limit = self.effective_limit
             self.limit_color = COLOR_WHITE
@@ -875,28 +1006,48 @@ class Overlay(QWidget):
         # ==========================================
         # ★ デバッグ表示
         # ==========================================
-        dbg_y = 200
+        dbg_y = 500
         painter.setFont(QFont("sans-serif", 14, QFont.Weight.Bold))
         
         if self.bb_is_in_zone:
-            failed_str = "あり" if self.bb_state == "FAILED" else "なし"
-            bb_debug_text = f"[BB] State: {self.bb_state} | Apply: {self.bb_apply_count} | Rel: {self.bb_release_count} | 込め直し: {failed_str}"
+            mech_fail_str = "あり" if self.bb_state == "FAILED" else "なし"
+            # ★ V55：強停 -> 強ブレーキ停車 に変更
+            rule_fail_str = "発生" if (self.is_stopped_out_of_range or self.stop_notch_state == "STRONG") else "なし"
+            bb_debug_text = f"[BB] State: {self.bb_state} | App: {self.bb_apply_count} | Rel: {self.bb_release_count} | 込め直し: {mech_fail_str} | 範囲外/強ブレーキ停車: {rule_fail_str}"
         else:
             bb_debug_text = "[BB] Out of Station Zone"
 
-        jump_warn = " | !! JUMP DETECTED !!" if self.has_jumped_current_station else ""
+        # ★ V55：汚染フラグ（Tainted）の表示を追加
+        jump_warn = f" | JumpLock: {'ON' if self.jump_lock else 'OFF'} | Tainted: {'ON' if self.is_jump_tainted else 'OFF'}"
         
-        c_min_text = self.all_brk_texts[self.cushion_min] if 0 <= self.cushion_min < len(self.all_brk_texts) else f"B{self.cushion_min}"
-        c_max_text = self.all_brk_texts[self.cushion_max] if 0 <= self.cushion_max < len(self.all_brk_texts) else f"B{self.cushion_max}"
-        cushion_str = f"[CUSHION] 抑速: {'あり' if self.has_holding_brake else 'なし'} | 常用: {self.svc_brk_count}段 | 帯域: {c_min_text} - {c_max_text}"
+        if self.bve_btype == "Cl":
+            cushion_str = f"[BRAKE MODE] 抑速: {'あり' if self.has_holding_brake else 'なし'} | 状態: 自動空気ブレーキ (段位概念なし)"
+        else:
+            c_min_text = self.all_brk_texts[self.cushion_min] if 0 <= self.cushion_min < len(self.all_brk_texts) else f"B{self.cushion_min}"
+            c_max_text = self.all_brk_texts[self.cushion_max] if 0 <= self.cushion_max < len(self.all_brk_texts) else f"B{self.cushion_max}"
+            
+            dummy_text = "なし"
+            if self.cushion_min > 1:
+                dummy_text = self.all_brk_texts[1] if len(self.all_brk_texts) > 1 else "B1"
+
+            if c_min_text == c_max_text:
+                cushion_str = f"[CUSHION] 無効段: {dummy_text} | 有効常用: {self.svc_brk_count}段 | 帯域: {c_min_text}"
+            else:
+                cushion_str = f"[CUSHION] 無効段: {dummy_text} | 有効常用: {self.svc_brk_count}段 | 帯域: {c_min_text} - {c_max_text}"
+
+        eb_freeze_status = "OFF"
+        if self.smee_eb_frozen:
+            eb_freeze_status = "ON (Wait Drop/Stable)"
+            
+        ecb_debug_str = f" | Ecb_EB: {self.ecb_eb_accum_time:.2f}/{ECB_EB_ACCUM_THRESHOLD}s (Cool: {self.ecb_eb_cooling_time:.2f}/{ECB_EB_COOLING_THRESHOLD}s)" if self.bve_btype == "Ecb" else ""
 
         dbg_texts = [
-            f"[DEBUG X-RAY]{jump_warn}",
+            f"[DEBUG X-RAY]{jump_warn}{ecb_debug_str}",
             f"BrakeType: {self.bve_btype} | InitExempt: {IGNORE_INITIAL_BRAKE} | RelExempt: {IGNORE_RELEASE_BRAKE}",
             cushion_str,
             bb_debug_text,
-            f"Target_Cap_Val: {self.dbg_target_cap}",
-            f"ActiveBlue: {self.dbg_blue}  |  ActiveRed: {self.dbg_red}",
+            f"BCP: {self.bcPressure:.1f} kPa | BPP: {self.bpPressure:.1f} / {self.bve_bp_initial * 0.9:.1f} kPa | EB_Freeze: {eb_freeze_status} | Thresh: {self.eb_freeze_threshold:.1f} kPa",
+            f"Target_Cap_Val: {round(self.dbg_target_cap, 1)} | ActiveBlue: {round(float(self.dbg_blue), 1) if self.dbg_blue != 'None' else 'None'}  |  ActiveRed: {round(float(self.dbg_red), 1) if self.dbg_red != 'None' else 'None'}",
             f"CalcG: {self.bve_calc_g:.4f} G | MaxG: {self.max_stop_g:.4f} G | LastStop: {self.last_stop_g:.4f} G"
         ]
         
@@ -936,7 +1087,7 @@ class Overlay(QWidget):
             painter.setPen(QPen(QColor(255, 50, 50, 150), 2, Qt.PenStyle.DashLine))
             painter.drawLine(int(graph_x), int(y_z2), int(graph_x + graph_w), int(y_z2))
             
-            now = time.time()
+            now = self.bve_time_ms / 1000.0
             path_g = QPainterPath()
             path_notch = QPainterPath()
             
@@ -945,10 +1096,8 @@ class Overlay(QWidget):
                 t, g, notch, b_max = h_data
                 x = graph_x + graph_w - ((now - t) / 10.0) * graph_w
                 yg = graph_y + graph_h - (min(max(g, 0.0), 0.15) / 0.15) * graph_h
-                
                 n_norm = max(0.0, min(notch, b_max)) / max(1.0, float(b_max))
                 yn = graph_y + graph_h - n_norm * graph_h
-                
                 x = max(graph_x, min(x, graph_x + graph_w))
 
                 if first:
@@ -976,7 +1125,7 @@ class Overlay(QWidget):
             painter.drawText(int(graph_x + 10), int(y_z2 - 5), "ZONE2 (0.055G)")
 
         # ==========================================
-        # ★ ポップアップの描画 (順序固定ソート)
+        # ★ ポップアップ描画 ＆ 右UI描画
         # ==========================================
         display_list = []
         for p in self.popups:
@@ -984,12 +1133,7 @@ class Overlay(QWidget):
                 display_list.append(p)
         
         if self.is_speed_penalty:
-            display_list.append({
-                "text": f"速度制限超過 -{self.speed_penalty_score}", 
-                "color": COLOR_B_EMG, 
-                "type": "neg", 
-                "category": "速度制限超過"
-            })
+            display_list.append({"text": f"速度制限超過 -{self.speed_penalty_score}", "color": COLOR_B_EMG, "type": "neg", "category": "速度制限超過"})
             
         display_list.sort(key=lambda x: CATEGORY_ORDER.get(x.get("category", ""), 99))
 
@@ -1029,26 +1173,20 @@ class Overlay(QWidget):
             padding_x = 15
             if label_text: bg_x = pos_x_label - padding_x
             else: bg_x = pos_x_right - value_width - padding_x
-                
             bg_w = (pos_x_right - bg_x) + padding_x
             bg_h = ui_step - 2 
             bg_y_offset = 5
             bg_y = y - fm.ascent() - (bg_h - fm.height()) / 2 - bg_y_offset
-            
             gradient = QLinearGradient(bg_x, 0, bg_x + bg_w, 0)
             r, g, b, a = COLOR_BG
             gradient.setColorAt(0.0, QColor(r, g, b, 0))   
             gradient.setColorAt(0.15, QColor(r, g, b, a))  
             gradient.setColorAt(1.0, QColor(r, g, b, a))   
-            
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(gradient)
             painter.drawRect(int(bg_x), int(bg_y), int(bg_w), int(bg_h))
-            
-            if label_text and show_label:
-                self.draw_text_with_outline(painter, label_text, self.font_ui, label_color, self.get_outline_color(label_color), pos_x_label, y, "left")
-            if value_text and show_value:
-                self.draw_text_with_outline(painter, value_text, self.font_ui, value_color, self.get_outline_color(value_color), pos_x_right, y, "right")
+            if label_text and show_label: self.draw_text_with_outline(painter, label_text, self.font_ui, label_color, self.get_outline_color(label_color), pos_x_label, y, "left")
+            if value_text and show_value: self.draw_text_with_outline(painter, value_text, self.font_ui, value_color, self.get_outline_color(value_color), pos_x_right, y, "right")
 
         s = self.bve_time_ms // 1000
         h, m, sec = s // 3600, (s % 3600) // 60, s % 60
@@ -1080,26 +1218,18 @@ class Overlay(QWidget):
 
             if self.blink_phase < 0.5:
                 l_text = "制限" if self.target_type == "map" else "信号"
-                if is_type_changed and not is_capped_blue:
-                    l_color = self.limit_color
-                else:
-                    l_color = COLOR_WHITE
-                v_text = f"{int(self.disp_limit)} km/h" if self.disp_limit < 999.0 else "--- km/h"
+                l_color = self.limit_color if (is_type_changed and not is_capped_blue) else COLOR_WHITE
+                v_text = f"{round(self.disp_limit)} km/h" if self.disp_limit < 999.0 else "--- km/h"
                 v_color = self.limit_color
             else:
                 l_text = "制限" if self.base_limit_type == "map" else "信号"
                 l_color = COLOR_WHITE
-                v_text = f"{int(self.effective_limit)} km/h" if self.effective_limit < 999.0 else "--- km/h"
+                v_text = f"{round(self.effective_limit)} km/h" if self.effective_limit < 999.0 else "--- km/h"
                 v_color = COLOR_WHITE
         else:
             l_text = "制限" if self.base_limit_type == "map" else "信号"
             l_color = COLOR_WHITE
-            if self.effective_limit >= 999.0:
-                v_text = "--- km/h"
-            elif self.effective_limit >= 0:
-                v_text = f"{int(self.effective_limit)} km/h"
-            else:
-                v_text = ""
+            v_text = f"{round(self.effective_limit)} km/h" if self.effective_limit < 999.0 else "--- km/h"
             v_color = COLOR_WHITE
 
         draw_row_local(l_text, l_color, v_text, v_color, ui_y, show_label=show_l, show_value=show_v)
@@ -1121,13 +1251,9 @@ class Overlay(QWidget):
                 elif d < -self.bve_margin_f: d_color = COLOR_B_EMG 
             
             if self.bve_is_timing == 1:
-                show_timing = int(time.time() / 5.0) % 2 == 0
-                if is_p:
-                    label_text = "採時" if show_timing else "通過"
-                    label_col = COLOR_P
-                else:
-                    label_text = "採時" if show_timing else "停車"
-                    label_col = COLOR_B_EMG
+                show_timing = int((self.bve_time_ms / 1000.0) / 5.0) % 2 == 0
+                label_text = "採時" if show_timing else ("通過" if is_p else "停車")
+                label_col = COLOR_P if is_p else COLOR_B_EMG
             else:
                 label_text = "通過" if is_p else "停車"
                 label_col = COLOR_P if is_p else COLOR_B_EMG
@@ -1140,96 +1266,52 @@ class Overlay(QWidget):
         draw_row_local("得点", COLOR_WHITE, str(self.score), COLOR_B_EMG if self.score < 0 else COLOR_WHITE, ui_y)
         ui_y += ui_step
 
-        rev_color = COLOR_N
-        if self.bve_rev_pos == 1: rev_color = COLOR_P
-        elif self.bve_rev_pos == -1: rev_color = COLOR_B_EMG
+        rev_color = COLOR_P if self.bve_rev_pos == 1 else (COLOR_B_EMG if self.bve_rev_pos == -1 else COLOR_N)
         if "抜取" in self.bve_rev_text: rev_color = COLOR_B_EMG
-
-        pow_color = COLOR_N
-        if self.bve_pow_notch > 0: pow_color = COLOR_P
-        elif self.bve_pow_notch < 0: pow_color = COLOR_B_SVC 
-
+        pow_color = COLOR_P if self.bve_pow_notch > 0 else (COLOR_B_SVC if self.bve_pow_notch < 0 else COLOR_N)
         brk_color = COLOR_N
-        if self.bve_brk_notch > 0:
-            if self.bve_brk_notch >= self.bve_brk_max or "非常" in self.bve_brk_text or "EB" in self.bve_brk_text.upper():
-                brk_color = COLOR_B_EMG
-            else: 
-                brk_color = COLOR_B_SVC
+        if self.bve_brk_notch > 0: brk_color = COLOR_B_EMG if (self.bve_brk_notch >= self.bve_brk_max or "非常" in self.bve_brk_text or "EB" in self.bve_brk_text.upper()) else COLOR_B_SVC
         if "抜取" in self.bve_brk_text: brk_color = COLOR_B_EMG
 
         fm = QFontMetrics(self.font_ui)
         gap = 30       
         padding_x = 15 
 
-        if self.is_single_handle:
-            max_handle_w = max(self.max_pow_w, self.max_brk_w)
-            total_text_w = self.max_rev_w + gap + max_handle_w
-        else:
-            total_text_w = self.max_rev_w + gap + self.max_pow_w + gap + self.max_brk_w
+        total_text_w = self.max_rev_w + gap + max(self.max_pow_w, self.max_brk_w) if self.is_single_handle else self.max_rev_w + gap + self.max_pow_w + gap + self.max_brk_w
+        scale_ratio = min(1.0, LABEL_WIDTH / total_text_w) if total_text_w > 0 else 1.0
 
-        scale_ratio = 1.0
-        if total_text_w > LABEL_WIDTH:
-            scale_ratio = LABEL_WIDTH / total_text_w
-
-        bg_h_local = ui_step - 2
-        bg_y_offset = 5
+        bg_h_local, bg_y_offset = ui_step - 2, 5
         offset_to_top = fm.ascent() + (bg_h_local - fm.height()) / 2.0 + bg_y_offset
         base_bg_top_y = ui_y - offset_to_top
-
         scaled_bg_h = bg_h_local * scale_ratio
-        scaled_text_w = total_text_w * scale_ratio
-
-        bg_w_global = scaled_text_w + padding_x * 2
-        bg_x_global = pos_x_right - scaled_text_w - padding_x
-        bg_y_global = base_bg_top_y
+        bg_w_global = total_text_w * scale_ratio + padding_x * 2
+        bg_x_global = pos_x_right - total_text_w * scale_ratio - padding_x
 
         gradient = QLinearGradient(bg_x_global, 0, bg_x_global + bg_w_global, 0)
-        r, g, b, a = COLOR_BG
-        gradient.setColorAt(0.0, QColor(r, g, b, 0))
-        gradient.setColorAt(0.15, QColor(r, g, b, a))
-        gradient.setColorAt(1.0, QColor(r, g, b, a))
+        gradient.setColorAt(0.0, QColor(40, 40, 40, 0))
+        gradient.setColorAt(0.15, QColor(*COLOR_BG))
+        gradient.setColorAt(1.0, QColor(*COLOR_BG))
 
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(gradient)
-        painter.drawRect(int(bg_x_global), int(bg_y_global), int(bg_w_global), int(scaled_bg_h))
+        painter.drawRect(int(bg_x_global), int(base_bg_top_y), int(bg_w_global), int(scaled_bg_h))
 
         painter.save()
         painter.translate(pos_x_right, base_bg_top_y)
         painter.scale(scale_ratio, scale_ratio)
 
-        local_baseline_y = offset_to_top
-
         if self.is_single_handle:
-            if self.bve_pow_notch > 0 or self.bve_pow_notch < 0: 
-                handle_text, handle_color = self.bve_pow_text, pow_color
-            elif self.bve_brk_notch > 0: 
-                handle_text, handle_color = self.bve_brk_text, brk_color
-            else:
-                handle_text, handle_color = self.bve_pow_text, COLOR_N
-            x_handle = 0
-            x_rev = -max_handle_w - gap
-            self.draw_text_with_outline(painter, self.bve_rev_text, self.font_ui, rev_color, self.get_outline_color(rev_color), x_rev, local_baseline_y, "right")
-            self.draw_text_with_outline(painter, handle_text, self.font_ui, handle_color, self.get_outline_color(handle_color), x_handle, local_baseline_y, "right")
-            
+            handle_text, handle_color = (self.bve_pow_text, pow_color) if self.bve_pow_notch != 0 else ((self.bve_brk_text, brk_color) if self.bve_brk_notch > 0 else (self.bve_pow_text, COLOR_N))
+            self.draw_text_with_outline(painter, self.bve_rev_text, self.font_ui, rev_color, self.get_outline_color(rev_color), -max(self.max_pow_w, self.max_brk_w) - gap, offset_to_top, "right")
+            self.draw_text_with_outline(painter, handle_text, self.font_ui, handle_color, self.get_outline_color(handle_color), 0, offset_to_top, "right")
         else:
-            x_brk = 0
-            x_pow = -self.max_brk_w - gap
-            x_rev = -self.max_brk_w - gap - self.max_pow_w - gap
-            self.draw_text_with_outline(painter, self.bve_rev_text, self.font_ui, rev_color, self.get_outline_color(rev_color), x_rev, local_baseline_y, "right")
-            self.draw_text_with_outline(painter, self.bve_pow_text, self.font_ui, pow_color, self.get_outline_color(pow_color), x_pow, local_baseline_y, "right")
-            self.draw_text_with_outline(painter, self.bve_brk_text, self.font_ui, brk_color, self.get_outline_color(brk_color), x_brk, local_baseline_y, "right")
-
+            self.draw_text_with_outline(painter, self.bve_rev_text, self.font_ui, rev_color, self.get_outline_color(rev_color), -self.max_brk_w - gap - self.max_pow_w - gap, offset_to_top, "right")
+            self.draw_text_with_outline(painter, self.bve_pow_text, self.font_ui, pow_color, self.get_outline_color(pow_color), -self.max_brk_w - gap, offset_to_top, "right")
+            self.draw_text_with_outline(painter, self.bve_brk_text, self.font_ui, brk_color, self.get_outline_color(brk_color), 0, offset_to_top, "right")
         painter.restore()
 
         ui_y += scaled_bg_h + (ui_step - bg_h_local)
-        
-        if self.bve_gradient > 0:
-            grad_str = f"+{self.bve_gradient:.1f} ‰"
-        elif self.bve_gradient < 0:
-            grad_str = f"{self.bve_gradient:.1f} ‰"
-        else:
-            grad_str = "0.0 ‰"
-            
+        grad_str = f"+{self.bve_gradient:.1f} ‰" if self.bve_gradient > 0 else (f"{self.bve_gradient:.1f} ‰" if self.bve_gradient < 0 else "0.0 ‰")
         draw_row_local("", COLOR_WHITE, grad_str, COLOR_WHITE, ui_y)
 
 if __name__ == '__main__':

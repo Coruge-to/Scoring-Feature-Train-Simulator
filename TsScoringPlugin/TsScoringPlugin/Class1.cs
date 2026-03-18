@@ -36,7 +36,6 @@ namespace TsScoringPlugin
         private double lastSpeedMps = 0.0;
 
         private int jumpCounter = 0;
-
         private int terminalFrozenDiffSeconds = -999;
         private bool wasTerminalDoorOpened = false;
 
@@ -139,7 +138,6 @@ namespace TsScoringPlugin
 
                     if (handles != null)
                     {
-                        // NotchInfo からの確実なクッション情報抽出
                         object notchInfo = handles.GetType().GetProperty("NotchInfo", bindFlags)?.GetValue(handles);
                         if (notchInfo != null)
                         {
@@ -346,8 +344,15 @@ namespace TsScoringPlugin
                 double manualMapHead = 1000.0;
                 double manualMapTail = 1000.0;
                 double distToClear = 0.0;
+
                 double currentG = 0.0;
                 string bType = "Ecb";
+                double bcPressure = 0.0;
+                double bpPressure = 0.0;
+                double bpInitialPressure = 490.0; // ★ BpInitialPressureの初期値(kPa)
+
+                string pRatesStr = "";
+                double maxPressure = 0.0;
 
                 object speedLimits = null;
                 try { speedLimits = map.GetType().GetProperty("SpeedLimits", bindFlags)?.GetValue(map); } catch { }
@@ -492,46 +497,89 @@ namespace TsScoringPlugin
                     }
                     lastSpeedMps = currentSpeedMps;
 
-                    // ========================================================
-                    // ★ BveTypesラッパー対策済：ブレーキシステムの絶対判定
-                    // ========================================================
                     if (vehicle != null && vehicle.Instruments != null)
                     {
                         object brkSys = vehicle.Instruments.GetType().GetProperty("BrakeSystem", bindFlags)?.GetValue(vehicle.Instruments);
                         if (brkSys != null)
                         {
-                            var brkSysType = brkSys.GetType();
-                            object currentController = brkSysType.GetProperty("BrakeController", bindFlags)?.GetValue(brkSys);
-                            object ecbInstance = brkSysType.GetProperty("Ecb", bindFlags)?.GetValue(brkSys);
-                            object smeeInstance = brkSysType.GetProperty("Smee", bindFlags)?.GetValue(brkSys);
-                            object clInstance = brkSysType.GetProperty("Cl", bindFlags)?.GetValue(brkSys);
-
-                            if (currentController != null)
+                            try
                             {
-                                // ラッパー同士の比較は失敗するため、中身の 'Src' を取り出して比較する
-                                object ccSrc = currentController.GetType().GetProperty("Src", bindFlags)?.GetValue(currentController);
-                                object ecbSrc = ecbInstance?.GetType().GetProperty("Src", bindFlags)?.GetValue(ecbInstance);
-                                object smeeSrc = smeeInstance?.GetType().GetProperty("Src", bindFlags)?.GetValue(smeeInstance);
-                                object clSrc = clInstance?.GetType().GetProperty("Src", bindFlags)?.GetValue(clInstance);
-
-                                if (ccSrc != null)
+                                object firstCarBrake = brkSys.GetType().GetProperty("FirstCarBrake", bindFlags)?.GetValue(brkSys);
+                                if (firstCarBrake != null)
                                 {
-                                    if (ccSrc.Equals(ecbSrc)) bType = "Ecb";
-                                    else if (ccSrc.Equals(smeeSrc)) bType = "Smee";
-                                    else if (ccSrc.Equals(clSrc)) bType = "Cl";
-                                }
-                                else
-                                {
-                                    // 万が一 Src が取得できなかった場合の安全策（クラス名からの推測）
-                                    string typeName = currentController.GetType().Name;
-                                    if (typeName.Contains("AutomaticAir") || typeName == "Cl") bType = "Cl";
-                                    else if (typeName.Contains("Electromagnetic") || typeName == "Smee") bType = "Smee";
-                                    else bType = "Ecb";
+                                    object bcValve = firstCarBrake.GetType().GetProperty("BcValve", bindFlags)?.GetValue(firstCarBrake);
+                                    if (bcValve != null)
+                                    {
+                                        object pressureContainer = bcValve.GetType().GetProperty("Pressure", bindFlags)?.GetValue(bcValve);
+                                        if (pressureContainer != null)
+                                        {
+                                            object pVal = pressureContainer.GetType().GetProperty("Value", bindFlags)?.GetValue(pressureContainer)
+                                                       ?? pressureContainer.GetType().GetField("Value", bindFlags)?.GetValue(pressureContainer);
+                                            if (pVal != null) bcPressure = Convert.ToDouble(pVal) / 1000.0;
+                                        }
+                                    }
                                 }
                             }
+                            catch { }
+
+                            try
+                            {
+                                var brkSysType = brkSys.GetType();
+                                object currentController = brkSysType.GetProperty("BrakeController", bindFlags)?.GetValue(brkSys);
+                                object ecbInstance = brkSysType.GetProperty("Ecb", bindFlags)?.GetValue(brkSys);
+                                object smeeInstance = brkSysType.GetProperty("Smee", bindFlags)?.GetValue(brkSys);
+                                object clInstance = brkSysType.GetProperty("Cl", bindFlags)?.GetValue(brkSys);
+
+                                if (currentController != null)
+                                {
+                                    object ccSrc = currentController.GetType().GetProperty("Src", bindFlags)?.GetValue(currentController);
+                                    object ecbSrc = ecbInstance?.GetType().GetProperty("Src", bindFlags)?.GetValue(ecbInstance);
+                                    object smeeSrc = smeeInstance?.GetType().GetProperty("Src", bindFlags)?.GetValue(smeeInstance);
+                                    object clSrc = clInstance?.GetType().GetProperty("Src", bindFlags)?.GetValue(clInstance);
+
+                                    if (ccSrc != null)
+                                    {
+                                        if (ccSrc.Equals(ecbSrc)) bType = "Ecb";
+                                        else if (ccSrc.Equals(smeeSrc)) bType = "Smee";
+                                        else if (ccSrc.Equals(clSrc)) bType = "Cl";
+                                    }
+                                    else
+                                    {
+                                        string typeName = currentController.GetType().Name;
+                                        if (typeName.Contains("AutomaticAir") || typeName == "Cl") bType = "Cl";
+                                        else if (typeName.Contains("Electromagnetic") || typeName == "Smee") bType = "Smee";
+                                        else bType = "Ecb";
+                                    }
+
+                                    double[] pRates = currentController.GetType().GetProperty("PressureRates", bindFlags)?.GetValue(currentController) as double[];
+                                    if (pRates != null) pRatesStr = string.Join("_", pRates);
+
+                                    object maxPObj = currentController.GetType().GetProperty("MaximumPressure", bindFlags)?.GetValue(currentController);
+                                    if (maxPObj != null) maxPressure = Convert.ToDouble(maxPObj) / 1000.0;
+
+                                    if (smeeInstance != null)
+                                    {
+                                        // ★ BpInitialPressure の取得
+                                        object bpInitObj = smeeInstance.GetType().GetProperty("BpInitialPressure", bindFlags)?.GetValue(smeeInstance);
+                                        if (bpInitObj != null) bpInitialPressure = Convert.ToDouble(bpInitObj) / 1000.0;
+
+                                        object bpValve = smeeInstance.GetType().GetProperty("Bp", bindFlags)?.GetValue(smeeInstance);
+                                        if (bpValve != null)
+                                        {
+                                            object pContainer = bpValve.GetType().GetProperty("Pressure", bindFlags)?.GetValue(bpValve);
+                                            if (pContainer != null)
+                                            {
+                                                object pVal = pContainer.GetType().GetProperty("Value", bindFlags)?.GetValue(pContainer)
+                                                           ?? pContainer.GetType().GetField("Value", bindFlags)?.GetValue(pContainer);
+                                                if (pVal != null) bpPressure = Convert.ToDouble(pVal) / 1000.0;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            catch { }
                         }
                     }
-                    // ========================================================
                 }
                 catch { }
                 lastTimeMs = timeMs;
@@ -539,7 +587,8 @@ namespace TsScoringPlugin
                 try
                 {
                     int holds = hasHoldingBrake ? 1 : 0;
-                    string data = $"SPEED:{speed},TIME:{timeMs},LOCATION:{location},GRADIENT:{finalGradient},NEXTLOC:{nextStationLoc},NEXTTIME:{nextStationTime},ISPASS:{isPass},ISTIMING:{isTiming},MARGINB:{marginBack},MARGINF:{marginFront},REV:{revText}:{revPos},POW:{powText}:{powNotch},BRK:{brkText}:{brkNotch}:{brkMax},HTYPE:{handleType},ALLTXT:{allRevTexts}:{allPowTexts}:{allBrkTexts}:{allHldTexts},SIGLIMIT:{signalLimit},TRAINLEN:{trainLength},MAPLIMITS:{mapLimitsStr},FWDSIGLIMIT:{fwdSigLimit},FWDSIGLOC:{nextSigLoc},DOOR:{(areDoorsClosed ? 0 : 1)},TERM:{(targetStationIndex == stationList.Count - 1 ? 1 : 0)},MAPHEAD:{manualMapHead},MAPTAIL:{manualMapTail},CLEARDIST:{distToClear},CALCG:{currentG:F5},BTYPE:{bType},JUMP:{jumpCounter},CAB:{cabBrakeNotches}:{holds}";
+                    // ★ BPP送信データに bpInitialPressure を追加
+                    string data = $"SPEED:{speed},TIME:{timeMs},LOCATION:{location},GRADIENT:{finalGradient},NEXTLOC:{nextStationLoc},NEXTTIME:{nextStationTime},ISPASS:{isPass},ISTIMING:{isTiming},MARGINB:{marginBack},MARGINF:{marginFront},REV:{revText}:{revPos},POW:{powText}:{powNotch},BRK:{brkText}:{brkNotch}:{brkMax},HTYPE:{handleType},ALLTXT:{allRevTexts}:{allPowTexts}:{allBrkTexts}:{allHldTexts},SIGLIMIT:{signalLimit},TRAINLEN:{trainLength},MAPLIMITS:{mapLimitsStr},FWDSIGLIMIT:{fwdSigLimit},FWDSIGLOC:{nextSigLoc},DOOR:{(areDoorsClosed ? 0 : 1)},TERM:{(targetStationIndex == stationList.Count - 1 ? 1 : 0)},MAPHEAD:{manualMapHead},MAPTAIL:{manualMapTail},CLEARDIST:{distToClear},CALCG:{currentG:F5},BTYPE:{bType},JUMP:{jumpCounter},CAB:{cabBrakeNotches}:{holds},BCP:{bcPressure:F1},PRATES:{pRatesStr}:{maxPressure:F1},BPP:{bpPressure:F1}:{bpInitialPressure:F1}";
                     byte[] bytes = Encoding.UTF8.GetBytes(data);
                     udpClient.Send(bytes, bytes.Length, endPoint);
                 }
