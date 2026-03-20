@@ -16,7 +16,7 @@ import keyboard
 BASIC_BRAKE_APPLY_LIMIT = 0   
 BASIC_BRAKE_RELEASE_LIMIT = 0 
 
-STATION_MARGIN = 100.0
+STATION_MARGIN = 200.0
 
 IGNORE_INITIAL_BRAKE = "NONE"
 IGNORE_RELEASE_BRAKE = "NONE"
@@ -307,7 +307,7 @@ class Overlay(QWidget):
         elif self.menu_state == 3:
             if self.menu_cursor < 0: self.menu_cursor = 1
         elif self.menu_state == 4:
-            if self.menu_cursor < 0: self.menu_cursor = 6 # ★ 戻るボタン廃止により最大インデックスは6
+            if self.menu_cursor < 0: self.menu_cursor = 6
 
     def handle_menu_down(self):
         self.menu_cursor += 1
@@ -322,7 +322,7 @@ class Overlay(QWidget):
         elif self.menu_state == 3:
             if self.menu_cursor > 1: self.menu_cursor = 0
         elif self.menu_state == 4:
-            if self.menu_cursor > 6: self.menu_cursor = 0 # ★ 戻るボタン廃止により最大インデックスは6
+            if self.menu_cursor > 6: self.menu_cursor = 0
 
     def handle_menu_enter(self, is_bve_advancing):
         if self.menu_state == 1:
@@ -364,7 +364,7 @@ class Overlay(QWidget):
                 self.menu_cursor = self.target_retry_idx
 
         elif self.menu_state == 4:
-            if self.menu_cursor <= 6: # ★ 戻るボタン廃止により条件変更
+            if self.menu_cursor <= 6:
                 key = self.settings_keys[self.menu_cursor]
                 self.disp_settings[key] = not self.disp_settings[key]
 
@@ -1267,8 +1267,9 @@ class Overlay(QWidget):
                 y_pos = 400 + i * 80
                 draw_menu_item(text, y_pos, (i == self.menu_cursor), i, "center")
             
-            inst_text = "↑ ↓ : 選択  |  Enter / クリック : 決定/切替  |  Backspace : 戻る  |  F6 : 閉じる"
-            self.draw_text_with_outline(painter, inst_text, self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 900, "center")
+            # ★ 操作説明の統一 & 分割 (2行)
+            self.draw_text_with_outline(painter, "↑ ↓ : 選択  |  Enter / Click : 決定・切替", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 870, "center")
+            self.draw_text_with_outline(painter, "Backspace : 戻る  |  F6 : 閉じる", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 930, "center")
 
         elif self.menu_state == 2:
             self.draw_text_with_outline(painter, "=== 選択した駅からやり直す ===", self.font_big, MENU_TEXT, MENU_OUTLINE, center_x, 150, "center")
@@ -1298,8 +1299,9 @@ class Overlay(QWidget):
                 if self.menu_scroll + self.visible_list_count < len(self.save_data):
                     self.draw_text_with_outline(painter, "▼", self.font_normal, MENU_TEXT, MENU_OUTLINE, center_x, 300 + self.visible_list_count * 70, "center")
 
-            inst_text = "↑ ↓ : 選択  |  Enter / クリック : 決定/切替  |  Backspace : 戻る  |  F6 : 閉じる"
-            self.draw_text_with_outline(painter, inst_text, self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 900, "center")
+            # ★ 操作説明の統一 & 分割 (2行)
+            self.draw_text_with_outline(painter, "↑ ↓ : 選択  |  Enter / Click : 決定・切替", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 870, "center")
+            self.draw_text_with_outline(painter, "Backspace : 戻る  |  F6 : 閉じる", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 930, "center")
 
         elif self.menu_state == 3:
             cp = self.save_data[self.target_retry_idx]
@@ -1314,11 +1316,12 @@ class Overlay(QWidget):
                 y_pos_btn = y_pos + i * 80
                 draw_menu_item(row_text, y_pos_btn, (i == self.menu_cursor), i, "center")
                 
-            inst_text = "↑ ↓ : 選択  |  Enter / クリック : 決定/切替  |  Backspace : 戻る  |  F6 : 閉じる"
-            self.draw_text_with_outline(painter, inst_text, self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 900, "center")
+            # ★ 操作説明の統一 & 分割 (2行)
+            self.draw_text_with_outline(painter, "↑ ↓ : 選択  |  Enter / Click : 決定・切替", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 870, "center")
+            self.draw_text_with_outline(painter, "Backspace : 戻る  |  F6 : 閉じる", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 930, "center")
 
         elif self.menu_state == 4:
-            self.draw_text_with_outline(painter, "=== 環境設定 ===", self.font_big, MENU_TEXT, MENU_OUTLINE, center_x, 150, "center")
+            self.draw_text_with_outline(painter, "=== 環境設定 ===", self.font_big, MENU_TEXT, MENU_OUTLINE, center_x, 200, "center")
             for i in range(7):
                 y_pos = 300 + i * 70
                 key = self.settings_keys[i]
@@ -1327,8 +1330,9 @@ class Overlay(QWidget):
                 
                 draw_setting_item(name, is_on, y_pos, (i == self.menu_cursor), i)
                 
-            inst_text = "↑ ↓ : 選択  |  Enter / クリック : 決定/切替  |  Backspace : 戻る  |  F6 : 閉じる"
-            self.draw_text_with_outline(painter, inst_text, self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 900, "center")
+            # ★ 操作説明の統一 & 分割 (2行)
+            self.draw_text_with_outline(painter, "↑ ↓ : 選択  |  Enter / Click : 決定・切替", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 870, "center")
+            self.draw_text_with_outline(painter, "Backspace : 戻る  |  F6 : 閉じる", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 930, "center")
 
         painter.restore()
 
