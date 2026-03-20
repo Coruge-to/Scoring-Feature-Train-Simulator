@@ -1,8 +1,10 @@
-﻿using BveEx.PluginHost.Plugins;
+﻿using BveEx.PluginHost;
+using BveEx.PluginHost.Plugins;
 using BveEx.PluginHost.Plugins.Extensions;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -11,9 +13,12 @@ namespace TsScoringPlugin
 {
     public class StationData
     {
+        public string Name;
         public double Location;
         public int ArrTime;
         public int DepTime;
+        public int DefaultTime;
+        public int DoorDir;
         public bool IsPass;
         public bool HasTimeDef;
         public bool IsScoring;
@@ -28,6 +33,7 @@ namespace TsScoringPlugin
     {
         private UdpClient udpClient;
         private IPEndPoint endPoint;
+        private UdpClient udpReceiver;
 
         private int targetStationIndex = 0;
         private bool hasDoorOpenedAtTarget = false;
@@ -38,6 +44,9 @@ namespace TsScoringPlugin
         private int jumpCounter = 0;
         private int terminalFrozenDiffSeconds = -999;
         private bool wasTerminalDoorOpened = false;
+
+        private int opStopDelayStartMs = -1;
+        private int lastStaListSendMs = 0; // ★追加: 駅リスト送信タイマー
 
         private bool isTextsCached = false;
         private string allRevTexts = "切";
@@ -64,6 +73,8 @@ namespace TsScoringPlugin
             {
                 udpClient = new UdpClient();
                 endPoint = new IPEndPoint(IPAddress.Parse("127.0.0.1"), 54321);
+                udpReceiver = new UdpClient(54322);
+                udpReceiver.Client.Blocking = false;
             }
             catch { }
         }
@@ -72,6 +83,66 @@ namespace TsScoringPlugin
         {
             if (BveHacker.IsScenarioCreated && udpClient != null)
             {
+                var bindFlagsAll = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.FlattenHierarchy | System.Reflection.BindingFlags.Static;
+
+                if (udpReceiver != null)
+                {
+                    try
+                    {
+                        while (udpReceiver.Available > 0)
+                        {
+                            IPEndPoint ep = new IPEndPoint(IPAddress.Any, 0);
+                            byte[] rData = udpReceiver.Receive(ref ep);
+                            string msg = Encoding.UTF8.GetString(rData);
+
+                            if (msg.StartsWith("RETRY:"))
+                            {
+                                string[] parts = msg.Split(':');
+                                if (parts.Length >= 3 && double.TryParse(parts[1], out double rLoc) && int.TryParse(parts[2], out int rTimeMs))
+                                {
+                                    try
+                                    {
+                                        var scenario = BveHacker.Scenario;
+                                        if (scenario == null) continue;
+
+                                        var srcProp = scenario.GetType().GetProperty("Src", bindFlagsAll);
+                                        if (srcProp != null)
+                                        {
+                                            object rawScenario = srcProp.GetValue(scenario);
+                                            if (rawScenario != null)
+                                            {
+                                                var jumpMethod = rawScenario.GetType().GetMethods(bindFlagsAll)
+                                                    .FirstOrDefault(m => m.GetParameters().Length == 2 &&
+                                                                         m.GetParameters()[0].ParameterType == typeof(double) &&
+                                                                         m.GetParameters()[1].ParameterType == typeof(int) &&
+                                                                         m.ReturnType == typeof(void));
+
+                                                if (jumpMethod != null)
+                                                {
+                                                    jumpMethod.Invoke(rawScenario, new object[] { rLoc, 0 });
+
+                                                    var timeMgr = scenario.GetType().GetProperty("TimeManager", bindFlagsAll)?.GetValue(scenario);
+                                                    if (timeMgr != null)
+                                                    {
+                                                        var rawTimeMgr = timeMgr.GetType().GetProperty("Src", bindFlagsAll)?.GetValue(timeMgr);
+                                                        if (rawTimeMgr != null)
+                                                        {
+                                                            var timeField = rawTimeMgr.GetType().GetField("c", bindFlagsAll);
+                                                            if (timeField != null) timeField.SetValue(rawTimeMgr, rTimeMs);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    catch { }
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
                 double speed = 0.0;
                 double location = 0.0;
                 int timeMs = 0;
@@ -115,12 +186,12 @@ namespace TsScoringPlugin
                     isTextsCached = false;
                     terminalFrozenDiffSeconds = -999;
                     wasTerminalDoorOpened = false;
+                    opStopDelayStartMs = -1;
                     jumpCounter++;
                 }
 
                 int cabBrakeNotches = 8;
                 bool hasHoldingBrake = false;
-                var bindFlags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.FlattenHierarchy;
 
                 try
                 {
@@ -132,36 +203,35 @@ namespace TsScoringPlugin
                     catch { }
 
                     object cabObj = vehicle.Instruments.Cab;
-
                     handleType = cabObj.GetType().Name.Contains("OneLever") ? 1 : 2;
-                    object handles = cabObj.GetType().GetProperty("Handles", bindFlags)?.GetValue(cabObj);
+                    object handles = cabObj.GetType().GetProperty("Handles", bindFlagsAll)?.GetValue(cabObj);
 
                     if (handles != null)
                     {
-                        object notchInfo = handles.GetType().GetProperty("NotchInfo", bindFlags)?.GetValue(handles);
+                        object notchInfo = handles.GetType().GetProperty("NotchInfo", bindFlagsAll)?.GetValue(handles);
                         if (notchInfo != null)
                         {
-                            var propBrkCnt = notchInfo.GetType().GetProperty("BrakeNotchCount", bindFlags);
+                            var propBrkCnt = notchInfo.GetType().GetProperty("BrakeNotchCount", bindFlagsAll);
                             if (propBrkCnt != null) cabBrakeNotches = Convert.ToInt32(propBrkCnt.GetValue(notchInfo));
 
-                            var propHold = notchInfo.GetType().GetProperty("HasHoldingSpeedBrake", bindFlags);
+                            var propHold = notchInfo.GetType().GetProperty("HasHoldingSpeedBrake", bindFlagsAll);
                             if (propHold != null) hasHoldingBrake = Convert.ToBoolean(propHold.GetValue(notchInfo));
                         }
 
-                        revPos = Convert.ToInt32(handles.GetType().GetProperty("ReverserPosition", bindFlags).GetValue(handles));
-                        powNotch = Convert.ToInt32(handles.GetType().GetProperty("PowerNotch", bindFlags).GetValue(handles));
-                        brkNotch = Convert.ToInt32(handles.GetType().GetProperty("BrakeNotch", bindFlags).GetValue(handles));
+                        revPos = Convert.ToInt32(handles.GetType().GetProperty("ReverserPosition", bindFlagsAll).GetValue(handles));
+                        powNotch = Convert.ToInt32(handles.GetType().GetProperty("PowerNotch", bindFlagsAll).GetValue(handles));
+                        brkNotch = Convert.ToInt32(handles.GetType().GetProperty("BrakeNotch", bindFlagsAll).GetValue(handles));
                     }
 
                     if (!isTextsCached)
                     {
                         try
                         {
-                            string[] rTexts = (string[])cabObj.GetType().GetProperty("ReverserTexts", bindFlags).GetValue(cabObj);
-                            string[] pTexts = (string[])cabObj.GetType().GetProperty("PowerTexts", bindFlags).GetValue(cabObj);
-                            string[] bTexts = (string[])cabObj.GetType().GetProperty("BrakeTexts", bindFlags).GetValue(cabObj);
+                            string[] rTexts = (string[])cabObj.GetType().GetProperty("ReverserTexts", bindFlagsAll).GetValue(cabObj);
+                            string[] pTexts = (string[])cabObj.GetType().GetProperty("PowerTexts", bindFlagsAll).GetValue(cabObj);
+                            string[] bTexts = (string[])cabObj.GetType().GetProperty("BrakeTexts", bindFlagsAll).GetValue(cabObj);
                             string[] hTexts = null;
-                            try { hTexts = (string[])cabObj.GetType().GetProperty("HoldingSpeedTexts", bindFlags).GetValue(cabObj); } catch { }
+                            try { hTexts = (string[])cabObj.GetType().GetProperty("HoldingSpeedTexts", bindFlagsAll).GetValue(cabObj); } catch { }
 
                             allRevTexts = JoinTexts(rTexts);
                             allPowTexts = JoinTexts(pTexts);
@@ -172,22 +242,22 @@ namespace TsScoringPlugin
                         catch { }
                     }
 
-                    try { brkMax = ((string[])cabObj.GetType().GetProperty("BrakeTexts", bindFlags).GetValue(cabObj)).Length - 1; } catch { }
-                    try { revText = ((string[])cabObj.GetType().GetProperty("ReverserTexts", bindFlags).GetValue(cabObj))[revPos + 1]; } catch { revText = revPos.ToString(); }
-                    try { brkText = ((string[])cabObj.GetType().GetProperty("BrakeTexts", bindFlags).GetValue(cabObj))[brkNotch]; } catch { brkText = "B" + brkNotch; }
+                    try { brkMax = ((string[])cabObj.GetType().GetProperty("BrakeTexts", bindFlagsAll).GetValue(cabObj)).Length - 1; } catch { }
+                    try { revText = ((string[])cabObj.GetType().GetProperty("ReverserTexts", bindFlagsAll).GetValue(cabObj))[revPos + 1]; } catch { revText = revPos.ToString(); }
+                    try { brkText = ((string[])cabObj.GetType().GetProperty("BrakeTexts", bindFlagsAll).GetValue(cabObj))[brkNotch]; } catch { brkText = "B" + brkNotch; }
 
                     if (powNotch < 0)
                     {
                         try
                         {
-                            string[] hTexts = (string[])cabObj.GetType().GetProperty("HoldingSpeedTexts", bindFlags).GetValue(cabObj);
+                            string[] hTexts = (string[])cabObj.GetType().GetProperty("HoldingSpeedTexts", bindFlagsAll).GetValue(cabObj);
                             try { powText = hTexts[Math.Abs(powNotch)]; } catch { powText = hTexts[Math.Abs(powNotch) - 1]; }
                         }
                         catch { powText = "抑速" + Math.Abs(powNotch); }
                     }
                     else
                     {
-                        try { powText = ((string[])cabObj.GetType().GetProperty("PowerTexts", bindFlags).GetValue(cabObj))[powNotch]; }
+                        try { powText = ((string[])cabObj.GetType().GetProperty("PowerTexts", bindFlagsAll).GetValue(cabObj))[powNotch]; }
                         catch { powText = "P" + powNotch; }
                     }
                 }
@@ -204,23 +274,60 @@ namespace TsScoringPlugin
                             dynamic st = stations[i];
                             StationData sd = new StationData();
                             sd.Location = st.Location;
+                            try { sd.Name = st.Name; } catch { sd.Name = "不明な駅"; }
                             try { sd.IsPass = st.Pass; } catch { sd.IsPass = false; }
+                            try { sd.DoorDir = (int)st.DoorSideNumber; } catch { sd.DoorDir = 1; }
+                            try { sd.DefaultTime = (int)((TimeSpan)st.DefaultTime).TotalMilliseconds; } catch { try { sd.DefaultTime = (int)st.DefaultTimeMilliseconds; } catch { sd.DefaultTime = -1; } }
 
                             sd.ArrTime = -1; sd.DepTime = -1;
                             try { sd.ArrTime = (int)((TimeSpan)st.ArrivalTime).TotalMilliseconds; } catch { try { sd.ArrTime = (int)st.ArrivalTime; } catch { } }
                             try { sd.DepTime = (int)((TimeSpan)st.DepartureTime).TotalMilliseconds; } catch { try { sd.DepTime = (int)st.DepartureTime; } catch { } }
 
-                            sd.HasTimeDef = (sd.ArrTime > 0 || sd.DepTime > 0);
-                            sd.IsScoring = sd.HasTimeDef;
-                            sd.InterpolatedTime = sd.DepTime > 0 ? sd.DepTime : sd.ArrTime;
                             try { sd.StoppageTime = st.StoppageTimeMilliseconds; }
                             catch { try { sd.StoppageTime = (int)((TimeSpan)st.StoppageTime).TotalMilliseconds; } catch { sd.StoppageTime = 15000; } }
+
+                            sd.HasTimeDef = (sd.ArrTime > 0 || sd.DepTime > 0);
+                            sd.IsScoring = sd.HasTimeDef;
+
                             try { sd.MarginMin = Math.Abs((double)st.MarginMin); } catch { sd.MarginMin = 5.0; }
                             try { sd.MarginMax = (double)st.MarginMax; } catch { sd.MarginMax = 5.0; }
                             stationList.Add(sd);
                         }
 
                         if (stationList.Count > 0) stationList[0].IsScoring = false;
+
+                        for (int i = 0; i < stationList.Count; i++)
+                        {
+                            if (stationList[i].HasTimeDef)
+                            {
+                                if (stationList[i].ArrTime > 0 && stationList[i].DepTime <= 0) stationList[i].DepTime = stationList[i].ArrTime + stationList[i].StoppageTime;
+                                else if (stationList[i].DepTime > 0 && stationList[i].ArrTime <= 0)
+                                {
+                                    stationList[i].ArrTime = stationList[i].DepTime - stationList[i].StoppageTime;
+                                    if (stationList[i].ArrTime < 0) stationList[i].ArrTime = 0;
+                                }
+                            }
+                        }
+
+                        for (int i = 0; i < stationList.Count; i++)
+                        {
+                            if (!stationList[i].HasTimeDef && stationList[i].DefaultTime > 0)
+                            {
+                                bool hasPrevAnchor = false;
+                                for (int j = i - 1; j >= 0; j--) { if (stationList[j].HasTimeDef) { hasPrevAnchor = true; break; } }
+                                bool hasNextAnchor = false;
+                                for (int j = i + 1; j < stationList.Count; j++) { if (stationList[j].HasTimeDef) { hasNextAnchor = true; break; } }
+
+                                if (!hasPrevAnchor || !hasNextAnchor)
+                                {
+                                    stationList[i].ArrTime = stationList[i].DefaultTime;
+                                    stationList[i].DepTime = stationList[i].DefaultTime + stationList[i].StoppageTime;
+                                    stationList[i].HasTimeDef = true;
+                                    stationList[i].IsScoring = true;
+                                    stationList[i].InterpolatedTime = stationList[i].DepTime;
+                                }
+                            }
+                        }
 
                         int lastTimingIdx = -1;
                         for (int i = 0; i < stationList.Count; i++)
@@ -237,8 +344,8 @@ namespace TsScoringPlugin
                                 {
                                     double loc0 = stationList[lastTimingIdx].Location;
                                     double loc1 = stationList[nextTimingIdx].Location;
-                                    int time0 = stationList[lastTimingIdx].DepTime > 0 ? stationList[lastTimingIdx].DepTime : stationList[lastTimingIdx].ArrTime;
-                                    int time1 = stationList[nextTimingIdx].ArrTime > 0 ? stationList[nextTimingIdx].ArrTime : stationList[nextTimingIdx].DepTime;
+                                    int time0 = stationList[lastTimingIdx].DepTime;
+                                    int time1 = stationList[nextTimingIdx].ArrTime;
 
                                     int totalStopTime = 0;
                                     for (int k = lastTimingIdx + 1; k < nextTimingIdx; k++)
@@ -255,14 +362,10 @@ namespace TsScoringPlugin
                                         if (!stationList[k].IsPass) accStopTime += stationList[k].StoppageTime;
 
                                     int estArrTime = time0 + (int)(runTime * ratio) + accStopTime;
-
-                                    if (stationList[i].IsPass) stationList[i].InterpolatedTime = estArrTime;
-                                    else
-                                    {
-                                        stationList[i].ArrTime = estArrTime;
-                                        stationList[i].DepTime = estArrTime + stationList[i].StoppageTime;
-                                        stationList[i].InterpolatedTime = stationList[i].DepTime;
-                                    }
+                                    stationList[i].ArrTime = estArrTime;
+                                    if (stationList[i].IsPass) stationList[i].DepTime = estArrTime;
+                                    else stationList[i].DepTime = estArrTime + stationList[i].StoppageTime;
+                                    stationList[i].InterpolatedTime = stationList[i].DepTime;
                                 }
                             }
                         }
@@ -279,6 +382,19 @@ namespace TsScoringPlugin
                         isInitialized = true;
                     }
 
+                    // ★ 追加: 全駅リスト(STALIST)を1秒ごとにPythonへ送信
+                    if (timeMs - lastStaListSendMs >= 1000 || lastStaListSendMs == 0)
+                    {
+                        var staNames = stationList.Where(s => !s.IsPass).Select(s => s.Name).ToList();
+                        if (staNames.Count > 0)
+                        {
+                            string staData = "STALIST:" + string.Join("_", staNames);
+                            byte[] sBytes = Encoding.UTF8.GetBytes(staData);
+                            udpClient.Send(sBytes, sBytes.Length, endPoint);
+                        }
+                        lastStaListSendMs = timeMs;
+                    }
+
                     if (targetStationIndex < stationList.Count)
                     {
                         var targetSt = stationList[targetStationIndex];
@@ -288,6 +404,47 @@ namespace TsScoringPlugin
                         marginBack = targetSt.MarginMin;
                         marginFront = targetSt.MarginMax;
                         bool isTerminal = (targetStationIndex == stationList.Count - 1);
+
+                        if (targetSt.IsPass)
+                        {
+                            if (location > nextStationLoc && !isTerminal)
+                            {
+                                targetStationIndex++;
+                                hasDoorOpenedAtTarget = false;
+                                opStopDelayStartMs = -1;
+                            }
+                        }
+                        else if (targetSt.DoorDir == 0)
+                        {
+                            double distToStop = nextStationLoc - location;
+                            bool isInMargin = (distToStop >= -marginFront && distToStop <= marginBack);
+                            bool isStopped = Math.Abs(speed) < 0.1;
+                            int depTime = targetSt.DepTime > 0 ? targetSt.DepTime : targetSt.InterpolatedTime;
+
+                            if (isStopped && isInMargin) hasDoorOpenedAtTarget = true;
+
+                            if (hasDoorOpenedAtTarget && timeMs >= depTime && !isTerminal)
+                            {
+                                if (opStopDelayStartMs < 0) opStopDelayStartMs = timeMs;
+                                else if (timeMs >= opStopDelayStartMs + 300)
+                                {
+                                    targetStationIndex++;
+                                    hasDoorOpenedAtTarget = false;
+                                    opStopDelayStartMs = -1;
+                                }
+                            }
+                            else opStopDelayStartMs = -1;
+                        }
+                        else
+                        {
+                            if (!areDoorsClosed && Math.Abs(nextStationLoc - location) < 100.0) hasDoorOpenedAtTarget = true;
+                            if (hasDoorOpenedAtTarget && areDoorsClosed && !isTerminal)
+                            {
+                                targetStationIndex++;
+                                hasDoorOpenedAtTarget = false;
+                                opStopDelayStartMs = -1;
+                            }
+                        }
 
                         if (isTerminal)
                         {
@@ -305,29 +462,12 @@ namespace TsScoringPlugin
                         }
                         else
                         {
-                            if (hasDoorOpenedAtTarget && !areDoorsClosed) nextStationTime = targetSt.DepTime > 0 ? targetSt.DepTime : targetSt.ArrTime;
+                            if (targetSt.IsPass) nextStationTime = targetSt.ArrTime > 0 ? targetSt.ArrTime : targetSt.InterpolatedTime;
+                            else if (targetSt.DoorDir == 0) nextStationTime = targetSt.DepTime > 0 ? targetSt.DepTime : targetSt.InterpolatedTime;
                             else
                             {
-                                if (targetSt.IsPass) nextStationTime = targetSt.InterpolatedTime;
+                                if (hasDoorOpenedAtTarget && !areDoorsClosed) nextStationTime = targetSt.DepTime > 0 ? targetSt.DepTime : targetSt.InterpolatedTime;
                                 else nextStationTime = targetSt.ArrTime > 0 ? targetSt.ArrTime : targetSt.InterpolatedTime;
-                            }
-                        }
-
-                        if (targetSt.IsPass)
-                        {
-                            if (location > nextStationLoc && !isTerminal)
-                            {
-                                targetStationIndex++;
-                                hasDoorOpenedAtTarget = false;
-                            }
-                        }
-                        else
-                        {
-                            if (!areDoorsClosed && Math.Abs(nextStationLoc - location) < 100.0) hasDoorOpenedAtTarget = true;
-                            if (hasDoorOpenedAtTarget && areDoorsClosed && !isTerminal)
-                            {
-                                targetStationIndex++;
-                                hasDoorOpenedAtTarget = false;
                             }
                         }
                     }
@@ -337,31 +477,27 @@ namespace TsScoringPlugin
                 double signalLimit = 1000.0;
                 double trainLength = 20.0;
                 string mapLimitsStr = "";
-
                 double fwdSigLimit = 1000.0;
                 double nextSigLoc = -1.0;
-
                 double manualMapHead = 1000.0;
                 double manualMapTail = 1000.0;
                 double distToClear = 0.0;
-
                 double currentG = 0.0;
                 string bType = "Ecb";
                 double bcPressure = 0.0;
                 double bpPressure = 0.0;
-                double bpInitialPressure = 490.0; // ★ BpInitialPressureの初期値(kPa)
-
+                double bpInitialPressure = 490.0;
                 string pRatesStr = "";
                 double maxPressure = 0.0;
 
                 object speedLimits = null;
-                try { speedLimits = map.GetType().GetProperty("SpeedLimits", bindFlags)?.GetValue(map); } catch { }
+                try { speedLimits = map.GetType().GetProperty("SpeedLimits", bindFlagsAll)?.GetValue(map); } catch { }
 
                 if (speedLimits != null)
                 {
                     try
                     {
-                        object tlObj = speedLimits.GetType().GetProperty("VehicleLength", bindFlags)?.GetValue(speedLimits);
+                        object tlObj = speedLimits.GetType().GetProperty("VehicleLength", bindFlagsAll)?.GetValue(speedLimits);
                         if (tlObj != null) trainLength = Convert.ToDouble(tlObj);
                     }
                     catch { }
@@ -376,16 +512,14 @@ namespace TsScoringPlugin
 
                             foreach (object sl in enumerable)
                             {
-                                object locObj = sl.GetType().GetProperty("Location", bindFlags)?.GetValue(sl);
-                                object valObj = sl.GetType().GetProperty("Value", bindFlags)?.GetValue(sl);
+                                object locObj = sl.GetType().GetProperty("Location", bindFlagsAll)?.GetValue(sl);
+                                object valObj = sl.GetType().GetProperty("Value", bindFlagsAll)?.GetValue(sl);
                                 if (locObj != null && valObj != null)
                                 {
                                     double sloc = Convert.ToDouble(locObj);
                                     double rawVal = Convert.ToDouble(valObj);
-
                                     double sval = (double.IsInfinity(rawVal) || rawVal > 999.0 || rawVal <= 0) ? 1000.0 : rawVal * 3.6;
                                     validLimits.Add(new Tuple<double, double>(sloc, sval));
-
                                     if (sloc > location && sloc <= location + 3000.0) futureList.Add($"{sloc:F1}={sval:F1}");
                                 }
                             }
@@ -417,14 +551,8 @@ namespace TsScoringPlugin
                                 {
                                     if (validLimits[i].Item1 <= location && validLimits[i].Item1 > tailLoc)
                                     {
-                                        if (validLimits[i].Item2 == limitAtHead)
-                                        {
-                                            clearanceLoc = validLimits[i].Item1;
-                                        }
-                                        else
-                                        {
-                                            break;
-                                        }
+                                        if (validLimits[i].Item2 == limitAtHead) clearanceLoc = validLimits[i].Item1;
+                                        else break;
                                     }
                                 }
                                 distToClear = clearanceLoc - tailLoc;
@@ -439,10 +567,10 @@ namespace TsScoringPlugin
 
                 try
                 {
-                    object secMgr = BveHacker.Scenario.GetType().GetProperty("SectionManager", bindFlags)?.GetValue(BveHacker.Scenario);
+                    object secMgr = BveHacker.Scenario.GetType().GetProperty("SectionManager", bindFlagsAll)?.GetValue(BveHacker.Scenario);
                     if (secMgr != null)
                     {
-                        object sigLimObj = secMgr.GetType().GetProperty("CurrentSectionSpeedLimit", bindFlags)?.GetValue(secMgr);
+                        object sigLimObj = secMgr.GetType().GetProperty("CurrentSectionSpeedLimit", bindFlagsAll)?.GetValue(secMgr);
                         if (sigLimObj != null)
                         {
                             double rawSigLimit = Convert.ToDouble(sigLimObj);
@@ -450,7 +578,7 @@ namespace TsScoringPlugin
                             else signalLimit = rawSigLimit * 3.6;
                         }
 
-                        object fwdLimObj = secMgr.GetType().GetProperty("ForwardSectionSpeedLimit", bindFlags)?.GetValue(secMgr);
+                        object fwdLimObj = secMgr.GetType().GetProperty("ForwardSectionSpeedLimit", bindFlagsAll)?.GetValue(secMgr);
                         if (fwdLimObj != null)
                         {
                             double rawFwdLimit = Convert.ToDouble(fwdLimObj);
@@ -458,7 +586,7 @@ namespace TsScoringPlugin
                             else fwdSigLimit = rawFwdLimit * 3.6;
                         }
 
-                        object sections = secMgr.GetType().GetProperty("Sections", bindFlags)?.GetValue(secMgr);
+                        object sections = secMgr.GetType().GetProperty("Sections", bindFlagsAll)?.GetValue(secMgr);
                         if (sections != null)
                         {
                             var secEnum = sections as System.Collections.IEnumerable;
@@ -468,7 +596,7 @@ namespace TsScoringPlugin
                                 {
                                     if (sec != null)
                                     {
-                                        object locObj = sec.GetType().GetProperty("Location", bindFlags)?.GetValue(sec);
+                                        object locObj = sec.GetType().GetProperty("Location", bindFlagsAll)?.GetValue(sec);
                                         if (locObj != null)
                                         {
                                             double sLoc = Convert.ToDouble(locObj);
@@ -499,22 +627,22 @@ namespace TsScoringPlugin
 
                     if (vehicle != null && vehicle.Instruments != null)
                     {
-                        object brkSys = vehicle.Instruments.GetType().GetProperty("BrakeSystem", bindFlags)?.GetValue(vehicle.Instruments);
+                        object brkSys = vehicle.Instruments.GetType().GetProperty("BrakeSystem", bindFlagsAll)?.GetValue(vehicle.Instruments);
                         if (brkSys != null)
                         {
                             try
                             {
-                                object firstCarBrake = brkSys.GetType().GetProperty("FirstCarBrake", bindFlags)?.GetValue(brkSys);
+                                object firstCarBrake = brkSys.GetType().GetProperty("FirstCarBrake", bindFlagsAll)?.GetValue(brkSys);
                                 if (firstCarBrake != null)
                                 {
-                                    object bcValve = firstCarBrake.GetType().GetProperty("BcValve", bindFlags)?.GetValue(firstCarBrake);
+                                    object bcValve = firstCarBrake.GetType().GetProperty("BcValve", bindFlagsAll)?.GetValue(firstCarBrake);
                                     if (bcValve != null)
                                     {
-                                        object pressureContainer = bcValve.GetType().GetProperty("Pressure", bindFlags)?.GetValue(bcValve);
+                                        object pressureContainer = bcValve.GetType().GetProperty("Pressure", bindFlagsAll)?.GetValue(bcValve);
                                         if (pressureContainer != null)
                                         {
-                                            object pVal = pressureContainer.GetType().GetProperty("Value", bindFlags)?.GetValue(pressureContainer)
-                                                       ?? pressureContainer.GetType().GetField("Value", bindFlags)?.GetValue(pressureContainer);
+                                            object pVal = pressureContainer.GetType().GetProperty("Value", bindFlagsAll)?.GetValue(pressureContainer)
+                                                           ?? pressureContainer.GetType().GetField("Value", bindFlagsAll)?.GetValue(pressureContainer);
                                             if (pVal != null) bcPressure = Convert.ToDouble(pVal) / 1000.0;
                                         }
                                     }
@@ -525,17 +653,17 @@ namespace TsScoringPlugin
                             try
                             {
                                 var brkSysType = brkSys.GetType();
-                                object currentController = brkSysType.GetProperty("BrakeController", bindFlags)?.GetValue(brkSys);
-                                object ecbInstance = brkSysType.GetProperty("Ecb", bindFlags)?.GetValue(brkSys);
-                                object smeeInstance = brkSysType.GetProperty("Smee", bindFlags)?.GetValue(brkSys);
-                                object clInstance = brkSysType.GetProperty("Cl", bindFlags)?.GetValue(brkSys);
+                                object currentController = brkSysType.GetProperty("BrakeController", bindFlagsAll)?.GetValue(brkSys);
+                                object ecbInstance = brkSysType.GetProperty("Ecb", bindFlagsAll)?.GetValue(brkSys);
+                                object smeeInstance = brkSysType.GetProperty("Smee", bindFlagsAll)?.GetValue(brkSys);
+                                object clInstance = brkSysType.GetProperty("Cl", bindFlagsAll)?.GetValue(brkSys);
 
                                 if (currentController != null)
                                 {
-                                    object ccSrc = currentController.GetType().GetProperty("Src", bindFlags)?.GetValue(currentController);
-                                    object ecbSrc = ecbInstance?.GetType().GetProperty("Src", bindFlags)?.GetValue(ecbInstance);
-                                    object smeeSrc = smeeInstance?.GetType().GetProperty("Src", bindFlags)?.GetValue(smeeInstance);
-                                    object clSrc = clInstance?.GetType().GetProperty("Src", bindFlags)?.GetValue(clInstance);
+                                    object ccSrc = currentController.GetType().GetProperty("Src", bindFlagsAll)?.GetValue(currentController);
+                                    object ecbSrc = ecbInstance?.GetType().GetProperty("Src", bindFlagsAll)?.GetValue(ecbInstance);
+                                    object smeeSrc = smeeInstance?.GetType().GetProperty("Src", bindFlagsAll)?.GetValue(smeeInstance);
+                                    object clSrc = clInstance?.GetType().GetProperty("Src", bindFlagsAll)?.GetValue(clInstance);
 
                                     if (ccSrc != null)
                                     {
@@ -551,26 +679,25 @@ namespace TsScoringPlugin
                                         else bType = "Ecb";
                                     }
 
-                                    double[] pRates = currentController.GetType().GetProperty("PressureRates", bindFlags)?.GetValue(currentController) as double[];
+                                    double[] pRates = currentController.GetType().GetProperty("PressureRates", bindFlagsAll)?.GetValue(currentController) as double[];
                                     if (pRates != null) pRatesStr = string.Join("_", pRates);
 
-                                    object maxPObj = currentController.GetType().GetProperty("MaximumPressure", bindFlags)?.GetValue(currentController);
+                                    object maxPObj = currentController.GetType().GetProperty("MaximumPressure", bindFlagsAll)?.GetValue(currentController);
                                     if (maxPObj != null) maxPressure = Convert.ToDouble(maxPObj) / 1000.0;
 
                                     if (smeeInstance != null)
                                     {
-                                        // ★ BpInitialPressure の取得
-                                        object bpInitObj = smeeInstance.GetType().GetProperty("BpInitialPressure", bindFlags)?.GetValue(smeeInstance);
+                                        object bpInitObj = smeeInstance.GetType().GetProperty("BpInitialPressure", bindFlagsAll)?.GetValue(smeeInstance);
                                         if (bpInitObj != null) bpInitialPressure = Convert.ToDouble(bpInitObj) / 1000.0;
 
-                                        object bpValve = smeeInstance.GetType().GetProperty("Bp", bindFlags)?.GetValue(smeeInstance);
+                                        object bpValve = smeeInstance.GetType().GetProperty("Bp", bindFlagsAll)?.GetValue(smeeInstance);
                                         if (bpValve != null)
                                         {
-                                            object pContainer = bpValve.GetType().GetProperty("Pressure", bindFlags)?.GetValue(bpValve);
+                                            object pContainer = bpValve.GetType().GetProperty("Pressure", bindFlagsAll)?.GetValue(bpValve);
                                             if (pContainer != null)
                                             {
-                                                object pVal = pContainer.GetType().GetProperty("Value", bindFlags)?.GetValue(pContainer)
-                                                           ?? pContainer.GetType().GetField("Value", bindFlags)?.GetValue(pContainer);
+                                                object pVal = pContainer.GetType().GetProperty("Value", bindFlagsAll)?.GetValue(pContainer)
+                                                                ?? pContainer.GetType().GetField("Value", bindFlagsAll)?.GetValue(pContainer);
                                                 if (pVal != null) bpPressure = Convert.ToDouble(pVal) / 1000.0;
                                             }
                                         }
@@ -584,11 +711,19 @@ namespace TsScoringPlugin
                 catch { }
                 lastTimeMs = timeMs;
 
+                string currentStationName = "不明な駅";
+                int currentDoorDir = 1;
+                if (stationList.Count > 0 && targetStationIndex < stationList.Count)
+                {
+                    var st = stationList[targetStationIndex];
+                    currentStationName = !string.IsNullOrEmpty(st.Name) ? st.Name : "不明な駅";
+                    currentDoorDir = st.DoorDir;
+                }
+
                 try
                 {
                     int holds = hasHoldingBrake ? 1 : 0;
-                    // ★ BPP送信データに bpInitialPressure を追加
-                    string data = $"SPEED:{speed},TIME:{timeMs},LOCATION:{location},GRADIENT:{finalGradient},NEXTLOC:{nextStationLoc},NEXTTIME:{nextStationTime},ISPASS:{isPass},ISTIMING:{isTiming},MARGINB:{marginBack},MARGINF:{marginFront},REV:{revText}:{revPos},POW:{powText}:{powNotch},BRK:{brkText}:{brkNotch}:{brkMax},HTYPE:{handleType},ALLTXT:{allRevTexts}:{allPowTexts}:{allBrkTexts}:{allHldTexts},SIGLIMIT:{signalLimit},TRAINLEN:{trainLength},MAPLIMITS:{mapLimitsStr},FWDSIGLIMIT:{fwdSigLimit},FWDSIGLOC:{nextSigLoc},DOOR:{(areDoorsClosed ? 0 : 1)},TERM:{(targetStationIndex == stationList.Count - 1 ? 1 : 0)},MAPHEAD:{manualMapHead},MAPTAIL:{manualMapTail},CLEARDIST:{distToClear},CALCG:{currentG:F5},BTYPE:{bType},JUMP:{jumpCounter},CAB:{cabBrakeNotches}:{holds},BCP:{bcPressure:F1},PRATES:{pRatesStr}:{maxPressure:F1},BPP:{bpPressure:F1}:{bpInitialPressure:F1}";
+                    string data = $"SPEED:{speed},TIME:{timeMs},LOCATION:{location},GRADIENT:{finalGradient},NEXTLOC:{nextStationLoc},NEXTTIME:{nextStationTime},ISPASS:{isPass},ISTIMING:{isTiming},MARGINB:{marginBack},MARGINF:{marginFront},REV:{revText}:{revPos},POW:{powText}:{powNotch},BRK:{brkText}:{brkNotch}:{brkMax},HTYPE:{handleType},ALLTXT:{allRevTexts}:{allPowTexts}:{allBrkTexts}:{allHldTexts},SIGLIMIT:{signalLimit},TRAINLEN:{trainLength},MAPLIMITS:{mapLimitsStr},FWDSIGLIMIT:{fwdSigLimit},FWDSIGLOC:{nextSigLoc},DOOR:{(areDoorsClosed ? 0 : 1)},DOORDIR:{currentDoorDir},TERM:{(targetStationIndex == stationList.Count - 1 ? 1 : 0)},MAPHEAD:{manualMapHead},MAPTAIL:{manualMapTail},CLEARDIST:{distToClear},CALCG:{currentG:F5},BTYPE:{bType},JUMP:{jumpCounter},CAB:{cabBrakeNotches}:{holds},BCP:{bcPressure:F1},PRATES:{pRatesStr}:{maxPressure:F1},BPP:{bpPressure:F1}:{bpInitialPressure:F1},STATNAME:{currentStationName}";
                     byte[] bytes = Encoding.UTF8.GetBytes(data);
                     udpClient.Send(bytes, bytes.Length, endPoint);
                 }
@@ -598,11 +733,8 @@ namespace TsScoringPlugin
 
         public override void Dispose()
         {
-            if (udpClient != null)
-            {
-                udpClient.Close();
-                udpClient = null;
-            }
+            if (udpClient != null) { udpClient.Close(); udpClient = null; }
+            if (udpReceiver != null) { udpReceiver.Close(); udpReceiver = null; }
         }
     }
 }
