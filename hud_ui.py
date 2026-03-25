@@ -1,14 +1,22 @@
+import time
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFontMetrics, QPainterPath, QPen, QLinearGradient, QFont
 from config import *
-from utils import draw_text_with_outline, get_outline_color
+from utils import draw_text_with_outline, draw_text_with_stroke, get_outline_color
 
 def draw_hud(self, painter, logical_width):
+    from main import KERNING_OFFSETS
+    
+    def get_text_offset(text):
+        for suffix, offset in KERNING_OFFSETS.items():
+            if text.endswith(suffix):
+                return offset
+        return 0
+
     pos_x_left, pos_x_right = MARGIN_LEFT, logical_width - MARGIN_RIGHT
     pos_x_label = pos_x_right - LABEL_WIDTH
 
     dbg_y = 500
-    # ★ ここで必ずフォントサイズを14にリセットし、巨大化を防ぐ
     painter.setFont(QFont("sans-serif", 14, QFont.Weight.Bold))
     
     if self.bb_is_in_zone:
@@ -50,23 +58,21 @@ def draw_hud(self, painter, logical_width):
         f"CalcG: {self.bve_calc_g:.4f} G | MaxG: {self.max_stop_g:.4f} G | LastStop: {self.last_stop_g:.4f} G"
     ])
     
-    for i, text in enumerate(dbg_texts):
-        path = QPainterPath()
-        path.addText(20, dbg_y, QFont("sans-serif", 14, QFont.Weight.Bold), text)
-        
-        if text.startswith("★ "):
-            painter.setPen(QPen(QColor(*COLOR_BLACK), 3))
-            painter.drawPath(path)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(255, 255, 0)) 
-        else:
-            painter.setPen(QPen(QColor(*COLOR_BLACK), 3))
-            painter.drawPath(path)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(*COLOR_WHITE))
+    # ★ X線ゴーグル（超軽量版）
+    if self.show_graph:
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 150))
+        painter.drawRect(10, dbg_y - 20, 1100, len(dbg_texts) * 20 + 10)
+
+        painter.setFont(QFont("sans-serif", 14, QFont.Weight.Bold))
+        for i, text in enumerate(dbg_texts):
+            if text.startswith("★ "):
+                painter.setPen(QColor(255, 255, 0)) 
+            else:
+                painter.setPen(QColor(255, 255, 255)) 
             
-        painter.drawPath(path)
-        dbg_y += 20
+            painter.drawText(20, dbg_y, text)
+            dbg_y += 20
 
     if self.show_graph and len(self.g_history) > 1:
         graph_w = 800
@@ -91,7 +97,7 @@ def draw_hud(self, painter, logical_width):
         painter.setPen(QPen(QColor(255, 50, 50, 150), 2, Qt.PenStyle.DashLine))
         painter.drawLine(int(graph_x), int(y_z2), int(graph_x + graph_w), int(y_z2))
         
-        now = self.bve_time_ms / 1000.0
+        now = time.time()
         path_g = QPainterPath()
         path_notch = QPainterPath()
         
@@ -141,7 +147,7 @@ def draw_hud(self, painter, logical_width):
     y_off = 0
     line_h = QFontMetrics(self.font_normal).height() + 10
     for p in display_list:
-        draw_text_with_outline(painter, p["text"], self.font_normal, p["color"], get_outline_color(p["color"]), pos_x_left, MARGIN_TOP_NORMAL + y_off)
+        draw_text_with_stroke(painter, p["text"], self.font_normal, p["color"], get_outline_color(p["color"]), pos_x_left, MARGIN_TOP_NORMAL + y_off)
         y_off += line_h
 
     line_h_big = QFontMetrics(self.font_big).height() + 10
@@ -163,7 +169,7 @@ def draw_hud(self, painter, logical_width):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(gradient)
         painter.drawRect(int(bg_x), int(bg_y), int(bg_w), int(bg_h))
-        draw_text_with_outline(painter, p["text"], self.font_big, p["color"], get_outline_color(p["color"]), pos_x_left, MARGIN_TOP_BIG + (i * line_h_big))
+        draw_text_with_stroke(painter, p["text"], self.font_big, p["color"], get_outline_color(p["color"]), pos_x_left, MARGIN_TOP_BIG + (i * line_h_big))
 
     ui_y = MARGIN_TOP_UI
     ui_step = 60
@@ -186,8 +192,8 @@ def draw_hud(self, painter, logical_width):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(gradient)
         painter.drawRect(int(bg_x), int(bg_y), int(bg_w), int(bg_h))
-        if label_text and show_label: draw_text_with_outline(painter, label_text, self.font_ui, label_color, get_outline_color(label_color), pos_x_label, y, "left")
-        if value_text and show_value: draw_text_with_outline(painter, value_text, self.font_ui, value_color, get_outline_color(value_color), pos_x_right, y, "right")
+        if label_text and show_label: draw_text_with_stroke(painter, label_text, self.font_ui, label_color, get_outline_color(label_color), pos_x_label, y, "left")
+        if value_text and show_value: draw_text_with_stroke(painter, value_text, self.font_ui, value_color, get_outline_color(value_color), pos_x_right, y, "right")
 
     if self.disp_settings["time"]:
         s = self.bve_time_ms // 1000
@@ -223,17 +229,18 @@ def draw_hud(self, painter, logical_width):
             if self.blink_phase < 0.5:
                 l_text = "制限" if self.target_type == "map" else "信号"
                 l_color = self.limit_color if (is_type_changed and not is_capped_blue) else COLOR_WHITE
-                v_text = f"{round(self.disp_limit)} km/h" if self.disp_limit < 999.0 else "--- km/h"
+                # ★ 浮動小数点バグ修正
+                v_text = f"{int(round(self.disp_limit))} km/h" if self.disp_limit < 999.0 else "--- km/h"
                 v_color = self.limit_color
             else:
                 l_text = "制限" if self.base_limit_type == "map" else "信号"
                 l_color = COLOR_WHITE
-                v_text = f"{round(self.effective_limit)} km/h" if self.effective_limit < 999.0 else "--- km/h"
+                v_text = f"{int(round(self.effective_limit))} km/h" if self.effective_limit < 999.0 else "--- km/h"
                 v_color = COLOR_WHITE
         else:
             l_text = "制限" if self.base_limit_type == "map" else "信号"
             l_color = COLOR_WHITE
-            v_text = f"{round(self.effective_limit)} km/h" if self.effective_limit < 999.0 else "--- km/h"
+            v_text = f"{int(round(self.effective_limit))} km/h" if self.effective_limit < 999.0 else "--- km/h"
             v_color = COLOR_WHITE
         draw_row_local(l_text, l_color, v_text, v_color, ui_y, show_label=show_l, show_value=show_v)
     ui_y += ui_step
@@ -255,7 +262,8 @@ def draw_hud(self, painter, logical_width):
                 elif d < -self.bve_margin_f: d_color = COLOR_B_EMG 
             
             if self.bve_is_timing == 1:
-                show_timing = int((self.bve_time_ms / 1000.0) / 5.0) % 2 == 0
+                # ★ 点滅を 5.0 秒間隔に修正
+                show_timing = int(time.time() / 5.0) % 2 == 0
                 label_text = "採時" if show_timing else ("通過" if is_p else "停車")
                 label_col = COLOR_P if is_p else COLOR_B_EMG
             else:
@@ -269,6 +277,7 @@ def draw_hud(self, painter, logical_width):
 
     if self.is_scoring_mode:
         draw_row_local("得点", COLOR_WHITE, str(self.score), COLOR_B_EMG if self.score < 0 else COLOR_WHITE, ui_y)
+    # ★ 採点モードOFF時に上に詰まるバグ修正 (if文の外に出す)
     ui_y += ui_step
 
     if self.disp_settings["handle"]:
@@ -307,15 +316,21 @@ def draw_hud(self, painter, logical_width):
         painter.scale(scale_ratio, scale_ratio)
 
         if self.is_single_handle:
-            draw_text_with_outline(painter, self.bve_rev_text, self.font_ui, rev_color, get_outline_color(rev_color), -max(self.max_pow_w, self.max_brk_w) - gap, offset_to_top, "right")
-            draw_text_with_outline(painter, self.bve_pow_text if self.bve_pow_notch != 0 else (self.bve_brk_text if self.bve_brk_notch > 0 else self.bve_pow_text), self.font_ui, pow_color if self.bve_pow_notch != 0 else (brk_color if self.bve_brk_notch > 0 else COLOR_N), get_outline_color(pow_color if self.bve_pow_notch != 0 else (brk_color if self.bve_brk_notch > 0 else COLOR_N)), 0, offset_to_top, "right")
+            draw_text_with_stroke(painter, self.bve_rev_text, self.font_ui, rev_color, get_outline_color(rev_color), -max(self.max_pow_w, self.max_brk_w) - gap, offset_to_top, "right")
+            
+            handle_text = self.bve_pow_text if self.bve_pow_notch != 0 else (self.bve_brk_text if self.bve_brk_notch > 0 else self.bve_pow_text)
+            handle_color = pow_color if self.bve_pow_notch != 0 else (brk_color if self.bve_brk_notch > 0 else COLOR_N)
+            
+            me_offset = get_text_offset(handle_text) if self.bve_brk_notch > 0 else 0
+            draw_text_with_stroke(painter, handle_text, self.font_ui, handle_color, get_outline_color(handle_color), 0 + me_offset, offset_to_top, "right")
         else:
-            draw_text_with_outline(painter, self.bve_rev_text, self.font_ui, rev_color, get_outline_color(rev_color), -self.max_brk_w - gap - self.max_pow_w - gap, offset_to_top, "right")
-            draw_text_with_outline(painter, self.bve_pow_text, self.font_ui, pow_color, get_outline_color(pow_color), -self.max_brk_w - gap, offset_to_top, "right")
-            draw_text_with_outline(painter, self.bve_brk_text, self.font_ui, brk_color, get_outline_color(brk_color), 0, offset_to_top, "right")
+            draw_text_with_stroke(painter, self.bve_rev_text, self.font_ui, rev_color, get_outline_color(rev_color), -self.max_brk_w - gap - self.max_pow_w - gap, offset_to_top, "right")
+            draw_text_with_stroke(painter, self.bve_pow_text, self.font_ui, pow_color, get_outline_color(pow_color), -self.max_brk_w - gap, offset_to_top, "right")
+            
+            brk_offset = get_text_offset(self.bve_brk_text)
+            draw_text_with_stroke(painter, self.bve_brk_text, self.font_ui, brk_color, get_outline_color(brk_color), 0 + brk_offset, offset_to_top, "right")
         
         painter.restore()
-        # ★ マスコン・勾配の隙間ロジック完全復元
         ui_y += scaled_bg_h + (ui_step - bg_h_local)
     else:
         ui_y += ui_step 

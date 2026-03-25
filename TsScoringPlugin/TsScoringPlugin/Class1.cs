@@ -3,7 +3,6 @@ using BveEx.PluginHost.Plugins;
 using BveEx.PluginHost.Plugins.Extensions;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -17,6 +16,8 @@ namespace TsScoringPlugin
         public double Location;
         public int ArrTime;
         public int DepTime;
+        public int RawArrTime;
+        public int RawDepTime;
         public int DefaultTime;
         public int DoorDir;
         public bool IsPass;
@@ -35,6 +36,12 @@ namespace TsScoringPlugin
         private IPEndPoint endPoint;
         private UdpClient udpReceiver;
 
+        private string lastUdpData = "";
+        private string lastStaListPacket = "";
+
+        private object currentScenario = null;
+        private int scenarioId = -1;
+
         private int targetStationIndex = 0;
         private bool hasDoorOpenedAtTarget = false;
         private bool isInitialized = false;
@@ -46,7 +53,7 @@ namespace TsScoringPlugin
         private bool wasTerminalDoorOpened = false;
 
         private int opStopDelayStartMs = -1;
-        private int lastStaListSendMs = 0; // ★追加: 駅リスト送信タイマー
+        private int lastStaListSendMs = 0;
 
         private bool isTextsCached = false;
         private string allRevTexts = "切";
@@ -79,10 +86,43 @@ namespace TsScoringPlugin
             catch { }
         }
 
+        public override void Dispose()
+        {
+            if (udpClient != null) { udpClient.Close(); udpClient = null; }
+            if (udpReceiver != null) { udpReceiver.Close(); udpReceiver = null; }
+        }
+
         public override void Tick(TimeSpan elapsed)
         {
-            if (BveHacker.IsScenarioCreated && udpClient != null)
+            if (!BveHacker.IsScenarioCreated)
             {
+                lastUdpData = "";
+                lastStaListPacket = "";
+                isInitialized = false;
+                isTextsCached = false;
+                stationList.Clear();
+                lastTimeMs = 0;
+                lastStaListSendMs = 0;
+                currentScenario = null;
+                return;
+            }
+
+            if (udpClient != null)
+            {
+                if (!object.Equals(currentScenario, BveHacker.Scenario))
+                {
+                    currentScenario = BveHacker.Scenario;
+                    scenarioId = (int)(DateTime.Now.Ticks % 100000000);
+
+                    lastUdpData = "";
+                    lastStaListPacket = "";
+                    isInitialized = false;
+                    isTextsCached = false;
+                    stationList.Clear();
+                    lastTimeMs = 0;
+                    lastStaListSendMs = 0;
+                }
+
                 var bindFlagsAll = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.FlattenHierarchy | System.Reflection.BindingFlags.Static;
 
                 if (udpReceiver != null)
@@ -120,7 +160,6 @@ namespace TsScoringPlugin
                                                 if (jumpMethod != null)
                                                 {
                                                     jumpMethod.Invoke(rawScenario, new object[] { rLoc, 0 });
-
                                                     var timeMgr = scenario.GetType().GetProperty("TimeManager", bindFlagsAll)?.GetValue(scenario);
                                                     if (timeMgr != null)
                                                     {
@@ -131,6 +170,37 @@ namespace TsScoringPlugin
                                                             if (timeField != null) timeField.SetValue(rawTimeMgr, rTimeMs);
                                                         }
                                                     }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    catch { }
+                                }
+                            }
+                            else if (msg.StartsWith("JUMP_STA:"))
+                            {
+                                string[] parts = msg.Split(':');
+                                if (parts.Length >= 2 && int.TryParse(parts[1], out int sIdx))
+                                {
+                                    try
+                                    {
+                                        var scenario = BveHacker.Scenario;
+                                        if (scenario == null) continue;
+
+                                        var srcProp = scenario.GetType().GetProperty("Src", bindFlagsAll);
+                                        if (srcProp != null)
+                                        {
+                                            object rawScenario = srcProp.GetValue(scenario);
+                                            if (rawScenario != null)
+                                            {
+                                                var jumpStaMethod = rawScenario.GetType().GetMethods(bindFlagsAll)
+                                                    .FirstOrDefault(m => m.GetParameters().Length == 1 &&
+                                                                         m.GetParameters()[0].ParameterType == typeof(int) &&
+                                                                         m.ReturnType == typeof(void));
+
+                                                if (jumpStaMethod != null)
+                                                {
+                                                    jumpStaMethod.Invoke(rawScenario, new object[] { sIdx });
                                                 }
                                             }
                                         }
@@ -277,11 +347,26 @@ namespace TsScoringPlugin
                             try { sd.Name = st.Name; } catch { sd.Name = "不明な駅"; }
                             try { sd.IsPass = st.Pass; } catch { sd.IsPass = false; }
                             try { sd.DoorDir = (int)st.DoorSideNumber; } catch { sd.DoorDir = 1; }
-                            try { sd.DefaultTime = (int)((TimeSpan)st.DefaultTime).TotalMilliseconds; } catch { try { sd.DefaultTime = (int)st.DefaultTimeMilliseconds; } catch { sd.DefaultTime = -1; } }
 
-                            sd.ArrTime = -1; sd.DepTime = -1;
-                            try { sd.ArrTime = (int)((TimeSpan)st.ArrivalTime).TotalMilliseconds; } catch { try { sd.ArrTime = (int)st.ArrivalTime; } catch { } }
-                            try { sd.DepTime = (int)((TimeSpan)st.DepartureTime).TotalMilliseconds; } catch { try { sd.DepTime = (int)st.DepartureTime; } catch { } }
+                            sd.RawArrTime = -1;
+                            sd.RawDepTime = -1;
+                            sd.DefaultTime = -1;
+
+                            try { sd.RawArrTime = (int)((TimeSpan)st.ArrivalTime).TotalMilliseconds; }
+                            catch { try { sd.RawArrTime = (int)(Convert.ToDouble(st.ArrivalTime) * 1000.0); } catch { } }
+
+                            try { sd.RawDepTime = (int)((TimeSpan)st.DepartureTime).TotalMilliseconds; }
+                            catch { try { sd.RawDepTime = (int)(Convert.ToDouble(st.DepartureTime) * 1000.0); } catch { } }
+
+                            try { sd.DefaultTime = (int)((TimeSpan)st.DefaultTime).TotalMilliseconds; }
+                            catch { try { sd.DefaultTime = (int)(Convert.ToDouble(st.DefaultTime) * 1000.0); } catch { } }
+
+                            if (sd.RawArrTime <= -2000000000) sd.RawArrTime = -1;
+                            if (sd.RawDepTime <= -2000000000) sd.RawDepTime = -1;
+                            if (sd.DefaultTime <= -2000000000) sd.DefaultTime = -1;
+
+                            sd.ArrTime = sd.RawArrTime;
+                            sd.DepTime = sd.RawDepTime;
 
                             try { sd.StoppageTime = st.StoppageTimeMilliseconds; }
                             catch { try { sd.StoppageTime = (int)((TimeSpan)st.StoppageTime).TotalMilliseconds; } catch { sd.StoppageTime = 15000; } }
@@ -382,15 +467,18 @@ namespace TsScoringPlugin
                         isInitialized = true;
                     }
 
-                    // ★ 追加: 全駅リスト(STALIST)を1秒ごとにPythonへ送信
-                    if (timeMs - lastStaListSendMs >= 1000 || lastStaListSendMs == 0)
+                    if (timeMs - lastStaListSendMs >= 500 || lastStaListSendMs == 0)
                     {
-                        var staNames = stationList.Where(s => !s.IsPass).Select(s => s.Name).ToList();
-                        if (staNames.Count > 0)
+                        List<string> staInfoList = new List<string>();
+                        foreach (var st in stationList)
                         {
-                            string staData = "STALIST:" + string.Join("_", staNames);
-                            byte[] sBytes = Encoding.UTF8.GetBytes(staData);
-                            udpClient.Send(sBytes, sBytes.Length, endPoint);
+                            string sName = string.IsNullOrEmpty(st.Name) ? "不明な駅" : st.Name.Replace(",", "").Replace("=", "");
+                            int sTiming = st.IsScoring ? 1 : 0;
+                            staInfoList.Add($"{sName}={sTiming}={st.Location}={st.RawArrTime}={st.RawDepTime}={st.DefaultTime}={st.StoppageTime}");
+                        }
+                        if (staInfoList.Count > 0)
+                        {
+                            lastStaListPacket = "STALIST:" + string.Join(",", staInfoList);
                         }
                         lastStaListSendMs = timeMs;
                     }
@@ -709,32 +797,43 @@ namespace TsScoringPlugin
                     }
                 }
                 catch { }
-                lastTimeMs = timeMs;
-
-                string currentStationName = "不明な駅";
-                int currentDoorDir = 1;
-                if (stationList.Count > 0 && targetStationIndex < stationList.Count)
-                {
-                    var st = stationList[targetStationIndex];
-                    currentStationName = !string.IsNullOrEmpty(st.Name) ? st.Name : "不明な駅";
-                    currentDoorDir = st.DoorDir;
-                }
 
                 try
                 {
+                    string currentStationName = "不明な駅";
+                    int currentDoorDir = 1;
+                    if (stationList.Count > 0 && targetStationIndex < stationList.Count)
+                    {
+                        var st = stationList[targetStationIndex];
+                        currentStationName = !string.IsNullOrEmpty(st.Name) ? st.Name : "不明な駅";
+                        currentDoorDir = st.DoorDir;
+                    }
+
                     int holds = hasHoldingBrake ? 1 : 0;
-                    string data = $"SPEED:{speed},TIME:{timeMs},LOCATION:{location},GRADIENT:{finalGradient},NEXTLOC:{nextStationLoc},NEXTTIME:{nextStationTime},ISPASS:{isPass},ISTIMING:{isTiming},MARGINB:{marginBack},MARGINF:{marginFront},REV:{revText}:{revPos},POW:{powText}:{powNotch},BRK:{brkText}:{brkNotch}:{brkMax},HTYPE:{handleType},ALLTXT:{allRevTexts}:{allPowTexts}:{allBrkTexts}:{allHldTexts},SIGLIMIT:{signalLimit},TRAINLEN:{trainLength},MAPLIMITS:{mapLimitsStr},FWDSIGLIMIT:{fwdSigLimit},FWDSIGLOC:{nextSigLoc},DOOR:{(areDoorsClosed ? 0 : 1)},DOORDIR:{currentDoorDir},TERM:{(targetStationIndex == stationList.Count - 1 ? 1 : 0)},MAPHEAD:{manualMapHead},MAPTAIL:{manualMapTail},CLEARDIST:{distToClear},CALCG:{currentG:F5},BTYPE:{bType},JUMP:{jumpCounter},CAB:{cabBrakeNotches}:{holds},BCP:{bcPressure:F1},PRATES:{pRatesStr}:{maxPressure:F1},BPP:{bpPressure:F1}:{bpInitialPressure:F1},STATNAME:{currentStationName}";
-                    byte[] bytes = Encoding.UTF8.GetBytes(data);
-                    udpClient.Send(bytes, bytes.Length, endPoint);
+                    string data = $"SCENARIO_ID:{scenarioId},SPEED:{speed},TIME:{timeMs},LOCATION:{location},GRADIENT:{finalGradient},NEXTLOC:{nextStationLoc},NEXTTIME:{nextStationTime},ISPASS:{isPass},ISTIMING:{isTiming},MARGINB:{marginBack},MARGINF:{marginFront},REV:{revText}:{revPos},POW:{powText}:{powNotch},BRK:{brkText}:{brkNotch}:{brkMax},HTYPE:{handleType},ALLTXT:{allRevTexts}:{allPowTexts}:{allBrkTexts}:{allHldTexts},SIGLIMIT:{signalLimit},TRAINLEN:{trainLength},MAPLIMITS:{mapLimitsStr},FWDSIGLIMIT:{fwdSigLimit},FWDSIGLOC:{nextSigLoc},DOOR:{(areDoorsClosed ? 0 : 1)},DOORDIR:{currentDoorDir},TERM:{(targetStationIndex == stationList.Count - 1 ? 1 : 0)},MAPHEAD:{manualMapHead},MAPTAIL:{manualMapTail},CLEARDIST:{distToClear},CALCG:{currentG:F5},BTYPE:{bType},JUMP:{jumpCounter},CAB:{cabBrakeNotches}:{holds},BCP:{bcPressure:F1},PRATES:{pRatesStr}:{maxPressure:F1},BPP:{bpPressure:F1}:{bpInitialPressure:F1},STATNAME:{currentStationName}";
+                    lastUdpData = data;
+                }
+                catch { }
+
+                lastTimeMs = timeMs;
+
+                // ★ UDPデータの送信処理（Tickで毎フレーム呼ばれる）
+                try
+                {
+                    if (!string.IsNullOrEmpty(lastStaListPacket))
+                    {
+                        byte[] staBytes = Encoding.UTF8.GetBytes(lastStaListPacket);
+                        udpClient.Send(staBytes, staBytes.Length, endPoint);
+                        lastStaListPacket = ""; // 送信したら空にする（連投防止）
+                    }
+                    if (!string.IsNullOrEmpty(lastUdpData))
+                    {
+                        byte[] bytes = Encoding.UTF8.GetBytes(lastUdpData);
+                        udpClient.Send(bytes, bytes.Length, endPoint);
+                    }
                 }
                 catch { }
             }
-        }
-
-        public override void Dispose()
-        {
-            if (udpClient != null) { udpClient.Close(); udpClient = null; }
-            if (udpReceiver != null) { udpReceiver.Close(); udpReceiver = null; }
         }
     }
 }
