@@ -186,6 +186,7 @@ def update_physics_and_scoring(self, current_time, dt):
             self.stop_notch_state = get_notch_state(self, self.bve_brk_notch)
             
             # ★ 修正箇所：停車時衝動の判定を「案B（直前0.5秒間の平均G）」に変更
+            # g_historyには (current_time, decel_g, notch, b_max) が入っている
             recent_g = [h[1] for h in self.g_history if current_time - h[0] <= 0.5]
             if recent_g:
                 self.last_stop_g = sum(recent_g) / len(recent_g)
@@ -194,7 +195,7 @@ def update_physics_and_scoring(self, current_time, dt):
                 
             if self.last_stop_g >= 0.10:
                 add_score_popup(self, -200, "停車時衝動 -200", COLOR_B_EMG, "neg", "停車時衝動", current_time)
-            elif self.last_stop_g >= 0.065:
+            elif self.last_stop_g >= 0.06:
                 add_score_popup(self, -100, "停車時衝動 -100", COLOR_B_EMG, "neg", "停車時衝動", current_time)
             self.is_stopping_zone = False
             
@@ -204,6 +205,7 @@ def update_physics_and_scoring(self, current_time, dt):
         
     elif 0.0 < self.bve_speed <= 1.5:
         self.is_stopping_zone = True
+        # ★ 以前の max_stop_g はもう審査には使わないが、念のため計測だけ残しておく
         if decel_g > self.max_stop_g:
             self.max_stop_g = decel_g
             
