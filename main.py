@@ -117,7 +117,6 @@ class Overlay(QWidget):
         self.setting_start_idx = 0
         self.setting_end_idx = -1
         self.setting_stop_distance = -1 
-        # ★ 修正箇所1：初動ブレーキのVIPパス(ALL)を消し、NONEに戻しました
         self.setting_initial_brake = "NONE"
         
         self.current_scenario_id = -1
@@ -313,7 +312,6 @@ class Overlay(QWidget):
                                 self.setting_start_idx = 0
                                 self.setting_end_idx = -1
                                 self.setting_stop_distance = -1
-                                # ★ 修正箇所2：ここでも初期化時に NONE に戻す
                                 self.setting_initial_brake = "NONE"
                                 self.input_buffer = ""
                                 if self.menu_state != 0:
@@ -982,7 +980,8 @@ class Overlay(QWidget):
         else:
             self.hide()
 
-        current_time = time.time()
+        # ★ BVEの時間を秒単位に変換して current_time として使う！
+        current_time = self.bve_time_ms / 1000.0
 
         if self.bve_time_ms != self.last_bve_time_ms:
             self.last_time_change_real = time.time()
@@ -1076,6 +1075,11 @@ class Overlay(QWidget):
             self.bb_apply_count = 0
             self.bb_release_count = 0
             self.hb_strong_entered = False 
+            
+            # ★ 修正追加：フラグをすべてリセット
+            self.has_evaluated_initial_brake = False
+            self.idle_entered_while_stopped = False
+            
             self.last_update_time = current_time
         else:
             dt = current_time - self.last_update_time

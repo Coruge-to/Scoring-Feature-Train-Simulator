@@ -53,7 +53,10 @@ namespace TsScoringPlugin
         private bool wasTerminalDoorOpened = false;
 
         private int opStopDelayStartMs = -1;
-        private int lastStaListSendMs = 0;
+
+        // ★ BVE時間同期＆初回即時配信用フラグ
+        private bool initialStaListSent = false;
+        private DateTime lastStaListSendTime = DateTime.MinValue;
 
         private bool isTextsCached = false;
         private string allRevTexts = "切";
@@ -102,7 +105,11 @@ namespace TsScoringPlugin
                 isTextsCached = false;
                 stationList.Clear();
                 lastTimeMs = 0;
-                lastStaListSendMs = 0;
+
+                // ★ 初期化
+                initialStaListSent = false;
+                lastStaListSendTime = DateTime.MinValue;
+
                 currentScenario = null;
                 return;
             }
@@ -120,7 +127,10 @@ namespace TsScoringPlugin
                     isTextsCached = false;
                     stationList.Clear();
                     lastTimeMs = 0;
-                    lastStaListSendMs = 0;
+
+                    // ★ 初期化
+                    initialStaListSent = false;
+                    lastStaListSendTime = DateTime.MinValue;
                 }
 
                 var bindFlagsAll = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.FlattenHierarchy | System.Reflection.BindingFlags.Static;
@@ -467,7 +477,8 @@ namespace TsScoringPlugin
                         isInitialized = true;
                     }
 
-                    if (timeMs - lastStaListSendMs >= 500 || lastStaListSendMs == 0)
+                    // ★ リアルタイム（1秒間隔）でSTALISTを送信するように修正
+                    if (!initialStaListSent || (DateTime.Now - lastStaListSendTime).TotalMilliseconds >= 1000)
                     {
                         List<string> staInfoList = new List<string>();
                         foreach (var st in stationList)
@@ -480,7 +491,8 @@ namespace TsScoringPlugin
                         {
                             lastStaListPacket = "STALIST:" + string.Join(",", staInfoList);
                         }
-                        lastStaListSendMs = timeMs;
+                        lastStaListSendTime = DateTime.Now;
+                        initialStaListSent = true;
                     }
 
                     if (targetStationIndex < stationList.Count)
@@ -817,14 +829,13 @@ namespace TsScoringPlugin
 
                 lastTimeMs = timeMs;
 
-                // ★ UDPデータの送信処理（Tickで毎フレーム呼ばれる）
                 try
                 {
                     if (!string.IsNullOrEmpty(lastStaListPacket))
                     {
                         byte[] staBytes = Encoding.UTF8.GetBytes(lastStaListPacket);
                         udpClient.Send(staBytes, staBytes.Length, endPoint);
-                        lastStaListPacket = ""; // 送信したら空にする（連投防止）
+                        lastStaListPacket = "";
                     }
                     if (!string.IsNullOrEmpty(lastUdpData))
                     {

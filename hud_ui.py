@@ -58,7 +58,6 @@ def draw_hud(self, painter, logical_width):
         f"CalcG: {self.bve_calc_g:.4f} G | MaxG: {self.max_stop_g:.4f} G | LastStop: {self.last_stop_g:.4f} G"
     ])
     
-    # ★ X線ゴーグル（超軽量版）
     if self.show_graph:
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(0, 0, 0, 150))
@@ -97,7 +96,7 @@ def draw_hud(self, painter, logical_width):
         painter.setPen(QPen(QColor(255, 50, 50, 150), 2, Qt.PenStyle.DashLine))
         painter.drawLine(int(graph_x), int(y_z2), int(graph_x + graph_w), int(y_z2))
         
-        now = time.time()
+        now = self.bve_time_ms / 1000.0
         path_g = QPainterPath()
         path_notch = QPainterPath()
         
@@ -229,7 +228,6 @@ def draw_hud(self, painter, logical_width):
             if self.blink_phase < 0.5:
                 l_text = "制限" if self.target_type == "map" else "信号"
                 l_color = self.limit_color if (is_type_changed and not is_capped_blue) else COLOR_WHITE
-                # ★ 浮動小数点バグ修正
                 v_text = f"{int(round(self.disp_limit))} km/h" if self.disp_limit < 999.0 else "--- km/h"
                 v_color = self.limit_color
             else:
@@ -261,9 +259,17 @@ def draw_hud(self, painter, logical_width):
                 if -self.bve_margin_f <= d <= self.bve_margin_b: d_color = COLOR_N 
                 elif d < -self.bve_margin_f: d_color = COLOR_B_EMG 
             
-            if self.bve_is_timing == 1:
-                # ★ 点滅を 5.0 秒間隔に修正
-                show_timing = int(time.time() / 5.0) % 2 == 0
+            has_timing_station = False
+            targets = self.get_timing_target_stas()
+            if targets:
+                for sta_idx in targets:
+                    if self.is_station_timing(sta_idx):
+                        has_timing_station = True
+                        break
+
+            if has_timing_station and self.bve_is_timing == 1:
+                # ★ 鶴さんの元の設定 (5.0) に完全復元しました！
+                show_timing = int((self.bve_time_ms / 1000.0) / 5.0) % 2 == 0
                 label_text = "採時" if show_timing else ("通過" if is_p else "停車")
                 label_col = COLOR_P if is_p else COLOR_B_EMG
             else:
@@ -277,7 +283,6 @@ def draw_hud(self, painter, logical_width):
 
     if self.is_scoring_mode:
         draw_row_local("得点", COLOR_WHITE, str(self.score), COLOR_B_EMG if self.score < 0 else COLOR_WHITE, ui_y)
-    # ★ 採点モードOFF時に上に詰まるバグ修正 (if文の外に出す)
     ui_y += ui_step
 
     if self.disp_settings["handle"]:
