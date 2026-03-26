@@ -280,6 +280,8 @@ class Overlay(QWidget):
                                 s_rdep = int(parts[4]) if len(parts) >= 5 else -1
                                 s_def = int(parts[5]) if len(parts) >= 6 else -1
                                 s_stop = int(parts[6]) if len(parts) >= 7 else 15000
+                                # ★ 追加：受信パケットから is_pass フラグを読み取って保存
+                                s_is_pass = (parts[7] == '1') if len(parts) >= 8 else False
                                 new_list.append({
                                     "name": s_name, 
                                     "is_timing": (s_timing == '1'), 
@@ -287,7 +289,8 @@ class Overlay(QWidget):
                                     "raw_arr": s_rarr,
                                     "raw_dep": s_rdep,
                                     "def_time": s_def,
-                                    "stop_time": s_stop
+                                    "stop_time": s_stop,
+                                    "is_pass": s_is_pass
                                 })
                     if new_list:
                         self.station_list = new_list
@@ -687,7 +690,7 @@ class Overlay(QWidget):
             if self.station_list:
                 timing_stas.append({"idx": 0, "name": self.station_list[0]["name"]})
                 for i, s in enumerate(self.station_list):
-                    if i > 0 and s.get("is_timing", False):
+                    if i > 0 and not s.get("is_pass", False):
                         timing_stas.append({"idx": i, "name": s["name"]})
 
             if self.menu_cursor == 0 and self.menu_cursor_x >= 0:
@@ -827,7 +830,7 @@ class Overlay(QWidget):
                         if self.station_list:
                             timing_stas.append({"idx": 0, "name": self.station_list[0]["name"]})
                             for i, s in enumerate(self.station_list):
-                                if i > 0 and s.get("is_timing", False):
+                                if i > 0 and not s.get("is_pass", False):
                                     timing_stas.append({"idx": i, "name": s["name"]})
 
                         actual_terminal_idx = self.get_actual_terminal_idx()
@@ -980,7 +983,6 @@ class Overlay(QWidget):
         else:
             self.hide()
 
-        # ★ BVEの時間を秒単位に変換して current_time として使う！
         current_time = self.bve_time_ms / 1000.0
 
         if self.bve_time_ms != self.last_bve_time_ms:
@@ -1075,11 +1077,6 @@ class Overlay(QWidget):
             self.bb_apply_count = 0
             self.bb_release_count = 0
             self.hb_strong_entered = False 
-            
-            # ★ 修正追加：フラグをすべてリセット
-            self.has_evaluated_initial_brake = False
-            self.idle_entered_while_stopped = False
-            
             self.last_update_time = current_time
         else:
             dt = current_time - self.last_update_time

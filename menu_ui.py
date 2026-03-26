@@ -812,6 +812,6 @@ def draw_menu(self, painter, logical_width):
             draw_text_with_outline(painter, opt["name"], self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, text_y_base, "center", passes=8)
             
         if self.dropdown_scroll + 7 < len(self.dropdown_options):
-            draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, start_y + box_h + 30, "center", passes=8)
+            draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, start_y + box_h + 47, "center", passes=8)
 
     painter.restore()

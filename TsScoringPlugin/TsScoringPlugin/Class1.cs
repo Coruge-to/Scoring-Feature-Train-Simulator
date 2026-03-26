@@ -485,7 +485,8 @@ namespace TsScoringPlugin
                         {
                             string sName = string.IsNullOrEmpty(st.Name) ? "不明な駅" : st.Name.Replace(",", "").Replace("=", "");
                             int sTiming = st.IsScoring ? 1 : 0;
-                            staInfoList.Add($"{sName}={sTiming}={st.Location}={st.RawArrTime}={st.RawDepTime}={st.DefaultTime}={st.StoppageTime}");
+                            // ★ 変更箇所：末尾に st.IsPass ? 1 : 0 を追加
+                            staInfoList.Add($"{sName}={sTiming}={st.Location}={st.RawArrTime}={st.RawDepTime}={st.DefaultTime}={st.StoppageTime}={(st.IsPass ? 1 : 0)}");
                         }
                         if (staInfoList.Count > 0)
                         {
