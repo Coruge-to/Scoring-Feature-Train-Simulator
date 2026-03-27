@@ -144,7 +144,7 @@ class Overlay(QWidget):
         self.pen_jerk = True
         self.pen_limit = True
         self.pen_ats = True
-        self.penalty_init_rules = [{"end_idx": -1, "apply": "ON①", "release": "OFF"}]
+        self.penalty_init_rules = [{"end_idx": -1, "apply": "ON①", "release": "ON①"}]
         self.init_summary_scroll = 0
         self.init_sub_scroll = 0
         self.init_sub_cursor = 0
@@ -525,65 +525,73 @@ class Overlay(QWidget):
 
     def handle_menu_up(self):
         if self.menu_state == 5:
-            if self.input_mode_active: return
-            if self.menu_cursor == 4 and self.menu_cursor_x == 1:
-                self.summary_scroll = max(0, self.summary_scroll - 1)
+            if getattr(self, 'input_mode_active', False): return
+            if self.menu_cursor == 4 and getattr(self, 'menu_cursor_x', 0) == 1:
+                self.summary_scroll = max(0, getattr(self, 'summary_scroll', 0) - 1)
                 return
-            if self.menu_cursor_x == -1:
+            if getattr(self, 'menu_cursor_x', 0) == -1:
                 self.menu_cursor -= 1
                 if self.menu_cursor < 0: self.menu_cursor = 5
             return
         elif self.menu_state == 6:
-            if self.menu_cursor == 0 and self.menu_cursor_x == 1:
-                self.init_summary_scroll = max(0, self.init_summary_scroll - 1)
+            if self.menu_cursor == 5 and getattr(self, 'menu_cursor_x', 0) == 1:
+                self.init_summary_scroll = max(0, getattr(self, 'init_summary_scroll', 0) - 1)
                 return
-            if self.menu_cursor_x == -1:
+            if getattr(self, 'menu_cursor_x', 0) == -1:
                 self.menu_cursor -= 1
-                if self.menu_cursor < 0: self.menu_cursor = 7
+                if self.menu_cursor < 0: self.menu_cursor = 6
             return
 
         if self.menu_state in [7, 9]:
-            rules = self.brake_rules if self.menu_state == 7 else self.penalty_init_rules
-            sub_c = self.sub_cursor if self.menu_state == 7 else self.init_sub_cursor
-            sub_s = self.sub_scroll if self.menu_state == 7 else self.init_sub_scroll
+            rules = getattr(self, 'brake_rules', []) if self.menu_state == 7 else getattr(self, 'penalty_init_rules', [])
+            sub_c = getattr(self, 'sub_cursor', 0) if self.menu_state == 7 else getattr(self, 'init_sub_cursor', 0)
+            sub_s = getattr(self, 'sub_scroll', 0) if self.menu_state == 7 else getattr(self, 'init_sub_scroll', 0)
+            sub_x = getattr(self, 'sub_cursor_x', 0) if self.menu_state == 7 else getattr(self, 'init_sub_cursor_x', 0)
 
-            row_undo = len(rules) if len(rules) > 1 else -1
-            row_done = len(rules) + 1 if len(rules) > 1 else len(rules)
+            row_undo = len(rules) if len(rules) > 1 and self.menu_state == 7 else -1
+            row_done = len(rules) + 1 if len(rules) > 1 and self.menu_state == 7 else len(rules)
             
+            old_sub_c = sub_c
             sub_c -= 1
-            if sub_c == row_undo and row_undo == -1: sub_c -= 1
+            if sub_c == row_undo and row_undo != -1: sub_c -= 1
             if sub_c < 0: sub_c = row_done
             
             if sub_c < len(rules):
                 if sub_c < sub_s: sub_s = sub_c
 
             if self.menu_state == 7:
+                if old_sub_c != row_done and old_sub_c != row_undo and sub_c < len(rules):
+                    old_is_last = (old_sub_c == len(rules) - 1)
+                    new_is_last = (sub_c == len(rules) - 1)
+                    if old_is_last and not new_is_last: sub_x = max(0, sub_x - 1)
+                    elif not old_is_last and new_is_last: sub_x = min(2, sub_x + 1)
+                
                 self.sub_cursor = sub_c
                 self.sub_scroll = sub_s
-                self.sub_cursor_x = 0
+                self.sub_cursor_x = sub_x if sub_c < len(rules) else 0
             else:
                 self.init_sub_cursor = sub_c
                 self.init_sub_scroll = sub_s
-                self.init_sub_cursor_x = 0
+                self.init_sub_cursor_x = sub_x if sub_c < len(rules) else 0
             return
 
         if self.menu_state == 8:
-            targets = self.get_timing_target_stas()
+            targets = self.get_timing_target_stas() if hasattr(self, 'get_timing_target_stas') else []
             if not targets: return
-            if self.timing_cursor > 1: self.timing_cursor -= 1
-            if self.timing_cursor == 1 and self.timing_scroll > 0:
+            if getattr(self, 'timing_cursor', 0) > 1: self.timing_cursor -= 1
+            if getattr(self, 'timing_cursor', 0) == 1 and getattr(self, 'timing_scroll', 0) > 0:
                 self.timing_scroll = 0
-            elif self.timing_cursor < len(targets) and self.timing_cursor < self.timing_scroll:
-                self.timing_scroll = self.timing_cursor
+            elif getattr(self, 'timing_cursor', 0) < len(targets) and getattr(self, 'timing_cursor', 0) < getattr(self, 'timing_scroll', 0):
+                self.timing_scroll = getattr(self, 'timing_cursor', 0)
             return
 
         self.menu_cursor -= 1
         if self.menu_state == 1:
-            items = self.menu_items_on if self.is_scoring_mode else self.menu_items_off
+            items = getattr(self, 'menu_items_on', []) if getattr(self, 'is_scoring_mode', False) else getattr(self, 'menu_items_off', [])
             if self.menu_cursor < 0: self.menu_cursor = len(items) - 1
         elif self.menu_state == 2:
             if self.menu_cursor < 0: self.menu_cursor = 0
-            if self.menu_cursor < self.menu_scroll: self.menu_scroll = self.menu_cursor
+            if self.menu_cursor < getattr(self, 'menu_scroll', 0): self.menu_scroll = self.menu_cursor
         elif self.menu_state == 3:
             if self.menu_cursor < 0: self.menu_cursor = 1
         elif self.menu_state == 4:
@@ -591,70 +599,80 @@ class Overlay(QWidget):
 
     def handle_menu_down(self):
         if self.menu_state == 5:
-            if self.input_mode_active: return
-            if self.menu_cursor == 4 and self.menu_cursor_x == 1:
-                vis_rules = min(3, len(self.brake_rules))
-                if self.summary_scroll + vis_rules < len(self.brake_rules):
+            if getattr(self, 'input_mode_active', False): return
+            if self.menu_cursor == 4 and getattr(self, 'menu_cursor_x', 0) == 1:
+                vis_rules = min(3, len(getattr(self, 'brake_rules', [])))
+                if getattr(self, 'summary_scroll', 0) + vis_rules < len(getattr(self, 'brake_rules', [])):
                     self.summary_scroll += 1
                 return
-            if self.menu_cursor_x == -1:
+            if getattr(self, 'menu_cursor_x', 0) == -1:
                 self.menu_cursor += 1
                 if self.menu_cursor > 5: self.menu_cursor = 0
             return
         elif self.menu_state == 6:
-            if self.menu_cursor == 0 and self.menu_cursor_x == 1:
-                vis_rules = min(3, len(self.penalty_init_rules))
-                if self.init_summary_scroll + vis_rules < len(self.penalty_init_rules):
+            if self.menu_cursor == 5 and getattr(self, 'menu_cursor_x', 0) == 1:
+                vis_rules = min(3, len(getattr(self, 'penalty_init_rules', [])))
+                if getattr(self, 'init_summary_scroll', 0) + vis_rules < len(getattr(self, 'penalty_init_rules', [])):
                     self.init_summary_scroll += 1
                 return
-            if self.menu_cursor_x == -1:
+            if getattr(self, 'menu_cursor_x', 0) == -1:
                 self.menu_cursor += 1
-                if self.menu_cursor > 7: self.menu_cursor = 0
+                if self.menu_cursor > 6: self.menu_cursor = 0
             return
             
         if self.menu_state in [7, 9]:
-            rules = self.brake_rules if self.menu_state == 7 else self.penalty_init_rules
-            sub_c = self.sub_cursor if self.menu_state == 7 else self.init_sub_cursor
-            sub_s = self.sub_scroll if self.menu_state == 7 else self.init_sub_scroll
+            rules = getattr(self, 'brake_rules', []) if self.menu_state == 7 else getattr(self, 'penalty_init_rules', [])
+            sub_c = getattr(self, 'sub_cursor', 0) if self.menu_state == 7 else getattr(self, 'init_sub_cursor', 0)
+            sub_s = getattr(self, 'sub_scroll', 0) if self.menu_state == 7 else getattr(self, 'init_sub_scroll', 0)
+            sub_x = getattr(self, 'sub_cursor_x', 0) if self.menu_state == 7 else getattr(self, 'init_sub_cursor_x', 0)
 
-            row_undo = len(rules) if len(rules) > 1 else -1
-            row_done = len(rules) + 1 if len(rules) > 1 else len(rules)
+            row_undo = len(rules) if len(rules) > 1 and self.menu_state == 7 else -1
+            row_done = len(rules) + 1 if len(rules) > 1 and self.menu_state == 7 else len(rules)
             
+            old_sub_c = sub_c
             sub_c += 1
-            if sub_c == row_undo and row_undo == -1: sub_c += 1
+            if row_undo != -1 and sub_c == row_undo: pass 
+            elif row_undo == -1 and sub_c == len(rules): sub_c = row_done
+            
             if sub_c > row_done: sub_c = 0
             
             if sub_c < len(rules):
                 if sub_c >= sub_s + 5: sub_s = sub_c - 5 + 1
 
             if self.menu_state == 7:
+                if old_sub_c != row_done and old_sub_c != row_undo and sub_c < len(rules):
+                    old_is_last = (old_sub_c == len(rules) - 1)
+                    new_is_last = (sub_c == len(rules) - 1)
+                    if old_is_last and not new_is_last: sub_x = max(0, sub_x - 1)
+                    elif not old_is_last and new_is_last: sub_x = min(2, sub_x + 1)
+                
                 self.sub_cursor = sub_c
                 self.sub_scroll = sub_s
-                self.sub_cursor_x = 0
+                self.sub_cursor_x = sub_x if sub_c < len(rules) else 0
             else:
                 self.init_sub_cursor = sub_c
                 self.init_sub_scroll = sub_s
-                self.init_sub_cursor_x = 0
+                self.init_sub_cursor_x = sub_x if sub_c < len(rules) else 0
             return
 
         if self.menu_state == 8:
-            targets = self.get_timing_target_stas()
+            targets = self.get_timing_target_stas() if hasattr(self, 'get_timing_target_stas') else []
             if not targets: return
             max_cursor = len(targets) 
-            if self.timing_cursor < max_cursor: self.timing_cursor += 1
-            if self.timing_cursor < len(targets):
-                if self.timing_cursor >= self.timing_scroll + 6:
-                    self.timing_scroll = self.timing_cursor - 6 + 1
+            if getattr(self, 'timing_cursor', 0) < max_cursor: self.timing_cursor += 1
+            if getattr(self, 'timing_cursor', 0) < len(targets):
+                if getattr(self, 'timing_cursor', 0) >= getattr(self, 'timing_scroll', 0) + 6:
+                    self.timing_scroll = getattr(self, 'timing_cursor', 0) - 6 + 1
             return
 
         self.menu_cursor += 1
         if self.menu_state == 1:
-            items = self.menu_items_on if self.is_scoring_mode else self.menu_items_off
+            items = getattr(self, 'menu_items_on', []) if getattr(self, 'is_scoring_mode', False) else getattr(self, 'menu_items_off', [])
             if self.menu_cursor >= len(items): self.menu_cursor = 0
         elif self.menu_state == 2:
-            max_idx = max(0, len(self.save_data) - 1)
+            max_idx = max(0, len(getattr(self, 'save_data', [])) - 1)
             if self.menu_cursor > max_idx: self.menu_cursor = max_idx
-            if self.menu_cursor >= self.menu_scroll + VISIBLE_LIST_COUNT:
+            if self.menu_cursor >= getattr(self, 'menu_scroll', 0) + VISIBLE_LIST_COUNT:
                 self.menu_scroll = self.menu_cursor - VISIBLE_LIST_COUNT + 1
         elif self.menu_state == 3:
             if self.menu_cursor > 1: self.menu_cursor = 0
@@ -663,51 +681,52 @@ class Overlay(QWidget):
 
     def handle_menu_left(self):
         if self.menu_state == 5:
-            if self.input_mode_active: return
-            self.menu_cursor_x = max(-1, self.menu_cursor_x - 1)
+            if getattr(self, 'input_mode_active', False): return
+            self.menu_cursor_x = max(-1, getattr(self, 'menu_cursor_x', 0) - 1)
         elif self.menu_state == 6:
-            self.menu_cursor_x = max(-1, self.menu_cursor_x - 1)
+            self.menu_cursor_x = max(-1, getattr(self, 'menu_cursor_x', 0) - 1)
         elif self.menu_state == 7:
-            if self.sub_cursor < len(self.brake_rules):
-                self.sub_cursor_x = max(0, self.sub_cursor_x - 1)
+            if getattr(self, 'sub_cursor', 0) < len(getattr(self, 'brake_rules', [])):
+                self.sub_cursor_x = max(0, getattr(self, 'sub_cursor_x', 0) - 1)
         elif self.menu_state == 9:
-            if self.init_sub_cursor < len(self.penalty_init_rules):
-                self.init_sub_cursor_x = max(0, self.init_sub_cursor_x - 1)
+            if getattr(self, 'init_sub_cursor', 0) < len(getattr(self, 'penalty_init_rules', [])):
+                self.init_sub_cursor_x = max(0, getattr(self, 'init_sub_cursor_x', 0) - 1)
 
     def handle_menu_right(self):
         if self.menu_state == 5:
-            if self.input_mode_active: return
+            if getattr(self, 'input_mode_active', False): return
             if self.menu_cursor == 0: max_x = 1
             elif self.menu_cursor == 1: max_x = 0
             elif self.menu_cursor == 2: max_x = 0 
             elif self.menu_cursor == 4: max_x = 1
             else: max_x = -1
-            self.menu_cursor_x = min(max_x, self.menu_cursor_x + 1)
+            self.menu_cursor_x = min(max_x, getattr(self, 'menu_cursor_x', 0) + 1)
             
         elif self.menu_state == 6:
-            if self.menu_cursor == 0: max_x = 1
+            if self.menu_cursor == 0: max_x = -1
             elif 1 <= self.menu_cursor <= 4: max_x = 0
+            elif self.menu_cursor == 5: max_x = 1
             else: max_x = -1
-            self.menu_cursor_x = min(max_x, self.menu_cursor_x + 1)
+            self.menu_cursor_x = min(max_x, getattr(self, 'menu_cursor_x', 0) + 1)
 
         elif self.menu_state in [7, 9]:
-            rules = self.brake_rules if self.menu_state == 7 else self.penalty_init_rules
-            sub_c = self.sub_cursor if self.menu_state == 7 else self.init_sub_cursor
-            sub_c_x = self.sub_cursor_x if self.menu_state == 7 else self.init_sub_cursor_x
+            rules = getattr(self, 'brake_rules', []) if self.menu_state == 7 else getattr(self, 'penalty_init_rules', [])
+            sub_c = getattr(self, 'sub_cursor', 0) if self.menu_state == 7 else getattr(self, 'init_sub_cursor', 0)
+            sub_c_x = getattr(self, 'sub_cursor_x', 0) if self.menu_state == 7 else getattr(self, 'init_sub_cursor_x', 0)
 
             if sub_c < len(rules):
                 rule = rules[sub_c]
                 is_last = (sub_c == len(rules) - 1)
                 
-                if rule["apply"] == "OFF": max_x = 1 if is_last else 0
-                else: max_x = 2 if is_last else 1
+                if rule.get("apply", "OFF") == "OFF" and self.menu_state == 7: max_x = 1 if is_last else 0
+                else: max_x = 2 if is_last and self.menu_state == 7 else 1
                 
                 if self.menu_state == 7: self.sub_cursor_x = min(max_x, sub_c_x + 1)
                 else: self.init_sub_cursor_x = min(max_x, sub_c_x + 1)
 
     def handle_menu_enter(self, is_bve_advancing):
         if self.menu_state == 1:
-            items = self.menu_items_on if self.is_scoring_mode else self.menu_items_off
+            items = getattr(self, 'menu_items_on', []) if getattr(self, 'is_scoring_mode', False) else getattr(self, 'menu_items_off', [])
             selected = items[self.menu_cursor]
             if selected == "運転を再開する": self.toggle_menu(is_bve_advancing)
             elif selected == "採点設定":
@@ -716,10 +735,10 @@ class Overlay(QWidget):
                 self.menu_cursor_x = -1
             elif selected == "採点を中断する":
                 self.is_scoring_mode = False
-                self.popups.clear()
+                getattr(self, 'popups', []).clear()
                 self.toggle_menu(is_bve_advancing)
             elif selected == "選択した駅からやり直す":
-                if len(self.save_data) > 0:
+                if len(getattr(self, 'save_data', [])) > 0:
                     self.menu_state = 2
                     self.menu_cursor = 0
                     self.menu_scroll = 0
@@ -727,89 +746,97 @@ class Overlay(QWidget):
                 self.menu_state = 4
                 self.menu_cursor = 0
         elif self.menu_state == 2:
-            if len(self.save_data) > 0:
+            if len(getattr(self, 'save_data', [])) > 0:
                 self.target_retry_idx = self.menu_cursor
                 self.menu_state = 3
                 self.menu_cursor = 0
         elif self.menu_state == 3:
-            if self.menu_cursor == 0: execute_retry(self, self.target_retry_idx, is_bve_advancing)
+            if self.menu_cursor == 0: execute_retry(self, getattr(self, 'target_retry_idx', -1), is_bve_advancing)
             elif self.menu_cursor == 1: 
                 self.menu_state = 2
-                self.menu_cursor = self.target_retry_idx
+                self.menu_cursor = getattr(self, 'target_retry_idx', 0)
         elif self.menu_state == 4:
             if self.menu_cursor <= 6:
-                key = self.settings_keys[self.menu_cursor]
-                self.disp_settings[key] = not self.disp_settings[key]
+                key = getattr(self, 'settings_keys', [])[self.menu_cursor]
+                getattr(self, 'disp_settings', {})[key] = not getattr(self, 'disp_settings', {})[key]
 
         elif self.menu_state == 5:
             valid_stas = []
-            if self.station_list:
+            if getattr(self, 'station_list', []):
                 valid_stas.append({"idx": 0, "name": self.station_list[0]["name"]})
                 for i, s in enumerate(self.station_list):
                     if i > 0 and not s.get("is_pass", False):
                         valid_stas.append({"idx": i, "name": s["name"]})
 
-            if self.menu_cursor == 0 and self.menu_cursor_x >= 0:
+            if self.menu_cursor == 0 and getattr(self, 'menu_cursor_x', 0) >= 0:
                 self.dropdown_active = True
                 self.dropdown_cursor = 0
                 self.dropdown_scroll = 0
-                self.dropdown_target = "start_sta" if self.menu_cursor_x == 0 else "end_sta"
-                actual_terminal_idx = self.get_actual_terminal_idx()
+                self.dropdown_target = "start_sta" if getattr(self, 'menu_cursor_x', 0) == 0 else "end_sta"
+                actual_terminal_idx = self.get_actual_terminal_idx() if hasattr(self, 'get_actual_terminal_idx') else -1
                 
                 if self.dropdown_target == "start_sta":
-                    e_idx = self.setting_end_idx if self.setting_end_idx != -1 else actual_terminal_idx
+                    e_idx = getattr(self, 'setting_end_idx', -1) if getattr(self, 'setting_end_idx', -1) != -1 else actual_terminal_idx
                     opts = [s for s in valid_stas if s["idx"] < e_idx]
                 else:
-                    s_idx = self.setting_start_idx
+                    s_idx = getattr(self, 'setting_start_idx', 0)
                     opts = [s for s in valid_stas if s["idx"] > s_idx]
                 self.dropdown_options = opts if opts else [{"idx": -1, "name": "選択可能駅なし"}]
                 
-            elif self.menu_cursor == 1 and self.menu_cursor_x == 0:
-                if not self.input_mode_active:
+            elif self.menu_cursor == 1 and getattr(self, 'menu_cursor_x', 0) == 0:
+                if not getattr(self, 'input_mode_active', False):
                     self.input_mode_active = True
                     self.input_buffer = "" 
                 else:
                     self.finalize_margin_input()
             
-            elif self.menu_cursor == 2 and self.menu_cursor_x == 0:
+            elif self.menu_cursor == 2 and getattr(self, 'menu_cursor_x', 0) == 0:
                 self.menu_state = 8
                 self.timing_scroll = 0
-                targets = self.get_timing_target_stas()
+                targets = self.get_timing_target_stas() if hasattr(self, 'get_timing_target_stas') else []
                 self.timing_cursor = 1 if (targets and len(targets) > 1) else len(targets)
             
-            elif self.menu_cursor == 4 and self.menu_cursor_x == 0:
+            elif self.menu_cursor == 4 and getattr(self, 'menu_cursor_x', 0) == 0:
                 self.menu_state = 7
-                self.sub_cursor = len(self.brake_rules) - 1 
+                self.sub_cursor = len(getattr(self, 'brake_rules', [])) - 1 
                 self.sub_cursor_x = 0
-                self.sub_scroll = max(0, len(self.brake_rules) - 5)
+                self.sub_scroll = max(0, len(getattr(self, 'brake_rules', [])) - 5)
             elif self.menu_cursor == 5: 
                 self.menu_state = 6
                 self.menu_cursor = 0
                 self.menu_cursor_x = -1
+                
+                while len(getattr(self, 'penalty_init_rules', [])) < len(getattr(self, 'brake_rules', [])):
+                    idx = len(getattr(self, 'penalty_init_rules', []))
+                    default_apply = "OFF" if getattr(self, 'brake_rules', [])[idx].get("apply", "") == "1段" else "ON①"
+                    getattr(self, 'penalty_init_rules', []).append({"apply": default_apply, "release": "ON①"})
+                if len(getattr(self, 'penalty_init_rules', [])) > len(getattr(self, 'brake_rules', [])):
+                    self.penalty_init_rules = getattr(self, 'penalty_init_rules', [])[:len(getattr(self, 'brake_rules', []))]
+                    
+                for i, p_rule in enumerate(getattr(self, 'penalty_init_rules', [])):
+                    if i < len(getattr(self, 'brake_rules', [])):
+                        if getattr(self, 'brake_rules', [])[i].get("apply", "") == "1段" and p_rule.get("apply", "") == "ON①":
+                            p_rule["apply"] = "OFF"
 
         elif self.menu_state == 6:
-            if self.menu_cursor == 0 and self.menu_cursor_x == 0:
+            if self.menu_cursor == 1 and getattr(self, 'menu_cursor_x', 0) == 0:
+                self.pen_ats = not getattr(self, 'pen_ats', True)
+            elif self.menu_cursor == 2 and getattr(self, 'menu_cursor_x', 0) == 0:
+                self.pen_limit = not getattr(self, 'pen_limit', True)
+            elif self.menu_cursor == 3 and getattr(self, 'menu_cursor_x', 0) == 0:
+                self.pen_jerk = not getattr(self, 'pen_jerk', True)
+            elif self.menu_cursor == 4 and getattr(self, 'menu_cursor_x', 0) == 0:
+                self.pen_eb = not getattr(self, 'pen_eb', True)
+            elif self.menu_cursor == 5 and getattr(self, 'menu_cursor_x', 0) == 0:
                 self.menu_state = 9
-                self.init_sub_cursor = len(self.penalty_init_rules) - 1 
+                self.init_sub_cursor = 0 
                 self.init_sub_cursor_x = 0
-                self.init_sub_scroll = max(0, len(self.penalty_init_rules) - 5)
-            elif self.menu_cursor == 1 and self.menu_cursor_x == 0:
-                self.pen_eb = not self.pen_eb
-            elif self.menu_cursor == 2 and self.menu_cursor_x == 0:
-                self.pen_jerk = not self.pen_jerk
-            elif self.menu_cursor == 3 and self.menu_cursor_x == 0:
-                self.pen_limit = not self.pen_limit
-            elif self.menu_cursor == 4 and self.menu_cursor_x == 0:
-                self.pen_ats = not self.pen_ats
+                self.init_sub_scroll = max(0, len(getattr(self, 'penalty_init_rules', [])) - 5)
             elif self.menu_cursor == 6:
-                self.menu_state = 5
-                self.menu_cursor = 5
-                self.menu_cursor_x = -1
-            elif self.menu_cursor == 7:
                 self.is_scoring_mode = True
                 self.score = 0
-                self.save_data.clear()
-                self.popups.clear()
+                getattr(self, 'save_data', []).clear()
+                getattr(self, 'popups', []).clear()
                 self.debug_all_penalties = False
                 
                 start_loc = 0.0
@@ -817,7 +844,7 @@ class Overlay(QWidget):
                 target_time_ms = -1
                 retry_cmd = "" 
                 
-                if self.station_list and 0 <= self.setting_start_idx < len(self.station_list):
+                if getattr(self, 'station_list', []) and 0 <= getattr(self, 'setting_start_idx', 0) < len(getattr(self, 'station_list', [])):
                     st = self.station_list[self.setting_start_idx]
                     start_loc = st.get("location", 0.0)
                     start_sta_name = st.get("name", "不明な駅")
@@ -830,7 +857,7 @@ class Overlay(QWidget):
                     if self.setting_start_idx == 0:
                         retry_cmd = f"JUMP_STA:0"
                         if def_t >= 0: target_time_ms = def_t
-                        else: target_time_ms = max(0, self.bve_time_ms)
+                        else: target_time_ms = max(0, getattr(self, 'bve_time_ms', 0))
                     else:
                         if raw_arr >= 0: target_time_ms = raw_arr
                         else:
@@ -839,10 +866,10 @@ class Overlay(QWidget):
                             elif calc_t >= 0: target_time_ms = calc_t
                             elif def_t >= 0: target_time_ms = def_t
                         
-                        if target_time_ms < 0: target_time_ms = max(0, self.bve_time_ms)
+                        if target_time_ms < 0: target_time_ms = max(0, getattr(self, 'bve_time_ms', 0))
                         retry_cmd = f"RETRY:{start_loc}:{target_time_ms}"
                 
-                self.save_data.append({
+                getattr(self, 'save_data', []).append({
                     "loc": start_loc,
                     "time_ms": target_time_ms,
                     "score": 0,
@@ -857,26 +884,21 @@ class Overlay(QWidget):
                 self.toggle_menu(is_bve_advancing)
 
         elif self.menu_state in [7, 9]:
-            rules = self.brake_rules if self.menu_state == 7 else self.penalty_init_rules
-            sub_c = self.sub_cursor if self.menu_state == 7 else self.init_sub_cursor
-            sub_c_x = self.sub_cursor_x if self.menu_state == 7 else self.init_sub_cursor_x
+            rules = getattr(self, 'brake_rules', []) if self.menu_state == 7 else getattr(self, 'penalty_init_rules', [])
+            sub_c = getattr(self, 'sub_cursor', 0) if self.menu_state == 7 else getattr(self, 'init_sub_cursor', 0)
+            sub_c_x = getattr(self, 'sub_cursor_x', 0) if self.menu_state == 7 else getattr(self, 'init_sub_cursor_x', 0)
 
-            row_undo = len(rules) if len(rules) > 1 else -1
-            row_done = len(rules) + 1 if len(rules) > 1 else len(rules)
+            row_undo = len(rules) if len(rules) > 1 and self.menu_state == 7 else -1
+            row_done = len(rules) + 1 if len(rules) > 1 and self.menu_state == 7 else len(rules)
             
-            if sub_c == row_undo:
+            if sub_c == row_undo and row_undo != -1:
                 if len(rules) > 1:
                     rules.pop()
                     rules[-1]["end_idx"] = -1
                     if self.menu_state == 7:
                         if self.sub_cursor >= len(rules): self.sub_cursor -= 1
-                        if self.sub_scroll > 0 and len(rules) - self.sub_scroll < 5: self.sub_scroll = max(0, len(rules) - 5)
-                        if self.summary_scroll > 0 and len(rules) - self.summary_scroll < 3: self.summary_scroll = max(0, len(rules) - 3)
-                    else:
-                        if self.init_sub_cursor >= len(rules): self.init_sub_cursor -= 1
-                        if self.init_sub_scroll > 0 and len(rules) - self.init_sub_scroll < 5: self.init_sub_scroll = max(0, len(rules) - 5)
-                        if self.init_summary_scroll > 0 and len(rules) - self.init_summary_scroll < 3: self.init_summary_scroll = max(0, len(rules) - 3)
-
+                        if getattr(self, 'sub_scroll', 0) > 0 and len(rules) - getattr(self, 'sub_scroll', 0) < 5: self.sub_scroll = max(0, len(rules) - 5)
+                        if getattr(self, 'summary_scroll', 0) > 0 and len(rules) - getattr(self, 'summary_scroll', 0) < 3: self.summary_scroll = max(0, len(rules) - 3)
             elif sub_c == row_done:
                 self.menu_state = 6 if self.menu_state == 9 else 5
             elif sub_c < len(rules):
@@ -886,106 +908,121 @@ class Overlay(QWidget):
                 self.dropdown_scroll = 0
                 self.dropdown_target_rule_idx = sub_c
                 
-                if is_last:
+                if is_last and self.menu_state == 7:
                     if sub_c_x == 0: 
-                        self.dropdown_target = "sub_end_sta" if self.menu_state == 7 else "init_sub_end_sta"
-                        s_idx = self.setting_start_idx if sub_c == 0 else rules[sub_c-1]["end_idx"]
+                        self.dropdown_target = "sub_end_sta"
+                        s_idx = getattr(self, 'setting_start_idx', 0) if sub_c == 0 else rules[sub_c-1].get("end_idx", -1)
                         
                         valid_stas = []
-                        if self.station_list:
+                        if getattr(self, 'station_list', []):
                             valid_stas.append({"idx": 0, "name": self.station_list[0]["name"]})
                             for i, s in enumerate(self.station_list):
                                 if i > 0 and not s.get("is_pass", False):
                                     valid_stas.append({"idx": i, "name": s["name"]})
 
-                        actual_terminal_idx = self.get_actual_terminal_idx()
-                        e_overall = self.setting_end_idx if self.setting_end_idx != -1 else actual_terminal_idx
+                        actual_terminal_idx = self.get_actual_terminal_idx() if hasattr(self, 'get_actual_terminal_idx') else -1
+                        e_overall = getattr(self, 'setting_end_idx', -1) if getattr(self, 'setting_end_idx', -1) != -1 else actual_terminal_idx
                         
                         opts = [s for s in valid_stas if s["idx"] > s_idx and s["idx"] <= e_overall]
                         self.dropdown_options = opts if opts else [{"idx": -1, "name": "選択可能駅なし"}]
                     elif sub_c_x == 1:
-                        self.dropdown_target = "sub_apply" if self.menu_state == 7 else "init_sub_apply"
-                        if self.menu_state == 7: self.dropdown_options = [{"idx": 0, "name": "階段"}, {"idx": 1, "name": "1段"}, {"idx": 2, "name": "2段"}, {"idx": 3, "name": "3段"}, {"idx": 4, "name": "OFF"}]
-                        else: self.dropdown_options = [{"idx": 0, "name": "ON①"}, {"idx": 1, "name": "ON②"}, {"idx": 2, "name": "OFF"}]
+                        self.dropdown_target = "sub_apply"
+                        self.dropdown_options = [{"idx": 0, "name": "階段"}, {"idx": 1, "name": "1段"}, {"idx": 2, "name": "2段"}, {"idx": 3, "name": "3段"}, {"idx": 4, "name": "OFF"}]
                     elif sub_c_x == 2:
-                        self.dropdown_target = "sub_release" if self.menu_state == 7 else "init_sub_release"
-                        if self.menu_state == 7: self.dropdown_options = [{"idx": 0, "name": "階段"}, {"idx": 1, "name": "1段"}, {"idx": 2, "name": "2段"}, {"idx": 3, "name": "3段"}]
-                        else: self.dropdown_options = [{"idx": 0, "name": "ON①"}, {"idx": 1, "name": "ON②"}, {"idx": 2, "name": "OFF"}]
+                        self.dropdown_target = "sub_release"
+                        self.dropdown_options = [{"idx": 0, "name": "階段"}, {"idx": 1, "name": "1段"}, {"idx": 2, "name": "2段"}, {"idx": 3, "name": "3段"}]
                 else:
                     if sub_c_x == 0:
                         self.dropdown_target = "sub_apply" if self.menu_state == 7 else "init_sub_apply"
                         if self.menu_state == 7: self.dropdown_options = [{"idx": 0, "name": "階段"}, {"idx": 1, "name": "1段"}, {"idx": 2, "name": "2段"}, {"idx": 3, "name": "3段"}, {"idx": 4, "name": "OFF"}]
-                        else: self.dropdown_options = [{"idx": 0, "name": "ON①"}, {"idx": 1, "name": "ON②"}, {"idx": 2, "name": "OFF"}]
+                        else: 
+                            if getattr(self, 'brake_rules', [])[sub_c].get("apply", "") == "1段":
+                                self.dropdown_options = [{"idx": 0, "name": "ON②"}, {"idx": 1, "name": "OFF"}]
+                            else:
+                                self.dropdown_options = [{"idx": 0, "name": "ON①"}, {"idx": 1, "name": "ON②"}, {"idx": 2, "name": "OFF"}]
                     elif sub_c_x == 1:
                         self.dropdown_target = "sub_release" if self.menu_state == 7 else "init_sub_release"
                         if self.menu_state == 7: self.dropdown_options = [{"idx": 0, "name": "階段"}, {"idx": 1, "name": "1段"}, {"idx": 2, "name": "2段"}, {"idx": 3, "name": "3段"}]
                         else: self.dropdown_options = [{"idx": 0, "name": "ON①"}, {"idx": 1, "name": "ON②"}, {"idx": 2, "name": "OFF"}]
 
         elif self.menu_state == 8:
-            targets = self.get_timing_target_stas()
+            targets = self.get_timing_target_stas() if hasattr(self, 'get_timing_target_stas') else []
             if targets:
-                if self.timing_cursor == len(targets):
+                if getattr(self, 'timing_cursor', 0) == len(targets):
                     self.menu_state = 5
-                elif 0 <= self.timing_cursor < len(targets):
+                elif 0 <= getattr(self, 'timing_cursor', 0) < len(targets):
                     sta_idx = targets[self.timing_cursor]
-                    if sta_idx != self.setting_start_idx:
-                        current_status = self.is_station_timing(sta_idx)
-                        self.user_timing_overrides[sta_idx] = not current_status
+                    if sta_idx != getattr(self, 'setting_start_idx', 0):
+                        current_status = self.is_station_timing(sta_idx) if hasattr(self, 'is_station_timing') else False
+                        getattr(self, 'user_timing_overrides', {})[sta_idx] = not current_status
 
     def handle_dropdown_enter(self):
-        selected_opt = self.dropdown_options[self.dropdown_cursor]
-        if selected_opt["name"] == "選択可能駅なし":
+        selected_opt = getattr(self, 'dropdown_options', [])[getattr(self, 'dropdown_cursor', 0)]
+        if selected_opt.get("name") == "選択可能駅なし":
             self.dropdown_active = False
             return
             
-        val_name = selected_opt["name"]
-        val_idx = selected_opt["idx"]
+        val_name = selected_opt.get("name")
+        val_idx = selected_opt.get("idx")
         
-        if self.dropdown_target == "start_sta":
+        if getattr(self, 'dropdown_target', "") == "start_sta":
             self.setting_start_idx = val_idx
             self.brake_rules = [{"end_idx": -1, "apply": "階段", "release": "階段"}] 
-            self.penalty_init_rules = [{"end_idx": -1, "apply": "ON①", "release": "OFF"}]
-        elif self.dropdown_target == "end_sta":
+            self.penalty_init_rules = [{"apply": "ON①", "release": "ON①"}]
+        elif getattr(self, 'dropdown_target', "") == "end_sta":
             self.setting_end_idx = val_idx
             self.brake_rules = [{"end_idx": -1, "apply": "階段", "release": "階段"}] 
-            self.penalty_init_rules = [{"end_idx": -1, "apply": "ON①", "release": "OFF"}]
+            self.penalty_init_rules = [{"apply": "ON①", "release": "ON①"}]
             
-        elif self.dropdown_target in ["sub_end_sta", "init_sub_end_sta"]:
-            rules = self.brake_rules if self.dropdown_target == "sub_end_sta" else self.penalty_init_rules
-            actual_terminal_idx = self.get_actual_terminal_idx()
-            e_overall = self.setting_end_idx if self.setting_end_idx != -1 else actual_terminal_idx
+        elif getattr(self, 'dropdown_target', "") in ["sub_end_sta", "init_sub_end_sta"]:
+            rules = getattr(self, 'brake_rules', []) if getattr(self, 'dropdown_target', "") == "sub_end_sta" else getattr(self, 'penalty_init_rules', [])
+            actual_terminal_idx = self.get_actual_terminal_idx() if hasattr(self, 'get_actual_terminal_idx') else -1
+            e_overall = getattr(self, 'setting_end_idx', -1) if getattr(self, 'setting_end_idx', -1) != -1 else actual_terminal_idx
             is_terminal = (val_idx == e_overall)
             rules[-1]["end_idx"] = val_idx
             
             if not is_terminal:
-                if self.dropdown_target == "sub_end_sta":
+                if getattr(self, 'dropdown_target', "") == "sub_end_sta":
                     rules.append({"end_idx": -1, "apply": "階段", "release": "階段"})
                     self.sub_cursor = len(rules) - 1
                     self.sub_cursor_x = 0
-                    if self.sub_cursor >= self.sub_scroll + 5: self.sub_scroll = self.sub_cursor - 5 + 1
+                    if self.sub_cursor >= getattr(self, 'sub_scroll', 0) + 5: self.sub_scroll = self.sub_cursor - 5 + 1
                 else:
-                    rules.append({"end_idx": -1, "apply": "ON①", "release": "OFF"})
+                    rules.append({"end_idx": -1, "apply": "ON①", "release": "ON①"})
                     self.init_sub_cursor = len(rules) - 1
                     self.init_sub_cursor_x = 0
-                    if self.init_sub_cursor >= self.init_sub_scroll + 5: self.init_sub_scroll = self.init_sub_cursor - 5 + 1
+                    if self.init_sub_cursor >= getattr(self, 'init_sub_scroll', 0) + 5: self.init_sub_scroll = self.init_sub_cursor - 5 + 1
                     
-        elif self.dropdown_target == "sub_apply":
-            self.brake_rules[self.dropdown_target_rule_idx]["apply"] = val_name
+        elif getattr(self, 'dropdown_target', "") == "sub_apply":
+            idx = getattr(self, 'dropdown_target_rule_idx', 0)
+            old_val = getattr(self, 'brake_rules', [])[idx].get("apply", "")
+            getattr(self, 'brake_rules', [])[idx]["apply"] = val_name
+            
+            # ★ 1段制動と連動して初動の値を自動変更＆復元する処理
+            if len(getattr(self, 'penalty_init_rules', [])) > idx:
+                if val_name == "1段":
+                    if getattr(self, 'penalty_init_rules', [])[idx].get("apply") == "ON①":
+                        getattr(self, 'penalty_init_rules', [])[idx]["apply"] = "OFF"
+                elif old_val == "1段" and val_name != "1段":
+                    # 1段制動からそれ以外に戻した場合は ON① に復帰させる
+                    getattr(self, 'penalty_init_rules', [])[idx]["apply"] = "ON①"
+
             if val_name == "OFF": self.sub_cursor_x = 0
             if val_name == "1段": self.setting_initial_brake = "STATION"
-        elif self.dropdown_target == "sub_release":
-            self.brake_rules[self.dropdown_target_rule_idx]["release"] = val_name
-        elif self.dropdown_target == "init_sub_apply":
-            self.penalty_init_rules[self.dropdown_target_rule_idx]["apply"] = val_name
-        elif self.dropdown_target == "init_sub_release":
-            self.penalty_init_rules[self.dropdown_target_rule_idx]["release"] = val_name
+            
+        elif getattr(self, 'dropdown_target', "") == "sub_release":
+            getattr(self, 'brake_rules', [])[getattr(self, 'dropdown_target_rule_idx', 0)]["release"] = val_name
+        elif getattr(self, 'dropdown_target', "") == "init_sub_apply":
+            getattr(self, 'penalty_init_rules', [])[getattr(self, 'dropdown_target_rule_idx', 0)]["apply"] = val_name
+        elif getattr(self, 'dropdown_target', "") == "init_sub_release":
+            getattr(self, 'penalty_init_rules', [])[getattr(self, 'dropdown_target_rule_idx', 0)]["release"] = val_name
             
         self.dropdown_active = False
 
     def handle_menu_backspace(self, is_bve_advancing):
-        if self.menu_state == 5 and self.menu_cursor == 1 and self.input_mode_active:
+        if self.menu_state == 5 and self.menu_cursor == 1 and getattr(self, 'input_mode_active', False):
             self.input_fresh = False 
-            if len(self.input_buffer) > 0: self.input_buffer = self.input_buffer[:-1]
+            if len(getattr(self, 'input_buffer', "")) > 0: self.input_buffer = self.input_buffer[:-1]
             return
 
         if self.menu_state == 1: self.toggle_menu(is_bve_advancing)
@@ -994,12 +1031,12 @@ class Overlay(QWidget):
             self.menu_cursor = 0
         elif self.menu_state == 3:
             self.menu_state = 2
-            self.menu_cursor = self.target_retry_idx
+            self.menu_cursor = getattr(self, 'target_retry_idx', 0)
         elif self.menu_state == 4:
             self.menu_state = 1
             self.menu_cursor = 0
         elif self.menu_state == 5:
-            if self.input_mode_active: self.finalize_margin_input()
+            if getattr(self, 'input_mode_active', False): self.finalize_margin_input() if hasattr(self, 'finalize_margin_input') else None
             self.menu_state = 1
             self.menu_cursor = 0
         elif self.menu_state == 6:
