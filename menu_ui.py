@@ -40,8 +40,8 @@ def draw_menu(self, painter, logical_width):
         text_w = fm.horizontalAdvance(text)
         
         if align == "center":
-            draw_x = center_x
-            box_x = center_x - (text_w / 2) - 30 + GLOBAL_BOX_X_OFFSET
+            draw_x = center_x + x_offset
+            box_x = center_x + x_offset - (text_w / 2) - 30 + GLOBAL_BOX_X_OFFSET
         elif align == "left":
             draw_x = center_x + x_offset
             box_x = draw_x - 30 + GLOBAL_BOX_X_OFFSET
@@ -61,7 +61,7 @@ def draw_menu(self, painter, logical_width):
         draw_text_with_outline(painter, text, self.font_normal, MENU_TEXT, MENU_OUTLINE, draw_x, y, align, passes=8)
         
         if align == "center":
-            self.menu_click_zones.append((center_x - 400, box_y, center_x + 400, box_y + box_h, action_idx))
+            self.menu_click_zones.append((center_x + x_offset - 400, box_y, center_x + x_offset + 400, box_y + box_h, action_idx))
         else:
             self.menu_click_zones.append((box_x, box_y, box_x + box_w, box_y + box_h, action_idx))
 
@@ -91,7 +91,7 @@ def draw_menu(self, painter, logical_width):
     elif self.menu_state in [5, 7]: 
         title_text = "=== 採点設定 (1/2) ==="
         title_y = 100
-    elif self.menu_state == 6: 
+    elif self.menu_state in [6, 9]: 
         title_text = "=== 採点設定 (2/2) : 減点項目 ==="
         title_y = 100
 
@@ -99,7 +99,7 @@ def draw_menu(self, painter, logical_width):
         draw_text_with_outline(painter, title_text, self.font_big, MENU_TEXT, MENU_OUTLINE, center_x, title_y, "center", passes=8)
 
     if self.menu_state not in [3, 8]:
-        if self.menu_state in [5, 6, 7]:
+        if self.menu_state in [5, 6, 7, 9]:
             draw_text_with_outline(painter, "↑ ↓ ← → : 選択  |  Enter / Click : 決定・リスト開閉", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 980, "center", passes=8)
             draw_text_with_outline(painter, "Backspace : 戻る / 白紙入力(項目削除)  |  F6 : 閉じる", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 1030, "center", passes=8)
         else:
@@ -107,7 +107,7 @@ def draw_menu(self, painter, logical_width):
             draw_text_with_outline(painter, "Backspace : 戻る  |  F6 : 閉じる", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 1030, "center", passes=8)
 
     def get_sta_name(idx):
-        if not self.station_list: return "データ未受信"
+        if not getattr(self, 'station_list', []): return "データ未受信"
         if idx == -1:
             for i in range(len(self.station_list)-1, -1, -1):
                 if self.station_list[i].get("is_timing", False):
@@ -123,9 +123,6 @@ def draw_menu(self, painter, logical_width):
             draw_menu_item(text, 350 + i * 80, (i == self.menu_cursor), i, "center")
 
     elif self.menu_state == 2:
-        # ==========================================================
-        # ★★★ セーブデータ画面 (選択した駅からやり直す) 微調整パラメータ ★★★
-        # ==========================================================
         SAVE_TITLE_Y = 200
         SAVE_NO_DATA_Y = 450
         SAVE_ARROW_UP_Y = 260
@@ -142,7 +139,6 @@ def draw_menu(self, painter, logical_width):
         SAVE_COL_SCORE_W = 350
         SAVE_COL_TIME_W = 320
         SAVE_COL_GAP = 50
-        # ==========================================================
         
         draw_text_with_outline(painter, "=== 選択した駅からやり直す ===", self.font_big, MENU_TEXT, MENU_OUTLINE, center_x, SAVE_TITLE_Y, "center", passes=8)
         
@@ -284,12 +280,12 @@ def draw_menu(self, painter, logical_width):
         for i in range(7):
             key = self.settings_keys[i]
             name = self.settings_names[i]
-            is_on = self.disp_settings[key]
+            is_on = getattr(self, 'disp_settings', {}).get(key, True)
             draw_setting_item(name, is_on, 300 + i * 70, (i == self.menu_cursor), i)
 
     elif self.menu_state in [5, 7]:
-        sta_start = get_sta_name(self.setting_start_idx)
-        sta_end = get_sta_name(self.setting_end_idx)
+        sta_start = get_sta_name(getattr(self, 'setting_start_idx', 0))
+        sta_end = get_sta_name(getattr(self, 'setting_end_idx', -1))
 
         # =========================================================
         # ★ メイン設定画面 (1/2) のレイアウト微調整パラメータ
@@ -304,9 +300,9 @@ def draw_menu(self, painter, logical_width):
         fm = QFontMetrics(self.font_menu)
 
         def draw_label(row_idx, text, y, text_color, outline_color):
-            vis_rules = min(3, len(self.brake_rules))
-            if self.menu_state == 5 and (self.menu_cursor == row_idx or (row_idx == 4 and 4 <= self.menu_cursor < 4 + vis_rules)):
-                if self.menu_cursor_x == -1:
+            # ★ 修正: vis_rules の化石ロジックを消去し、シンプルに row_idx と一致するかだけを判定
+            if self.menu_state == 5 and self.menu_cursor == row_idx:
+                if getattr(self, 'menu_cursor_x', 0) == -1:
                     painter.setPen(Qt.PenStyle.NoPen)
                     painter.setBrush(HIGHLIGHT_COLOR)
                     label_w = fm.horizontalAdvance(text)
@@ -336,13 +332,13 @@ def draw_menu(self, painter, logical_width):
 
                 if is_interactive:
                     if not is_sub_window:
-                        is_focused = (self.menu_state == 5 and self.menu_cursor == row_idx and self.menu_cursor_x == interactive_idx and not self.dropdown_active)
+                        is_focused = (self.menu_state == 5 and self.menu_cursor == row_idx and getattr(self, 'menu_cursor_x', 0) == interactive_idx and not getattr(self, 'dropdown_active', False))
                     else:
-                        is_focused = (self.menu_state == 7 and self.sub_cursor == row_idx and self.sub_cursor_x == interactive_idx and not self.dropdown_active)
+                        is_focused = (self.menu_state == 7 and getattr(self, 'sub_cursor', 0) == row_idx and getattr(self, 'sub_cursor_x', 0) == interactive_idx and not getattr(self, 'dropdown_active', False))
                         
                     if is_focused:
                         painter.setPen(Qt.PenStyle.NoPen)
-                        if self.menu_state == 5 and row_idx == 1 and self.input_mode_active:
+                        if self.menu_state == 5 and row_idx == 1 and getattr(self, 'input_mode_active', False):
                             painter.setBrush(QColor(150, 50, 50, 200)) 
                         else:
                             painter.setBrush(HIGHLIGHT_COLOR)
@@ -363,218 +359,93 @@ def draw_menu(self, painter, logical_width):
                 
                 cx += actual_box_w + 20
 
-        draw_label(0, "採点区間", list_y_start, COLOR_WHITE, COLOR_OUTLINE_BLACK)
-        draw_blocks(0, [
-            {"text": sta_start, "interactive": True, "max_w": MAIN_ROW0_STA_MAX_W},
-            {"text": "～", "interactive": False},
-            {"text": sta_end, "interactive": True, "max_w": MAIN_ROW0_STA_MAX_W}
-        ], list_y_start)
-
-        tl = int(self.bve_train_length)
-        draw_label(1, "停車駅採点範囲", list_y_start + row_h, COLOR_WHITE, COLOR_OUTLINE_BLACK)
-        margin_disp = self.input_buffer if self.input_mode_active else str(self.setting_stop_distance)
-        if not margin_disp: margin_disp = "_" 
-        draw_blocks(1, [
-            {"text": margin_disp, "interactive": True},
-            {"text": "m", "interactive": False}
-        ], list_y_start + row_h)
-
-        draw_label(2, "運転時分", list_y_start + row_h*2, COLOR_N, COLOR_WHITE)
-        change_x_time = label_x + fm.horizontalAdvance("運転時分　")
-        is_focused_time = (self.menu_state == 5 and self.menu_cursor == 2 and self.menu_cursor_x == 0 and not self.dropdown_active)
-        if is_focused_time:
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(HIGHLIGHT_COLOR)
-            painter.drawRoundedRect(int(change_x_time - 10 + GLOBAL_BOX_X_OFFSET), int(list_y_start + row_h*2 - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(fm.horizontalAdvance("変更") + 20), int(fm.height() + 12), 6, 6)
-        draw_text_with_outline(painter, "変更", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, change_x_time, list_y_start + row_h*2, "left", passes=8)
-        
-        # ★ 修正箇所: 採時駅が1つでもあるかチェックし、すべてOFFなら赤色のOFFを表示
-        has_timing_station = False
-        timing_targets = self.get_timing_target_stas()
-        if timing_targets:
-            for t_idx in timing_targets:
-                if self.is_station_timing(t_idx):
-                    has_timing_station = True
-                    break
-                    
-        timing_disp_text = "ON" if has_timing_station else "OFF"
-        timing_disp_color = COLOR_P if has_timing_station else COLOR_B_EMG
-        
-        draw_blocks(2, [{"text": timing_disp_text, "interactive": False, "color": timing_disp_color, "outline": COLOR_WHITE}], list_y_start + row_h*2)
-
-        draw_label(3, "停止位置", list_y_start + row_h*3, COLOR_N, COLOR_WHITE)
-        draw_blocks(3, [{"text": "ON", "interactive": False, "color": COLOR_P, "outline": COLOR_WHITE}], list_y_start + row_h*3)
-
-        draw_label(4, "基本制動", list_y_start + row_h*4, COLOR_N, COLOR_WHITE)
-        
-        change_x = label_x + fm.horizontalAdvance("基本制動　") 
-        change_text = "変更"
-        text_w = fm.horizontalAdvance(change_text)
-        is_focused = (self.menu_state == 5 and self.menu_cursor == 4 and self.menu_cursor_x == 0 and not self.dropdown_active)
-        if is_focused:
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(HIGHLIGHT_COLOR)
-            painter.drawRoundedRect(int(change_x - 10 + GLOBAL_BOX_X_OFFSET), int(list_y_start + row_h*4 - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(text_w + 20), int(fm.height() + 12), 6, 6)
-        draw_text_with_outline(painter, change_text, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, change_x, list_y_start + row_h*4, "left", passes=8)
-
-        vis_rules = min(3, len(self.brake_rules))
-        FIXED_STA_W = 280      
-        
-        box_y_offset = 12
-        box_width = 1210
-        box_height = row_h * vis_rules + 5
-        
-        is_summary_focused = (self.menu_state == 5 and self.menu_cursor == 4 and self.menu_cursor_x == 1 and not self.dropdown_active)
-        if is_summary_focused:
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(30, 80, 150, 150))
-            painter.drawRoundedRect(int(val_x_start - 20 + GLOBAL_BOX_X_OFFSET), int(list_y_start + row_h*4 - fm.ascent() - box_y_offset), box_width, int(box_height), 6, 6)
-
-        col_summary_x = val_x_start + FIXED_STA_W + 15 + (fm.horizontalAdvance("～") // 2)
-
-        if self.summary_scroll > 0:
-            draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, col_summary_x, list_y_start + row_h*4 - 68, "center", passes=8)
-            
-        for i in range(vis_rules):
-            r_idx = self.summary_scroll + i
-            if r_idx >= len(self.brake_rules): break
-            r_y = list_y_start + row_h * (4 + i) 
-            rule = self.brake_rules[r_idx]
-            r_start = get_sta_name(self.setting_start_idx) if r_idx == 0 else get_sta_name(self.brake_rules[r_idx-1]["end_idx"])
-            r_end = get_sta_name(self.setting_end_idx) if rule["end_idx"] == -1 else get_sta_name(rule["end_idx"])
-            
-            cx = val_x_start
-            
-            w_start = fm.horizontalAdvance(r_start)
-            if w_start > FIXED_STA_W:
-                sr = FIXED_STA_W / w_start
-                cy = r_y - fm.ascent() + fm.height() / 2.0
-                painter.save()
-                painter.translate(cx, cy)
-                painter.scale(sr, sr)
-                painter.translate(0, -cy + r_y)
-                draw_text_with_outline(painter, r_start, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, 0, 0, "left", passes=8)
-                painter.restore()
-            else:
-                draw_text_with_outline(painter, r_start, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
-            cx += FIXED_STA_W + 15
-            
-            draw_text_with_outline(painter, "～", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
-            cx += fm.horizontalAdvance("～") + 15
-            
-            w_end = fm.horizontalAdvance(r_end)
-            if w_end > FIXED_STA_W:
-                sr = FIXED_STA_W / w_end
-                cy = r_y - fm.ascent() + fm.height() / 2.0
-                painter.save()
-                painter.translate(cx, cy)
-                painter.scale(sr, sr)
-                painter.translate(0, -cy + r_y)
-                draw_text_with_outline(painter, r_end, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, 0, 0, "left", passes=8)
-                painter.restore()
-            else:
-                draw_text_with_outline(painter, r_end, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
-            cx += FIXED_STA_W + 15
-            
-            draw_text_with_outline(painter, ":", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
-            cx += fm.horizontalAdvance(":") + 20
-            
-            if rule["apply"] == "OFF":
-                draw_text_with_outline(painter, "OFF", self.font_menu, COLOR_B_EMG, COLOR_WHITE, cx, r_y, "left", passes=8)
-            else:
-                draw_text_with_outline(painter, rule["apply"], self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
-                cx += fm.horizontalAdvance(rule["apply"]) + 15
-                draw_text_with_outline(painter, "制動 /", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
-                cx += fm.horizontalAdvance("制動 /") + 15
-                draw_text_with_outline(painter, rule["release"], self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
-                cx += fm.horizontalAdvance(rule["release"]) + 15
-                draw_text_with_outline(painter, "緩め", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
-
-        if self.summary_scroll + 3 < len(self.brake_rules):
-            draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, col_summary_x, list_y_start + row_h*(4 + vis_rules), "center", passes=8)
-
-        last_row = 5
-        btn_y = 720 
-        draw_menu_item("次へ (減点項目の設定)", btn_y, (self.menu_state == 5 and self.menu_cursor == last_row and self.menu_cursor_x == -1), last_row, "center")
-
-        desc_y = 770 
-        desc_h = 135 
-        painter.setPen(QPen(QColor(150, 150, 150), 2))
-        painter.setBrush(QColor(20, 20, 20, 220))
-        painter.drawRoundedRect(150, int(desc_y), 1620, int(desc_h), 10, 10)
-
-        actual_margin = self.setting_stop_distance
-
-        desc_dict = {
-            0: "【 採点区間 】\n採点を行う区間を設定します。\n（※デフォルト:始発駅～終着駅）",
-            1: f"【 停車駅採点範囲 】\n停車駅において、採点を行う停止位置からの距離を設定します。キーボードで数値入力が可能です。\n列車長より短い値は入力できません。（※列車長 {tl} m ＋ マージン {max(0, actual_margin - tl)} m ＝ 判定距離 {actual_margin} m）",
-            2: "【 運転時分 】\n指定された採時駅への到着・出発時刻の正確さを採点します。\n（※0～±9秒 : 300点、±10～±19秒 : 200点、±20秒～±29秒 : 100点、±30秒～ : 0点）",
-            3: "【 停止位置 】\n停車駅での停止位置の正確さを採点します。誤差0.00 mに近いほど高得点になります。\n （※許容範囲に停車した時、停止位置x[m]とすると、点数y = 500 × (1 - x)）",
-            4: "【 基本制動 】\n駅に停車する際、指定された回数で制動・緩め操作が行われたかを採点します。\n（※基本制動の条件を満たすと500点、さらに0.00 mに停車した場合はボーナス500点）",
-            last_row: "次の設定ページ（減点項目の設定）へ進みます。"
-        }
-        
-        desc_text = ""
         if self.menu_state == 5:
-            if self.menu_cursor == 2 and self.menu_cursor_x == 0:
-                desc_text = "【 運転時分 設定 】\n駅ごとの採時 / 非採時の設定を個別に変更します。\n（※採点開始駅は非採時で固定されます）"
-            elif self.menu_cursor == 4 and self.menu_cursor_x == 0:
-                desc_text = "【 基本制動 設定 】\n特定区間だけ異なる基本制動ルールを適用したい場合に追加・編集します。\nルールはチェーン（数珠繋ぎ）になります。"
-            else:
-                desc_text = desc_dict.get(self.menu_cursor, "")
+            draw_label(0, "採点区間", list_y_start, COLOR_WHITE, COLOR_OUTLINE_BLACK)
+            draw_blocks(0, [
+                {"text": sta_start, "interactive": True, "max_w": MAIN_ROW0_STA_MAX_W},
+                {"text": "～", "interactive": False},
+                {"text": sta_end, "interactive": True, "max_w": MAIN_ROW0_STA_MAX_W}
+            ], list_y_start)
 
-        for j, line in enumerate(desc_text.split('\n')):
-            draw_text_with_outline(painter, line, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, 180, desc_y + 40 + (j * 40), "left", passes=8)
+            tl = int(getattr(self, 'bve_train_length', 20.0))
+            draw_label(1, "停車駅採点範囲", list_y_start + row_h, COLOR_WHITE, COLOR_OUTLINE_BLACK)
+            margin_disp = getattr(self, 'input_buffer', "") if getattr(self, 'input_mode_active', False) else str(getattr(self, 'setting_stop_distance', -1))
+            if not margin_disp or margin_disp == "-1": margin_disp = "_" 
+            draw_blocks(1, [
+                {"text": margin_disp, "interactive": True},
+                {"text": "m", "interactive": False}
+            ], list_y_start + row_h)
 
-        if self.menu_state == 7:
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(0,0,0, 180))
-            painter.drawRect(0,0, int(BASE_SCREEN_W), int(BASE_SCREEN_H))
+            draw_label(2, "運転時分", list_y_start + row_h*2, COLOR_N, COLOR_WHITE)
+            change_x_time = label_x + fm.horizontalAdvance("運転時分　")
+            is_focused_time = (self.menu_cursor == 2 and getattr(self, 'menu_cursor_x', 0) == 0 and not getattr(self, 'dropdown_active', False))
+            if is_focused_time:
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(HIGHLIGHT_COLOR)
+                painter.drawRoundedRect(int(change_x_time - 10 + GLOBAL_BOX_X_OFFSET), int(list_y_start + row_h*2 - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(fm.horizontalAdvance("変更") + 20), int(fm.height() + 12), 6, 6)
+            draw_text_with_outline(painter, "変更", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, change_x_time, list_y_start + row_h*2, "left", passes=8)
             
-            sub_w, sub_h = 1700, 850
-            sub_x, sub_y = 110, (BASE_SCREEN_H - sub_h) / 2
+            has_timing_station = False
+            if hasattr(self, 'get_timing_target_stas'):
+                timing_targets = self.get_timing_target_stas()
+                if timing_targets:
+                    for t_idx in timing_targets:
+                        if hasattr(self, 'is_station_timing') and self.is_station_timing(t_idx):
+                            has_timing_station = True
+                            break
+                        
+            timing_disp_text = "ON" if has_timing_station else "OFF"
+            timing_disp_color = COLOR_P if has_timing_station else COLOR_B_EMG
             
-            painter.setBrush(QColor(30, 30, 30, 240))
-            painter.setPen(QPen(QColor(150, 150, 150), 3))
-            painter.drawRoundedRect(int(sub_x), int(sub_y), int(sub_w), int(sub_h), 12, 12)
-            
-            draw_text_with_outline(painter, "=== 基本制動 設定 ===", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, sub_y + 130, "center", passes=8)
-            
-            vis_rules = min(5, len(self.brake_rules)) 
-            
-            # =========================================================
-            # ★ 基本制動設定UI 微調整パラメータ
-            # =========================================================
-            sub_val_x_start = 300  
-            SUB_FIXED_STA_W = 350  
-            gap_tilde = 15         
-            gap_sta2 = 15          
-            gap_colon = 15         
-            gap_rule = 20          
-            # =========================================================
-            
-            colon_x = sub_val_x_start + SUB_FIXED_STA_W + gap_tilde + fm.horizontalAdvance("～") + gap_sta2 + SUB_FIXED_STA_W + gap_colon
-            sub_col_summary_x = colon_x + (fm.horizontalAdvance(":") // 2)
+            draw_blocks(2, [{"text": timing_disp_text, "interactive": False, "color": timing_disp_color, "outline": COLOR_WHITE}], list_y_start + row_h*2)
 
-            if self.sub_scroll > 0:
-                draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, sub_col_summary_x, sub_y + 200, "center", passes=8)
+            draw_label(3, "停止位置", list_y_start + row_h*3, COLOR_N, COLOR_WHITE)
+            draw_blocks(3, [{"text": "ON", "interactive": False, "color": COLOR_P, "outline": COLOR_WHITE}], list_y_start + row_h*3)
+
+            draw_label(4, "基本制動", list_y_start + row_h*4, COLOR_N, COLOR_WHITE)
             
-            sub_list_y_start = sub_y + 275 
+            change_x = label_x + fm.horizontalAdvance("基本制動　") 
+            change_text = "変更"
+            text_w = fm.horizontalAdvance(change_text)
+            is_focused = (self.menu_cursor == 4 and getattr(self, 'menu_cursor_x', 0) == 0 and not getattr(self, 'dropdown_active', False))
+            if is_focused:
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(HIGHLIGHT_COLOR)
+                painter.drawRoundedRect(int(change_x - 10 + GLOBAL_BOX_X_OFFSET), int(list_y_start + row_h*4 - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(text_w + 20), int(fm.height() + 12), 6, 6)
+            draw_text_with_outline(painter, change_text, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, change_x, list_y_start + row_h*4, "left", passes=8)
+
+            vis_rules = min(3, len(getattr(self, 'brake_rules', [])))
+            FIXED_STA_W = 280      
             
-            for i in range(vis_rules):
-                r_idx = self.sub_scroll + i
-                if r_idx >= len(self.brake_rules): break
-                rule = self.brake_rules[r_idx]
-                r_start = sta_start if r_idx == 0 else get_sta_name(self.brake_rules[r_idx-1]["end_idx"])
-                r_end = sta_end if rule["end_idx"] == -1 else get_sta_name(rule["end_idx"])
-                is_last = (r_idx == len(self.brake_rules) - 1)
-                r_y = sub_list_y_start + (i * 70) 
+            box_y_offset = 12
+            box_width = 1210
+            box_height = row_h * vis_rules + 5
+            
+            is_summary_focused = (self.menu_cursor == 4 and getattr(self, 'menu_cursor_x', 0) == 1 and not getattr(self, 'dropdown_active', False))
+            if is_summary_focused:
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QColor(30, 80, 150, 150))
+                painter.drawRoundedRect(int(val_x_start - 20 + GLOBAL_BOX_X_OFFSET), int(list_y_start + row_h*4 - fm.ascent() - box_y_offset), box_width, int(box_height), 6, 6)
+
+            colon_x = val_x_start + FIXED_STA_W + 15 + fm.horizontalAdvance("～") + 15 + FIXED_STA_W + 15
+            col_summary_x = colon_x + (fm.horizontalAdvance(":") // 2)
+            
+            if getattr(self, 'summary_scroll', 0) > 0:
+                draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, col_summary_x, list_y_start + row_h*4 - 68, "center", passes=8)
                 
-                cx = sub_val_x_start 
+            for i in range(vis_rules):
+                r_idx = getattr(self, 'summary_scroll', 0) + i
+                if r_idx >= len(self.brake_rules): break
+                r_y = list_y_start + row_h * (4 + i) 
+                rule = self.brake_rules[r_idx]
+                r_start = get_sta_name(getattr(self, 'setting_start_idx', 0)) if r_idx == 0 else get_sta_name(self.brake_rules[r_idx-1]["end_idx"])
+                r_end = get_sta_name(getattr(self, 'setting_end_idx', -1)) if rule["end_idx"] == -1 else get_sta_name(rule["end_idx"])
+                
+                cx = val_x_start
                 
                 w_start = fm.horizontalAdvance(r_start)
-                if w_start > SUB_FIXED_STA_W:
-                    sr = SUB_FIXED_STA_W / w_start
+                if w_start > FIXED_STA_W:
+                    sr = FIXED_STA_W / w_start
                     cy = r_y - fm.ascent() + fm.height() / 2.0
                     painter.save()
                     painter.translate(cx, cy)
@@ -584,21 +455,14 @@ def draw_menu(self, painter, logical_width):
                     painter.restore()
                 else:
                     draw_text_with_outline(painter, r_start, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
-                cx += SUB_FIXED_STA_W + gap_tilde
+                cx += FIXED_STA_W + 15
                 
                 draw_text_with_outline(painter, "～", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
-                cx += fm.horizontalAdvance("～") + gap_sta2
+                cx += fm.horizontalAdvance("～") + 15
                 
                 w_end = fm.horizontalAdvance(r_end)
-                is_focused = (self.sub_cursor == r_idx and self.sub_cursor_x == 0 and not self.dropdown_active)
-                
-                if w_end > SUB_FIXED_STA_W:
-                    if is_focused and is_last:
-                        painter.setPen(Qt.PenStyle.NoPen)
-                        painter.setBrush(HIGHLIGHT_COLOR)
-                        painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(SUB_FIXED_STA_W + 20), int(fm.height() + 12), 6, 6)
-                        
-                    sr = SUB_FIXED_STA_W / w_end
+                if w_end > FIXED_STA_W:
+                    sr = FIXED_STA_W / w_end
                     cy = r_y - fm.ascent() + fm.height() / 2.0
                     painter.save()
                     painter.translate(cx, cy)
@@ -607,62 +471,195 @@ def draw_menu(self, painter, logical_width):
                     draw_text_with_outline(painter, r_end, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, 0, 0, "left", passes=8)
                     painter.restore()
                 else:
-                    if is_focused and is_last:
-                        painter.setPen(Qt.PenStyle.NoPen)
-                        painter.setBrush(HIGHLIGHT_COLOR)
-                        painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(w_end + 20), int(fm.height() + 12), 6, 6)
                     draw_text_with_outline(painter, r_end, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
-                cx += SUB_FIXED_STA_W + gap_colon
+                cx += FIXED_STA_W + 15
                 
                 draw_text_with_outline(painter, ":", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
-                cx += fm.horizontalAdvance(":") + gap_rule
+                cx += fm.horizontalAdvance(":") + 20
                 
-                idx_apply = 1 if is_last else 0
-                idx_release = 2 if is_last else 1
-
-                if rule["apply"] == "OFF":
-                    tw = fm.horizontalAdvance("OFF")
-                    if self.sub_cursor == r_idx and self.sub_cursor_x == idx_apply and not self.dropdown_active:
-                        painter.setPen(Qt.PenStyle.NoPen)
-                        painter.setBrush(HIGHLIGHT_COLOR)
-                        painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(tw + 20), int(fm.height() + 12), 6, 6)
+                if rule.get("apply", "OFF") == "OFF":
                     draw_text_with_outline(painter, "OFF", self.font_menu, COLOR_B_EMG, COLOR_WHITE, cx, r_y, "left", passes=8)
                 else:
-                    tw = fm.horizontalAdvance(rule["apply"])
-                    if self.sub_cursor == r_idx and self.sub_cursor_x == idx_apply and not self.dropdown_active:
-                        painter.setPen(Qt.PenStyle.NoPen)
-                        painter.setBrush(HIGHLIGHT_COLOR)
-                        painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(tw + 20), int(fm.height() + 12), 6, 6)
                     draw_text_with_outline(painter, rule["apply"], self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
-                    cx += tw + 15
-                    
+                    cx += fm.horizontalAdvance(rule["apply"]) + 15
                     draw_text_with_outline(painter, "制動 /", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
                     cx += fm.horizontalAdvance("制動 /") + 15
+                    draw_text_with_outline(painter, rule.get("release", "階段"), self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+                    cx += fm.horizontalAdvance(rule.get("release", "階段")) + 15
                     
-                    tw_rel = fm.horizontalAdvance(rule["release"])
-                    if self.sub_cursor == r_idx and self.sub_cursor_x == idx_release and not self.dropdown_active:
-                        painter.setPen(Qt.PenStyle.NoPen)
-                        painter.setBrush(HIGHLIGHT_COLOR)
-                        painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(tw_rel + 20), int(fm.height() + 12), 6, 6)
-                    draw_text_with_outline(painter, rule["release"], self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
-            
-            if self.sub_scroll + 5 < len(self.brake_rules):
-                draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, sub_col_summary_x, sub_list_y_start + (5 * 70) + 10, "center", passes=8)
-            
-            row_undo = len(self.brake_rules) if len(self.brake_rules) > 1 else -1
-            row_done = len(self.brake_rules) + 1 if len(self.brake_rules) > 1 else len(self.brake_rules)
-            
-            btn_base_y = sub_list_y_start + (5 * 70) + 90 
-            if row_undo != -1:
-                draw_menu_item("１つ前の設定を修正する (この行を削除)", btn_base_y, (self.sub_cursor == row_undo), row_undo, "center")
-            draw_menu_item("設定完了", btn_base_y + 80, (self.sub_cursor == row_done), row_done, "center")
+                    # ★ ここで「緩め」を完全復活！
+                    draw_text_with_outline(painter, "緩め", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
 
-    elif self.menu_state == 6:
-        draw_text_with_outline(painter, "=== 採点設定 (2/2) : 減点項目 ===", self.font_big, MENU_TEXT, MENU_OUTLINE, center_x, 200, "center", passes=8)
-        draw_text_with_outline(painter, "※減点項目の個別設定は現在開発中です", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 300, "center", passes=8)
+            if getattr(self, 'summary_scroll', 0) + 3 < len(self.brake_rules):
+                draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, col_summary_x, list_y_start + row_h*(4 + vis_rules), "center", passes=8)
+
+            last_row = 5
+            btn_y = 720 
+            draw_menu_item("次へ (減点項目の設定)", btn_y, (self.menu_cursor == last_row and getattr(self, 'menu_cursor_x', 0) == -1), last_row, "center")
+
+            desc_y = 770 
+            desc_h = 135 
+            painter.setPen(QPen(QColor(150, 150, 150), 2))
+            painter.setBrush(QColor(20, 20, 20, 220))
+            painter.drawRoundedRect(150, int(desc_y), 1620, int(desc_h), 10, 10)
+
+            actual_margin = getattr(self, 'setting_stop_distance', -1)
+
+            desc_dict = {
+                0: "【 採点区間 】\n採点を行う区間を設定します。\n（※デフォルト:始発駅～終着駅）",
+                1: f"【 停車駅採点範囲 】\n停車駅において、採点を行う停止位置からの距離を設定します。キーボードで数値入力が可能です。\n列車長より短い値は入力できません。（※列車長 {tl} m ＋ マージン {max(0, actual_margin - tl)} m ＝ 判定距離 {actual_margin} m）",
+                2: "【 運転時分 】\n指定された採時駅への到着・出発時刻の正確さを採点します。\n（※0～±9秒 : 300点、±10～±19秒 : 200点、±20秒～±29秒 : 100点、±30秒～ : 0点）",
+                3: "【 停止位置 】\n停車駅での停止位置の正確さを採点します。誤差0.00 mに近いほど高得点になります。\n （※許容範囲に停車した時、停止位置x[m]とすると、点数y = 500 × (1 - x)）",
+                4: "【 基本制動 】\n駅に停車する際、指定された回数で制動・緩め操作が行われたかを採点します。\n（※基本制動の条件を満たすと500点、さらに0.00 mに停車した場合はボーナス500点）",
+                last_row: "次の設定ページ（減点項目の設定）へ進みます。"
+            }
+            
+            desc_text = ""
+            if self.menu_cursor == 2 and getattr(self, 'menu_cursor_x', 0) == 0:
+                desc_text = "【 運転時分 設定 】\n駅ごとの採時 / 非採時の設定を個別に変更します。\n（※採点開始駅は非採時で固定されます）"
+            elif self.menu_cursor == 4 and getattr(self, 'menu_cursor_x', 0) == 0:
+                desc_text = "【 基本制動 設定 】\n特定区間だけ異なる基本制動ルールを適用したい場合に追加・編集します。\nルールはチェーン（数珠繋ぎ）になります。"
+            else:
+                desc_text = desc_dict.get(self.menu_cursor, "")
+
+            for j, line in enumerate(desc_text.split('\n')):
+                draw_text_with_outline(painter, line, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, 180, desc_y + 40 + (j * 40), "left", passes=8)
+
+    if self.menu_state == 7:
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0,0,0, 180))
+        painter.drawRect(0,0, int(BASE_SCREEN_W), int(BASE_SCREEN_H))
         
-        draw_menu_item("【デバッグ】全減点項目をONにして採点を開始する", 500, (self.menu_cursor == 0), 0, "center")
-        draw_menu_item("ページ1に戻る", 600, (self.menu_cursor == 1), 1, "center")
+        sub_w, sub_h = 1700, 850
+        sub_x, sub_y = 110, (BASE_SCREEN_H - sub_h) / 2
+        
+        painter.setBrush(QColor(30, 30, 30, 240))
+        painter.setPen(QPen(QColor(150, 150, 150), 3))
+        painter.drawRoundedRect(int(sub_x), int(sub_y), int(sub_w), int(sub_h), 12, 12)
+        
+        draw_text_with_outline(painter, "=== 基本制動 設定 ===", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, sub_y + 130, "center", passes=8)
+        
+        vis_rules = min(5, len(getattr(self, 'brake_rules', []))) 
+        
+        # =========================================================
+        # ★ 基本制動設定UI 微調整パラメータ
+        # =========================================================
+        sub_val_x_start = 300  
+        SUB_FIXED_STA_W = 350  
+        gap_tilde = 15         
+        gap_sta2 = 15          
+        gap_colon = 15         
+        gap_rule = 20          
+        # =========================================================
+        
+        fm = QFontMetrics(self.font_menu)
+        colon_x = sub_val_x_start + SUB_FIXED_STA_W + gap_tilde + fm.horizontalAdvance("～") + gap_sta2 + SUB_FIXED_STA_W + gap_colon
+        sub_col_summary_x = colon_x + (fm.horizontalAdvance(":") // 2)
+
+        if getattr(self, 'sub_scroll', 0) > 0:
+            draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, sub_col_summary_x, sub_y + 200, "center", passes=8)
+        
+        sub_list_y_start = sub_y + 275 
+        
+        for i in range(vis_rules):
+            r_idx = getattr(self, 'sub_scroll', 0) + i
+            if r_idx >= len(self.brake_rules): break
+            rule = self.brake_rules[r_idx]
+            r_start = get_sta_name(getattr(self, 'setting_start_idx', 0)) if r_idx == 0 else get_sta_name(self.brake_rules[r_idx-1]["end_idx"])
+            r_end = get_sta_name(getattr(self, 'setting_end_idx', -1)) if rule["end_idx"] == -1 else get_sta_name(rule["end_idx"])
+            is_last = (r_idx == len(self.brake_rules) - 1)
+            r_y = sub_list_y_start + (i * 70) 
+            
+            cx = sub_val_x_start 
+            
+            w_start = fm.horizontalAdvance(r_start)
+            if w_start > SUB_FIXED_STA_W:
+                sr = SUB_FIXED_STA_W / w_start
+                cy = r_y - fm.ascent() + fm.height() / 2.0
+                painter.save()
+                painter.translate(cx, cy)
+                painter.scale(sr, sr)
+                painter.translate(0, -cy + r_y)
+                draw_text_with_outline(painter, r_start, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, 0, 0, "left", passes=8)
+                painter.restore()
+            else:
+                draw_text_with_outline(painter, r_start, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+            cx += SUB_FIXED_STA_W + gap_tilde
+            
+            draw_text_with_outline(painter, "～", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+            cx += fm.horizontalAdvance("～") + gap_sta2
+            
+            w_end = fm.horizontalAdvance(r_end)
+            is_focused = (getattr(self, 'sub_cursor', 0) == r_idx and getattr(self, 'sub_cursor_x', 0) == 0 and not getattr(self, 'dropdown_active', False))
+            
+            if w_end > SUB_FIXED_STA_W:
+                if is_focused and is_last:
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(HIGHLIGHT_COLOR)
+                    painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(SUB_FIXED_STA_W + 20), int(fm.height() + 12), 6, 6)
+                    
+                sr = SUB_FIXED_STA_W / w_end
+                cy = r_y - fm.ascent() + fm.height() / 2.0
+                painter.save()
+                painter.translate(cx, cy)
+                painter.scale(sr, sr)
+                painter.translate(0, -cy + r_y)
+                draw_text_with_outline(painter, r_end, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, 0, 0, "left", passes=8)
+                painter.restore()
+            else:
+                if is_focused and is_last:
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(HIGHLIGHT_COLOR)
+                    painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(w_end + 20), int(fm.height() + 12), 6, 6)
+                draw_text_with_outline(painter, r_end, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+            cx += SUB_FIXED_STA_W + gap_colon
+            
+            draw_text_with_outline(painter, ":", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+            cx += fm.horizontalAdvance(":") + gap_rule
+            
+            idx_apply = 1 if is_last else 0
+            idx_release = 2 if is_last else 1
+
+            if rule.get("apply", "OFF") == "OFF":
+                tw = fm.horizontalAdvance("OFF")
+                if getattr(self, 'sub_cursor', 0) == r_idx and getattr(self, 'sub_cursor_x', 0) == idx_apply and not getattr(self, 'dropdown_active', False):
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(HIGHLIGHT_COLOR)
+                    painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(tw + 20), int(fm.height() + 12), 6, 6)
+                draw_text_with_outline(painter, "OFF", self.font_menu, COLOR_B_EMG, COLOR_WHITE, cx, r_y, "left", passes=8)
+            else:
+                tw = fm.horizontalAdvance(rule["apply"])
+                if getattr(self, 'sub_cursor', 0) == r_idx and getattr(self, 'sub_cursor_x', 0) == idx_apply and not getattr(self, 'dropdown_active', False):
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(HIGHLIGHT_COLOR)
+                    painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(tw + 20), int(fm.height() + 12), 6, 6)
+                draw_text_with_outline(painter, rule["apply"], self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+                cx += tw + 15
+                
+                draw_text_with_outline(painter, "制動 /", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+                cx += fm.horizontalAdvance("制動 /") + 15
+                
+                tw_rel = fm.horizontalAdvance(rule.get("release", "階段"))
+                if getattr(self, 'sub_cursor', 0) == r_idx and getattr(self, 'sub_cursor_x', 0) == idx_release and not getattr(self, 'dropdown_active', False):
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(HIGHLIGHT_COLOR)
+                    painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(tw_rel + 20), int(fm.height() + 12), 6, 6)
+                draw_text_with_outline(painter, rule.get("release", "階段"), self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+                cx += tw_rel + 15
+                
+                # ★ ここにも「緩め」を完全復活！
+                draw_text_with_outline(painter, "緩め", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+        
+        if getattr(self, 'sub_scroll', 0) + 5 < len(self.brake_rules):
+            draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, sub_col_summary_x, sub_list_y_start + (5 * 70) + 10, "center", passes=8)
+        
+        row_undo = len(self.brake_rules) if len(self.brake_rules) > 1 else -1
+        row_done = len(self.brake_rules) + 1 if len(self.brake_rules) > 1 else len(self.brake_rules)
+        
+        btn_base_y = sub_list_y_start + (5 * 70) + 90 
+        if row_undo != -1:
+            draw_menu_item("１つ前の設定を修正する (この行を削除)", btn_base_y, (getattr(self, 'sub_cursor', 0) == row_undo), row_undo, "center")
+        draw_menu_item("設定完了", btn_base_y + 80, (getattr(self, 'sub_cursor', 0) == row_done), row_done, "center")
 
     elif self.menu_state == 8:
         # ==========================================================
@@ -704,27 +701,31 @@ def draw_menu(self, painter, logical_width):
         
         draw_text_with_outline(painter, "=== 運転時分 設定 ===", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, TITLE_Y, "center", passes=8)
 
-        targets = self.get_timing_target_stas()
+        if hasattr(self, 'get_timing_target_stas'):
+            targets = self.get_timing_target_stas()
+        else:
+            targets = []
         
         if not targets:
             draw_text_with_outline(painter, "設定可能な駅がありません", self.font_normal, COLOR_B_EMG, COLOR_OUTLINE_BLACK, center_x, LIST_Y + 50, "center", passes=8)
         else:
-            if self.timing_scroll > 0:
+            if getattr(self, 'timing_scroll', 0) > 0:
                 draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, ARROW_UP_Y, "center", passes=8)
             
             fm = QFontMetrics(self.font_normal)
             box_x_base = center_x - (TIMING_BOX_W / 2) + TIMING_BOX_X_OFFSET
 
             for i in range(TIMING_VISIBLE_COUNT):
-                list_idx = self.timing_scroll + i
+                list_idx = getattr(self, 'timing_scroll', 0) + i
                 if list_idx >= len(targets): break
                 
                 sta_idx = targets[list_idx]
                 st = self.station_list[sta_idx]
                 sta_name = st.get("name", "不明な駅")
                 
-                is_timing = self.is_station_timing(sta_idx)
-                is_start = (sta_idx == self.setting_start_idx)
+                is_timing = False
+                if hasattr(self, 'is_station_timing'): is_timing = self.is_station_timing(sta_idx)
+                is_start = (sta_idx == getattr(self, 'setting_start_idx', 0))
                 
                 if is_start:
                     stat_text = "非採時"
@@ -739,7 +740,7 @@ def draw_menu(self, painter, logical_width):
                 box_h = fm.height() + 16
                 box_y = y - fm.ascent() - 6 - (fm.descent() // 2) + 1
 
-                if list_idx == self.timing_cursor:
+                if list_idx == getattr(self, 'timing_cursor', 0):
                     painter.setPen(Qt.PenStyle.NoPen)
                     painter.setBrush(HIGHLIGHT_COLOR)
                     painter.drawRoundedRect(int(box_x_base + TIMING_HIGHLIGHT_OFFSET_X), int(box_y + TIMING_HIGHLIGHT_OFFSET_Y), int(TIMING_BOX_W), int(box_h), 8, 8)
@@ -764,7 +765,7 @@ def draw_menu(self, painter, logical_width):
                 cx_stat = SUB_X + TIMING_SUB_W - TIMING_INNER_MARGIN_X
                 draw_text_with_outline(painter, stat_text, self.font_normal, stat_color, stat_outline, cx_stat, y, "right", passes=8)
 
-            if self.timing_scroll + TIMING_VISIBLE_COUNT < len(targets):
+            if getattr(self, 'timing_scroll', 0) + TIMING_VISIBLE_COUNT < len(targets):
                 draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, ARROW_DOWN_Y, "center", passes=8)
                 
             btn_text = "設定完了"
@@ -773,7 +774,7 @@ def draw_menu(self, painter, logical_width):
             btn_x = center_x - (btn_w / 2)
             btn_rect_y = BTN_Y - fm.ascent() - 6 - (fm.descent() // 2) + 1
             
-            if self.timing_cursor == len(targets):
+            if getattr(self, 'timing_cursor', 0) == len(targets):
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(HIGHLIGHT_COLOR)
                 painter.drawRoundedRect(int(btn_x + TIMING_HIGHLIGHT_OFFSET_X), int(btn_rect_y + TIMING_HIGHLIGHT_OFFSET_Y), int(btn_w), int(btn_h), 8, 8)
@@ -781,12 +782,353 @@ def draw_menu(self, painter, logical_width):
             draw_text_with_outline(painter, btn_text, self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, BTN_Y, "center", passes=8)
             self.menu_click_zones.append((btn_x, btn_rect_y, btn_x + btn_w, btn_rect_y + btn_h, len(targets)))
 
-    if self.dropdown_active and len(self.dropdown_options) > 0:
+    # ==========================================================
+    # ★ 新規追加: 採点設定 (2/2) 減点項目のメイン描画 (menu_state == 6)
+    # ==========================================================
+    elif self.menu_state == 6:
+        MAIN_X_OFFSET = 50   
+        list_y_start  = 200
+        row_h         = 65
+        label_x       = 100 + MAIN_X_OFFSET      
+        val_x_start   = 550 + MAIN_X_OFFSET
+        fm = QFontMetrics(self.font_menu)
+
+        # 0: 初動・緩和ブレーキ (2行で1項目扱い)
+        if self.menu_cursor == 0 and getattr(self, 'menu_cursor_x', 0) == -1:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(HIGHLIGHT_COLOR)
+            label_w = fm.horizontalAdvance("初動ブレーキ")
+            painter.drawRoundedRect(int(label_x - 15 + GLOBAL_BOX_X_OFFSET), int(list_y_start - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(label_w + 30), int(row_h + fm.height() + 12), 6, 6)
+            
+        draw_text_with_outline(painter, "初動ブレーキ", self.font_menu, COLOR_B_EMG, COLOR_WHITE, label_x, list_y_start, "left", passes=8)
+        draw_text_with_outline(painter, "緩和ブレーキ", self.font_menu, COLOR_B_EMG, COLOR_WHITE, label_x, list_y_start + row_h, "left", passes=8)
+        
+        # 初動ブレーキの「変更」ボタン
+        change_x = label_x + fm.horizontalAdvance("初動ブレーキ　") 
+        change_text = "変更"
+        text_w = fm.horizontalAdvance(change_text)
+        is_focused = (self.menu_cursor == 0 and getattr(self, 'menu_cursor_x', 0) == 0 and not getattr(self, 'dropdown_active', False))
+        if is_focused:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(HIGHLIGHT_COLOR)
+            painter.drawRoundedRect(int(change_x - 10 + GLOBAL_BOX_X_OFFSET), int(list_y_start - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(text_w + 20), int(fm.height() + 12), 6, 6)
+        draw_text_with_outline(painter, change_text, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, change_x, list_y_start, "left", passes=8)
+        
+        # サマリー描画 (初動・緩和ルール)
+        init_rules = getattr(self, 'penalty_init_rules', [{"end_idx": -1, "apply": "ON①", "release": "OFF"}])
+        vis_rules = min(3, len(init_rules))
+        FIXED_STA_W = 280      
+        box_y_offset = 12
+        box_width = 1210
+        box_height = row_h * vis_rules + 5
+        
+        is_summary_focused = (self.menu_cursor == 0 and getattr(self, 'menu_cursor_x', 0) == 1 and not getattr(self, 'dropdown_active', False))
+        if is_summary_focused:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(30, 80, 150, 150))
+            painter.drawRoundedRect(int(val_x_start - 20 + GLOBAL_BOX_X_OFFSET), int(list_y_start - fm.ascent() - box_y_offset), box_width, int(box_height), 6, 6)
+
+        col_summary_x = val_x_start + FIXED_STA_W + 15 + (fm.horizontalAdvance("～") // 2)
+        summary_scroll = getattr(self, 'init_summary_scroll', 0)
+        
+        if summary_scroll > 0:
+            draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, col_summary_x, list_y_start - 68, "center", passes=8)
+            
+        for i in range(vis_rules):
+            r_idx = summary_scroll + i
+            if r_idx >= len(init_rules): break
+            r_y = list_y_start + row_h * i
+            rule = init_rules[r_idx]
+            r_start = get_sta_name(getattr(self, 'setting_start_idx', 0)) if r_idx == 0 else get_sta_name(init_rules[r_idx-1]["end_idx"])
+            r_end = get_sta_name(getattr(self, 'setting_end_idx', -1)) if rule["end_idx"] == -1 else get_sta_name(rule["end_idx"])
+            
+            cx = val_x_start
+            
+            w_start = fm.horizontalAdvance(r_start)
+            if w_start > FIXED_STA_W:
+                sr = FIXED_STA_W / w_start
+                cy = r_y - fm.ascent() + fm.height() / 2.0
+                painter.save()
+                painter.translate(cx, cy)
+                painter.scale(sr, sr)
+                painter.translate(0, -cy + r_y)
+                draw_text_with_outline(painter, r_start, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, 0, 0, "left", passes=8)
+                painter.restore()
+            else:
+                draw_text_with_outline(painter, r_start, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+            cx += FIXED_STA_W + 15
+            
+            draw_text_with_outline(painter, "～", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+            cx += fm.horizontalAdvance("～") + 15
+            
+            w_end = fm.horizontalAdvance(r_end)
+            if w_end > FIXED_STA_W:
+                sr = FIXED_STA_W / w_end
+                cy = r_y - fm.ascent() + fm.height() / 2.0
+                painter.save()
+                painter.translate(cx, cy)
+                painter.scale(sr, sr)
+                painter.translate(0, -cy + r_y)
+                draw_text_with_outline(painter, r_end, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, 0, 0, "left", passes=8)
+                painter.restore()
+            else:
+                draw_text_with_outline(painter, r_end, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+            cx += FIXED_STA_W + 15
+            
+            draw_text_with_outline(painter, ":", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+            cx += fm.horizontalAdvance(":") + 20
+            
+            draw_text_with_outline(painter, "初動", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+            cx += fm.horizontalAdvance("初動") + 15
+            
+            apply_val = rule["apply"]
+            a_col = COLOR_P if "ON" in apply_val else COLOR_B_EMG
+            draw_text_with_outline(painter, apply_val, self.font_menu, a_col, COLOR_WHITE, cx, r_y, "left", passes=8)
+            cx += fm.horizontalAdvance(apply_val) + 15
+            
+            draw_text_with_outline(painter, "/", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+            cx += fm.horizontalAdvance("/") + 15
+            
+            draw_text_with_outline(painter, "緩和", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+            cx += fm.horizontalAdvance("緩和") + 15
+            
+            rel_val = rule["release"]
+            r_col = COLOR_P if "ON" in rel_val else COLOR_B_EMG
+            draw_text_with_outline(painter, rel_val, self.font_menu, r_col, COLOR_WHITE, cx, r_y, "left", passes=8)
+            
+        if summary_scroll + 3 < len(init_rules):
+            draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, col_summary_x, list_y_start + row_h*vis_rules, "center", passes=8)
+
+        # ----------------------------
+        # 1〜4: ON/OFF トグル項目
+        # ----------------------------
+        def draw_toggle_row(cursor_idx, label_text, is_on, base_y):
+            if self.menu_cursor == cursor_idx and getattr(self, 'menu_cursor_x', 0) == -1:
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(HIGHLIGHT_COLOR)
+                label_w = fm.horizontalAdvance(label_text)
+                painter.drawRoundedRect(int(label_x - 15 + GLOBAL_BOX_X_OFFSET), int(base_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(label_w + 30), int(fm.height() + 12), 6, 6)
+            draw_text_with_outline(painter, label_text, self.font_menu, COLOR_B_EMG, COLOR_WHITE, label_x, base_y, "left", passes=8)
+            
+            val_text = "ON" if is_on else "OFF"
+            val_col = COLOR_P if is_on else COLOR_B_EMG
+            
+            is_val_focused = (self.menu_cursor == cursor_idx and getattr(self, 'menu_cursor_x', 0) == 0)
+            if is_val_focused:
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(HIGHLIGHT_COLOR)
+                val_w = fm.horizontalAdvance(val_text)
+                painter.drawRoundedRect(int(val_x_start - 10 + GLOBAL_BOX_X_OFFSET), int(base_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(val_w + 20), int(fm.height() + 12), 6, 6)
+                
+            draw_text_with_outline(painter, val_text, self.font_menu, val_col, COLOR_WHITE, val_x_start, base_y, "left", passes=8)
+
+        start_y2 = list_y_start + row_h * 2.5 
+        draw_toggle_row(1, "非常ブレーキ", getattr(self, 'pen_eb', True), start_y2)
+        draw_toggle_row(2, "停車時衝動", getattr(self, 'pen_jerk', True), start_y2 + row_h)
+        draw_toggle_row(3, "速度制限超過", getattr(self, 'pen_limit', True), start_y2 + row_h * 2)
+        draw_toggle_row(4, "ATS信号無視", getattr(self, 'pen_ats', True), start_y2 + row_h * 3)
+        
+        # 5: 転動 (ON固定)
+        y_roll = start_y2 + row_h * 4
+        if self.menu_cursor == 5 and getattr(self, 'menu_cursor_x', 0) == -1:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(HIGHLIGHT_COLOR)
+            label_w = fm.horizontalAdvance("転動")
+            painter.drawRoundedRect(int(label_x - 15 + GLOBAL_BOX_X_OFFSET), int(y_roll - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(label_w + 30), int(fm.height() + 12), 6, 6)
+        draw_text_with_outline(painter, "転動", self.font_menu, COLOR_B_EMG, COLOR_WHITE, label_x, y_roll, "left", passes=8)
+        draw_text_with_outline(painter, "ON", self.font_menu, COLOR_P, COLOR_WHITE, val_x_start, y_roll, "left", passes=8)
+        
+        # 6: 前へ, 7: 採点開始
+        btn_y = 760
+        draw_menu_item("前へ (1/2に戻る)", btn_y, (self.menu_cursor == 6 and getattr(self, 'menu_cursor_x', 0) == -1), 6, "center", x_offset=-250)
+        draw_menu_item("採点を開始する", btn_y, (self.menu_cursor == 7 and getattr(self, 'menu_cursor_x', 0) == -1), 7, "center", x_offset=250)
+
+        # 説明文
+        desc_y = 820 
+        desc_h = 135 
+        painter.setPen(QPen(QColor(150, 150, 150), 2))
+        painter.setBrush(QColor(20, 20, 20, 220))
+        painter.drawRoundedRect(150, int(desc_y), 1620, int(desc_h), 10, 10)
+
+        desc_dict = {
+            0: "【 初動・緩和ブレーキ 】\n特定区間だけ異なる初動・緩和ルールを適用したい場合に追加・編集します。\nルールはチェーン（数珠繋ぎ）になります。",
+            1: "【 非常ブレーキ 】\n非常ブレーキを使用した際の減点（-500点）を有効にします。",
+            2: "【 停車時衝動 】\n停車直前に強いブレーキが掛かっていた際の減点（-100〜-200点）を有効にします。",
+            3: "【 速度制限超過 】\n速度制限・信号制限を超過した際の減点（超過秒数に応じた減点）を有効にします。",
+            4: "【 ATS信号無視 】\nATS確認等を行わず非常ブレーキが動作した際の減点（-500点）を有効にします。",
+            5: "【 転動 】\nドア開扉中に車両が動いた際の減点（-500点）です。（※常に有効）",
+            6: "前の設定ページ（1/2）に戻ります。",
+            7: "現在の設定内容で採点を開始します。"
+        }
+        
+        desc_text = ""
+        # ★ 修正: 「変更」にカーソルが合っている時だけ専用の説明文を出す
+        if self.menu_cursor == 0 and getattr(self, 'menu_cursor_x', 0) == 0:
+            desc_text = "【 初動・緩和ブレーキ 設定 】\n特定区間だけ異なる初動・緩和ルールを適用したい場合に追加・編集します。\nルールはチェーン（数珠繋ぎ）になります。"
+        else:
+            desc_text = desc_dict.get(self.menu_cursor, "")
+
+        for j, line in enumerate(desc_text.split('\n')):
+            draw_text_with_outline(painter, line, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, 180, desc_y + 40 + (j * 40), "left", passes=8)
+
+    # ==========================================================
+    # ★ 新規追加: 初動・緩和ブレーキ区間設定 サブウィンドウ (menu_state == 9)
+    # ==========================================================
+    elif self.menu_state == 9:
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0,0,0, 180))
+        painter.drawRect(0,0, int(BASE_SCREEN_W), int(BASE_SCREEN_H))
+        
+        sub_w, sub_h = 1700, 850
+        sub_x, sub_y = 110, (BASE_SCREEN_H - sub_h) / 2
+        
+        painter.setBrush(QColor(30, 30, 30, 240))
+        painter.setPen(QPen(QColor(150, 150, 150), 3))
+        painter.drawRoundedRect(int(sub_x), int(sub_y), int(sub_w), int(sub_h), 12, 12)
+        
+        draw_text_with_outline(painter, "=== 初動・緩和ブレーキ 設定 ===", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, sub_y + 110, "center", passes=8)
+        
+        fm = QFontMetrics(self.font_menu)
+        init_rules = getattr(self, 'penalty_init_rules', [{"end_idx": -1, "apply": "ON①", "release": "OFF"}])
+        vis_rules = min(5, len(init_rules)) 
+        
+        sub_val_x_start = 280  
+        SUB_FIXED_STA_W = 350  
+        gap_tilde = 15         
+        gap_sta2 = 15          
+        gap_colon = 15         
+        gap_rule = 20          
+        
+        colon_x = sub_val_x_start + SUB_FIXED_STA_W + gap_tilde + fm.horizontalAdvance("～") + gap_sta2 + SUB_FIXED_STA_W + gap_colon
+        sub_col_summary_x = colon_x + (fm.horizontalAdvance(":") // 2)
+        
+        sub_scroll = getattr(self, 'init_sub_scroll', 0)
+        sub_cursor = getattr(self, 'init_sub_cursor', 0)
+        sub_cursor_x = getattr(self, 'init_sub_cursor_x', 0)
+
+        if sub_scroll > 0:
+            draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, sub_col_summary_x, sub_y + 170, "center", passes=8)
+        
+        sub_list_y_start = sub_y + 240 
+        sta_start = get_sta_name(getattr(self, 'setting_start_idx', 0))
+        sta_end = get_sta_name(getattr(self, 'setting_end_idx', -1))
+
+        for i in range(vis_rules):
+            r_idx = sub_scroll + i
+            if r_idx >= len(init_rules): break
+            rule = init_rules[r_idx]
+            r_start = sta_start if r_idx == 0 else get_sta_name(init_rules[r_idx-1]["end_idx"])
+            r_end = sta_end if rule["end_idx"] == -1 else get_sta_name(rule["end_idx"])
+            is_last = (r_idx == len(init_rules) - 1)
+            r_y = sub_list_y_start + (i * 70) 
+            
+            cx = sub_val_x_start 
+            
+            w_start = fm.horizontalAdvance(r_start)
+            if w_start > SUB_FIXED_STA_W:
+                sr = SUB_FIXED_STA_W / w_start
+                cy = r_y - fm.ascent() + fm.height() / 2.0
+                painter.save()
+                painter.translate(cx, cy)
+                painter.scale(sr, sr)
+                painter.translate(0, -cy + r_y)
+                draw_text_with_outline(painter, r_start, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, 0, 0, "left", passes=8)
+                painter.restore()
+            else:
+                draw_text_with_outline(painter, r_start, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+            cx += SUB_FIXED_STA_W + gap_tilde
+            
+            draw_text_with_outline(painter, "～", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+            cx += fm.horizontalAdvance("～") + gap_sta2
+            
+            w_end = fm.horizontalAdvance(r_end)
+            is_focused = (sub_cursor == r_idx and sub_cursor_x == 0 and not getattr(self, 'dropdown_active', False))
+            
+            if w_end > SUB_FIXED_STA_W:
+                if is_focused and is_last:
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(HIGHLIGHT_COLOR)
+                    painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(SUB_FIXED_STA_W + 20), int(fm.height() + 12), 6, 6)
+                    
+                sr = SUB_FIXED_STA_W / w_end
+                cy = r_y - fm.ascent() + fm.height() / 2.0
+                painter.save()
+                painter.translate(cx, cy)
+                painter.scale(sr, sr)
+                painter.translate(0, -cy + r_y)
+                draw_text_with_outline(painter, r_end, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, 0, 0, "left", passes=8)
+                painter.restore()
+            else:
+                if is_focused and is_last:
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(HIGHLIGHT_COLOR)
+                    painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(w_end + 20), int(fm.height() + 12), 6, 6)
+                draw_text_with_outline(painter, r_end, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+            cx += SUB_FIXED_STA_W + gap_colon
+            
+            draw_text_with_outline(painter, ":", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+            cx += fm.horizontalAdvance(":") + gap_rule
+            
+            idx_apply = 1 if is_last else 0
+            idx_release = 2 if is_last else 1
+
+            # 初動
+            draw_text_with_outline(painter, "初動", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+            cx += fm.horizontalAdvance("初動") + 15
+            
+            apply_val = rule["apply"]
+            tw = fm.horizontalAdvance(apply_val)
+            if sub_cursor == r_idx and sub_cursor_x == idx_apply and not getattr(self, 'dropdown_active', False):
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(HIGHLIGHT_COLOR)
+                painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(tw + 20), int(fm.height() + 12), 6, 6)
+            a_col = COLOR_P if "ON" in apply_val else COLOR_B_EMG
+            draw_text_with_outline(painter, apply_val, self.font_menu, a_col, COLOR_WHITE, cx, r_y, "left", passes=8)
+            cx += tw + 15
+            
+            draw_text_with_outline(painter, "/", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+            cx += fm.horizontalAdvance("/") + 15
+            
+            # 緩和
+            draw_text_with_outline(painter, "緩和", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+            cx += fm.horizontalAdvance("緩和") + 15
+            
+            rel_val = rule["release"]
+            tw_rel = fm.horizontalAdvance(rel_val)
+            if sub_cursor == r_idx and sub_cursor_x == idx_release and not getattr(self, 'dropdown_active', False):
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(HIGHLIGHT_COLOR)
+                painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(tw_rel + 20), int(fm.height() + 12), 6, 6)
+            r_col = COLOR_P if "ON" in rel_val else COLOR_B_EMG
+            draw_text_with_outline(painter, rel_val, self.font_menu, r_col, COLOR_WHITE, cx, r_y, "left", passes=8)
+
+        if sub_scroll + 5 < len(init_rules):
+            draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, sub_col_summary_x, sub_list_y_start + (5 * 70) + 10, "center", passes=8)
+        
+        row_undo = len(init_rules) if len(init_rules) > 1 else -1
+        row_done = len(init_rules) + 1 if len(init_rules) > 1 else len(init_rules)
+        
+        btn_base_y = sub_list_y_start + (5 * 70) + 40 
+        if row_undo != -1:
+            draw_menu_item("１つ前の設定を修正する (この行を削除)", btn_base_y, (sub_cursor == row_undo), row_undo, "center")
+        draw_menu_item("設定完了", btn_base_y + 80, (sub_cursor == row_done), row_done, "center")
+
+        # 説明文
+        desc_y = btn_base_y + 130
+        desc_h = 135 
+        painter.setPen(QPen(QColor(150, 150, 150), 2))
+        painter.setBrush(QColor(20, 20, 20, 220))
+        painter.drawRoundedRect(150, int(desc_y), 1620, int(desc_h), 10, 10)
+        desc_text = "ON① : 全区間で採点を行います。\nON② : 停車駅採点範囲内（停止位置目標の付近）での操作は減点免除となります。\nOFF  : 採点を行いません。"
+        for j, line in enumerate(desc_text.split('\n')):
+            draw_text_with_outline(painter, line, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, 180, desc_y + 40 + (j * 40), "left", passes=8)
+
+    if getattr(self, 'dropdown_active', False) and len(getattr(self, 'dropdown_options', [])) > 0:
         fm = QFontMetrics(self.font_menu)
         max_w = max([fm.horizontalAdvance(opt["name"]) for opt in self.dropdown_options]) + 60
         box_w = max(250, max_w) 
         
-        visible_opts = self.dropdown_options[self.dropdown_scroll : self.dropdown_scroll + 7]
+        visible_opts = self.dropdown_options[getattr(self, 'dropdown_scroll', 0) : getattr(self, 'dropdown_scroll', 0) + 7]
         row_h = fm.height() + 16
         box_h = row_h * len(visible_opts) + 20
         
@@ -797,13 +1139,13 @@ def draw_menu(self, painter, logical_width):
         painter.setBrush(QColor(20, 20, 20, 240))
         painter.drawRoundedRect(int(start_x), int(start_y), int(box_w), int(box_h), 8, 8)
         
-        if self.dropdown_scroll > 0:
+        if getattr(self, 'dropdown_scroll', 0) > 0:
             draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, start_y - 10, "center", passes=8)
             
         for i, opt in enumerate(visible_opts):
-            actual_idx = self.dropdown_scroll + i
+            actual_idx = getattr(self, 'dropdown_scroll', 0) + i
             item_y = start_y + 10 + (i * row_h)
-            if actual_idx == self.dropdown_cursor:
+            if actual_idx == getattr(self, 'dropdown_cursor', 0):
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(HIGHLIGHT_COLOR)
                 painter.drawRoundedRect(int(start_x + 5), int(item_y), int(box_w - 10), int(row_h), 4, 4)
@@ -811,7 +1153,7 @@ def draw_menu(self, painter, logical_width):
             text_y_base = item_y + fm.ascent() + 8
             draw_text_with_outline(painter, opt["name"], self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, text_y_base, "center", passes=8)
             
-        if self.dropdown_scroll + 7 < len(self.dropdown_options):
+        if getattr(self, 'dropdown_scroll', 0) + 7 < len(getattr(self, 'dropdown_options', [])):
             draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, start_y + box_h + 47, "center", passes=8)
 
     painter.restore()

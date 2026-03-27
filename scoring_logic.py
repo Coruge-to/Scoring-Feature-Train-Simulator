@@ -324,7 +324,7 @@ def update_physics_and_scoring(self, current_time, dt):
             self.roll_penalized = False
         else:
             if not self.roll_penalized:
-                if abs(self.bve_location - self.door_open_loc) >= 0.1: 
+                if abs(self.bve_location - self.door_open_loc) >= 0.05: 
                     add_score_popup(self, -500, "転動 -500", COLOR_B_EMG, "neg", "転動", current_time)
                     self.roll_penalized = True
     else:
