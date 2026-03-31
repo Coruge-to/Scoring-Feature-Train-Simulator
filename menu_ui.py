@@ -844,7 +844,7 @@ def draw_menu(self, painter, logical_width):
         draw_text_with_outline(painter, "初動ブレーキ", self.font_menu, COLOR_B_EMG, COLOR_WHITE, label_x, y_init, "left", passes=8)
         draw_text_with_outline(painter, "緩和ブレーキ", self.font_menu, COLOR_B_EMG, COLOR_WHITE, label_x, y_init + row_h, "left", passes=8)
         
-        change_x = label_x + fm.horizontalAdvance("初動ブレーキ　") 
+        change_x = label_x + 317
         change_text = "変更"
         text_w = fm.horizontalAdvance(change_text)
         is_focused = (self.menu_cursor == 5 and getattr(self, 'menu_cursor_x', 0) == 0 and not getattr(self, 'dropdown_active', False))
@@ -863,8 +863,7 @@ def draw_menu(self, painter, logical_width):
         
         is_summary_focused = (self.menu_cursor == 5 and getattr(self, 'menu_cursor_x', 0) == 1 and not getattr(self, 'dropdown_active', False))
         
-        # ★ サマリーの開始X座標を +20px オフセット
-        list_cx_start = val_x_start + 20
+        list_cx_start = val_x_start
 
         if is_summary_focused:
             painter.setPen(Qt.PenStyle.NoPen)
@@ -984,15 +983,16 @@ def draw_menu(self, painter, logical_width):
         painter.setBrush(QColor(0,0,0, 180))
         painter.drawRect(0,0, int(BASE_SCREEN_W), int(BASE_SCREEN_H))
         
-        sub_w, sub_h = 1700, 850
+        sub_w, sub_h = 1700, 940
         sub_x, sub_y = 110, (BASE_SCREEN_H - sub_h) / 2
+        SHIFT_Y = 30
         
         painter.setBrush(QColor(30, 30, 30, 240))
         painter.setPen(QPen(QColor(150, 150, 150), 3))
         painter.drawRoundedRect(int(sub_x), int(sub_y), int(sub_w), int(sub_h), 12, 12)
         
-        draw_text_with_outline(painter, "=== 初動・緩和ブレーキ 設定 ===", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, sub_y + 110, "center", passes=8)
-        
+        draw_text_with_outline(painter, "=== 初動・緩和ブレーキ 設定 ===", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, sub_y + 110 + SHIFT_Y, "center", passes=8)
+
         fm = QFontMetrics(self.font_menu)
         fixed_apply_w = fm.horizontalAdvance("ON①") 
         init_rules = getattr(self, 'penalty_init_rules', [{"apply": "ON①", "release": "ON①"}])
@@ -1013,9 +1013,9 @@ def draw_menu(self, painter, logical_width):
         sub_cursor_x = getattr(self, 'init_sub_cursor_x', 0)
 
         if sub_scroll > 0:
-            draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, sub_col_summary_x, sub_y + 170, "center", passes=8)
+            draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, sub_col_summary_x, sub_y + 170 + SHIFT_Y, "center", passes=8)
         
-        sub_list_y_start = sub_y + 240 
+        sub_list_y_start = sub_y + 240 + SHIFT_Y
         sta_start = get_sta_name(getattr(self, 'setting_start_idx', 0))
         sta_end = get_sta_name(getattr(self, 'setting_end_idx', -1))
 
@@ -1103,16 +1103,16 @@ def draw_menu(self, painter, logical_width):
             draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, sub_col_summary_x, sub_list_y_start + (5 * 70) + 10, "center", passes=8)
         
         row_done = len(getattr(self, 'brake_rules', []))
-        btn_base_y = sub_list_y_start + (5 * 70) + 40 
+        btn_base_y = sub_list_y_start + (5 * 70)
         draw_menu_item("設定完了", btn_base_y + 80, (sub_cursor == row_done), row_done, "center")
 
         # 説明文
-        desc_y = btn_base_y + 130
-        desc_h = 135 
+        desc_y = btn_base_y + 120
+        desc_h = 175 
         painter.setPen(QPen(QColor(150, 150, 150), 2))
         painter.setBrush(QColor(20, 20, 20, 220))
         painter.drawRoundedRect(150, int(desc_y), 1620, int(desc_h), 10, 10)
-        desc_text = "ON① : 全区間で採点を行います。\nON② : 停車駅採点範囲内（停止位置目標の付近）での操作は減点免除となります。\nOFF  : 採点を行いません。"
+        desc_text = "ON① : 全区間で採点を行います。\nON② : 停車駅採点範囲内（停止位置目標の付近）での操作は減点免除となります。\nOFF  : 採点を行いません。\n※残圧停車を行う路線では、緩和をON②またはOFFにしてください。"
         for j, line in enumerate(desc_text.split('\n')):
             draw_text_with_outline(painter, line, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, 180, desc_y + 40 + (j * 40), "left", passes=8)
 
