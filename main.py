@@ -63,7 +63,7 @@ class Overlay(QWidget):
         self.speed_penalty_score = 0
         self.last_penalty_time = 0.0
         
-        keys_to_track = ['0','1','2','3','4','5','6','7','8','9','f5','f6','p','up','down','left','right','enter','backspace', 'h']
+        keys_to_track = ['0','1','2','3','4','5','6','7','8','9','f5','f6','f8','p','up','down','left','right','enter','backspace', 'h']
         self.key_states = {k: False for k in keys_to_track}
         self.show_help = False # ★ ヘルプ表示フラグ
         
@@ -673,8 +673,8 @@ class Overlay(QWidget):
         elif self.menu_state == 2:
             max_idx = max(0, len(getattr(self, 'save_data', [])) - 1)
             if self.menu_cursor > max_idx: self.menu_cursor = max_idx
-            if self.menu_cursor >= getattr(self, 'menu_scroll', 0) + VISIBLE_LIST_COUNT:
-                self.menu_scroll = self.menu_cursor - VISIBLE_LIST_COUNT + 1
+            if self.menu_cursor >= getattr(self, 'menu_scroll', 0) + 7:
+                self.menu_scroll = self.menu_cursor - 7 + 1
         elif self.menu_state == 3:
             if self.menu_cursor > 1: self.menu_cursor = 0
         elif self.menu_state == 4:
@@ -1025,6 +1025,7 @@ class Overlay(QWidget):
         if getattr(self, 'show_help', False):
             self.show_help = False
             return
+        
         if self.menu_state == 5 and self.menu_cursor == 1 and getattr(self, 'input_mode_active', False):
             self.input_fresh = False 
             if len(getattr(self, 'input_buffer', "")) > 0: self.input_buffer = self.input_buffer[:-1]
@@ -1115,7 +1116,7 @@ class Overlay(QWidget):
         
         should_block_keys = (self.menu_state != 0) and is_bve_active
         if should_block_keys and not self.keys_blocked:
-            block_keys = ['0','1','2','3','4','5','6','7','8','9','p','up','down','left','right','enter','backspace', 'h']
+            block_keys = ['0','1','2','3','4','5','6','7','8','9','p','f8','up','down','left','right','enter','backspace', 'h']
             for k in block_keys:
                 self.hook_dict[k] = keyboard.on_press_key(k, lambda e: None, suppress=True)
             self.keys_blocked = True

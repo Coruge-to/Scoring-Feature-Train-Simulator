@@ -197,14 +197,11 @@ def update_physics_and_scoring(self, current_time, dt):
                 add_score_popup(self, -100, "停車時衝動 -100", COLOR_B_EMG, "neg", "停車時衝動", current_time)
             self.is_stopping_zone = False
             
-        self.max_stop_g = 0.0
         curr_n = self.bve_brk_notch
         self.hb_prev_notch = curr_n
         
     elif 0.0 < self.bve_speed <= 1.5:
         self.is_stopping_zone = True
-        if decel_g > self.max_stop_g:
-            self.max_stop_g = decel_g
             
     # ★ ここにあった if self.bve_speed > 0.0: を削除し、インデントを左に戻しました！
     is_eb_handle = (self.bve_brk_notch >= self.bve_brk_max or "非常" in self.bve_brk_text or "EB" in self.bve_brk_text.upper())

@@ -61,7 +61,7 @@ def draw_hud(self, painter, logical_width):
     if self.show_graph:
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(0, 0, 0, 150))
-        painter.drawRect(10, dbg_y - 20, 1100, len(dbg_texts) * 20 + 10)
+        painter.drawRect(10, dbg_y - 20, 950, len(dbg_texts) * 20 + 10)
 
         painter.setFont(QFont("sans-serif", 14, QFont.Weight.Bold))
         for i, text in enumerate(dbg_texts):

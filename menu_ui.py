@@ -83,17 +83,21 @@ def draw_menu(self, painter, logical_width):
         draw_text_with_outline(painter, val_text, self.font_normal, val_color, COLOR_WHITE, box_x - GLOBAL_BOX_X_OFFSET + box_w - 40, y, "right", passes=8)
         self.menu_click_zones.append((box_x, box_y, box_x + box_w, box_y + box_h, action_idx))
 
+    MAIN_SHIFT_Y = 25
+
     title_text = ""
     title_y = 200
-    if self.menu_state == 1: title_text = "=== メニュー ==="
+    if self.menu_state == 1:
+        title_text = "=== メニュー ==="
+        title_y = 315
     elif self.menu_state == 2: title_text = "=== 選択した駅からやり直す ==="
     elif self.menu_state == 4: title_text = "=== 環境設定 ==="
     elif self.menu_state in [5, 7]: 
         title_text = "=== 採点設定 (1/2) ==="
-        title_y = 100
+        title_y = 112 + MAIN_SHIFT_Y
     elif self.menu_state in [6, 9]: 
-        title_text = "=== 採点設定 (2/2) : 減点項目 ==="
-        title_y = 100
+        title_text = "=== 採点設定 (2/2) ==="
+        title_y = 112 + MAIN_SHIFT_Y
 
     if title_text and self.menu_state not in [3, 8]:
         draw_text_with_outline(painter, title_text, self.font_big, MENU_TEXT, MENU_OUTLINE, center_x, title_y, "center", passes=8)
@@ -112,22 +116,21 @@ def draw_menu(self, painter, logical_width):
     if self.menu_state == 1:
         items = self.menu_items_on if self.is_scoring_mode else self.menu_items_off
         for i, text in enumerate(items):
-            draw_menu_item(text, 350 + i * 80, (i == self.menu_cursor), i, "center")
+            draw_menu_item(text, 465 + i * 80, (i == self.menu_cursor), i, "center")
 
     elif self.menu_state == 2:
         SAVE_TITLE_Y = 200
         SAVE_NO_DATA_Y = 450
-        SAVE_ARROW_UP_Y = 260
-        SAVE_LIST_Y = 320
+        SAVE_ARROW_UP_Y = 290
+        SAVE_LIST_Y = 370
         SAVE_ROW_H = 80
-        SAVE_VISIBLE_COUNT = 6
-        SAVE_ARROW_DOWN_OFFSET = 30
+        SAVE_VISIBLE_COUNT = 7
         
         SAVE_COL_BOX_W = 1560
         SAVE_COL_BOX_X_OFFSET = 0
         
         SAVE_COL_STA_W = 380
-        SAVE_COL_POS_W = 300
+        SAVE_COL_POS_W = 310
         SAVE_COL_SCORE_W = 350
         SAVE_COL_TIME_W = 320
         SAVE_COL_GAP = 50
@@ -222,28 +225,38 @@ def draw_menu(self, painter, logical_width):
                 draw_kv_cell("時刻:", f"{h:02}:{m:02}:{s:02}", COL_TIME_L, SAVE_COL_TIME_W)
 
             if self.menu_scroll + SAVE_VISIBLE_COUNT < len(self.save_data):
-                draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, SAVE_LIST_Y + SAVE_VISIBLE_COUNT * SAVE_ROW_H + SAVE_ARROW_DOWN_OFFSET, "center", passes=8)
+                draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, SAVE_LIST_Y + SAVE_VISIBLE_COUNT * SAVE_ROW_H, "center", passes=8)
 
     elif self.menu_state == 3:
+        CONFIRM_SHIFT_Y = 50 # ★ ここの数字で上下にエレベーター移動します
+
         cp = self.save_data[self.target_retry_idx]
         msg = f"【 {cp.get('station_name', '駅')} 】からやり直しますか？"
         fm_big = QFontMetrics(self.font_big)
         max_msg_w = 1700
         actual_w = fm_big.horizontalAdvance(msg)
         
+        # ★ ここで基準となるY座標を定義し、SHIFT分を足し込む
+        msg_y = 350 + CONFIRM_SHIFT_Y
+        warn_y = 450 + CONFIRM_SHIFT_Y
+        btn_start_y = 600 + CONFIRM_SHIFT_Y
+        
         if actual_w > max_msg_w:
             sr = max_msg_w / actual_w
-            cy = 350 - fm_big.ascent() + fm_big.height() / 2.0
+            # ★ 350 だった部分を msg_y に変更
+            cy = msg_y - fm_big.ascent() + fm_big.height() / 2.0
             painter.save()
             painter.translate(center_x, cy)
             painter.scale(sr, sr)
             painter.translate(-center_x, -cy)
-            draw_text_with_outline(painter, msg, self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 350, "center", passes=8)
+            draw_text_with_outline(painter, msg, self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, msg_y, "center", passes=8)
             painter.restore()
         else:
-            draw_text_with_outline(painter, msg, self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 350, "center", passes=8)
+            # ★ 350 だった部分を msg_y に変更
+            draw_text_with_outline(painter, msg, self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, msg_y, "center", passes=8)
             
-        draw_text_with_outline(painter, "※これ以降のセーブデータは破棄されます", self.font_normal, COLOR_B_EMG, COLOR_OUTLINE_BLACK, center_x, 450, "center", passes=8)
+        # ★ 450 だった部分を warn_y に変更
+        draw_text_with_outline(painter, "※これ以降のセーブデータは破棄されます", self.font_normal, COLOR_B_EMG, COLOR_WHITE, center_x, warn_y, "center", passes=8)
         
         self.menu_click_zones.clear()
         fm_normal = QFontMetrics(self.font_normal)
@@ -255,18 +268,17 @@ def draw_menu(self, painter, logical_width):
         for i, text in enumerate(["はい", "いいえ"]):
             draw_x = center_x
             box_x = center_x - (fixed_box_w / 2) + box_offset_x
-            box_y = 600 + i * 80 - fm_normal.ascent() - 6 - (fm_normal.descent() // 2) + 1
+            # ★ 600 だった部分を btn_start_y に変更
+            box_y = btn_start_y + i * 80 - fm_normal.ascent() - 6 - (fm_normal.descent() // 2) + 1
             
             if i == self.menu_cursor:
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(QColor(30, 80, 150, 200))
                 painter.drawRoundedRect(int(box_x), int(box_y), int(fixed_box_w), int(fixed_box_h), 8, 8)
                 
-            draw_text_with_outline(painter, text, self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, draw_x, 600 + i * 80, "center", passes=8)
+            # ★ 600 だった部分を btn_start_y に変更
+            draw_text_with_outline(painter, text, self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, draw_x, btn_start_y + i * 80, "center", passes=8)
             self.menu_click_zones.append((box_x, box_y, box_x + fixed_box_w, box_y + fixed_box_h, i))
-
-        draw_text_with_outline(painter, "↑ ↓ : 選択  |  Enter / Click : 決定・切替", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 870, "center", passes=8)
-        draw_text_with_outline(painter, "Backspace : 戻る  |  F6 : 閉じる", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 930, "center", passes=8)
 
     elif self.menu_state == 4:
         for i in range(7):
@@ -283,7 +295,7 @@ def draw_menu(self, painter, logical_width):
         # ★ メイン設定画面 (1/2) のレイアウト微調整パラメータ
         # =========================================================
         MAIN_X_OFFSET = 50   
-        list_y_start  = 200
+        list_y_start  = 212 + MAIN_SHIFT_Y
         row_h         = 65
         label_x       = 100 + MAIN_X_OFFSET      
         val_x_start   = 550 + MAIN_X_OFFSET  
@@ -496,10 +508,10 @@ def draw_menu(self, painter, logical_width):
                 draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, col_summary_x, list_y_start + row_h*(4 + vis_rules), "center", passes=8)
 
             last_row = 5
-            btn_y = 720 
+            btn_y = 830 
             draw_menu_item("次へ (減点項目の設定)", btn_y, (self.menu_cursor == last_row and getattr(self, 'menu_cursor_x', 0) == -1), last_row, "center")
 
-            desc_y = 770 
+            desc_y = 870 
             desc_h = 135 
             painter.setPen(QPen(QColor(150, 150, 150), 2))
             painter.setBrush(QColor(20, 20, 20, 220))
@@ -511,16 +523,16 @@ def draw_menu(self, painter, logical_width):
                 0: "【 採点区間 】\n採点を行う区間を設定します。\n（※デフォルト:始発駅～終着駅）",
                 1: f"【 停車駅採点範囲 】\n停車駅において、採点を行う停止位置からの距離を設定します。キーボードで数値入力が可能です。\n列車長より短い値は入力できません。（※列車長 {tl} m ＋ マージン {max(0, actual_margin - tl)} m ＝ 判定距離 {actual_margin} m）",
                 2: "【 運転時分 】\n指定された採時駅への到着・出発時刻の正確さを採点します。\n（※0～±9秒 : 300点、±10～±19秒 : 200点、±20秒～±29秒 : 100点、±30秒～ : 0点）",
-                3: "【 停止位置 】\n停車駅での停止位置の正確さを採点します。誤差0.00 mに近いほど高得点になります。\n （※許容範囲に停車した時、停止位置x[m]とすると、点数y = 500 × (1 - x)）",
+                3: "【 停止位置 】\n停車駅での停止位置の正確さを採点します。誤差0.00 mに近いほど高得点になります。\n（※許容範囲に停車した時、停止位置x[m]とすると、点数y = 500 × (1 - x)）",
                 4: "【 基本制動 】\n駅に停車する際、指定された回数で制動・緩め操作が行われたかを採点します。\n（※基本制動の条件を満たすと500点、さらに0.00 mに停車した場合はボーナス500点）",
                 last_row: "次の設定ページ（減点項目の設定）へ進みます。"
             }
             
             desc_text = ""
             if self.menu_cursor == 2 and getattr(self, 'menu_cursor_x', 0) == 0:
-                desc_text = "【 運転時分 設定 】\n駅ごとの採時 / 非採時の設定を個別に変更します。\n（※採点開始駅は非採時で固定されます）"
+                desc_text = "【 運転時分 設定 】\n駅ごとの採時 / 非採時の設定を変更します。\n（※採点開始駅は非採時で固定）"
             elif self.menu_cursor == 4 and getattr(self, 'menu_cursor_x', 0) == 0:
-                desc_text = "【 基本制動 設定 】\n特定区間だけ異なる基本制動ルールを適用したい場合に追加・編集します。\nルールはチェーン（数珠繋ぎ）になります。"
+                desc_text = "【 基本制動 設定 】\n区間ごとに異なる基本制動のルールを適用したい場合に追加・編集します。\nルールは区間別の数珠繋ぎになります。"
             else:
                 desc_text = desc_dict.get(self.menu_cursor, "")
 
@@ -789,7 +801,7 @@ def draw_menu(self, painter, logical_width):
     # ==========================================================
     elif self.menu_state == 6:
         MAIN_X_OFFSET = 50   
-        list_y_start  = 200
+        list_y_start  = 212 + MAIN_SHIFT_Y
         row_h         = 65
         
         # ★ 1/2と位置を完全に同期
@@ -938,29 +950,29 @@ def draw_menu(self, painter, logical_width):
             draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, col_summary_x, y_init + row_h*vis_rules, "center", passes=8)
         
         # 6: 採点開始 (前へを廃止し中央へ)
-        btn_y = 760
+        btn_y = 830
         draw_menu_item("採点を開始する", btn_y, (self.menu_cursor == 6 and getattr(self, 'menu_cursor_x', 0) == -1), 6, "center", x_offset=0)
 
         # 説明文
-        desc_y = 820 
+        desc_y = 870 
         desc_h = 135 
         painter.setPen(QPen(QColor(150, 150, 150), 2))
         painter.setBrush(QColor(20, 20, 20, 220))
         painter.drawRoundedRect(150, int(desc_y), 1620, int(desc_h), 10, 10)
 
         desc_dict = {
-            0: "【 転動 】\nドア開扉中に車両が動いた際の減点（-500点）です。（※常に有効）",
-            1: "【 ATS信号無視 】\nATS確認等を行わず非常ブレーキが動作した際の減点（-500点）を有効にします。",
-            2: "【 速度制限超過 】\n速度制限・信号制限を超過した際の減点（超過秒数に応じた減点）を有効にします。",
-            3: "【 停車時衝動 】\n停車直前に強いブレーキが掛かっていた際の減点（-100〜-200点）を有効にします。",
-            4: "【 非常ブレーキ 】\n非常ブレーキを使用した際の減点（-500点）を有効にします。",
-            5: "【 初動・緩和ブレーキ 】\n特定区間だけ異なる初動・緩和ルールを適用したい場合に追加・編集します。\nルールはチェーン（数珠繋ぎ）になります。",
+            0: "【 転動 】\nドア開扉中に車両が完全に停止していたかを採点します。\n（※ドア開扉中に5cm以上動くと-500点）",
+            1: "【 ATS信号無視 】\n未実装\n（※保安装置が働く度に-500点）",
+            2: "【 速度制限超過 】\n速度制限・信号制限を守ったかを採点します。\n（※1秒毎に超過した速度(km/h)を累積減点）",
+            3: "【 停車時衝動 】\n列車が完全に停止する際のショックの大きさを停止直前の0.5秒におけるGの平均値により採点します。\n（※0.06G≒2.1km/h/s以上で-100点、0.10G≒3.5km/h/s以上で-200点）",
+            4: "【 非常ブレーキ 】\n走行中に非常ブレーキを使用したかどうかを採点します。\n（※非常ブレーキを使用するごとに-500点）",
+            5: "【 初動・緩和ブレーキ 】\n基本制動のルールを設定した区間ごとに、\n異なる初動・緩和ブレーキのルールを適用したい場合に追加・編集します。",
             6: "現在の設定内容で採点を開始します。"
         }
         
         desc_text = ""
         if self.menu_cursor == 5 and getattr(self, 'menu_cursor_x', 0) == 0:
-            desc_text = "【 初動・緩和ブレーキ 設定 】\n特定区間だけ異なる初動・緩和ルールを適用したい場合に追加・編集します。\n基本制動で区切られた区間ごとに、ON①/ON②/OFFの切り替えを行います。"
+            desc_text = "【 初動・緩和ブレーキ 設定 】\n特定区間だけ異なる初動・緩和ルールを適用したい場合に追加・編集します。\n基本制動のルールを設定した区間ごとに、ON①/ON②/OFFの切り替えを行います。"
         else:
             desc_text = desc_dict.get(self.menu_cursor, "")
 
@@ -1150,8 +1162,10 @@ def draw_menu(self, painter, logical_width):
             
             draw_text_with_outline(painter, "=== 操作説明 ===", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, win_y + 60, "center", passes=8)
             
+            move_keys = "↑↓" if self.menu_state in [1, 2, 3] else "↑↓←→"
+            
             help_items = [
-                ("↑↓←→", "移動"),
+                (move_keys, "移動"),
                 ("Enter", "決定"),
                 ("Backspace", "戻る"),
                 ("F6", "閉じる")
