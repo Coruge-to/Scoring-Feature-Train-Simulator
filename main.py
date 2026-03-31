@@ -63,8 +63,9 @@ class Overlay(QWidget):
         self.speed_penalty_score = 0
         self.last_penalty_time = 0.0
         
-        keys_to_track = ['0','1','2','3','4','5','6','7','8','9','f5','f6','p','up','down','left','right','enter','backspace']
+        keys_to_track = ['0','1','2','3','4','5','6','7','8','9','f5','f6','p','up','down','left','right','enter','backspace', 'h']
         self.key_states = {k: False for k in keys_to_track}
+        self.show_help = False # ★ ヘルプ表示フラグ
         
         self.eb_applied = False
         self.smee_eb_frozen = False
@@ -1020,6 +1021,10 @@ class Overlay(QWidget):
         self.dropdown_active = False
 
     def handle_menu_backspace(self, is_bve_advancing):
+        # ★ 新規追加: ヘルプ画面が開いている場合は、ヘルプを閉じるだけで戻らない
+        if getattr(self, 'show_help', False):
+            self.show_help = False
+            return
         if self.menu_state == 5 and self.menu_cursor == 1 and getattr(self, 'input_mode_active', False):
             self.input_fresh = False 
             if len(getattr(self, 'input_buffer', "")) > 0: self.input_buffer = self.input_buffer[:-1]
@@ -1110,7 +1115,7 @@ class Overlay(QWidget):
         
         should_block_keys = (self.menu_state != 0) and is_bve_active
         if should_block_keys and not self.keys_blocked:
-            block_keys = ['0','1','2','3','4','5','6','7','8','9','p','up','down','left','right','enter','backspace']
+            block_keys = ['0','1','2','3','4','5','6','7','8','9','p','up','down','left','right','enter','backspace', 'h']
             for k in block_keys:
                 self.hook_dict[k] = keyboard.on_press_key(k, lambda e: None, suppress=True)
             self.keys_blocked = True
@@ -1136,6 +1141,9 @@ class Overlay(QWidget):
                 for zone in self.menu_click_zones:
                     x1, y1, x2, y2, action_idx = zone
                     if x1 <= lx <= x2 and y1 <= ly <= y2:
+                        if action_idx == 999: # ★ ヘルプボタンが押された場合
+                            self.show_help = not getattr(self, 'show_help', False)
+                            break
                         self.menu_cursor = action_idx
                         self.menu_cursor_x = -1
                         self.handle_menu_enter(is_bve_advancing)
@@ -1155,6 +1163,8 @@ class Overlay(QWidget):
                             self.input_buffer += key
                             
                 elif key == 'f6': self.toggle_menu(is_bve_advancing)
+                elif key == 'h' and self.menu_state != 0: # ★ Hキーが押された場合
+                    self.show_help = not getattr(self, 'show_help', False)
                 elif self.menu_state != 0:
                     if self.dropdown_active:
                         if key == 'up':

@@ -98,14 +98,6 @@ def draw_menu(self, painter, logical_width):
     if title_text and self.menu_state not in [3, 8]:
         draw_text_with_outline(painter, title_text, self.font_big, MENU_TEXT, MENU_OUTLINE, center_x, title_y, "center", passes=8)
 
-    if self.menu_state not in [3, 8]:
-        if self.menu_state in [5, 6, 7, 9]:
-            draw_text_with_outline(painter, "↑ ↓ ← → : 選択  |  Enter / Click : 決定・リスト開閉", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 980, "center", passes=8)
-            draw_text_with_outline(painter, "Backspace : 戻る / 白紙入力(項目削除)  |  F6 : 閉じる", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 1030, "center", passes=8)
-        else:
-            draw_text_with_outline(painter, "↑ ↓ : 選択  |  Enter / Click : 決定・切替", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 980, "center", passes=8)
-            draw_text_with_outline(painter, "Backspace : 戻る  |  F6 : 閉じる", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, 1030, "center", passes=8)
-
     def get_sta_name(idx):
         if not getattr(self, 'station_list', []): return "データ未受信"
         if idx == -1:
@@ -1115,6 +1107,67 @@ def draw_menu(self, painter, logical_width):
         desc_text = "ON① : 全区間で採点を行います。\nON② : 停車駅採点範囲内（停止位置目標の付近）での操作は減点免除となります。\nOFF  : 採点を行いません。\n※残圧停車を行う路線では、緩和をON②またはOFFにしてください。"
         for j, line in enumerate(desc_text.split('\n')):
             draw_text_with_outline(painter, line, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, 180, desc_y + 40 + (j * 40), "left", passes=8)
+
+    # ==========================================================
+    # ★ 新規追加: 操作説明（ヘルプ）ボタンと小ウィンドウの描画
+    # ==========================================================
+    if self.menu_state not in [0, 3, 8]:
+        # 画面右下にヘルプボタンを描画
+        help_text = "操作説明 : H"
+        fm_help = QFontMetrics(self.font_desc)
+        hw = fm_help.horizontalAdvance(help_text) + 30
+        hh = fm_help.height() + 10
+        
+        # ★ ウィンドウサイズが変わっても「常に右下」に追従させるための逆算ロジック
+        logical_right = self.width() / (2 * menu_scale) + BASE_SCREEN_W / 2
+        logical_bottom = self.height() / (2 * menu_scale) + BASE_SCREEN_H / 2
+        
+        hx = logical_right - hw - 10
+        hy = logical_bottom - hh - 10
+        
+        painter.setPen(QPen(QColor(200, 200, 200), 2))
+        painter.setBrush(QColor(50, 50, 50, 200))
+        painter.drawRoundedRect(int(hx), int(hy), int(hw), int(hh), 5, 5)
+        draw_text_with_outline(painter, help_text, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, hx + 15, hy + fm_help.ascent() + 5, "left", passes=8)
+        
+        self.menu_click_zones.append((hx, hy, hx + hw, hy + hh, 999))
+        
+        if getattr(self, 'show_help', False):
+            # 画面全体を暗転（どんなサイズでも覆えるように巨大な矩形を描画）
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(0, 0, 0, 180))
+            painter.drawRect(-2000, -2000, 6000, 6000)
+
+            # 小ウィンドウのサイズと位置
+            win_w, win_h = 500, 330
+            win_x = center_x - (win_w / 2)
+            win_y = (BASE_SCREEN_H - win_h) / 2
+            
+            # 色を他のサブウィンドウと統一
+            painter.setBrush(QColor(30, 30, 30, 240))
+            painter.setPen(QPen(QColor(150, 150, 150), 3))
+            painter.drawRoundedRect(int(win_x), int(win_y), int(win_w), int(win_h), 12, 12)
+            
+            draw_text_with_outline(painter, "=== 操作説明 ===", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, win_y + 60, "center", passes=8)
+            
+            help_items = [
+                ("↑↓←→", "移動"),
+                ("Enter", "決定"),
+                ("Backspace", "戻る"),
+                ("F6", "閉じる")
+            ]
+            
+            # コロンのX座標を固定して縦を揃える
+            colon_x = center_x + 45 
+            
+            for i, (left_text, right_text) in enumerate(help_items):
+                y_pos = win_y + 140 + i * 55
+                # 左側（キー操作）を右揃え
+                draw_text_with_outline(painter, left_text, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, colon_x - 20, y_pos, "right", passes=8)
+                # 中央のコロン
+                draw_text_with_outline(painter, ":", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, colon_x, y_pos, "center", passes=8)
+                # 右側（説明）を左揃え
+                draw_text_with_outline(painter, right_text, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, colon_x + 20, y_pos, "left", passes=8)
 
     if getattr(self, 'dropdown_active', False) and len(getattr(self, 'dropdown_options', [])) > 0:
         fm = QFontMetrics(self.font_menu)
