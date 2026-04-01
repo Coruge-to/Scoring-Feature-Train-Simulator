@@ -430,7 +430,7 @@ def update_physics_and_scoring(self, current_time, dt):
     self.prev_term = self.bve_term
     self.prev_diff_s = diff_s
 
-    # ------------------ ここから下を上書き ------------------
+   # ------------------ ここから下を上書き ------------------
     true_map_limit = self.map_tail_limit 
     self.effective_limit = min(true_map_limit, self.bve_signal_limit)
     base_limit = self.effective_limit 
@@ -492,26 +492,24 @@ def update_physics_and_scoring(self, current_time, dt):
             
             v_assumed = max(val, min(peak_speed, v_apex))
             
-            # 【賢いターゲット選択】
+            # 【賢いターゲット選択】鶴さんのオリジナル（完璧な状態）を復元
             if val < target_val:
                 if (target_val - val) > 10.0:
-                    # ★ 修正: target_val が 1000(---) の時はターゲットの格下げを禁止する！
-                    # これにより「---青点滅」が維持され、赤点滅ロジックも確実に作動します。
-                    if target_val < 999.0:
-                        available_dist = dist_of_hill if (is_waiting_tail and target_val > base_limit) else (loc - self.bve_location)
-                        if available_dist < 0: available_dist = 0
-                        
-                        _, warn_dist_apex = calculate_warning_distance(v_apex, val)
-                        if available_dist <= warn_dist_apex or v_apex <= val + 2.0:
-                            target_val = val
-                            target_type = l_type
-                            target_loc = loc
+                    available_dist = dist_of_hill if (is_waiting_tail and target_val > base_limit) else (loc - self.bve_location)
+                    if available_dist < 0: available_dist = 0
+                    
+                    _, warn_dist_apex = calculate_warning_distance(v_apex, val)
+                    if available_dist <= warn_dist_apex or v_apex <= val + 2.0:
+                        target_val = val
+                        target_type = l_type
+                        target_loc = loc
                             
             if v_assumed <= val and target_val > val:
                 v_assumed = target_val
                         
+            # 【赤点滅判定】本来の v_assumed 比較に戻し、--- の時だけ calc_v をすり替える
             if val < v_assumed:
-                # ★ 鶴さん考案：val + 1.0 による「接近アラーム」ロジック
+                # ★ val + 1.0 による「接近アラーム」ロジック
                 if self.effective_limit >= 999.0 or target_val >= 999.0:
                     calc_v = max(self.bve_speed, val + 1.0)
                 else:
@@ -524,9 +522,19 @@ def update_physics_and_scoring(self, current_time, dt):
                     if not active_red or urgency < active_red['urgency']:
                         active_red = {'val': val, 'dist': dist_to_limit, 'decel_dist': decel_dist, 'urgency': urgency, 'type': l_type}
 
+    # =================================================================
+    # ★ ナビゲーション青点滅ロジック
+    # =================================================================
     active_blue = None
-    if target_val > self.effective_limit: 
-        is_capped = (target_val != min(self.map_head_limit, self.bve_signal_limit)) if is_waiting_tail else False
+    is_standard_up = target_val > self.effective_limit
+    is_nav_up = (self.effective_limit >= 999.0 and target_val > self.bve_speed and target_val < 999.0)
+
+    if is_standard_up or is_nav_up: 
+        if is_nav_up:
+            is_capped = True
+        else:
+            is_capped = (target_val != min(self.map_head_limit, self.bve_signal_limit)) if is_waiting_tail else False
+            
         dist_for_blue = (target_loc - self.bve_location) if is_capped else max(1.0, self.bve_clear_dist)
         active_blue = {'val': target_val, 'dist': max(1.0, dist_for_blue), 'type': target_type}
 
@@ -535,7 +543,7 @@ def update_physics_and_scoring(self, current_time, dt):
     self.dbg_blue = str(active_blue['val']) if active_blue else "None"
 
     # =================================================================
-    # ★ 鶴さん考案：予告機能の最終決定と停車中ストッパー
+    # ★ 予告機能の最終決定と停車中ストッパー
     # =================================================================
     self.blink_active = False
     self.target_type = self.base_limit_type
