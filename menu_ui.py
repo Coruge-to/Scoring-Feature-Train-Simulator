@@ -1140,7 +1140,9 @@ def draw_menu(self, painter, logical_width):
         painter.setPen(QPen(QColor(200, 200, 200), 2))
         painter.setBrush(QColor(50, 50, 50, 200))
         painter.drawRoundedRect(int(hx), int(hy), int(hw), int(hh), 5, 5)
-        draw_text_with_outline(painter, help_text, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, hx + 15, hy + fm_help.ascent() + 5, "left", passes=8)
+        text_y_offset = 2  # ★この数値を 2 や 4 などに変えることで、文字だけが上下します
+        
+        draw_text_with_outline(painter, help_text, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, hx + 15, hy + fm_help.ascent() + 5 + text_y_offset, "left", passes=8)
         
         self.menu_click_zones.append((hx, hy, hx + hw, hy + hh, 999))
         

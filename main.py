@@ -399,6 +399,17 @@ class Overlay(QWidget):
                         if getattr(self, 'needs_margin_recalc', False) or self.setting_stop_distance == -1:
                             self.setting_stop_distance = int(self.bve_train_length) * 2
                             self.needs_margin_recalc = False
+
+                    elif part.startswith("MAPLIMITS:"):
+                        limits_str = part.split(':', 1)[1]
+                        parsed_limits = []
+                        if limits_str:
+                            for pair in limits_str.split('_'):
+                                try:
+                                    l, v = pair.split('=')
+                                    parsed_limits.append((float(l), float(v)))
+                                except: pass
+                        self.bve_map_limits = parsed_limits
                             
                     elif part.startswith("FWDSIGLIMIT:"): self.bve_fwd_sig_limit = float(part.split(':')[1])
                     elif part.startswith("FWDSIGLOC:"): self.bve_fwd_sig_loc = float(part.split(':')[1])
