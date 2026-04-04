@@ -25,6 +25,10 @@ def execute_retry(self, index, is_bve_advancing):
     self.save_data = self.save_data[:index + 1]
     cp = self.save_data[-1]
     self.score = cp["score"]
+
+    self.bve_door = 0
+    self.prev_door = 0
+
     self.rollback_msg = f">>> {cp.get('station_name', '駅')} へロールバック完了 <<<"
     self.rollback_msg_timer = self.bve_time_ms / 1000.0 + 5.0
     
