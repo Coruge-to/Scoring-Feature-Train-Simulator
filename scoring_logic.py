@@ -5,8 +5,9 @@ from PyQt6.QtNetwork import QHostAddress
 def execute_retry(self, index, is_bve_advancing):
     if index < 0 or index >= len(self.save_data): return
     
-    # 始発駅（最初のセーブデータ）へのリトライかどうかを判定
-    is_first_station_retry = (index == 0)
+    # ★ 修正：セーブデータの最初（index == 0）かつ、採点設定で選んだ駅が「本当の始発駅（0）」の時だけ JUMP_STA を使う！
+    # それ以外（途中駅から開始した場合や、途中駅へのロールバック）はすべて普通の時刻表ジャンプ（RETRY）を使う。
+    is_absolute_first_station = (index == 0 and getattr(self, 'setting_start_idx', -1) == 0)
     
     self.save_data = self.save_data[:index + 1]
     cp = self.save_data[-1]
@@ -16,8 +17,7 @@ def execute_retry(self, index, is_bve_advancing):
     
     self.toggle_menu(is_bve_advancing)
     
-    # ★ 修正：始発駅なら JUMP_STA を、それ以外なら RETRY を送信する
-    if is_first_station_retry:
+    if is_absolute_first_station:
         retry_cmd = "JUMP_STA:0"
     else:
         retry_cmd = f"RETRY:{cp['target_loc']}:{cp['time_ms']}"
