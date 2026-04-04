@@ -4,6 +4,10 @@ from PyQt6.QtNetwork import QHostAddress
 
 def execute_retry(self, index, is_bve_advancing):
     if index < 0 or index >= len(self.save_data): return
+    
+    # 始発駅（最初のセーブデータ）へのリトライかどうかを判定
+    is_first_station_retry = (index == 0)
+    
     self.save_data = self.save_data[:index + 1]
     cp = self.save_data[-1]
     self.score = cp["score"]
@@ -11,7 +15,13 @@ def execute_retry(self, index, is_bve_advancing):
     self.rollback_msg_timer = self.bve_time_ms / 1000.0 + 5.0
     
     self.toggle_menu(is_bve_advancing)
-    retry_cmd = f"RETRY:{cp['target_loc']}:{cp['time_ms']}"
+    
+    # ★ 修正：始発駅なら JUMP_STA を、それ以外なら RETRY を送信する
+    if is_first_station_retry:
+        retry_cmd = "JUMP_STA:0"
+    else:
+        retry_cmd = f"RETRY:{cp['target_loc']}:{cp['time_ms']}"
+        
     self.udp_socket.writeDatagram(retry_cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)
 
 def add_score_popup(self, points, text, color, ptype, category, current_time):
