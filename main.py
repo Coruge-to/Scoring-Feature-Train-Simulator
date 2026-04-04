@@ -851,6 +851,15 @@ class Overlay(QWidget):
                 getattr(self, 'popups', []).clear()
                 self.debug_all_penalties = False
                 
+                self.expected_jump = True
+
+                self.is_first_station = True
+                self.has_departed = False
+                self.is_approaching = False
+                self.is_stopped_out_of_range = False
+                self.has_scored_time_this_station = False
+                self.has_scored_stop_this_station = False
+                
                 start_loc = 0.0
                 start_sta_name = "不明な駅"
                 target_time_ms = -1
@@ -1124,6 +1133,19 @@ class Overlay(QWidget):
         if self.bve_time_ms != self.last_bve_time_ms:
             self.last_time_change_real = time.time()
         is_bve_advancing = (time.time() - self.last_time_change_real) < 0.1
+
+        # =================================================================
+        # ★ 追加：F7キー（時刻表ジャンプ）の物理的ブロック
+        # 採点モード中かつBVEアクティブ時なら、常にF7を無効化する
+        # =================================================================
+        should_block_f7 = getattr(self, 'is_scoring_mode', False) and is_bve_active
+        if should_block_f7 and not getattr(self, 'f7_blocked', False):
+            self.f7_hook = keyboard.on_press_key('f7', lambda e: None, suppress=True)
+            self.f7_blocked = True
+        elif not should_block_f7 and getattr(self, 'f7_blocked', False):
+            if hasattr(self, 'f7_hook') and self.f7_hook:
+                keyboard.unhook(self.f7_hook)
+            self.f7_blocked = False
         
         should_block_keys = (self.menu_state != 0) and is_bve_active
         if should_block_keys and not self.keys_blocked:

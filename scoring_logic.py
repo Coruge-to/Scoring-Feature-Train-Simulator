@@ -5,9 +5,22 @@ from PyQt6.QtNetwork import QHostAddress
 def execute_retry(self, index, is_bve_advancing):
     if index < 0 or index >= len(self.save_data): return
     
-    # ★ 修正：セーブデータの最初（index == 0）かつ、採点設定で選んだ駅が「本当の始発駅（0）」の時だけ JUMP_STA を使う！
-    # それ以外（途中駅から開始した場合や、途中駅へのロールバック）はすべて普通の時刻表ジャンプ（RETRY）を使う。
     is_absolute_first_station = (index == 0 and getattr(self, 'setting_start_idx', -1) == 0)
+    
+    self.expected_jump = True
+    # 採点開始駅（index 0）以外へのやり直しなら、扉閉まり時の運転時分を許可する
+    self.is_official_retry = (index > 0)
+    
+    # =================================================================
+    # ★ 追加：やり直し時に列車の状態をリセットする
+    # index == 0 なら「最初の駅」として扱い、不正な採点を防ぐ
+    # =================================================================
+    self.is_first_station = (index == 0)
+    self.has_departed = False
+    self.is_approaching = False
+    self.is_stopped_out_of_range = False
+    self.has_scored_time_this_station = False
+    self.has_scored_stop_this_station = False
     
     self.save_data = self.save_data[:index + 1]
     cp = self.save_data[-1]
@@ -24,8 +37,9 @@ def execute_retry(self, index, is_bve_advancing):
         
     self.udp_socket.writeDatagram(retry_cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)
 
-def add_score_popup(self, points, text, color, ptype, category, current_time):
-    if not self.is_scoring_mode: return
+# ★ 修正：force=False パラメータを追加し、採点OFFでも強制表示できるようにする
+def add_score_popup(self, points, text, color, ptype, category, current_time, force=False):
+    if not self.is_scoring_mode and not force: return
     self.score += points
     self.popups.append({"text": text, "color": color, "expire_time": current_time + 5.0, "type": ptype, "category": category})
 
@@ -106,17 +120,20 @@ def evaluate_arrival(self, current_time):
         create_save_data(self)
 
 def evaluate_departure(self, current_time):
-    if not self.ignore_next_pass_score and not self.jump_lock and not self.is_first_station:
+    allow_score = not self.jump_lock or getattr(self, 'is_official_retry', False)
+    if not self.ignore_next_pass_score and allow_score and not self.is_first_station:
         if self.prev_is_pass == 1 and self.prev_is_timing == 1:
             if not self.has_scored_time_this_station:
                 apply_time_score(self, self.prev_diff_s, current_time)
                 self.has_scored_time_this_station = True
+                self.is_official_retry = False 
         elif self.prev_is_pass == 0 and self.prev_doordir == 0 and self.prev_is_timing == 1:
             if not self.has_scored_time_this_station:
                 d = self.prev_next_loc - self.bve_location
                 if (-self.bve_margin_f <= d <= self.bve_margin_b):
                     apply_time_score(self, self.prev_diff_s, current_time)
                     self.has_scored_time_this_station = True
+                    self.is_official_retry = False 
 
 def process_bb_transition(self, stable_notch):
     if stable_notch != self.bb_prev_stable_notch:
@@ -159,17 +176,6 @@ def update_physics_and_scoring(self, current_time, dt):
     self.g_history = [h for h in self.g_history if h[0] > cutoff_time]
 
     if self.bve_jump_count != self.last_jump_count:
-        self.jump_lock = True
-        
-        is_forward_jump = self.bve_location > (self.prev_frame_loc + 10.0)
-        if is_forward_jump: self.ignore_next_pass_score = True
-        else: self.ignore_next_pass_score = False
-            
-        self.blink_active = False
-        self.blink_phase = 0.0
-        if self.bve_door == 1: self.door_open_loc = self.bve_location
-        self.last_jump_count = self.bve_jump_count
-        
         self.g_history.clear()
         self.bcp_history.clear()
         self.popups.clear()
@@ -183,6 +189,24 @@ def update_physics_and_scoring(self, current_time, dt):
         self.hb_strong_entered = False
         self.has_evaluated_initial_brake = False
         self.idle_entered_while_stopped = False
+        
+        # ★ 修正：force=True で採点モードOFFでも警告ポップアップを表示
+        if not getattr(self, 'expected_jump', False) and getattr(self, 'is_scoring_mode', False):
+            self.is_scoring_mode = False
+            add_score_popup(self, 0, "不正なジャンプを検知しました。", COLOR_B_EMG, "big", "警告", current_time, force=True)
+            add_score_popup(self, 0, "採点を中断します。", COLOR_B_EMG, "big", "警告", current_time, force=True)
+        
+        self.expected_jump = False 
+        self.jump_lock = True
+        
+        is_forward_jump = self.bve_location > (self.prev_frame_loc + 10.0)
+        if is_forward_jump: self.ignore_next_pass_score = True
+        else: self.ignore_next_pass_score = False
+            
+        self.blink_active = False
+        self.blink_phase = 0.0
+        if self.bve_door == 1: self.door_open_loc = self.bve_location
+        self.last_jump_count = self.bve_jump_count
 
     in_station_zone = False
     if self.bve_next_loc >= 0 and self.bve_is_pass == 0:
@@ -213,7 +237,6 @@ def update_physics_and_scoring(self, current_time, dt):
     elif 0.0 < self.bve_speed <= 1.5:
         self.is_stopping_zone = True
             
-    # ★ ここにあった if self.bve_speed > 0.0: を削除し、インデントを左に戻しました！
     is_eb_handle = (self.bve_brk_notch >= self.bve_brk_max or "非常" in self.bve_brk_text or "EB" in self.bve_brk_text.upper())
     physical_eb_tripped = False
     
@@ -419,17 +442,22 @@ def update_physics_and_scoring(self, current_time, dt):
 
     if not is_operational_stop and self.prev_door == 0 and self.bve_door == 1:
         if self.bve_term == 1 and self.bve_is_timing == 1 and not self.has_scored_time_this_station:
-            if not self.jump_lock and not self.is_first_station:
+            # ★ 修正：ターミナル到着時の扉開け採点にもバイパスを適用
+            allow_score = not self.jump_lock or getattr(self, 'is_official_retry', False)
+            if allow_score and not self.is_first_station:
                 apply_time_score(self, diff_s, current_time)
+                self.is_official_retry = False
             self.has_scored_time_this_station = True
             
         evaluate_arrival(self, current_time)
         self.has_scored_stop_this_station = True
 
+    allow_score = not self.jump_lock or getattr(self, 'is_official_retry', False)
     if not is_operational_stop and self.prev_door == 1 and self.bve_door == 0:
         if self.prev_term == 0 and self.prev_is_timing == 1 and not self.has_scored_time_this_station:
-            if not self.jump_lock and not self.is_first_station:
+            if allow_score and not self.is_first_station:
                 apply_time_score(self, self.prev_diff_s, current_time)
+                self.is_official_retry = False 
             self.has_scored_time_this_station = True
 
     self.prev_next_loc = self.bve_next_loc
