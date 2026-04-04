@@ -185,7 +185,7 @@ def update_physics_and_scoring(self, current_time, dt):
         self.idle_entered_while_stopped = False
 
     in_station_zone = False
-    if self.bve_next_loc >= 0:
+    if self.bve_next_loc >= 0 and self.bve_is_pass == 0:
         actual_margin = self.setting_stop_distance if getattr(self, 'setting_stop_distance', -1) != -1 else (self.bve_train_length + STATION_MARGIN)
         dist_to_stop = self.bve_next_loc - self.bve_location
         if abs(dist_to_stop) <= actual_margin:
