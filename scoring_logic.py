@@ -430,12 +430,21 @@ def update_physics_and_scoring(self, current_time, dt):
     self.prev_term = self.bve_term
     self.prev_diff_s = diff_s
 
-   # ------------------ ここから下を上書き ------------------
-    true_map_limit = self.map_tail_limit 
-    self.effective_limit = min(true_map_limit, self.bve_signal_limit)
+# ------------------ ここから下を上書き ------------------
+    rnd_tail_limit = round(self.map_tail_limit, 1)
+    rnd_head_limit = round(self.map_head_limit, 1)
+    rnd_sig_limit  = round(self.bve_signal_limit, 1)
+    rnd_fwd_sig_limit = round(self.bve_fwd_sig_limit, 1)
+
+    true_map_limit = rnd_tail_limit 
+    self.effective_limit = min(true_map_limit, rnd_sig_limit)
     base_limit = self.effective_limit 
     
-    self.base_limit_type = "signal" if self.bve_signal_limit < true_map_limit else "map"
+    self.base_limit_type = "signal" if rnd_sig_limit < true_map_limit else "map"
+
+    if self.bve_speed == 0.0:
+        self.prev_base_limit = base_limit
+        self.limit_changed_loc = self.bve_location
 
     if self.current_base_limit != base_limit:
         if self.current_base_limit < 999.0: 
@@ -445,19 +454,19 @@ def update_physics_and_scoring(self, current_time, dt):
 
     future_targets = []
     for loc, val in self.bve_map_limits:
-        future_targets.append((loc, val, "map"))
+        future_targets.append((loc, round(val, 1), "map"))
         
-    if self.bve_fwd_sig_loc > self.bve_location and self.bve_fwd_sig_limit < 999.0:
-        future_targets.append((self.bve_fwd_sig_loc, self.bve_fwd_sig_limit, "signal"))
+    if self.bve_fwd_sig_loc > self.bve_location and rnd_fwd_sig_limit < 999.0:
+        future_targets.append((self.bve_fwd_sig_loc, rnd_fwd_sig_limit, "signal"))
         
     future_targets.sort(key=lambda x: x[0])
 
-    is_waiting_tail = (self.map_tail_limit < self.map_head_limit)
+    is_waiting_tail = (rnd_tail_limit < rnd_head_limit)
     self.dbg_is_wait = is_waiting_tail
 
     if is_waiting_tail:
-        target_val = min(self.map_head_limit, self.bve_signal_limit)
-        target_type = "signal" if self.bve_signal_limit < self.map_head_limit else "map"
+        target_val = min(rnd_head_limit, rnd_sig_limit)
+        target_type = "signal" if rnd_sig_limit < rnd_head_limit else "map"
         target_loc = self.bve_location + self.bve_clear_dist
     else:
         target_val = self.effective_limit
@@ -465,76 +474,70 @@ def update_physics_and_scoring(self, current_time, dt):
         target_loc = self.bve_location
 
     active_red = None
+    running_base_speed = base_limit 
 
     for loc, val, l_type in future_targets:
         if loc > self.bve_location:
-            peak_speed = max(base_limit, target_val) if is_waiting_tail else base_limit
-            v_apex = peak_speed
-            entry_speed = base_limit
+            peak_speed = max(running_base_speed, target_val) if is_waiting_tail else running_base_speed
+            entry_speed = running_base_speed
             
             if peak_speed > val: 
-                if is_waiting_tail and target_val > base_limit:
+                if is_waiting_tail and target_val > running_base_speed:
                     dist_of_hill = (loc - self.bve_location) - self.bve_clear_dist
                     if dist_of_hill < 0: dist_of_hill = 0
-                    entry_speed = base_limit
+                    entry_speed = running_base_speed
                 else:
-                    if self.prev_base_limit < base_limit:
+                    if running_base_speed == base_limit and self.prev_base_limit < base_limit:
                         dist_of_hill = loc - self.limit_changed_loc
                         entry_speed = self.prev_base_limit
                     else:
                         dist_of_hill = 0
-                        entry_speed = base_limit
+                        entry_speed = running_base_speed
                         
                 if dist_of_hill > 0:
                     v_apex = calculate_apex_speed(entry_speed, peak_speed, dist_of_hill, val)
                 else:
                     v_apex = entry_speed
+            else:
+                v_apex = peak_speed
             
             v_assumed = max(val, min(peak_speed, v_apex))
             
-            # 【賢いターゲット選択】鶴さんのオリジナル（完璧な状態）を復元
+            # =================================================================
+            # ★ 究極の賢いターゲット選択：「すでに進んだ距離」を足し戻し、
+            # 走行中に距離が縮んで騙される現象を完全にシャットアウト！
+            # =================================================================
             if val < target_val:
-                if (target_val - val) > 10.0:
-                    available_dist = dist_of_hill if (is_waiting_tail and target_val > base_limit) else (loc - self.bve_location)
-                    if available_dist < 0: available_dist = 0
-                    
-                    _, warn_dist_apex = calculate_warning_distance(v_apex, val)
-                    if available_dist <= warn_dist_apex or v_apex <= val + 2.0:
-                        target_val = val
-                        target_type = l_type
-                        target_loc = loc
+                advanced_dist = max(0.0, self.bve_train_length - self.bve_clear_dist)
+                zone_length = (loc - self.bve_location) + advanced_dist
+                
+                # 浮動小数点の誤差を吸収するため +1.0m のマージンを取る
+                if is_waiting_tail and zone_length <= self.bve_train_length + 1.0:
+                    target_val = val
+                    target_type = l_type
+                    target_loc = loc
                             
-            if v_assumed <= val and target_val > val:
-                v_assumed = target_val
-                        
-            # 【赤点滅判定】本来の v_assumed 比較に戻し、--- の時だけ calc_v をすり替える
-            if val < v_assumed:
-                # ★ val + 1.0 による「接近アラーム」ロジック
-                if self.effective_limit >= 999.0 or target_val >= 999.0:
+            # 赤点滅判定
+            if val < peak_speed and val < self.effective_limit:
+                if running_base_speed >= 999.0 or target_val >= 999.0:
                     calc_v = max(self.bve_speed, val + 1.0)
                 else:
-                    calc_v = v_assumed
+                    calc_v = max(v_assumed, val + 1.0)
                 
                 decel_dist, warn_dist = calculate_warning_distance(calc_v, val)
                 dist_to_limit = loc - self.bve_location
+                
                 if dist_to_limit <= warn_dist:
                     urgency = dist_to_limit - decel_dist
-                    if not active_red or urgency < active_red['urgency']:
+                    if not active_red or val < active_red['val']:
                         active_red = {'val': val, 'dist': dist_to_limit, 'decel_dist': decel_dist, 'urgency': urgency, 'type': l_type}
 
-    # =================================================================
-    # ★ ナビゲーション青点滅ロジック
-    # =================================================================
-    active_blue = None
-    is_standard_up = target_val > self.effective_limit
-    is_nav_up = (self.effective_limit >= 999.0 and target_val > self.bve_speed and target_val < 999.0)
+            if val < running_base_speed:
+                running_base_speed = val
 
-    if is_standard_up or is_nav_up: 
-        if is_nav_up:
-            is_capped = True
-        else:
-            is_capped = (target_val != min(self.map_head_limit, self.bve_signal_limit)) if is_waiting_tail else False
-            
+    active_blue = None
+    if target_val > self.effective_limit: 
+        is_capped = (target_val != min(rnd_head_limit, rnd_sig_limit)) if is_waiting_tail else False
         dist_for_blue = (target_loc - self.bve_location) if is_capped else max(1.0, self.bve_clear_dist)
         active_blue = {'val': target_val, 'dist': max(1.0, dist_for_blue), 'type': target_type}
 
@@ -542,13 +545,9 @@ def update_physics_and_scoring(self, current_time, dt):
     self.dbg_red = str(active_red['val']) if active_red else "None"
     self.dbg_blue = str(active_blue['val']) if active_blue else "None"
 
-    # =================================================================
-    # ★ 予告機能の最終決定と停車中ストッパー
-    # =================================================================
     self.blink_active = False
     self.target_type = self.base_limit_type
 
-    # 0.1km/h以上（走行中）のときのみ予告（点滅）を許可する
     if self.bve_speed > 0.1:
         if active_red:
             self.disp_limit = active_red['val']
@@ -571,7 +570,6 @@ def update_physics_and_scoring(self, current_time, dt):
             self.disp_limit = self.effective_limit
             self.limit_color = COLOR_WHITE
     else:
-        # 停車中は現在の制限を固定表示（点滅させない）
         self.disp_limit = self.effective_limit
         self.limit_color = COLOR_WHITE
         self.blink_active = False
@@ -584,3 +582,22 @@ def update_physics_and_scoring(self, current_time, dt):
         self.blink_phase = 0.0
         
     self.prev_frame_loc = self.bve_location
+
+    """
+    # =================================================================
+    # ★ 原因究明用：デスクトップに Debug.log を出力するトラップ
+    # =================================================================
+    import os
+    debug_file = os.path.join(os.path.expanduser("~"), "Desktop", "Debug.log")
+    try:
+        # ファイルサイズが大きくなりすぎないよう、現在地が更新された時だけ出力
+        if not hasattr(self, 'last_debug_loc') or abs(self.bve_location - self.last_debug_loc) >= 0.5:
+            with open(debug_file, "a", encoding="utf-8") as f:
+                f.write(f"[{current_time:.1f}s] Loc:{self.bve_location:.1f}m | HeadLmt:{self.map_head_limit} TailLmt:{self.map_tail_limit} Eff:{self.effective_limit}\n")
+                f.write(f"    wait_tail:{is_waiting_tail} | tgt_val:{target_val} | clear_dist:{self.bve_clear_dist}\n")
+                f.write(f"    future:{future_targets[:2]}... (中略)\n") # 近い未来の制限だけ2つ出力
+                f.write(f"    RESULT -> TC:{self.dbg_target_cap} AB:{self.dbg_blue} AR:{self.dbg_red}\n\n")
+            self.last_debug_loc = self.bve_location
+    except Exception:
+        pass
+    """
