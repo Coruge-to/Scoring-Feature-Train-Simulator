@@ -455,11 +455,50 @@ def update_physics_and_scoring(self, current_time, dt):
             self.bb_is_stable = True
             process_bb_transition(self, self.bb_current_notch)
 
-    if getattr(self, 'is_speed_penalty', False):
-        if current_time - getattr(self, 'last_penalty_time', 0.0) >= 1.0:
-            if not getattr(self, 'is_scoring_finished', False):
-                self.speed_penalty_score += 3
-            self.last_penalty_time = current_time
+    if getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False) and getattr(self, 'pen_limit', True):
+        current_limit = getattr(self, 'effective_limit', 1000.0)
+        
+        # ★ 修正1：後退時（マイナス）の速度超過も絶対値で検知する
+        abs_speed = abs(self.bve_speed)
+        
+        # 制限速度 + 1.0 km/h 以上で減点開始
+        if current_limit < 999.0 and abs_speed >= current_limit + 1.0:
+            if not getattr(self, 'is_speed_limit_exceeded', False):
+                self.is_speed_limit_exceeded = True
+                self.last_speed_limit_penalty_time = current_time - 1.0 # 初回は即座に減点
+                
+            if current_time - getattr(self, 'last_speed_limit_penalty_time', 0.0) >= 1.0:
+                # 小数点以下切り捨ての減点幅（絶対値で計算）
+                deduction = int(abs_speed - current_limit)
+                if deduction > 0:
+                    if not hasattr(self, 'accumulated_speed_penalty'):
+                        self.accumulated_speed_penalty = 0
+                    self.accumulated_speed_penalty += deduction
+                    
+                    # 既存のポップアップを探して上書き（居座り）
+                    popup_found = False
+                    for p in getattr(self, 'popups', []):
+                        if p.get("category") == "速度制限超過":
+                            p["text"] = f"速度制限超過 -{self.accumulated_speed_penalty}"
+                            # ★ 修正2：「勝手に5秒後に消えるルール」の活用
+                            # 超過している間は毎秒「寿命を5秒後に延長」し続ける。
+                            # 速度を下回ると延長が止まり、最後の減点からぴったり5秒後に自然消滅する！
+                            p["expire_time"] = current_time + 5.0
+                            popup_found = True
+                            break
+                            
+                    if not popup_found:
+                        add_score_popup(self, -deduction, f"速度制限超過 -{self.accumulated_speed_penalty}", COLOR_B_EMG, "neg", "速度制限超過", current_time)
+                    else:
+                        # 既存ポップアップ上書き時はスコアだけ直接引く
+                        self.score -= deduction
+                        
+                    self.last_speed_limit_penalty_time = current_time
+        else:
+            self.is_speed_limit_exceeded = False
+            # 速度が下回り、ポップアップが消滅したら累積をリセット
+            if not any(p.get("category") == "速度制限超過" for p in getattr(self, 'popups', [])):
+                self.accumulated_speed_penalty = 0
 
     if getattr(self, 'is_first_udp', False) and self.bve_next_loc != -1.0:
         self.prev_door = getattr(self, 'bve_door', 0)
