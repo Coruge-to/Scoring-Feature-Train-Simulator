@@ -890,6 +890,11 @@ class Overlay(QWidget):
                         if target_time_ms < 0: target_time_ms = max(0, getattr(self, 'bve_time_ms', 0))
                         retry_cmd = f"RETRY:{start_loc}:{target_time_ms}"
                 
+                self.is_official_jumping = True
+                self.jump_start_real_time = time.time()
+                self.expected_target_loc = start_loc
+                self.expected_target_time = target_time_ms
+
                 getattr(self, 'save_data', []).append({
                     "loc": start_loc,
                     "time_ms": target_time_ms,
