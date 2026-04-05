@@ -1143,7 +1143,7 @@ class Overlay(QWidget):
         # ★ 追加：F7キー（時刻表ジャンプ）の物理的ブロック
         # 採点モード中かつBVEアクティブ時なら、常にF7を無効化する
         # =================================================================
-        should_block_f7 = getattr(self, 'is_scoring_mode', False) and is_bve_active
+        should_block_f7 = getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False) and is_bve_active
         if should_block_f7 and not getattr(self, 'f7_blocked', False):
             self.f7_hook = keyboard.on_press_key('f7', lambda e: None, suppress=True)
             self.f7_blocked = True
