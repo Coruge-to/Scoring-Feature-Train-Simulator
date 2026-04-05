@@ -1152,6 +1152,25 @@ class Overlay(QWidget):
                 keyboard.unhook(self.f7_hook)
             self.f7_blocked = False
         
+        # =================================================================
+        # ★ 課題2解決：「時刻と位置」ウィンドウの無力化（グレーアウト）
+        # F6メニューを開いている時、または「採点中かつ終了前」の時に操作不能にする
+        # =================================================================
+        try:
+            # BVEのダイヤグラムウィンドウをタイトルで検索
+            diag_hwnd = win32gui.FindWindow(None, "時刻と位置")
+            if diag_hwnd:
+                should_disable_diag = (self.menu_state != 0) or (getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False))
+                is_enabled = win32gui.IsWindowEnabled(diag_hwnd)
+                
+                # 状態が変わる時だけ EnableWindow を呼ぶ（毎フレーム呼ぶと重くなるため）
+                if should_disable_diag and is_enabled:
+                    win32gui.EnableWindow(diag_hwnd, False)
+                elif not should_disable_diag and not is_enabled:
+                    win32gui.EnableWindow(diag_hwnd, True)
+        except Exception:
+            pass
+
         should_block_keys = (self.menu_state != 0) and is_bve_active
         if should_block_keys and not self.keys_blocked:
             block_keys = ['0','1','2','3','4','5','6','7','8','9','p','f8','up','down','left','right','enter','backspace', 'h']

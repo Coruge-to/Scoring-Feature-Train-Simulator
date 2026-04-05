@@ -287,17 +287,22 @@ def update_physics_and_scoring(self, current_time, dt):
                 self.last_stop_g = sum(recent_g) / len(recent_g)
             else:
                 self.last_stop_g = decel_g
-                
-            if self.last_stop_g >= 0.10:
+
+            # =================================================================
+            # ★ 修正：後退からの停車も考慮し、絶対値でGを判定する
+            # =================================================================
+            abs_stop_g = abs(self.last_stop_g)
+
+            if abs_stop_g >= 0.10:
                 add_score_popup(self, -200, "停車時衝動 -200", COLOR_B_EMG, "neg", "停車時衝動", current_time)
-            elif self.last_stop_g >= 0.06:
+            elif abs_stop_g >= 0.06:
                 add_score_popup(self, -100, "停車時衝動 -100", COLOR_B_EMG, "neg", "停車時衝動", current_time)
             self.is_stopping_zone = False
             
         curr_n = self.bve_brk_notch
         self.hb_prev_notch = curr_n
         
-    elif 0.0 < self.bve_speed <= 1.5:
+    elif 0.0 < abs(self.bve_speed) <= 1.5:
         self.is_stopping_zone = True
             
     is_eb_handle = (self.bve_brk_notch >= self.bve_brk_max or "非常" in self.bve_brk_text or "EB" in self.bve_brk_text.upper())
@@ -322,7 +327,7 @@ def update_physics_and_scoring(self, current_time, dt):
     if physical_eb_tripped:
         if self.bb_is_in_zone: self.bb_state = "FAILED"
         if not self.eb_applied:
-            if self.bve_speed > 0.0: 
+            if abs(self.bve_speed) > 0.0: 
                 add_score_popup(self, -500, "非常ブレーキ使用 -500", COLOR_B_EMG, "neg", "非常ブレーキ", current_time)
                 
                 actual_exempt = getattr(self, 'setting_initial_brake', IGNORE_INITIAL_BRAKE)
@@ -349,12 +354,12 @@ def update_physics_and_scoring(self, current_time, dt):
             curr_state_unfrozen = get_notch_state(self, self.bve_brk_notch)
             if self.bcPressure <= self.eb_freeze_threshold and curr_state_unfrozen == "IDLE":
                 self.smee_eb_frozen = False
-                if self.bve_speed > 0.0 and not getattr(self, 'idle_entered_while_stopped', False):
+                if abs(self.bve_speed) > 0.0 and not getattr(self, 'idle_entered_while_stopped', False):
                     add_score_popup(self, -100, "緩和ブレーキ -100", COLOR_B_EMG, "neg", "緩和ブレーキ", current_time)
             elif is_stabilized:
                 self.smee_eb_frozen = False
                 if curr_state_unfrozen == "IDLE": 
-                    if self.bve_speed > 0.0 and not getattr(self, 'idle_entered_while_stopped', False):
+                    if abs(self.bve_speed) > 0.0 and not getattr(self, 'idle_entered_while_stopped', False):
                         add_score_popup(self, -100, "緩和ブレーキ -100", COLOR_B_EMG, "neg", "緩和ブレーキ", current_time)
         else: self.bcp_history.clear()
 
@@ -380,7 +385,7 @@ def update_physics_and_scoring(self, current_time, dt):
             actual_exempt = getattr(self, 'setting_initial_brake', IGNORE_INITIAL_BRAKE)
             is_initial_exempt = (actual_exempt == "ALL") or (actual_exempt == "STATION" and in_station_zone)
             
-            if not is_initial_exempt and self.bve_speed > 0.0:
+            if not is_initial_exempt and abs(self.bve_speed) > 0.0:
                 if not getattr(self, 'has_evaluated_initial_brake', False):
                     if self.bve_btype == "Cl":
                         if is_eb_handle: add_score_popup(self, -100, "初動ブレーキ -100", COLOR_B_EMG, "neg", "初動ブレーキ", current_time)
@@ -395,7 +400,7 @@ def update_physics_and_scoring(self, current_time, dt):
 
     if curr_state == "IDLE" and prev_state != "IDLE":
         is_release_exempt = (IGNORE_RELEASE_BRAKE == "ALL") or (IGNORE_RELEASE_BRAKE == "STATION" and in_station_zone)
-        if not is_release_exempt and self.bve_speed > 0.0: 
+        if not is_release_exempt and abs(self.bve_speed) > 0.0: 
             if not getattr(self, 'idle_entered_while_stopped', False):
                 if getattr(self, 'hb_strong_entered', False):
                     if self.bve_btype == "Cl": pass 
@@ -423,6 +428,9 @@ def update_physics_and_scoring(self, current_time, dt):
     else:
         self.roll_penalized = False
 
+    if getattr(self, 'bb_is_in_zone', False) and self.bve_speed < 0:
+        self.bb_state = "FAILED"
+    
     if in_station_zone and not self.bb_is_in_zone:
         self.bb_state = "IDLE"
         self.bb_apply_count = 0
