@@ -38,7 +38,6 @@ namespace TsScoringPlugin
 
         private string lastUdpData = "";
         private string lastStaListPacket = "";
-
         private object currentScenario = null;
         private int scenarioId = -1;
 
@@ -53,8 +52,6 @@ namespace TsScoringPlugin
         private bool wasTerminalDoorOpened = false;
 
         private int opStopDelayStartMs = -1;
-
-        // ★ BVE時間同期＆初回即時配信用フラグ
         private bool initialStaListSent = false;
         private DateTime lastStaListSendTime = DateTime.MinValue;
 
@@ -70,10 +67,7 @@ namespace TsScoringPlugin
         {
             if (arr == null || arr.Length == 0) return "";
             List<string> validTexts = new List<string>();
-            foreach (var s in arr)
-            {
-                if (!string.IsNullOrWhiteSpace(s)) validTexts.Add(s);
-            }
+            foreach (var s in arr) if (!string.IsNullOrWhiteSpace(s)) validTexts.Add(s);
             return string.Join("_", validTexts);
         }
 
@@ -105,11 +99,8 @@ namespace TsScoringPlugin
                 isTextsCached = false;
                 stationList.Clear();
                 lastTimeMs = 0;
-
-                // ★ 初期化
                 initialStaListSent = false;
                 lastStaListSendTime = DateTime.MinValue;
-
                 currentScenario = null;
                 return;
             }
@@ -120,15 +111,12 @@ namespace TsScoringPlugin
                 {
                     currentScenario = BveHacker.Scenario;
                     scenarioId = (int)(DateTime.Now.Ticks % 100000000);
-
                     lastUdpData = "";
                     lastStaListPacket = "";
                     isInitialized = false;
                     isTextsCached = false;
                     stationList.Clear();
                     lastTimeMs = 0;
-
-                    // ★ 初期化
                     initialStaListSent = false;
                     lastStaListSendTime = DateTime.MinValue;
                 }
@@ -145,40 +133,46 @@ namespace TsScoringPlugin
                             byte[] rData = udpReceiver.Receive(ref ep);
                             string msg = Encoding.UTF8.GetString(rData);
 
-                            if (msg.StartsWith("RETRY:"))
+                            // =================================================================
+                            // ★ 究極の解決策：「駅ジャンプ」＋「時間ハック」の融合コマンド
+                            // 座標ジャンプ(早送り)をしないため、マップ音声が絶対に暴発しない！
+                            // =================================================================
+                            if (msg.StartsWith("JUMP_STA_TIME:"))
                             {
                                 string[] parts = msg.Split(':');
-                                if (parts.Length >= 3 && double.TryParse(parts[1], out double rLoc) && int.TryParse(parts[2], out int rTimeMs))
+                                if (parts.Length >= 3 && int.TryParse(parts[1], out int sIdx) && int.TryParse(parts[2], out int rTimeMs))
                                 {
+                                    System.IO.File.AppendAllText(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "debug.log"),
+                                        $"[{DateTime.Now:HH:mm:ss.fff}] [C#] コマンド受信: STA={sIdx}, TIME={rTimeMs}\n");
                                     try
                                     {
                                         var scenario = BveHacker.Scenario;
                                         if (scenario == null) continue;
-
                                         var srcProp = scenario.GetType().GetProperty("Src", bindFlagsAll);
                                         if (srcProp != null)
                                         {
                                             object rawScenario = srcProp.GetValue(scenario);
                                             if (rawScenario != null)
                                             {
-                                                var jumpMethod = rawScenario.GetType().GetMethods(bindFlagsAll)
-                                                    .FirstOrDefault(m => m.GetParameters().Length == 2 &&
-                                                                         m.GetParameters()[0].ParameterType == typeof(double) &&
-                                                                         m.GetParameters()[1].ParameterType == typeof(int) &&
+                                                // 1. 公式のクリーンな駅ジャンプを実行（音も環境も綺麗にリセット）
+                                                var jumpStaMethod = rawScenario.GetType().GetMethods(bindFlagsAll)
+                                                    .FirstOrDefault(m => m.GetParameters().Length == 1 &&
+                                                                         m.GetParameters()[0].ParameterType == typeof(int) &&
                                                                          m.ReturnType == typeof(void));
-
-                                                if (jumpMethod != null)
+                                                if (jumpStaMethod != null)
                                                 {
-                                                    jumpMethod.Invoke(rawScenario, new object[] { rLoc, 0 });
-                                                    var timeMgr = scenario.GetType().GetProperty("TimeManager", bindFlagsAll)?.GetValue(scenario);
-                                                    if (timeMgr != null)
+                                                    jumpStaMethod.Invoke(rawScenario, new object[] { sIdx });
+                                                }
+
+                                                // 2. 時計の針（TimeManager）だけを強引に過去(セーブデータ)に合わせる
+                                                var timeMgr = scenario.GetType().GetProperty("TimeManager", bindFlagsAll)?.GetValue(scenario);
+                                                if (timeMgr != null)
+                                                {
+                                                    var rawTimeMgr = timeMgr.GetType().GetProperty("Src", bindFlagsAll)?.GetValue(timeMgr);
+                                                    if (rawTimeMgr != null)
                                                     {
-                                                        var rawTimeMgr = timeMgr.GetType().GetProperty("Src", bindFlagsAll)?.GetValue(timeMgr);
-                                                        if (rawTimeMgr != null)
-                                                        {
-                                                            var timeField = rawTimeMgr.GetType().GetField("c", bindFlagsAll);
-                                                            if (timeField != null) timeField.SetValue(rawTimeMgr, rTimeMs);
-                                                        }
+                                                        var timeField = rawTimeMgr.GetType().GetField("c", bindFlagsAll);
+                                                        if (timeField != null && rTimeMs >= 0) timeField.SetValue(rawTimeMgr, rTimeMs);
                                                     }
                                                 }
                                             }
@@ -187,30 +181,46 @@ namespace TsScoringPlugin
                                     catch { }
                                 }
                             }
-                            else if (msg.StartsWith("JUMP_STA:"))
+
+                            // =================================================================
+                            // ★ 追加：理不尽ドア待ち回避用ハイブリッド（従来の座標ワープ復活）
+                            // =================================================================
+                            else if (msg.StartsWith("JUMP_LOC_TIME:"))
                             {
                                 string[] parts = msg.Split(':');
-                                if (parts.Length >= 2 && int.TryParse(parts[1], out int sIdx))
+                                if (parts.Length >= 3 && double.TryParse(parts[1], out double rLoc) && int.TryParse(parts[2], out int rTimeMs))
                                 {
                                     try
                                     {
                                         var scenario = BveHacker.Scenario;
                                         if (scenario == null) continue;
-
                                         var srcProp = scenario.GetType().GetProperty("Src", bindFlagsAll);
                                         if (srcProp != null)
                                         {
                                             object rawScenario = srcProp.GetValue(scenario);
                                             if (rawScenario != null)
                                             {
-                                                var jumpStaMethod = rawScenario.GetType().GetMethods(bindFlagsAll)
-                                                    .FirstOrDefault(m => m.GetParameters().Length == 1 &&
-                                                                         m.GetParameters()[0].ParameterType == typeof(int) &&
+                                                // 1. 従来の「座標ジャンプ（早送り）」を実行
+                                                var jumpMethod = rawScenario.GetType().GetMethods(bindFlagsAll)
+                                                    .FirstOrDefault(m => m.GetParameters().Length == 2 &&
+                                                                         m.GetParameters()[0].ParameterType == typeof(double) &&
+                                                                         m.GetParameters()[1].ParameterType == typeof(int) &&
                                                                          m.ReturnType == typeof(void));
-
-                                                if (jumpStaMethod != null)
+                                                if (jumpMethod != null)
                                                 {
-                                                    jumpStaMethod.Invoke(rawScenario, new object[] { sIdx });
+                                                    jumpMethod.Invoke(rawScenario, new object[] { rLoc, 0 });
+                                                }
+
+                                                // 2. 時計の針を合わせる
+                                                var timeMgr = scenario.GetType().GetProperty("TimeManager", bindFlagsAll)?.GetValue(scenario);
+                                                if (timeMgr != null)
+                                                {
+                                                    var rawTimeMgr = timeMgr.GetType().GetProperty("Src", bindFlagsAll)?.GetValue(timeMgr);
+                                                    if (rawTimeMgr != null)
+                                                    {
+                                                        var timeField = rawTimeMgr.GetType().GetField("c", bindFlagsAll);
+                                                        if (timeField != null && rTimeMs >= 0) timeField.SetValue(rawTimeMgr, rTimeMs);
+                                                    }
                                                 }
                                             }
                                         }
@@ -233,7 +243,6 @@ namespace TsScoringPlugin
                 int isTiming = 0;
                 double marginBack = 5.0;
                 double marginFront = 5.0;
-
                 string revText = "切";
                 string powText = "N";
                 string brkText = "N";
@@ -258,9 +267,67 @@ namespace TsScoringPlugin
                 }
                 catch { }
 
+                // =================================================================
+                // ★ 方針②：ドア（cc）とパラメータ（d3）の数値をすべて暴く！
+                // =================================================================
+                if (!isInitialized && vehicle != null)
+                {
+                    try
+                    {
+                        string logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "debug_doors_deep.log");
+                        if (!System.IO.File.Exists(logPath))
+                        {
+                            StringBuilder sb = new StringBuilder();
+                            sb.AppendLine($"\n[{DateTime.Now:HH:mm:ss.fff}] ===== DEEP DOOR DUMP =====");
+
+                            object rawVehicle = vehicle.GetType().GetProperty("Src", bindFlagsAll)?.GetValue(vehicle);
+                            if (rawVehicle != null)
+                            {
+                                // パラメータ群（d3 = h）をダンプ
+                                object d3Obj = rawVehicle.GetType().GetField("h", bindFlagsAll)?.GetValue(rawVehicle);
+                                if (d3Obj != null)
+                                {
+                                    sb.AppendLine("\n--- Parameters (h / d3) ---");
+                                    foreach (var f in d3Obj.GetType().GetFields(bindFlagsAll))
+                                    {
+                                        object val = f.GetValue(d3Obj);
+                                        if (val is double || val is float || val is int || val is long)
+                                            sb.AppendLine($"{f.Name} = {val}");
+                                    }
+                                }
+
+                                // ドア群（cc = m）をダンプ
+                                object ccObj = rawVehicle.GetType().GetField("m", bindFlagsAll)?.GetValue(rawVehicle);
+                                if (ccObj != null)
+                                {
+                                    sb.AppendLine("\n--- Doors (m / cc) ---");
+                                    object cfArray = ccObj.GetType().GetField("c", bindFlagsAll)?.GetValue(ccObj); // cf[]
+                                    if (cfArray is Array arr && arr.Length > 0)
+                                    {
+                                        object firstDoor = arr.GetValue(0); // 1つ目のドアオブジェクトを取得
+                                        if (firstDoor != null)
+                                        {
+                                            sb.AppendLine($"First Door Type: {firstDoor.GetType().Name}");
+                                            foreach (var f in firstDoor.GetType().GetFields(bindFlagsAll))
+                                            {
+                                                object val = f.GetValue(firstDoor);
+                                                if (val is double || val is float || val is int || val is long)
+                                                    sb.AppendLine($"DoorField {f.Name} = {val}");
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            System.IO.File.WriteAllText(logPath, sb.ToString());
+                        }
+                    }
+                    catch { }
+                }
+                // =================================================================
+
                 if (map == null) return;
 
-                if (lastTimeMs != 0 && Math.Abs(timeMs - lastTimeMs - elapsed.TotalMilliseconds) > 1000)
+                if (lastTimeMs != 0 && Math.Abs(timeMs - lastTimeMs - elapsed.TotalMilliseconds) > 300)
                 {
                     isInitialized = false;
                     isTextsCached = false;
@@ -477,7 +544,6 @@ namespace TsScoringPlugin
                         isInitialized = true;
                     }
 
-                    // ★ リアルタイム（1秒間隔）でSTALISTを送信するように修正
                     if (!initialStaListSent || (DateTime.Now - lastStaListSendTime).TotalMilliseconds >= 1000)
                     {
                         List<string> staInfoList = new List<string>();
@@ -485,7 +551,6 @@ namespace TsScoringPlugin
                         {
                             string sName = string.IsNullOrEmpty(st.Name) ? "不明な駅" : st.Name.Replace(",", "").Replace("=", "");
                             int sTiming = st.IsScoring ? 1 : 0;
-                            // ★ 変更箇所：末尾に st.IsPass ? 1 : 0 を追加
                             staInfoList.Add($"{sName}={sTiming}={st.Location}={st.RawArrTime}={st.RawDepTime}={st.DefaultTime}={st.StoppageTime}={(st.IsPass ? 1 : 0)}");
                         }
                         if (staInfoList.Count > 0)

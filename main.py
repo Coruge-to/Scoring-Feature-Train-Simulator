@@ -238,6 +238,7 @@ class Overlay(QWidget):
         self.is_stopped_out_of_range = False
         self.has_scored_time_this_station = False
         self.has_scored_stop_this_station = False
+        self.end_message_time = 0.0
         self.has_departed = False
 
         self.map_head_limit = 1000.0
@@ -852,7 +853,8 @@ class Overlay(QWidget):
                 self.debug_all_penalties = False
                 
                 self.expected_jump = True
-
+                self.end_message_time = 0.0
+                self.is_first_udp = True
                 self.is_first_station = True
                 self.has_departed = False
                 self.is_approaching = False
@@ -863,7 +865,9 @@ class Overlay(QWidget):
                 start_loc = 0.0
                 start_sta_name = "不明な駅"
                 target_time_ms = -1
-                retry_cmd = "" 
+                
+                # ★ ここで空文字で初期化しておく！
+                retry_cmd = ""
                 
                 if getattr(self, 'station_list', []) and 0 <= getattr(self, 'setting_start_idx', 0) < len(getattr(self, 'station_list', [])):
                     st = self.station_list[self.setting_start_idx]
@@ -875,26 +879,50 @@ class Overlay(QWidget):
                     def_t = st.get("def_time", -1)
                     stop_t = st.get("stop_time", 15000)
                     
+                    calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1
+                    
                     if self.setting_start_idx == 0:
-                        retry_cmd = f"JUMP_STA:0"
-                        if def_t >= 0: target_time_ms = def_t
-                        else: target_time_ms = max(0, getattr(self, 'bve_time_ms', 0))
+                        # 始発駅：def_tとcalc_tの「遅い方(max)」
+                        cands = [t for t in [def_t, calc_t] if t >= 0]
+                        if cands: target_time_ms = max(cands)
+                        else: target_time_ms = raw_arr if raw_arr >= 0 else -1
                     else:
-                        if raw_arr >= 0: target_time_ms = raw_arr
-                        else:
-                            calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1
-                            if calc_t >= 0 and def_t >= 0: target_time_ms = min(calc_t, def_t)
-                            elif calc_t >= 0: target_time_ms = calc_t
-                            elif def_t >= 0: target_time_ms = def_t
-                        
-                        if target_time_ms < 0: target_time_ms = max(0, getattr(self, 'bve_time_ms', 0))
-                        retry_cmd = f"RETRY:{start_loc}:{target_time_ms}"
-                
+                        # 途中駅：def_tとcalc_tの「早い方(min)」
+                        cands = [t for t in [def_t, calc_t] if t >= 0]
+                        if cands: target_time_ms = min(cands)
+                        else: target_time_ms = raw_arr if raw_arr >= 0 else -1
+
+                    if target_time_ms < 0: target_time_ms = max(0, getattr(self, 'bve_time_ms', 0))
+
+                    # 途中駅で、BVEネイティブのジャンプ時刻(def_t)が計算時刻より遅い場合、理不尽ドア待ちが発生するため「従来ワープ(LOC)」に切り替える
+                    use_legacy_jump = False
+                    if self.setting_start_idx > 0 and def_t >= 0 and def_t > target_time_ms:
+                        use_legacy_jump = True
+
+                    if use_legacy_jump:
+                        retry_cmd = f"JUMP_LOC_TIME:{start_loc}:{target_time_ms}"
+                    else:
+                        retry_cmd = f"JUMP_STA_TIME:{self.setting_start_idx}:{target_time_ms}"
+
+                    '''
+                    # 始発駅の特別扱いを撤去し、全駅共通の計算にする
+                    if raw_arr >= 0: target_time_ms = raw_arr
+                    else:
+                        calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1
+                        if calc_t >= 0 and def_t >= 0: target_time_ms = max(calc_t, def_t)
+                        elif calc_t >= 0: target_time_ms = calc_t
+                        elif def_t >= 0: target_time_ms = def_t
+                    
+                    if target_time_ms < 0: target_time_ms = max(0, getattr(self, 'bve_time_ms', 0))
+                    # 共通のコマンドを組み立てる
+                    retry_cmd = f"JUMP_STA_TIME:{self.setting_start_idx}:{target_time_ms}"
+                    '''
+               
                 self.is_official_jumping = True
                 self.jump_start_real_time = time.time()
                 self.expected_target_loc = start_loc
                 self.expected_target_time = target_time_ms
-
+                
                 getattr(self, 'save_data', []).append({
                     "loc": start_loc,
                     "time_ms": target_time_ms,
@@ -905,6 +933,7 @@ class Overlay(QWidget):
                 })
                 
                 if retry_cmd != "":
+                    write_desktop_log(f"[MENU 6] 送信コマンド: {retry_cmd} / 予想時間: {target_time_ms}")
                     self.udp_socket.writeDatagram(retry_cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)
                 
                 self.toggle_menu(is_bve_advancing)

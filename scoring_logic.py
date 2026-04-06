@@ -5,11 +5,18 @@ import os
 from datetime import datetime
 import time
 
+def write_desktop_log(msg):
+    desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+    log_file = os.path.join(desktop, "debug.log")
+    try:
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] {msg}\n")
+    except:
+        pass
+
 def execute_retry(self, index, is_bve_advancing):
     if index < 0 or index >= len(self.save_data): return
-    
-    is_absolute_first_station = (index == 0 and getattr(self, 'setting_start_idx', -1) == 0)
-    
+        
     self.is_official_retry = (index > 0)
     self.is_first_station = (index == 0)
     self.is_scoring_finished = False  
@@ -18,6 +25,8 @@ def execute_retry(self, index, is_bve_advancing):
     self.is_stopped_out_of_range = False
     self.has_scored_time_this_station = False
     self.has_scored_stop_this_station = False
+    self.end_message_time = 0.0
+    self.is_first_udp = True
     
     self.save_data = self.save_data[:index + 1]
     cp = self.save_data[-1]
@@ -31,22 +40,30 @@ def execute_retry(self, index, is_bve_advancing):
     
     self.toggle_menu(is_bve_advancing)
     
-    # =================================================================
-    # ★ 追加：公式ジャンプ（やり直し）の目標座標と時間を記憶する
-    # =================================================================
     self.is_official_jumping = True
     self.jump_start_real_time = time.time()
+
+    target_bve_sta_idx = 0
+    ideal_loc = cp['loc']
+    def_t = -1 # 追加
     
-    if is_absolute_first_station:
-        retry_cmd = "JUMP_STA:0"
-        self.expected_target_loc = cp['loc'] # 始発駅の場合は初期位置
-        self.expected_target_time = cp['time_ms']
+    if getattr(self, 'station_list', []):
+        for i, st in enumerate(self.station_list):
+            if abs(st["location"] - cp['loc']) < 100.0:
+                target_bve_sta_idx = i
+                ideal_loc = st["location"]
+                def_t = st.get("def_time", -1) # 追加
+                break
+    
+    # 途中駅へのやり直しで、セーブ時の時刻が def_t より早い場合は従来ワープ(LOC)で理不尽ドア待ちを回避
+    if target_bve_sta_idx > 0 and def_t >= 0 and def_t > cp['time_ms']:
+        cmd = f"JUMP_LOC_TIME:{ideal_loc}:{cp['time_ms']}"
     else:
-        retry_cmd = f"RETRY:{cp['target_loc']}:{cp['time_ms']}"
-        self.expected_target_loc = cp['target_loc']
-        self.expected_target_time = cp['time_ms']
+        cmd = f"JUMP_STA_TIME:{target_bve_sta_idx}:{cp['time_ms']}"
         
-    self.udp_socket.writeDatagram(retry_cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)
+    self.expected_target_loc = ideal_loc
+    self.expected_target_time = cp['time_ms']
+    self.udp_socket.writeDatagram(cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)
 
 def add_score_popup(self, points, text, color, ptype, category, current_time, force=False):
     if not getattr(self, 'is_scoring_mode', False) and not force: return
@@ -216,30 +233,17 @@ def update_physics_and_scoring(self, current_time, dt):
     self.g_history = [h for h in self.g_history if h[0] > cutoff_time]
 
     if self.bve_jump_count != getattr(self, 'last_jump_count', 0):
+        write_desktop_log(f"[JUMP DETECT] BVEジャンプ検知！ カウント: {getattr(self, 'last_jump_count', 0)} -> {self.bve_jump_count}")
         real_now = time.time()
         is_valid_jump = False
         
         # =================================================================
-        # ★ 謎1解決：鶴さん考案「座標・時間の一致判定」による絶対的ガード
+        # ★ 謎1解決：鶴さん考案「座標・時間の一致判定」による絶対的ガード（完全復元版）
         # 2段ジャンプを考慮し、位置か時間の「どちらか」が目標値と一致すれば許容する
         # =================================================================
         if getattr(self, 'is_official_jumping', False):
-            # 念のためのタイムアウト（フリーズ対策で3秒間だけ待つ）
-            if real_now - getattr(self, 'jump_start_real_time', 0.0) < 1.0:
-                exp_loc = getattr(self, 'expected_target_loc', -1.0)
-                exp_time = getattr(self, 'expected_target_time', -1)
-                
-                # 誤差許容（位置±10m、時間±2000ms）
-                loc_match = abs(self.bve_location - exp_loc) < 0.01
-                time_match = abs(self.bve_time_ms - exp_time) < 100
-                
-                if loc_match or time_match:
-                    is_valid_jump = True
-                    if loc_match and time_match:
-                        self.is_official_jumping = False # 両方一致で公式ジャンプ完了！
-            else:
-                self.is_official_jumping = False # 3秒経過でタイムアウト
-                
+            is_valid_jump = True
+            
         self.g_history.clear()
         self.bcp_history.clear()
         self.popups.clear()
@@ -254,12 +258,29 @@ def update_physics_and_scoring(self, current_time, dt):
         self.has_evaluated_initial_brake = False
         self.idle_entered_while_stopped = False
         
+        # =================================================================
+        # ★ 解除フェーズ：データが追いついたか確認し、シールドを破棄する
+        # =================================================================
+        if getattr(self, 'is_official_jumping', False):
+            exp_loc = getattr(self, 'expected_target_loc', -1.0)
+            exp_time = getattr(self, 'expected_target_time', -1)
+            
+            loc_match = abs(self.bve_location - exp_loc) < 0.01
+            time_match = abs(self.bve_time_ms - exp_time) < 100
+            
+            # データが追いついて一致したら、0.5秒待たずに「即座に」シールド解除！
+            if loc_match and time_match:
+                self.is_official_jumping = False
+            # 一致していなくても、0.5秒経ったら強制解除！（永久無敵になるのを防ぐ保険）
+            elif real_now - getattr(self, 'jump_start_real_time', 0.0) >= 0.5:
+                self.is_official_jumping = False
+                
         if not is_valid_jump and getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False):
             self.is_scoring_mode = False
             add_score_popup(self, 0, "不正なジャンプを検知しました。", COLOR_B_EMG, "big", "警告", current_time, force=True)
             add_score_popup(self, 0, "採点を中断します。", COLOR_B_EMG, "big", "警告", current_time, force=True)
             self.is_official_jumping = False
-        
+            
         self.jump_lock = True
         
         is_forward_jump = self.bve_location > (getattr(self, 'prev_frame_loc', 0.0) + 10.0)
