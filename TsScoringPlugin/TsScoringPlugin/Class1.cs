@@ -655,6 +655,7 @@ namespace TsScoringPlugin
                 double bpInitialPressure = 490.0;
                 string pRatesStr = "";
                 double maxPressure = 0.0;
+                int doorCloseTimeMs = 0;
 
                 object speedLimits = null;
                 try { speedLimits = map.GetType().GetProperty("SpeedLimits", bindFlagsAll)?.GetValue(map); } catch { }
@@ -876,6 +877,41 @@ namespace TsScoringPlugin
                 }
                 catch { }
 
+                // =================================================================
+                // ★ 追加：ドアの動作時間（CloseTime）を暗号化階層から取得する
+                // =================================================================
+                try
+                {
+                    if (vehicle != null)
+                    {
+                        object rawVehicle = vehicle.GetType().GetProperty("Src", bindFlagsAll)?.GetValue(vehicle);
+                        if (rawVehicle != null)
+                        {
+                            object ccObj = rawVehicle.GetType().GetField("m", bindFlagsAll)?.GetValue(rawVehicle);
+                            if (ccObj != null)
+                            {
+                                object cfArray = ccObj.GetType().GetField("c", bindFlagsAll)?.GetValue(ccObj);
+                                if (cfArray is Array arr && arr.Length > 0)
+                                {
+                                    object firstDoor = arr.GetValue(0); // 1つ目のドア(cf)
+                                    if (firstDoor != null)
+                                    {
+                                        // ダンプで突き止めた「b」フィールドを取得
+                                        object bVal = firstDoor.GetType().GetField("b", bindFlagsAll)?.GetValue(firstDoor);
+                                        if (bVal != null)
+                                        {
+                                            // 型に関わらず確実に整数(4630)に変換
+                                            doorCloseTimeMs = Convert.ToInt32(bVal);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch { doorCloseTimeMs = 0; } // 失敗時は安全のため 0 を返す
+                // =================================================================
+
                 try
                 {
                     string currentStationName = "不明な駅";
@@ -888,7 +924,7 @@ namespace TsScoringPlugin
                     }
 
                     int holds = hasHoldingBrake ? 1 : 0;
-                    string data = $"SCENARIO_ID:{scenarioId},SPEED:{speed},TIME:{timeMs},LOCATION:{location},GRADIENT:{finalGradient},NEXTLOC:{nextStationLoc},NEXTTIME:{nextStationTime},ISPASS:{isPass},ISTIMING:{isTiming},MARGINB:{marginBack},MARGINF:{marginFront},REV:{revText}:{revPos},POW:{powText}:{powNotch},BRK:{brkText}:{brkNotch}:{brkMax},HTYPE:{handleType},ALLTXT:{allRevTexts}:{allPowTexts}:{allBrkTexts}:{allHldTexts},SIGLIMIT:{signalLimit},TRAINLEN:{trainLength},MAPLIMITS:{mapLimitsStr},FWDSIGLIMIT:{fwdSigLimit},FWDSIGLOC:{nextSigLoc},DOOR:{(areDoorsClosed ? 0 : 1)},DOORDIR:{currentDoorDir},TERM:{(targetStationIndex == stationList.Count - 1 ? 1 : 0)},MAPHEAD:{manualMapHead},MAPTAIL:{manualMapTail},CLEARDIST:{distToClear},CALCG:{currentG:F5},BTYPE:{bType},JUMP:{jumpCounter},CAB:{cabBrakeNotches}:{holds},BCP:{bcPressure:F1},PRATES:{pRatesStr}:{maxPressure:F1},BPP:{bpPressure:F1}:{bpInitialPressure:F1},STATNAME:{currentStationName}";
+                    string data = $"SCENARIO_ID:{scenarioId},SPEED:{speed},TIME:{timeMs},LOCATION:{location},GRADIENT:{finalGradient},NEXTLOC:{nextStationLoc},NEXTTIME:{nextStationTime},ISPASS:{isPass},ISTIMING:{isTiming},MARGINB:{marginBack},MARGINF:{marginFront},REV:{revText}:{revPos},POW:{powText}:{powNotch},BRK:{brkText}:{brkNotch}:{brkMax},HTYPE:{handleType},ALLTXT:{allRevTexts}:{allPowTexts}:{allBrkTexts}:{allHldTexts},SIGLIMIT:{signalLimit},TRAINLEN:{trainLength},MAPLIMITS:{mapLimitsStr},FWDSIGLIMIT:{fwdSigLimit},FWDSIGLOC:{nextSigLoc},DOOR:{(areDoorsClosed ? 0 : 1)},DOORDIR:{currentDoorDir},TERM:{(targetStationIndex == stationList.Count - 1 ? 1 : 0)},MAPHEAD:{manualMapHead},MAPTAIL:{manualMapTail},CLEARDIST:{distToClear},CALCG:{currentG:F5},BTYPE:{bType},JUMP:{jumpCounter},CAB:{cabBrakeNotches}:{holds},BCP:{bcPressure:F1},PRATES:{pRatesStr}:{maxPressure:F1},BPP:{bpPressure:F1}:{bpInitialPressure:F1},STATNAME:{currentStationName},DOORTIME:{doorCloseTimeMs}"; 
                     lastUdpData = data;
                 }
                 catch { }

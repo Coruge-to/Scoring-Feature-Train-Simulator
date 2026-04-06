@@ -45,18 +45,31 @@ def execute_retry(self, index, is_bve_advancing):
 
     target_bve_sta_idx = 0
     ideal_loc = cp['loc']
-    def_t = -1 # 追加
+    def_t = -1
+    calc_t = -1  # ★ 追加
     
     if getattr(self, 'station_list', []):
         for i, st in enumerate(self.station_list):
             if abs(st["location"] - cp['loc']) < 100.0:
                 target_bve_sta_idx = i
                 ideal_loc = st["location"]
-                def_t = st.get("def_time", -1) # 追加
+                def_t = st.get("def_time", -1)
+                
+                # ★ 追加：calc_t を計算して理不尽判定の材料にする
+                raw_dep = st.get("raw_dep", -1)
+                stop_t = st.get("stop_time", 15000)
+                calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1
                 break
     
-    # 途中駅へのやり直しで、セーブ時の時刻が def_t より早い場合は従来ワープ(LOC)で理不尽ドア待ちを回避
-    if target_bve_sta_idx > 0 and def_t >= 0 and def_t > cp['time_ms']:
+    # =================================================================
+    # ★ 修正：旧方式(LOC)に逃げる「完全な悪条件」の厳密化
+    # 1. 途中駅である
+    # 2. 作者が意図的に遅延設定(def_t > calc_t)にしている
+    # 3. かつ、自分のセーブ時刻がその def_t より早い
+    # =================================================================
+    use_legacy = (target_bve_sta_idx > 0 and def_t >= 0 and calc_t >= 0 and def_t > calc_t and cp['time_ms'] < def_t)
+    
+    if use_legacy:
         cmd = f"JUMP_LOC_TIME:{ideal_loc}:{cp['time_ms']}"
     else:
         cmd = f"JUMP_STA_TIME:{target_bve_sta_idx}:{cp['time_ms']}"
@@ -101,9 +114,54 @@ def create_save_data(self):
     if not getattr(self, 'is_scoring_mode', False) or getattr(self, 'is_scoring_finished', False): return
     if not getattr(self, 'save_data', []) or self.save_data[-1]["target_loc"] != self.bve_next_loc:
         stop_error = self.bve_next_loc - self.bve_location
+        
+        # 基本は現在の時刻をそのまま保存する
+        save_time_ms = self.bve_time_ms
+        
+        # =================================================================
+        # ★ 追加：ドア開時間の加算（ズル防止ペナルティ）
+        # =================================================================
+        # 条件1: 始発駅（最初のセーブデータ）ではないこと
+        if len(getattr(self, 'save_data', [])) > 0:
+            # 条件2: 扉が開く駅であること（通過駅や運転停車は除外）
+            if getattr(self, 'bve_is_pass', 0) == 0 and getattr(self, 'bve_doordir', 1) != 0:
+                
+                # 現在の駅のダイヤ情報を取得する
+                curr_sta_idx = -1
+                p_loc = getattr(self, 'prev_next_loc', getattr(self, 'bve_next_loc', -1.0))
+                for i, st in enumerate(getattr(self, 'station_list', [])):
+                    if abs(st["location"] - p_loc) < 1.0:
+                        curr_sta_idx = i
+                        break
+                
+                if curr_sta_idx >= 0:
+                    st = getattr(self, 'station_list', [])[curr_sta_idx]
+                    raw_dep = st.get("raw_dep", -1)
+                    def_t = st.get("def_time", -1)
+                    stop_t = st.get("stop_time", 15000)
+                    
+                    calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1
+                    
+                    # 条件3: 到着時間が「定刻(calc_t)」より遅れているか？（遅延時のみ加算）
+                    is_delayed = (calc_t < 0) or (self.bve_time_ms > calc_t)
+                    
+                    # 条件4: ロールバック時に「新方式(STA)」が使われるか？
+                    # (旧方式(LOC)の場合は目の前で扉が開くため加算不要)
+                    will_use_sta = (def_t < 0) or (self.bve_time_ms >= def_t)
+                    
+                    # すべての悪条件（ズルできる条件）が揃った時のみ、ドア時間を加算して未来へ進める！
+                    if is_delayed and will_use_sta:
+                        door_time = getattr(self, 'bve_door_close_time_ms', 0)
+                        save_time_ms += door_time
+                        
+                        # （確認用：後で消してもOKです）
+                        print(f"ズル防止発動: {st.get('name', '駅')}にて {door_time} msを加算しました！")
+
+        # =================================================================
+        
         self.save_data.append({
             "loc": self.bve_location,
-            "time_ms": self.bve_time_ms,
+            "time_ms": save_time_ms,  # ★ 変更: ズル防止計算済みの時間を保存する！
             "score": self.score,
             "target_loc": self.bve_next_loc,
             "station_name": getattr(self, 'bve_current_station_name', '不明な駅'),

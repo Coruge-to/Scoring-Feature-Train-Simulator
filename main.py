@@ -454,6 +454,18 @@ class Overlay(QWidget):
                             if min_valid < len(rates): self.eb_freeze_threshold = (self.bve_max_pressure * rates[min_valid]) - 5.0
                             else: self.eb_freeze_threshold = 20.0
                             if self.eb_freeze_threshold < 5.0: self.eb_freeze_threshold = 5.0
+                    # =================================================================
+                    # ★ 追加：C#から送られてきたドア時間をキャッチ！
+                    # (PRATESの処理が終わった直後、exceptの「上」にelifを書きます)
+                    # =================================================================
+                    elif part.startswith("DOORTIME:"):
+                        val = int(part.split(':')[1])
+                        self.bve_door_close_time_ms = val
+                    
+                    # ログがスパムにならないよう、値が初めて取得・変化した時だけコンソールに出力
+                        if getattr(self, '_debug_door_time_printed', -1) != val:
+                            print(f"\n[DEBUG] C#からドア時間を受信しました！ DOORTIME: {val} ms\n")
+                            self._debug_door_time_printed = val
                 except Exception: continue 
 
     def is_station_timing(self, sta_idx):
@@ -882,9 +894,9 @@ class Overlay(QWidget):
                     calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1
                     
                     if self.setting_start_idx == 0:
-                        # 始発駅：def_tとcalc_tの「遅い方(max)」
-                        cands = [t for t in [def_t, calc_t] if t >= 0]
-                        if cands: target_time_ms = max(cands)
+                        # 始発駅：作者の設定した def_t を絶対的に優先する！
+                        if def_t >= 0: target_time_ms = def_t
+                        elif calc_t >= 0: target_time_ms = calc_t
                         else: target_time_ms = raw_arr if raw_arr >= 0 else -1
                     else:
                         # 途中駅：def_tとcalc_tの「早い方(min)」
