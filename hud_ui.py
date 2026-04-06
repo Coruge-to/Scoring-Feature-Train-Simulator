@@ -16,7 +16,7 @@ def draw_hud(self, painter, logical_width):
     pos_x_left, pos_x_right = MARGIN_LEFT, logical_width - MARGIN_RIGHT
     pos_x_label = pos_x_right - LABEL_WIDTH
 
-    dbg_y = 500
+    dbg_y = 450
     painter.setFont(QFont("sans-serif", 14, QFont.Weight.Bold))
     
     if self.bb_is_in_zone:
@@ -43,6 +43,28 @@ def draw_hud(self, painter, logical_width):
     dbg_texts = []
     if (self.bve_time_ms / 1000.0) < self.rollback_msg_timer and self.rollback_msg:
         dbg_texts.append(f"★ {self.rollback_msg}")
+    
+    # =================================================================
+    # ★ 追加：X線ゴーグルのすぐ上に「現在の適用ルール」を描画！
+    # =================================================================
+    if getattr(self, 'is_scoring_mode', False):
+        n_sta = getattr(self, 'active_next_sta_name', '---')
+        n_time = '採時' if getattr(self, 'active_next_sta_timing', False) else '非採時'
+        b_app = getattr(self, 'active_rule_basic_apply', '階段')
+        b_rel = getattr(self, 'active_rule_basic_release', '階段')
+        basic_str = "OFF" if b_app == "OFF" else f"{b_app} / {b_rel}"
+        i_app = getattr(self, 'active_rule_init_apply', 'ON①')
+        i_rel = getattr(self, 'active_rule_init_release', 'ON①')
+        f_str = getattr(self, 'active_features_str', '')
+        
+        dbg_texts.extend([
+            f"[SCORING RULES] 次駅: {n_sta} ({n_time})",
+            f"基本制動: {basic_str}  |  初動: {i_app}  |  緩和: {i_rel}",
+            f"減点項目: [転動] {f_str}",
+            "-" * 80  # 視覚的な区切り線
+        ])
+    # =================================================================
+
 
     mode_str = "ON" if self.is_scoring_mode else "OFF"
     dbg_texts.extend([
@@ -267,7 +289,12 @@ def draw_hud(self, painter, logical_width):
                         has_timing_station = True
                         break
 
-            if has_timing_station and self.bve_is_timing == 1:
+            # =================================================================
+            # ★ 修正：BVEの生データ(bve_is_timing)を捨て、ユーザー設定(抽出済み)を使う！
+            # =================================================================
+            is_currently_timing = getattr(self, 'active_next_sta_timing', self.bve_is_timing == 1)
+
+            if has_timing_station and is_currently_timing:
                 # ★ 鶴さんの元の設定 (5.0) に完全復元しました！
                 show_timing = int((self.bve_time_ms / 1000.0) / 5.0) % 2 == 0
                 label_text = "採時" if show_timing else ("通過" if is_p else "停車")

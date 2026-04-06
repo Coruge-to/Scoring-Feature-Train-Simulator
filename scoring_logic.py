@@ -268,6 +268,62 @@ def get_notch_state(self, notch):
 
 def update_physics_and_scoring(self, current_time, dt):
     # =================================================================
+    # ★ 新設：現在の座標から「今適用されるルール」をリアルタイム抽出！
+    # =================================================================
+    if getattr(self, 'is_scoring_mode', False) and getattr(self, 'station_list', []):
+        
+        # 1. 先に「次駅ターゲット」を特定する（ドアが閉まると切り替わる）
+        next_idx = -1
+        if self.bve_next_loc >= 0:
+            for i, st in enumerate(self.station_list):
+                if abs(st["location"] - self.bve_next_loc) < 1.0:
+                    next_idx = i
+                    break
+        
+        if next_idx >= 0:
+            self.active_next_sta_name = self.station_list[next_idx].get("name", "不明な駅")
+            self.active_next_sta_timing = self.is_station_timing(next_idx) if hasattr(self, 'is_station_timing') else False
+        else:
+            self.active_next_sta_name = "---"
+            self.active_next_sta_timing = False
+            
+        # 2. 区間ルールの抽出（物理座標ではなく、次駅ターゲットを基準にする！）
+        b_rules = getattr(self, 'brake_rules', [{"end_idx": -1, "apply": "階段", "release": "階段"}])
+        p_rules = getattr(self, 'penalty_init_rules', [{"apply": "ON①", "release": "ON①"}])
+        
+        active_b_rule = b_rules[-1]
+        active_p_rule = p_rules[-1] if len(p_rules) == len(b_rules) else {"apply": "ON①", "release": "ON①"}
+        
+        # 比較用インデックス（次駅が未定なら0とする）
+        compare_idx = next_idx if next_idx >= 0 else 0
+        
+        for i, r in enumerate(b_rules):
+            e_idx = r.get("end_idx", -1)
+            if e_idx == -1 or e_idx >= len(self.station_list):
+                active_b_rule = r
+                active_p_rule = p_rules[i] if i < len(p_rules) else p_rules[-1]
+                break
+            
+            # ★ 変更：列車の現在地ではなく、「次に向かっている駅」が区間内かで判定
+            if compare_idx <= e_idx:
+                active_b_rule = r
+                active_p_rule = p_rules[i] if i < len(p_rules) else p_rules[-1]
+                break
+                
+        self.active_rule_basic_apply = active_b_rule.get("apply", "階段")
+        self.active_rule_basic_release = active_b_rule.get("release", "階段")
+        self.active_rule_init_apply = active_p_rule.get("apply", "ON①")
+        self.active_rule_init_release = active_p_rule.get("release", "ON①")
+        
+        # 3. 機能ON/OFFの文字列化（HUD表示用）
+        f_list = []
+        if getattr(self, 'pen_limit', True): f_list.append("[制限超]")
+        if getattr(self, 'pen_jerk', True): f_list.append("[衝動]")
+        if getattr(self, 'pen_eb', True): f_list.append("[EB]")
+        if getattr(self, 'pen_ats', True): f_list.append("[ATS]")
+        self.active_features_str = " ".join(f_list) if f_list else "すべてOFF"
+        
+    # =================================================================
     # ★ 謎4解決：お掃除係を最上部へ配置し、永遠に残るバグを消滅
     # =================================================================
     self.popups = [p for p in getattr(self, 'popups', []) if p["expire_time"] > current_time]

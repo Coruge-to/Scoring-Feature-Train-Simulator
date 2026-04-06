@@ -324,6 +324,10 @@ class Overlay(QWidget):
                                 if self.menu_state != 0:
                                     self.menu_state = 0
                                 self.user_timing_overrides.clear()
+                                self.is_speed_limit_exceeded = False
+                                self.last_speed_limit_penalty_time = 0.0
+                                if hasattr(self, 'accumulated_speed_penalty'):
+                                    self.accumulated_speed_penalty = 0
                             self.needs_margin_recalc = True
                             self.current_scenario_id = new_id
                             
