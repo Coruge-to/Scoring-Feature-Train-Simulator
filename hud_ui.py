@@ -61,7 +61,7 @@ def draw_hud(self, painter, logical_width):
             f"[SCORING RULES] 次駅: {n_sta} ({n_time})",
             f"基本制動: {basic_str}  |  初動: {i_app}  |  緩和: {i_rel}",
             f"減点項目: [転動] {f_str}",
-            "-" * 80  # 視覚的な区切り線
+            "-" * 115  # 視覚的な区切り線
         ])
     # =================================================================
 

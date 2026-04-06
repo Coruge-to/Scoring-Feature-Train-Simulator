@@ -27,6 +27,11 @@ def execute_retry(self, index, is_bve_advancing):
     self.bve_door = 0
     self.prev_door = 0
 
+    #self.prev_term = 0
+    #self.prev_is_pass = 0
+    #self.prev_is_timing = 0
+    #self.prev_next_loc = -1.0
+
     self.rollback_msg = f">>> {cp.get('station_name', '駅')} へロールバック完了 <<<"
     self.rollback_msg_timer = self.bve_time_ms / 1000.0 + 5.0
     
@@ -169,7 +174,8 @@ def evaluate_arrival(self, current_time):
             curr_sta_idx = i
             break
             
-    is_scoring_end_station = (curr_sta_idx == getattr(self, 'setting_end_idx', -1)) or (getattr(self, 'prev_term', 0) == 1)
+    is_end_sta_match = (curr_sta_idx != -1 and curr_sta_idx == getattr(self, 'setting_end_idx', -1)) or (getattr(self, 'prev_term', 0) == 1)
+    is_scoring_end_station = is_end_sta_match and not getattr(self, 'jump_lock', False)
 
     is_zero_stop = False
     if not getattr(self, 'is_first_station', False) and getattr(self, 'has_departed', False) and not getattr(self, 'has_scored_stop_this_station', False):
@@ -180,11 +186,27 @@ def evaluate_arrival(self, current_time):
     apply_ok = False
     release_ok = False
 
-    if getattr(self, 'bb_is_in_zone', False) and not getattr(self, 'bb_evaluated', False) and not getattr(self, 'jump_lock', False):
+    # =================================================================
+    # ★ 追加：現在の基本制動ルールを取得し、"OFF"なら判定自体をスキップ
+    # =================================================================
+    b_rule_app = getattr(self, 'active_rule_basic_apply', '階段')
+    b_rule_rel = getattr(self, 'active_rule_basic_release', '階段')
+
+    if b_rule_app != "OFF" and getattr(self, 'bb_is_in_zone', False) and not getattr(self, 'bb_evaluated', False) and not getattr(self, 'jump_lock', False):
         if not getattr(self, 'bb_is_stable', False):
             self.bb_is_stable = True
             process_bb_transition(self, self.bb_current_notch)
         self.bb_evaluated = True
+        
+        # 文字列を回数(数値)に変換する関数（回数計算用）
+        def get_limit_val(s):
+            if s == "1段": return 1
+            if s == "2段": return 2
+            if s == "3段": return 3
+            return 0 # "階段"
+
+        app_limit = get_limit_val(b_rule_app)
+        rel_limit = get_limit_val(b_rule_rel)
         
         actual_margin = getattr(self, 'setting_stop_distance', -1) if getattr(self, 'setting_stop_distance', -1) != -1 else (self.bve_train_length + STATION_MARGIN)
         dist_to_stop = p_loc - self.bve_location
@@ -192,19 +214,19 @@ def evaluate_arrival(self, current_time):
         if abs(dist_to_stop) <= actual_margin:
             if getattr(self, 'bb_state', "IDLE") != "FAILED" and not getattr(self, 'is_stopped_out_of_range', False) and getattr(self, 'stop_notch_state', "IDLE") != "STRONG":
                 if (getattr(self, 'bb_apply_count', 0) > 0 or getattr(self, 'bb_release_count', 0) > 0):
-                    apply_ok = (BASIC_BRAKE_APPLY_LIMIT == 0) or (getattr(self, 'bb_apply_count', 0) <= BASIC_BRAKE_APPLY_LIMIT)
-                    release_ok = (BASIC_BRAKE_RELEASE_LIMIT == 0) or (getattr(self, 'bb_release_count', 0) <= BASIC_BRAKE_RELEASE_LIMIT)
+                    # ★ 変更：固定値ではなく、ルール上限値(app_limit)と比較
+                    apply_ok = (app_limit == 0) or (getattr(self, 'bb_apply_count', 0) <= app_limit)
+                    release_ok = (rel_limit == 0) or (getattr(self, 'bb_release_count', 0) <= rel_limit)
 
     if is_zero_stop and getattr(self, 'is_scoring_mode', False):
         add_score_popup(self, 0, "0cm停車成功!!!", COLOR_N, "big", "ボーナス", current_time)
         
     if apply_ok and release_ok and getattr(self, 'is_scoring_mode', False):
-        apply_str = f"{BASIC_BRAKE_APPLY_LIMIT}段制動" if BASIC_BRAKE_APPLY_LIMIT > 0 else "階段制動"
-        release_str = f"{BASIC_BRAKE_RELEASE_LIMIT}段緩め" if BASIC_BRAKE_RELEASE_LIMIT > 0 else "階段緩め"
-        add_score_popup(self, 0, f"{apply_str}{release_str}成功!!!", COLOR_N, "big", "基本制動", current_time)
+        # ★ 鶴さん考案！そのまま文字列を結合するだけでスマートに表示！
+        add_score_popup(self, 0, f"{b_rule_app}制動{b_rule_rel}緩め成功!!!", COLOR_N, "big", "基本制動", current_time)
         add_score_popup(self, 500, "基本制動 +500", COLOR_N, "pos", "基本制動", current_time)
 
-    if is_zero_stop and getattr(self, 'is_scoring_mode', False):
+    if is_zero_stop and apply_ok and release_ok and getattr(self, 'is_scoring_mode', False):
         add_score_popup(self, 500, "ボーナス +500", COLOR_N, "pos", "ボーナス", current_time)
 
     if is_scoring_end_station:
@@ -218,19 +240,35 @@ def evaluate_arrival(self, current_time):
 def evaluate_departure(self, current_time):
     if getattr(self, 'is_scoring_finished', False): return
     allow_score = not getattr(self, 'jump_lock', False) or getattr(self, 'is_official_retry', False)
+    
+    p_loc = getattr(self, 'prev_next_loc', -1.0)
+    p_idx = -1
+    if p_loc >= 0:
+        for i, st in enumerate(getattr(self, 'station_list', [])):
+            if abs(st["location"] - p_loc) < 1.0:
+                p_idx = i
+                break
+    
+    # ★ 厳密化：駅が特定できない、もしくはユーザー設定で非採時なら False
+    is_timing_active = False
+    if p_idx >= 0:
+        # F6メニューの設定(override)も含めて判定する関数を呼ぶ
+        is_timing_active = self.is_station_timing(p_idx)
+
     if not getattr(self, 'ignore_next_pass_score', False) and allow_score and not getattr(self, 'is_first_station', False):
-        if getattr(self, 'prev_is_pass', 0) == 1 and getattr(self, 'prev_is_timing', 0) == 1:
+        # ★ prev_is_timing == 1 を is_timing_active に置き換え
+        if getattr(self, 'prev_is_pass', 0) == 1 and is_timing_active:
             if not getattr(self, 'has_scored_time_this_station', False):
                 apply_time_score(self, getattr(self, 'prev_diff_s', 0), current_time)
                 self.has_scored_time_this_station = True
                 self.is_official_retry = False 
-        elif getattr(self, 'prev_is_pass', 0) == 0 and getattr(self, 'prev_doordir', 1) == 0 and getattr(self, 'prev_is_timing', 0) == 1:
+        elif getattr(self, 'prev_is_pass', 0) == 0 and getattr(self, 'prev_doordir', 1) == 0 and is_timing_active:
             if not getattr(self, 'has_scored_time_this_station', False):
-                d = getattr(self, 'prev_next_loc', -1.0) - self.bve_location
+                d = p_loc - self.bve_location
                 if (-self.bve_margin_f <= d <= self.bve_margin_b):
                     apply_time_score(self, getattr(self, 'prev_diff_s', 0), current_time)
                     self.has_scored_time_this_station = True
-                    self.is_official_retry = False 
+                    self.is_official_retry = False
 
 def process_bb_transition(self, stable_notch):
     if stable_notch != self.bb_prev_stable_notch:
@@ -322,7 +360,7 @@ def update_physics_and_scoring(self, current_time, dt):
         if getattr(self, 'pen_eb', True): f_list.append("[EB]")
         if getattr(self, 'pen_ats', True): f_list.append("[ATS]")
         self.active_features_str = " ".join(f_list) if f_list else "すべてOFF"
-        
+
     # =================================================================
     # ★ 謎4解決：お掃除係を最上部へ配置し、永遠に残るバグを消滅
     # =================================================================
@@ -420,10 +458,11 @@ def update_physics_and_scoring(self, current_time, dt):
             # =================================================================
             abs_stop_g = abs(self.last_stop_g)
 
-            if abs_stop_g >= 0.10:
-                add_score_popup(self, -200, "停車時衝動 -200", COLOR_B_EMG, "neg", "停車時衝動", current_time)
-            elif abs_stop_g >= 0.06:
-                add_score_popup(self, -100, "停車時衝動 -100", COLOR_B_EMG, "neg", "停車時衝動", current_time)
+            if getattr(self, 'pen_jerk', True):
+                if abs_stop_g >= 0.10:
+                    add_score_popup(self, -200, "停車時衝動 -200", COLOR_B_EMG, "neg", "停車時衝動", current_time)
+                elif abs_stop_g >= 0.06:
+                    add_score_popup(self, -100, "停車時衝動 -100", COLOR_B_EMG, "neg", "停車時衝動", current_time)
             self.is_stopping_zone = False
             
         curr_n = self.bve_brk_notch
@@ -455,7 +494,8 @@ def update_physics_and_scoring(self, current_time, dt):
         if self.bb_is_in_zone: self.bb_state = "FAILED"
         if not self.eb_applied:
             if abs(self.bve_speed) > 0.0: 
-                add_score_popup(self, -500, "非常ブレーキ使用 -500", COLOR_B_EMG, "neg", "非常ブレーキ", current_time)
+                if getattr(self, 'pen_eb', True):
+                    add_score_popup(self, -500, "非常ブレーキ使用 -500", COLOR_B_EMG, "neg", "非常ブレーキ", current_time)
                 
                 actual_exempt = getattr(self, 'setting_initial_brake', IGNORE_INITIAL_BRAKE)
                 is_initial_exempt = (actual_exempt == "ALL") or (actual_exempt == "STATION" and in_station_zone)
@@ -509,8 +549,8 @@ def update_physics_and_scoring(self, current_time, dt):
     if curr_state == "STRONG":
         self.hb_strong_entered = True 
         if prev_state != "STRONG":
-            actual_exempt = getattr(self, 'setting_initial_brake', IGNORE_INITIAL_BRAKE)
-            is_initial_exempt = (actual_exempt == "ALL") or (actual_exempt == "STATION" and in_station_zone)
+            rule = getattr(self, 'active_rule_init_apply', 'ON①')
+            is_initial_exempt = (rule == "OFF") or (rule == "ON②" and in_station_zone)
             
             if not is_initial_exempt and abs(self.bve_speed) > 0.0:
                 if not getattr(self, 'has_evaluated_initial_brake', False):
@@ -526,7 +566,8 @@ def update_physics_and_scoring(self, current_time, dt):
                     self.has_evaluated_initial_brake = True
 
     if curr_state == "IDLE" and prev_state != "IDLE":
-        is_release_exempt = (IGNORE_RELEASE_BRAKE == "ALL") or (IGNORE_RELEASE_BRAKE == "STATION" and in_station_zone)
+        rule = getattr(self, 'active_rule_init_release', 'ON①')
+        is_release_exempt = (rule == "OFF") or (rule == "ON②" and in_station_zone)
         if not is_release_exempt and abs(self.bve_speed) > 0.0: 
             if not getattr(self, 'idle_entered_while_stopped', False):
                 if getattr(self, 'hb_strong_entered', False):
@@ -685,8 +726,11 @@ def update_physics_and_scoring(self, current_time, dt):
             break
     is_scoring_end_station = (curr_sta_idx == getattr(self, 'setting_end_idx', -1)) or (getattr(self, 'prev_term', 0) == 1)
 
+    is_timing_active = self.is_station_timing(curr_sta_idx) if curr_sta_idx >= 0 else False
+
     if not is_operational_stop and getattr(self, 'prev_door', 0) == 0 and getattr(self, 'bve_door', 0) == 1:
-        if is_scoring_end_station and getattr(self, 'prev_is_timing', 0) == 1 and not getattr(self, 'has_scored_time_this_station', False):
+        # ★ 修正：prev_is_timing == 1 ではなく is_timing_active を使う
+        if is_scoring_end_station and is_timing_active and not getattr(self, 'has_scored_time_this_station', False):
             allow_score = not getattr(self, 'jump_lock', False) or getattr(self, 'is_official_retry', False)
             if allow_score and not getattr(self, 'is_first_station', False):
                 apply_time_score(self, getattr(self, 'prev_diff_s', 0), current_time)
@@ -698,7 +742,7 @@ def update_physics_and_scoring(self, current_time, dt):
 
     allow_score = not getattr(self, 'jump_lock', False) or getattr(self, 'is_official_retry', False)
     if not is_operational_stop and getattr(self, 'prev_door', 0) == 1 and getattr(self, 'bve_door', 0) == 0:
-        if getattr(self, 'prev_term', 0) == 0 and getattr(self, 'prev_is_timing', 0) == 1 and not getattr(self, 'has_scored_time_this_station', False):
+        if getattr(self, 'prev_term', 0) == 0 and is_timing_active and not getattr(self, 'has_scored_time_this_station', False):
             if allow_score and not getattr(self, 'is_first_station', False):
                 apply_time_score(self, getattr(self, 'prev_diff_s', 0), current_time)
                 self.is_official_retry = False 
