@@ -903,21 +903,7 @@ class Overlay(QWidget):
                         retry_cmd = f"JUMP_LOC_TIME:{start_loc}:{target_time_ms}"
                     else:
                         retry_cmd = f"JUMP_STA_TIME:{self.setting_start_idx}:{target_time_ms}"
-
-                    '''
-                    # 始発駅の特別扱いを撤去し、全駅共通の計算にする
-                    if raw_arr >= 0: target_time_ms = raw_arr
-                    else:
-                        calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1
-                        if calc_t >= 0 and def_t >= 0: target_time_ms = max(calc_t, def_t)
-                        elif calc_t >= 0: target_time_ms = calc_t
-                        elif def_t >= 0: target_time_ms = def_t
-                    
-                    if target_time_ms < 0: target_time_ms = max(0, getattr(self, 'bve_time_ms', 0))
-                    # 共通のコマンドを組み立てる
-                    retry_cmd = f"JUMP_STA_TIME:{self.setting_start_idx}:{target_time_ms}"
-                    '''
-               
+              
                 self.is_official_jumping = True
                 self.jump_start_real_time = time.time()
                 self.expected_target_loc = start_loc
