@@ -15,15 +15,7 @@ from config import *
 from scoring_logic import execute_retry, update_physics_and_scoring
 from menu_ui import draw_menu
 from hud_ui import draw_hud
-
-def write_desktop_log(msg):
-    desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-    log_file = os.path.join(desktop, "debug.log")
-    try:
-        with open(log_file, "a", encoding="utf-8") as f:
-            f.write(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] {msg}\n")
-    except:
-        pass
+from utils import write_desktop_log
 
 KERNING_OFFSETS = {
     "メ": 12,
@@ -464,7 +456,7 @@ class Overlay(QWidget):
                     
                     # ログがスパムにならないよう、値が初めて取得・変化した時だけコンソールに出力
                         if getattr(self, '_debug_door_time_printed', -1) != val:
-                            print(f"\n[DEBUG] C#からドア時間を受信しました！ DOORTIME: {val} ms\n")
+                            write_desktop_log(f"[UDP] ドア時間(CloseTime)を受信: {val} ms")
                             self._debug_door_time_printed = val
                 except Exception: continue 
 

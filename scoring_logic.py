@@ -1,18 +1,10 @@
 from config import *
 from utils import calculate_warning_distance, calculate_apex_speed
 from PyQt6.QtNetwork import QHostAddress
+from utils import calculate_warning_distance, calculate_apex_speed, write_desktop_log
 import os
 from datetime import datetime
 import time
-
-def write_desktop_log(msg):
-    desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-    log_file = os.path.join(desktop, "debug.log")
-    try:
-        with open(log_file, "a", encoding="utf-8") as f:
-            f.write(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] {msg}\n")
-    except:
-        pass
 
 def execute_retry(self, index, is_bve_advancing):
     if index < 0 or index >= len(self.save_data): return
@@ -155,7 +147,7 @@ def create_save_data(self):
                         save_time_ms += door_time
                         
                         # （確認用：後で消してもOKです）
-                        print(f"ズル防止発動: {st.get('name', '駅')}にて {door_time} msを加算しました！")
+                        write_desktop_log(f"[SAVE] ズル防止発動: {st.get('name', '駅')}にて {door_time}ms をセーブデータ時刻に加算")
 
         # =================================================================
         

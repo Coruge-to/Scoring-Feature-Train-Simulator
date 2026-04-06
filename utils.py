@@ -1,13 +1,16 @@
 import math
 import datetime
+import os
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFontMetrics, QPainterPath, QPen
 from config import *
 
 # ★ ネットワークファイル用のログ関数
-def write_debug_log(msg):
+def write_desktop_log(msg):
+    desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+    log_file = os.path.join(desktop, "debug.log")
     try:
-        with open("debug_log.txt", "a", encoding="utf-8") as f:
+        with open(log_file, "a", encoding="utf-8") as f:
             f.write(f"[{datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]}] {msg}\n")
     except:
         pass
