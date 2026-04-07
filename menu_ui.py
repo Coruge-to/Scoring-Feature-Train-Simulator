@@ -2,6 +2,8 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFontMetrics, QPen
 from config import *
 from utils import draw_text_with_outline
+import math
+import time
 
 def draw_menu(self, painter, logical_width):
     # ==========================================================
@@ -93,10 +95,10 @@ def draw_menu(self, painter, logical_width):
     elif self.menu_state == 2: title_text = "=== 選択した駅からやり直す ==="
     elif self.menu_state == 4: title_text = "=== 環境設定 ==="
     elif self.menu_state in [5, 7]: 
-        title_text = "=== 採点設定 (1/2) ==="
+        title_text = "=== 採点設定 (1/3) ==="
         title_y = 112 + MAIN_SHIFT_Y
     elif self.menu_state in [6, 9]: 
-        title_text = "=== 採点設定 (2/2) ==="
+        title_text = "=== 採点設定 (2/3) ==="
         title_y = 112 + MAIN_SHIFT_Y
 
     if title_text and self.menu_state not in [3, 8]:
@@ -951,7 +953,7 @@ def draw_menu(self, painter, logical_width):
         
         # 6: 採点開始 (前へを廃止し中央へ)
         btn_y = 830
-        draw_menu_item("採点を開始する", btn_y, (self.menu_cursor == 6 and getattr(self, 'menu_cursor_x', 0) == -1), 6, "center", x_offset=0)
+        draw_menu_item("次へ (評価点の設定)", btn_y, (self.menu_cursor == 6 and getattr(self, 'menu_cursor_x', 0) == -1), 6, "center", x_offset=0)
 
         # 説明文
         desc_y = 870 
@@ -967,7 +969,7 @@ def draw_menu(self, painter, logical_width):
             3: "【 停車時衝動 】\n列車が完全に停止する際のショックの大きさを停止直前の0.5秒におけるGの平均値により採点します。\n（※0.06G≒2.1km/h/s以上で-100点、0.10G≒3.5km/h/s以上で-200点）",
             4: "【 非常ブレーキ 】\n走行中に非常ブレーキを使用したかどうかを採点します。\n（※非常ブレーキを使用するごとに-500点）",
             5: "【 初動・緩和ブレーキ 】\n基本制動のルールを設定した区間ごとに、\n異なる初動・緩和ブレーキのルールを適用したい場合に追加・編集します。",
-            6: "現在の設定内容で採点を開始します。"
+            6: "次の設定ページ（評価点の設定）へ進みます。"
         }
         
         desc_text = ""
@@ -1119,6 +1121,147 @@ def draw_menu(self, painter, logical_width):
         desc_text = "ON① : 全区間で採点を行います。\nON② : 停車駅採点範囲内（停止位置目標の付近）での操作は減点免除となります。\nOFF  : 採点を行いません。\n※残圧停車を行う路線では、緩和をON②またはOFFにしてください。"
         for j, line in enumerate(desc_text.split('\n')):
             draw_text_with_outline(painter, line, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, 180, desc_y + 40 + (j * 40), "left", passes=8)
+
+    # ==========================================================
+    # ★ 新規追加: 評価点の設定 (3/3) メイン描画 (menu_state == 10)
+    # ==========================================================
+    elif self.menu_state == 10:
+        MAIN_SHIFT_Y = 25
+        title_text = "=== 採点設定 (3/3) ==="
+        title_y = 112 + MAIN_SHIFT_Y
+        draw_text_with_outline(painter, title_text, self.font_big, MENU_TEXT, MENU_OUTLINE, center_x, title_y, "center", passes=8)
+
+        # 数値の計算
+        rank_a_pct = int(round(getattr(self, 'rank_a_ratio', 0.8) * 100))
+        rank_b_pct = int(round(rank_a_pct * 0.8))
+        rank_c_pct = int(round(rank_b_pct * 0.8))
+
+        theory_score = getattr(self, 'theoretical_score', 12500)
+        score_a = int(round(theory_score * (rank_a_pct / 100.0)))
+        score_b = int(round(score_a * 0.8))
+        score_c = int(round(score_a * 0.8 * 0.8))
+
+        # ---------------------------------------------
+        # 1. スライダーの描画
+        # ---------------------------------------------
+        slider_y = 265
+        slider_w = 1200
+        slider_x = center_x - (slider_w / 2)
+        
+        # 太い黒(グレー)のベースライン
+        painter.setPen(QPen(QColor(50, 50, 50), 16, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(int(slider_x), int(slider_y), int(slider_x + slider_w), int(slider_y))
+
+        # 両端のテキスト
+        draw_text_with_outline(painter, "0%", self.font_ui, COLOR_WHITE, COLOR_OUTLINE_BLACK, slider_x - 30, slider_y + 20, "right", passes=8)
+        draw_text_with_outline(painter, "100%", self.font_ui, COLOR_WHITE, COLOR_OUTLINE_BLACK, slider_x + slider_w + 30, slider_y + 20, "left", passes=8)
+
+        def draw_node(pct, color_val, label_text, is_active=False):
+            nx = slider_x + (slider_w * pct / 100)
+
+            qc = QColor(*color_val) if isinstance(color_val, tuple) else QColor(color_val)
+            
+            if is_active:
+                # 1. アニメーション変数を滑らかな「脈動」に変換する (0.0 〜 1.0 の sin波)
+                t = time.time()
+                pulse = (math.sin(t * math.pi) + 1) / 2 # 0.0 〜 1.0 のゆっくりした波
+                
+                painter.setPen(Qt.PenStyle.NoPen)
+                
+                glow_c = QColor(255, 80, 80)
+                
+                glow_c.setAlpha(60)
+                painter.setBrush(glow_c)
+                painter.drawEllipse(int(nx - 28), int(slider_y - 28), 56, 56)
+                
+                glow_size = 44 + (pulse * 20)
+                
+                glow_alpha = int(40 + (pulse * 80))
+                
+                glow_c.setAlpha(glow_alpha)
+                painter.setBrush(glow_c)
+                for s_offset in [0, 8]:
+                    s = glow_size + s_offset
+                    painter.drawEllipse(int(nx - s/2), int(slider_y - s/2), int(s), int(s))
+
+            painter.setPen(QPen(qc, 8))
+            painter.setBrush(QColor(*COLOR_WHITE)) # 白で塗りつぶし
+            painter.drawEllipse(int(nx - 22), int(slider_y - 22), 44, 44)
+            
+            # 上の吹き出しボックス
+            box_w = 100
+            box_h = 45
+            box_y = slider_y - 85
+            painter.setPen(QPen(qc, 3))
+            painter.setBrush(QColor(*COLOR_WHITE)) # ★ 修正
+            painter.drawRoundedRect(int(nx - box_w/2), int(box_y), box_w, box_h, 5, 5)
+            
+            # 吹き出しの尻尾
+            painter.drawLine(int(nx), int(box_y + box_h + 1), int(nx), int(slider_y - 28))
+            
+            # パーセント文字 (draw_text_with_outline はタプルをそのまま受け取れる)
+            pct_str = getattr(self, 'input_buffer', "") + "%" if is_active and getattr(self, 'input_mode_active', False) else f"{pct}%"
+            draw_text_with_outline(painter, pct_str, self.font_desc, color_val, COLOR_WHITE, nx, box_y + 35, "center", passes=8)
+            return nx
+
+        # C, B, A の順に描画 (HUDのカラー定数を使い回す)
+        draw_node(rank_c_pct, COLOR_P, "C")       # 水色/青系 (COLOR_P)
+        draw_node(rank_b_pct, COLOR_N, "B")       # 緑系 (COLOR_N)
+        
+        # Aノード（アクティブ判定）
+        is_a_focused = (self.menu_cursor == 0)
+        nx_a = draw_node(rank_a_pct, COLOR_B_EMG, "A", is_a_focused) # 赤系 (COLOR_B_EMG)
+
+        # ---------------------------------------------
+        # 2. 理論値・各ランク点数の描画
+        # ---------------------------------------------
+        table_y = 365
+        row_h = 65
+        col1_x = center_x - 450
+        col2_x = center_x + 250
+        col3_x = center_x + 450
+
+        font_tbl = self.font_normal
+        draw_text_with_outline(painter, "理論値", font_tbl, COLOR_WHITE, COLOR_OUTLINE_BLACK, col1_x, table_y, "left", passes=8)
+        draw_text_with_outline(painter, f"{theory_score} 点", font_tbl, COLOR_WHITE, COLOR_OUTLINE_BLACK, col2_x, table_y, "right", passes=8)
+        draw_text_with_outline(painter, "(100%)", font_tbl, COLOR_WHITE, COLOR_OUTLINE_BLACK, col3_x, table_y, "right", passes=8)
+
+        draw_text_with_outline(painter, "Rank A", font_tbl, COLOR_B_EMG, COLOR_WHITE, col1_x, table_y + row_h, "left", passes=8)
+        draw_text_with_outline(painter, f"{score_a} 点", font_tbl, COLOR_B_EMG, COLOR_WHITE, col2_x, table_y + row_h, "right", passes=8)
+        draw_text_with_outline(painter, f"({rank_a_pct:>3}%)", font_tbl, COLOR_WHITE, COLOR_OUTLINE_BLACK, col3_x, table_y + row_h, "right", passes=8)
+
+        draw_text_with_outline(painter, "Rank B", font_tbl, COLOR_N, COLOR_WHITE, col1_x, table_y + row_h*2, "left", passes=8)
+        draw_text_with_outline(painter, f"{score_b} 点", font_tbl, COLOR_N, COLOR_WHITE, col2_x, table_y + row_h*2, "right", passes=8)
+        draw_text_with_outline(painter, f"( {rank_b_pct}%)", font_tbl, COLOR_WHITE, COLOR_OUTLINE_BLACK, col3_x, table_y + row_h*2, "right", passes=8)
+
+        draw_text_with_outline(painter, "Rank C", font_tbl, COLOR_P, COLOR_WHITE, col1_x, table_y + row_h*3, "left", passes=8)
+        draw_text_with_outline(painter, f"{score_c} 点", font_tbl, COLOR_P, COLOR_WHITE, col2_x, table_y + row_h*3, "right", passes=8)
+        draw_text_with_outline(painter, f"( {rank_c_pct}%)", font_tbl, COLOR_WHITE, COLOR_OUTLINE_BLACK, col3_x, table_y + row_h*3, "right", passes=8)
+
+        # ---------------------------------------------
+        # 3. 採点開始ボタンと説明文
+        # ---------------------------------------------
+        draw_menu_item("採点を開始する", 645, (self.menu_cursor == 1), 1, "center")
+
+        desc_y = 693 
+        desc_h = 312 
+        painter.setPen(QPen(QColor(150, 150, 150), 2))
+        painter.setBrush(QColor(20, 20, 20, 220))
+        painter.drawRoundedRect(150, int(desc_y), 1620, int(desc_h), 10, 10)
+
+        desc_lines = [
+            "（※理論値 ＝ n₁ × 500 ＋ n₂ × 500 ＋ n₃ × 300）",
+            "理論値とは、採点対象となる各駅で、各加点項目の全てを満点で獲得した場合の合計点数です。",
+            "停止位置の採点対象となる駅の総数n₁ : 始発駅以外の停車駅の数",
+            "基本制動の採点対象となる駅の総数n₂ : 始発駅以外 かつ 基本制動設定がOFF ではない停車駅の数",
+            "運転時分の採点対象となる駅の総数n₃ : 採時駅の数",
+            "",
+            "Rank A は理論値の 60～100％ の間で調整が可能です。",
+            "Rank B = Rank A × 0.8、Rank C = Rank B × 0.8 (整数値に四捨五入)で自動的に計算されます。",
+            "やり直しをせずに試験を終え、かつ Rank A 以上の点数の場合には Rank S が与えられます。"
+        ]
+        for j, line in enumerate(desc_lines):
+            draw_text_with_outline(painter, line, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, 180, desc_y + 35 + (j * 33), "left", passes=8)
 
     # ==========================================================
     # ★ 新規追加: 操作説明（ヘルプ）ボタンと小ウィンドウの描画

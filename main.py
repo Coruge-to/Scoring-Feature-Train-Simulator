@@ -142,6 +142,13 @@ class Overlay(QWidget):
         self.init_sub_scroll = 0
         self.init_sub_cursor = 0
         self.init_sub_cursor_x = 0
+
+        # =================================================================
+        # ★ 新規追加: 評価点(Rank)設定用の変数
+        # =================================================================
+        self.rank_a_ratio = 0.80  # Aランクの閾値 (0.60 ～ 1.00)
+        self.theoretical_score = 0 # 理論値
+        self.total_retry_count = 0 # Sランク判定用のやり直し回数
         
         self.menu_items_off = ["運転を再開する", "採点設定", "環境設定"]
         self.menu_items_on = ["運転を再開する", "採点を中断する", "選択した駅からやり直す", "環境設定"]
@@ -545,6 +552,10 @@ class Overlay(QWidget):
             self.input_mode_active = False
 
     def handle_menu_up(self):
+        if self.menu_state == 10:
+            if getattr(self, 'input_mode_active', False): return
+            self.menu_cursor = 0 if self.menu_cursor == 1 else 1
+            return
         if self.menu_state == 5:
             if getattr(self, 'input_mode_active', False): return
             if self.menu_cursor == 4 and getattr(self, 'menu_cursor_x', 0) == 1:
@@ -619,6 +630,10 @@ class Overlay(QWidget):
             if self.menu_cursor < 0: self.menu_cursor = 6
 
     def handle_menu_down(self):
+        if self.menu_state == 10:
+            if getattr(self, 'input_mode_active', False): return
+            self.menu_cursor = 1 if self.menu_cursor == 0 else 0
+            return
         if self.menu_state == 5:
             if getattr(self, 'input_mode_active', False): return
             if self.menu_cursor == 4 and getattr(self, 'menu_cursor_x', 0) == 1:
@@ -712,6 +727,10 @@ class Overlay(QWidget):
         elif self.menu_state == 9:
             if getattr(self, 'init_sub_cursor', 0) < len(getattr(self, 'penalty_init_rules', [])):
                 self.init_sub_cursor_x = max(0, getattr(self, 'init_sub_cursor_x', 0) - 1)
+        elif self.menu_state == 10:
+            if getattr(self, 'input_mode_active', False): return
+            if self.menu_cursor == 0:
+                self.rank_a_ratio = max(0.60, round(self.rank_a_ratio - 0.01, 2))
 
     def handle_menu_right(self):
         if self.menu_state == 5:
@@ -744,6 +763,10 @@ class Overlay(QWidget):
                 
                 if self.menu_state == 7: self.sub_cursor_x = min(max_x, sub_c_x + 1)
                 else: self.init_sub_cursor_x = min(max_x, sub_c_x + 1)
+        elif self.menu_state == 10:
+            if getattr(self, 'input_mode_active', False): return
+            if self.menu_cursor == 0:
+                self.rank_a_ratio = min(1.00, round(self.rank_a_ratio + 0.01, 2))
 
     def handle_menu_enter(self, is_bve_advancing):
         if self.menu_state == 1:
@@ -772,7 +795,9 @@ class Overlay(QWidget):
                 self.menu_state = 3
                 self.menu_cursor = 0
         elif self.menu_state == 3:
-            if self.menu_cursor == 0: execute_retry(self, getattr(self, 'target_retry_idx', -1), is_bve_advancing)
+            if self.menu_cursor == 0: 
+                execute_retry(self, getattr(self, 'target_retry_idx', -1), is_bve_advancing)
+                self.total_retry_count += 1 # ★ 追加：Sランク判定のためにやり直し回数をカウント
             elif self.menu_cursor == 1: 
                 self.menu_state = 2
                 self.menu_cursor = getattr(self, 'target_retry_idx', 0)
@@ -854,83 +879,43 @@ class Overlay(QWidget):
                 self.init_sub_cursor_x = 0
                 self.init_sub_scroll = max(0, len(getattr(self, 'penalty_init_rules', [])) - 5)
             elif self.menu_cursor == 6:
-                self.is_scoring_mode = True
-                self.score = 0
-                getattr(self, 'save_data', []).clear()
-                getattr(self, 'popups', []).clear()
-                self.debug_all_penalties = False
+                # =================================================================
+                # ★ 変更: 採点を開始せず、理論値を計算して画面 10 (評価点設定) へ飛ぶ
+                # =================================================================
+                n1, n2, n3 = 0, 0, 0
+                s_idx = getattr(self, 'setting_start_idx', 0)
+                e_idx = getattr(self, 'setting_end_idx', -1)
+                if e_idx == -1:
+                    e_idx = self.get_actual_terminal_idx()
+                    if e_idx == -1: e_idx = len(self.station_list) - 1
+                e_idx = min(e_idx, len(self.station_list) - 1)
                 
-                self.expected_jump = True
-                self.end_message_time = 0.0
-                self.is_first_udp = True
-                self.is_first_station = True
-                self.has_departed = False
-                self.is_approaching = False
-                self.is_stopped_out_of_range = False
-                self.has_scored_time_this_station = False
-                self.has_scored_stop_this_station = False
+                if getattr(self, 'station_list', []):
+                    for i in range(s_idx, e_idx + 1):
+                        st = self.station_list[i]
+                        is_start_station = (i == s_idx)
+                        is_pass = st.get("is_pass", False)
+                        
+                        if not is_start_station and not is_pass:
+                            n1 += 1
+                            b_rule_app = "階段"
+                            for r in getattr(self, 'brake_rules', []):
+                                r_end = r.get("end_idx", -1)
+                                if r_end == -1 or i <= r_end:
+                                    b_rule_app = r.get("apply", "階段")
+                                    break
+                            if b_rule_app != "OFF":
+                                n2 += 1
+                                
+                        if self.is_station_timing(i):
+                            n3 += 1
                 
-                start_loc = 0.0
-                start_sta_name = "不明な駅"
-                target_time_ms = -1
-                
-                # ★ ここで空文字で初期化しておく！
-                retry_cmd = ""
-                
-                if getattr(self, 'station_list', []) and 0 <= getattr(self, 'setting_start_idx', 0) < len(getattr(self, 'station_list', [])):
-                    st = self.station_list[self.setting_start_idx]
-                    start_loc = st.get("location", 0.0)
-                    start_sta_name = st.get("name", "不明な駅")
-                    
-                    raw_arr = st.get("raw_arr", -1)
-                    raw_dep = st.get("raw_dep", -1)
-                    def_t = st.get("def_time", -1)
-                    stop_t = st.get("stop_time", 15000)
-                    
-                    calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1
-                    
-                    if self.setting_start_idx == 0:
-                        # 始発駅：作者の設定した def_t を絶対的に優先する！
-                        if def_t >= 0: target_time_ms = def_t
-                        elif calc_t >= 0: target_time_ms = calc_t
-                        else: target_time_ms = raw_arr if raw_arr >= 0 else -1
-                    else:
-                        # 途中駅：def_tとcalc_tの「早い方(min)」
-                        cands = [t for t in [def_t, calc_t] if t >= 0]
-                        if cands: target_time_ms = min(cands)
-                        else: target_time_ms = raw_arr if raw_arr >= 0 else -1
-
-                    if target_time_ms < 0: target_time_ms = max(0, getattr(self, 'bve_time_ms', 0))
-
-                    # 途中駅で、BVEネイティブのジャンプ時刻(def_t)が計算時刻より遅い場合、理不尽ドア待ちが発生するため「従来ワープ(LOC)」に切り替える
-                    use_legacy_jump = False
-                    if self.setting_start_idx > 0 and def_t >= 0 and def_t > target_time_ms:
-                        use_legacy_jump = True
-
-                    if use_legacy_jump:
-                        retry_cmd = f"JUMP_LOC_TIME:{start_loc}:{target_time_ms}"
-                    else:
-                        retry_cmd = f"JUMP_STA_TIME:{self.setting_start_idx}:{target_time_ms}"
-              
-                self.is_official_jumping = True
-                self.jump_start_real_time = time.time()
-                self.expected_target_loc = start_loc
-                self.expected_target_time = target_time_ms
-                
-                getattr(self, 'save_data', []).append({
-                    "loc": start_loc,
-                    "time_ms": target_time_ms,
-                    "score": 0,
-                    "target_loc": start_loc, 
-                    "station_name": start_sta_name,
-                    "stop_error": 0.0
-                })
-                
-                if retry_cmd != "":
-                    write_desktop_log(f"[MENU 6] 送信コマンド: {retry_cmd} / 予想時間: {target_time_ms}")
-                    self.udp_socket.writeDatagram(retry_cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)
-                
-                self.toggle_menu(is_bve_advancing)
+                self.theoretical_score = (n1 * 500) + (n2 * 500) + (n3 * 300)
+                self.menu_state = 10
+                self.menu_cursor = 0
+                self.input_mode_active = False
+                self.input_buffer = ""
+                # =================================================================
 
         elif self.menu_state in [7, 9]:
             rules = getattr(self, 'brake_rules', []) if self.menu_state == 7 else getattr(self, 'penalty_init_rules', [])
@@ -1004,6 +989,102 @@ class Overlay(QWidget):
                     if sta_idx != getattr(self, 'setting_start_idx', 0):
                         current_status = self.is_station_timing(sta_idx) if hasattr(self, 'is_station_timing') else False
                         getattr(self, 'user_timing_overrides', {})[sta_idx] = not current_status
+        
+
+        elif self.menu_state == 10:
+            if self.menu_cursor == 0: # スライダーを選択中にEnterで直接入力モード
+                if not getattr(self, 'input_mode_active', False):
+                    self.input_mode_active = True
+                    self.input_buffer = "" 
+                    self.input_fresh = True
+                else:
+                    if self.input_buffer:
+                        try:
+                            val = int(self.input_buffer)
+                            if not (60 <= val <= 100): val = 80
+                            self.rank_a_ratio = val / 100.0
+                        except ValueError: pass
+                    self.input_mode_active = False
+                    
+            elif self.menu_cursor == 1: # 「採点を開始する」
+                # ここに、以前 menu_state == 6 にあった以下の長い処理を丸ごと置きます。
+                self.is_scoring_mode = True
+                self.score = 0
+                self.total_retry_count = 0 # ★Sランク判定用に初期化
+                getattr(self, 'save_data', []).clear()
+                getattr(self, 'popups', []).clear()
+                self.debug_all_penalties = False
+                
+                self.expected_jump = True
+                self.end_message_time = 0.0
+                self.is_first_udp = True
+                self.is_first_station = True
+                self.has_departed = False
+                self.is_approaching = False
+                self.is_stopped_out_of_range = False
+                self.has_scored_time_this_station = False
+                self.has_scored_stop_this_station = False
+                
+                start_loc = 0.0
+                start_sta_name = "不明な駅"
+                target_time_ms = -1
+
+                retry_cmd = ""
+                
+                if getattr(self, 'station_list', []) and 0 <= getattr(self, 'setting_start_idx', 0) < len(getattr(self, 'station_list', [])):
+                    st = self.station_list[self.setting_start_idx]
+                    start_loc = st.get("location", 0.0)
+                    start_sta_name = st.get("name", "不明な駅")
+                    
+                    raw_arr = st.get("raw_arr", -1)
+                    raw_dep = st.get("raw_dep", -1)
+                    def_t = st.get("def_time", -1)
+                    stop_t = st.get("stop_time", 15000)
+                    
+                    calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1
+                    
+                    if self.setting_start_idx == 0:
+                        # 始発駅：作者の設定した def_t を絶対的に優先する！
+                        if def_t >= 0: target_time_ms = def_t
+                        elif calc_t >= 0: target_time_ms = calc_t
+                        else: target_time_ms = raw_arr if raw_arr >= 0 else -1
+                    else:
+                        # 途中駅：def_tとcalc_tの「早い方(min)」
+                        cands = [t for t in [def_t, calc_t] if t >= 0]
+                        if cands: target_time_ms = min(cands)
+                        else: target_time_ms = raw_arr if raw_arr >= 0 else -1
+
+                    if target_time_ms < 0: target_time_ms = max(0, getattr(self, 'bve_time_ms', 0))
+
+                    # 途中駅で、BVEネイティブのジャンプ時刻(def_t)が計算時刻より遅い場合、理不尽ドア待ちが発生するため「従来ワープ(LOC)」に切り替える
+                    use_legacy_jump = False
+                    if self.setting_start_idx > 0 and def_t >= 0 and def_t > target_time_ms:
+                        use_legacy_jump = True
+
+                    if use_legacy_jump:
+                        retry_cmd = f"JUMP_LOC_TIME:{start_loc}:{target_time_ms}"
+                    else:
+                        retry_cmd = f"JUMP_STA_TIME:{self.setting_start_idx}:{target_time_ms}"
+              
+                self.is_official_jumping = True
+                self.jump_start_real_time = time.time()
+                self.expected_target_loc = start_loc
+                self.expected_target_time = target_time_ms
+                
+                getattr(self, 'save_data', []).append({
+                    "loc": start_loc,
+                    "time_ms": target_time_ms,
+                    "score": 0,
+                    "target_loc": start_loc, 
+                    "station_name": start_sta_name,
+                    "stop_error": 0.0
+                })
+                
+                if retry_cmd != "":
+                    write_desktop_log(f"[MENU 6] 送信コマンド: {retry_cmd} / 予想時間: {target_time_ms}")
+                    self.udp_socket.writeDatagram(retry_cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)
+                
+                self.toggle_menu(is_bve_advancing)
 
     def handle_dropdown_enter(self):
         selected_opt = getattr(self, 'dropdown_options', [])[getattr(self, 'dropdown_cursor', 0)]
@@ -1103,6 +1184,12 @@ class Overlay(QWidget):
             self.menu_state = 5
         elif self.menu_state == 9:
             self.menu_state = 6
+        elif self.menu_state == 10:
+            if getattr(self, 'input_mode_active', False):
+                self.finalize_margin_input() # 入力モード解除用流用
+            else:
+                self.menu_state = 6
+                self.menu_cursor = 6
 
     def find_bve_window(self):
         found_hwnd = None
@@ -1207,6 +1294,34 @@ class Overlay(QWidget):
             self.keys_blocked = False
 
         is_left_clicked = (win32api.GetAsyncKeyState(win32con.VK_LBUTTON) & 0x8000) != 0
+        # =================================================================
+        # ★ 新規追加: スライダーのマウスドラッグ＆クリック対応
+        # =================================================================
+        is_mouse_down = (win32api.GetAsyncKeyState(win32con.VK_LBUTTON) & 0x8000) != 0
+        if self.menu_state == 10 and is_mouse_down and is_bve_active:
+            cursor_pos = win32gui.GetCursorPos()
+            geom = self.geometry()
+            scale_x = geom.width() / BASE_SCREEN_W
+            scale_y = geom.height() / BASE_SCREEN_H
+            menu_scale = min(scale_x, scale_y)
+            offset_x = (geom.width() - BASE_SCREEN_W * menu_scale) / 2
+            offset_y = (geom.height() - BASE_SCREEN_H * menu_scale) / 2
+            lx = (cursor_pos[0] - geom.x() - offset_x) / menu_scale
+            ly = (cursor_pos[1] - geom.y() - offset_y) / menu_scale
+            
+            # スライダーの当たり判定エリア (menu_ui.py の描画座標と一致させます)
+            slider_y = 280
+            slider_w = 1200
+            slider_x = (BASE_SCREEN_W / 2) - (slider_w / 2)
+            
+            # Y座標がスライダー付近(±100px)なら反応する
+            if slider_y - 100 <= ly <= slider_y + 100:
+                # X座標からパーセンテージを逆算
+                pct = (lx - slider_x) / slider_w
+                pct = max(0.60, min(1.00, pct))
+                self.rank_a_ratio = round(pct, 2)
+                self.menu_cursor = 0 # カーソルをスライダーに合わせる
+                self.input_mode_active = False # 手入力をキャンセル
         if is_left_clicked and not self.last_left_click:
             if self.menu_state != 0 and is_bve_active:
                 cursor_pos = win32gui.GetCursorPos()
@@ -1236,11 +1351,11 @@ class Overlay(QWidget):
             if is_pressed and not self.key_states[key] and is_bve_active:
                 
                 if key in [str(i) for i in range(10)]:
-                    if self.menu_state == 5 and self.menu_cursor == 1 and self.input_mode_active:
+                    if (self.menu_state == 5 and self.menu_cursor == 1 and self.input_mode_active) or (self.menu_state == 10 and self.menu_cursor == 0 and self.input_mode_active):
                         if self.input_fresh:
                             self.input_buffer = key
                             self.input_fresh = False
-                        elif len(self.input_buffer) < 4:
+                        elif len(self.input_buffer) < 3:
                             self.input_buffer += key
                             
                 elif key == 'f6': self.toggle_menu(is_bve_advancing)
