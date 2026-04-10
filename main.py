@@ -187,6 +187,20 @@ class Overlay(QWidget):
         self.bve_term = 0
 
         self.station_list = []
+
+        # =========================================================
+        # ★ 新規追加: シナリオメタ情報と、採点内訳の貯金箱
+        self.meta_title = ""
+        self.meta_route = ""
+        self.meta_vehicle = ""
+        self.meta_author = ""
+        self.meta_comment = ""
+        
+        self.score_details = {
+            "time": 0, "stop": 0, "base_brake": 0, "roll": 0, "jerk": 0,
+            "init_brake": 0, "rel_brake": 0, "eb": 0, "limit": 0, "ats": 0, "bonus": 0
+        }
+        # =========================================================
         
         self.user_timing_overrides = {} 
         self.timing_cursor = 0
@@ -305,6 +319,13 @@ class Overlay(QWidget):
                                 })
                     if new_list:
                         self.station_list = new_list
+                elif text.startswith("META:"):
+                    parts = text.split(':')
+                    if len(parts) >= 6:
+                        self.meta_title = parts[1]
+                        self.meta_route = parts[2]
+                        self.meta_vehicle = parts[3]
+                        self.meta_author = parts[4]
                 else:
                     latest_telemetry = text
             except Exception:
@@ -1010,6 +1031,14 @@ class Overlay(QWidget):
                 # ここに、以前 menu_state == 6 にあった以下の長い処理を丸ごと置きます。
                 self.is_scoring_mode = True
                 self.score = 0
+                # =================================================================
+                # ★ これから新しいプレイが始まるので、貯金箱もやり直し回数も完全に綺麗にする
+                # =================================================================
+                for k in self.score_details:
+                    self.score_details[k] = 0
+                
+                self.total_retry_count = 0 # ★ Sランク判定用に 0 からスタート！
+                # =================================================================
                 self.total_retry_count = 0 # ★Sランク判定用に初期化
                 getattr(self, 'save_data', []).clear()
                 getattr(self, 'popups', []).clear()

@@ -1257,7 +1257,7 @@ def draw_menu(self, painter, logical_width):
             "運転時分の採点対象となる駅の総数n₃ : 採時駅の数",
             "",
             "Rank A は理論値の 60～100％ の間で調整が可能です。",
-            "Rank B = Rank A × 0.8、Rank C = Rank B × 0.8 (整数値に四捨五入)で自動的に計算されます。",
+            "Rank B = Rank A × 0.8、Rank C = Rank B × 0.8 （整数値に四捨五入）で自動的に計算されます。",
             "やり直しをせずに試験を終え、かつ Rank A 以上の点数の場合には Rank S が与えられます。"
         ]
         for j, line in enumerate(desc_lines):

@@ -24,13 +24,14 @@ def execute_retry(self, index, is_bve_advancing):
     cp = self.save_data[-1]
     self.score = cp["score"]
 
-    self.bve_door = 0
-    self.prev_door = 0
+    if "score_details" in cp:
+        self.score_details = cp["score_details"].copy()
+    else:
+        # 万が一古いセーブデータだった場合の保険
+        for k in self.score_details: self.score_details[k] = 0
 
-    #self.prev_term = 0
-    #self.prev_is_pass = 0
-    #self.prev_is_timing = 0
-    #self.prev_next_loc = -1.0
+    #?self.bve_door = 0
+    #?self.prev_door = 0
 
     self.rollback_msg = f">>> {cp.get('station_name', '駅')} へロールバック完了 <<<"
     self.rollback_msg_timer = self.bve_time_ms / 1000.0 + 5.0
@@ -82,6 +83,19 @@ def add_score_popup(self, points, text, color, ptype, category, current_time, fo
     # =================================================================
     if getattr(self, 'is_scoring_finished', False) and not force: return
     self.score += points
+    # =================================================================
+    # ★ 新規追加：カテゴリに応じた内訳貯金箱への自動振り分け
+    # =================================================================
+    cat_map = {
+        "運転時分": "time", "停止位置": "stop", "基本制動": "base_brake",
+        "ボーナス": "bonus", "転動": "roll", "停車時衝動": "jerk",
+        "初動ブレーキ": "init_brake", "緩和ブレーキ": "rel_brake",
+        "非常ブレーキ": "eb", "速度制限超過": "limit", "ATS信号無視": "ats"
+    }
+    if category in cat_map:
+        key = cat_map[category]
+        self.score_details[key] += points
+    # =================================================================
     self.popups.append({"text": text, "color": color, "expire_time": current_time + 5.0, "type": ptype, "category": category})
 
 def apply_time_score(self, diff_s, current_time):
@@ -158,8 +172,10 @@ def create_save_data(self):
         
         self.save_data.append({
             "loc": self.bve_location,
-            "time_ms": save_time_ms,  # ★ 変更: ズル防止計算済みの時間を保存する！
+            "time_ms": save_time_ms,  # ズル防止計算済みの時間を保存する！
             "score": self.score,
+            # ★ 追加：現在の内訳貯金箱の状態をコピーして保存（未来で加算されても影響を受けないように .copy() する）
+            "score_details": self.score_details.copy(),
             "target_loc": self.bve_next_loc,
             "station_name": getattr(self, 'bve_current_station_name', '不明な駅'),
             "stop_error": stop_error
@@ -233,6 +249,33 @@ def evaluate_arrival(self, current_time):
         self.is_scoring_finished = True
         # ★ 謎4解決：5秒後にメッセージを出すためのタイマーをセット
         self.end_message_time = current_time + 5.0
+
+        try:
+            total_details = sum(self.score_details.values())
+            write_desktop_log("\n====== 採点終了！ スコア内訳の答え合わせ ======")
+            write_desktop_log(f"  運転時分: {self.score_details.get('time', 0)}")
+            write_desktop_log(f"  停止位置: {self.score_details.get('stop', 0)}")
+            write_desktop_log(f"  基本制動: {self.score_details.get('base_brake', 0)}")
+            write_desktop_log(f"  ボーナス: {self.score_details.get('bonus', 0)}")
+            write_desktop_log(f"  転動: {self.score_details.get('roll', 0)}")
+            write_desktop_log(f"  停車時衝動: {self.score_details.get('jerk', 0)}")
+            write_desktop_log(f"  初動ブレーキ: {self.score_details.get('init_brake', 0)}")
+            write_desktop_log(f"  緩和ブレーキ: {self.score_details.get('rel_brake', 0)}")
+            write_desktop_log(f"  非常ブレーキ: {self.score_details.get('eb', 0)}")
+            write_desktop_log(f"  速度制限超過: {self.score_details.get('limit', 0)}")
+            write_desktop_log(f"  ATS信号無視: {self.score_details.get('ats', 0)}")
+            write_desktop_log("----------------------------------------------")
+            write_desktop_log(f"  内訳の合計: {total_details} 点")
+            write_desktop_log(f"  実際の総合得点(self.score): {self.score} 点")
+            if total_details == self.score:
+                write_desktop_log("  => 判定: 【完全一致！！完璧です！】")
+            else:
+                write_desktop_log("  => 判定: 【不一致... どこかで加算漏れがあります】")
+            write_desktop_log("==============================================\n")
+        except Exception as e:
+            write_desktop_log(f"[エラー] 答え合わせ出力失敗: {e}")
+        # =================================================================
+
     else:
         if not getattr(self, 'jump_lock', False):
             create_save_data(self)
@@ -497,8 +540,9 @@ def update_physics_and_scoring(self, current_time, dt):
                 if getattr(self, 'pen_eb', True):
                     add_score_popup(self, -500, "非常ブレーキ使用 -500", COLOR_B_EMG, "neg", "非常ブレーキ", current_time)
                 
-                actual_exempt = getattr(self, 'setting_initial_brake', IGNORE_INITIAL_BRAKE)
-                is_initial_exempt = (actual_exempt == "ALL") or (actual_exempt == "STATION" and in_station_zone)
+                rule = getattr(self, 'active_rule_init_apply', 'ON①')
+                is_initial_exempt = (rule == "OFF") or (rule == "ON②" and in_station_zone)
+
                 if not is_initial_exempt and not getattr(self, 'has_evaluated_initial_brake', False):
                     add_score_popup(self, -100, "初動ブレーキ -100", COLOR_B_EMG, "neg", "初動ブレーキ", current_time)
                     self.has_evaluated_initial_brake = True
@@ -658,8 +702,9 @@ def update_physics_and_scoring(self, current_time, dt):
                     if not popup_found:
                         add_score_popup(self, -deduction, f"速度制限超過 -{self.accumulated_speed_penalty}", COLOR_B_EMG, "neg", "速度制限超過", current_time)
                     else:
-                        # 既存ポップアップ上書き時はスコアだけ直接引く
                         self.score -= deduction
+                        # ★ 追加：内訳貯金箱からも直接引く
+                        self.score_details["limit"] -= deduction
                         
                     self.last_speed_limit_penalty_time = current_time
         else:
@@ -729,24 +774,31 @@ def update_physics_and_scoring(self, current_time, dt):
     is_timing_active = self.is_station_timing(curr_sta_idx) if curr_sta_idx >= 0 else False
 
     if not is_operational_stop and getattr(self, 'prev_door', 0) == 0 and getattr(self, 'bve_door', 0) == 1:
-        # ★ 修正：prev_is_timing == 1 ではなく is_timing_active を使う
-        if is_scoring_end_station and is_timing_active and not getattr(self, 'has_scored_time_this_station', False):
-            allow_score = not getattr(self, 'jump_lock', False) or getattr(self, 'is_official_retry', False)
-            if allow_score and not getattr(self, 'is_first_station', False):
-                apply_time_score(self, getattr(self, 'prev_diff_s', 0), current_time)
-                self.is_official_retry = False
-            self.has_scored_time_this_station = True
-            
-        evaluate_arrival(self, current_time)
-        self.has_scored_stop_this_station = True
+        # =========================================================
+        # ★ 修正：ワープ待機中の「幻のドア開閉」を完全にシャットアウト
+        if not getattr(self, 'is_official_jumping', False):
+            if is_scoring_end_station and is_timing_active and not getattr(self, 'has_scored_time_this_station', False):
+                allow_score = not getattr(self, 'jump_lock', False) or getattr(self, 'is_official_retry', False)
+                if allow_score and not getattr(self, 'is_first_station', False):
+                    apply_time_score(self, getattr(self, 'prev_diff_s', 0), current_time)
+                    self.is_official_retry = False
+                self.has_scored_time_this_station = True
+                
+            evaluate_arrival(self, current_time)
+            self.has_scored_stop_this_station = True
+        # =========================================================
 
     allow_score = not getattr(self, 'jump_lock', False) or getattr(self, 'is_official_retry', False)
     if not is_operational_stop and getattr(self, 'prev_door', 0) == 1 and getattr(self, 'bve_door', 0) == 0:
-        if getattr(self, 'prev_term', 0) == 0 and is_timing_active and not getattr(self, 'has_scored_time_this_station', False):
-            if allow_score and not getattr(self, 'is_first_station', False):
-                apply_time_score(self, getattr(self, 'prev_diff_s', 0), current_time)
-                self.is_official_retry = False 
-            self.has_scored_time_this_station = True
+        # =========================================================
+        # ★ 修正：ワープ待機中の「幻のドア開閉」をシャットアウト
+        if not getattr(self, 'is_official_jumping', False):
+            if getattr(self, 'prev_term', 0) == 0 and is_timing_active and not getattr(self, 'has_scored_time_this_station', False):
+                if allow_score and not getattr(self, 'is_first_station', False):
+                    apply_time_score(self, getattr(self, 'prev_diff_s', 0), current_time)
+                    self.is_official_retry = False 
+                self.has_scored_time_this_station = True
+        # =========================================================
 
     self.prev_next_loc = self.bve_next_loc
     self.prev_door = getattr(self, 'bve_door', 0)

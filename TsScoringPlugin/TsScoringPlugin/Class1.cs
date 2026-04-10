@@ -61,6 +61,14 @@ namespace TsScoringPlugin
         private string allBrkTexts = "EB";
         private string allHldTexts = "";
 
+        // ★ 新規追加: シナリオ情報(META)用の変数
+        private string metaTitle = "";
+        private string metaRoute = "";
+        private string metaVehicle = "";
+        private string metaAuthor = "";
+        private string metaComment = "";
+        private string lastMetaPacket = "";
+
         private List<StationData> stationList = new List<StationData>();
 
         private string JoinTexts(string[] arr)
@@ -120,6 +128,27 @@ namespace TsScoringPlugin
                     initialStaListSent = false;
                     lastStaListSendTime = DateTime.MinValue;
                 }
+
+                // =================================================================
+                // ★ 修正: ダンプコードを削除し、ScenarioInfoから実データを抽出して変数に格納
+                // =================================================================
+                try
+                {
+                    var bindFlagsAllDump = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+                    object scenarioInfo = BveHacker.GetType().GetProperty("ScenarioInfo", bindFlagsAllDump)?.GetValue(BveHacker);
+
+                    if (scenarioInfo != null)
+                    {
+                        var t = scenarioInfo.GetType();
+                        metaTitle = t.GetProperty("Title", bindFlagsAllDump)?.GetValue(scenarioInfo)?.ToString() ?? "";
+                        metaRoute = t.GetProperty("RouteTitle", bindFlagsAllDump)?.GetValue(scenarioInfo)?.ToString() ?? "";
+                        metaVehicle = t.GetProperty("VehicleTitle", bindFlagsAllDump)?.GetValue(scenarioInfo)?.ToString() ?? "";
+                        metaAuthor = t.GetProperty("Author", bindFlagsAllDump)?.GetValue(scenarioInfo)?.ToString() ?? "";
+                        metaComment = t.GetProperty("Comment", bindFlagsAllDump)?.GetValue(scenarioInfo)?.ToString() ?? "";
+                    }
+                }
+                catch { }
+                // =================================================================
 
                 var bindFlagsAll = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.FlattenHierarchy | System.Reflection.BindingFlags.Static;
 
@@ -557,6 +586,10 @@ namespace TsScoringPlugin
                         {
                             lastStaListPacket = "STALIST:" + string.Join(",", staInfoList);
                         }
+
+                        string Sanitize(string s) => string.IsNullOrEmpty(s) ? "" : s.Replace(":", "：").Replace(",", "、").Replace("\r", "").Replace("\n", " ");
+                        lastMetaPacket = $"META:{Sanitize(metaTitle)}:{Sanitize(metaRoute)}:{Sanitize(metaVehicle)}:{Sanitize(metaAuthor)}:{Sanitize(metaComment)}";
+
                         lastStaListSendTime = DateTime.Now;
                         initialStaListSent = true;
                     }
@@ -938,6 +971,12 @@ namespace TsScoringPlugin
                         byte[] staBytes = Encoding.UTF8.GetBytes(lastStaListPacket);
                         udpClient.Send(staBytes, staBytes.Length, endPoint);
                         lastStaListPacket = "";
+                    }
+                    if (!string.IsNullOrEmpty(lastMetaPacket))
+                    {
+                        byte[] metaBytes = Encoding.UTF8.GetBytes(lastMetaPacket);
+                        udpClient.Send(metaBytes, metaBytes.Length, endPoint);
+                        lastMetaPacket = "";
                     }
                     if (!string.IsNullOrEmpty(lastUdpData))
                     {
