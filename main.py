@@ -800,6 +800,7 @@ class Overlay(QWidget):
                 self.menu_cursor_x = -1
             elif selected == "採点を中断する":
                 self.is_scoring_mode = False
+                self.is_scoring_finished = False
                 getattr(self, 'popups', []).clear()
                 self.toggle_menu(is_bve_advancing)
             elif selected == "選択した駅からやり直す":

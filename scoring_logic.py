@@ -99,14 +99,15 @@ def add_score_popup(self, points, text, color, ptype, category, current_time, fo
     self.popups.append({"text": text, "color": color, "expire_time": current_time + 5.0, "type": ptype, "category": category})
 
 def apply_time_score(self, diff_s, current_time):
-    if not getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False): return
+    if not getattr(self, 'is_scoring_mode', False) or getattr(self, 'is_scoring_finished', False): return
     abs_diff = abs(diff_s)
     if abs_diff <= 9: add = 300
     elif abs_diff <= 19: add = 200
     elif abs_diff <= 29: add = 100
     else: add = 0
     if add > 0:
-        add_score_popup(self, add, f"運転時分 +{add}", COLOR_N, "pos", "運転時分", current_time, force=True)
+        # ★ 変更: force=True を削除！（通常のスコアとして扱う）
+        add_score_popup(self, add, f"運転時分 +{add}", COLOR_N, "pos", "運転時分", current_time)
 
 def apply_stop_score(self, d_m, current_time):
     if not getattr(self, 'is_scoring_mode', False): return False
@@ -182,6 +183,7 @@ def create_save_data(self):
         })
 
 def evaluate_arrival(self, current_time):
+    if getattr(self, 'is_scoring_finished', False): return
     curr_sta_idx = -1
     # ★ 謎2解決：bve_next_loc がすでに更新されてしまっていることを防ぐため、prev_next_loc を使う
     p_loc = getattr(self, 'prev_next_loc', getattr(self, 'bve_next_loc', -1.0))
@@ -201,6 +203,7 @@ def evaluate_arrival(self, current_time):
 
     apply_ok = False
     release_ok = False
+    is_rescue = False # ★ 追加: 救済フラグ
 
     # =================================================================
     # ★ 追加：現在の基本制動ルールを取得し、"OFF"なら判定自体をスキップ
@@ -233,14 +236,30 @@ def evaluate_arrival(self, current_time):
                     # ★ 変更：固定値ではなく、ルール上限値(app_limit)と比較
                     apply_ok = (app_limit == 0) or (getattr(self, 'bb_apply_count', 0) <= app_limit)
                     release_ok = (rel_limit == 0) or (getattr(self, 'bb_release_count', 0) <= rel_limit)
+                    # =============================================================
+                    # ★ 追加：1段制動設定時の救済措置（2段まで許容）
+                    # =============================================================
+                    if not apply_ok and b_rule_app == "1段" and getattr(self, 'bb_apply_count', 0) == 2 and release_ok:
+                        is_rescue = True
+                        apply_ok = True # 表示ブロックへ進めるために合格扱いにする
+                    # =============================================================
+                    
 
     if is_zero_stop and getattr(self, 'is_scoring_mode', False):
         add_score_popup(self, 0, "0cm停車成功!!!", COLOR_N, "big", "ボーナス", current_time)
         
     if apply_ok and release_ok and getattr(self, 'is_scoring_mode', False):
-        # ★ 鶴さん考案！そのまま文字列を結合するだけでスマートに表示！
-        add_score_popup(self, 0, f"{b_rule_app}制動{b_rule_rel}緩め成功!!!", COLOR_N, "big", "基本制動", current_time)
-        add_score_popup(self, 500, "基本制動 +500", COLOR_N, "pos", "基本制動", current_time)
+        # =============================================================
+        # ★ 修正：救済フラグの有無で表示メッセージと点数を分岐
+        if is_rescue:
+            # 救済：メッセージを「2段制動〜」に変更し、点数を +300 にする
+            add_score_popup(self, 0, f"2段制動{b_rule_rel}緩め成功!!!", COLOR_N, "big", "基本制動", current_time)
+            add_score_popup(self, 300, "基本制動 +300", COLOR_N, "pos", "基本制動", current_time)
+        else:
+            # 通常成功：設定通りのルール名を表示し、点数を +500 にする
+            add_score_popup(self, 0, f"{b_rule_app}制動{b_rule_rel}緩め成功!!!", COLOR_N, "big", "基本制動", current_time)
+            add_score_popup(self, 500, "基本制動 +500", COLOR_N, "pos", "基本制動", current_time)
+        # =============================================================
 
     if is_zero_stop and apply_ok and release_ok and getattr(self, 'is_scoring_mode', False):
         add_score_popup(self, 500, "ボーナス +500", COLOR_N, "pos", "ボーナス", current_time)
@@ -563,14 +582,21 @@ def update_physics_and_scoring(self, current_time, dt):
                 max_p, min_p = max(h[1] for h in self.bcp_history), min(h[1] for h in self.bcp_history)
                 if (max_p - min_p) < 2.0: is_stabilized = True
             curr_state_unfrozen = get_notch_state(self, self.bve_brk_notch)
+            
+            # =========================================================
+            # ★ 修正: Smee凍結解除時も、現在の緩和ルールの免除(OFF/ON②)をチェックする
+            rel_rule = getattr(self, 'active_rule_init_release', 'ON①')
+            is_rel_exempt = (rel_rule == "OFF") or (rel_rule == "ON②" and in_station_zone)
+            # =========================================================
+            
             if self.bcPressure <= self.eb_freeze_threshold and curr_state_unfrozen == "IDLE":
                 self.smee_eb_frozen = False
-                if abs(self.bve_speed) > 0.0 and not getattr(self, 'idle_entered_while_stopped', False):
+                if abs(self.bve_speed) > 0.0 and not getattr(self, 'idle_entered_while_stopped', False) and not is_rel_exempt:
                     add_score_popup(self, -100, "緩和ブレーキ -100", COLOR_B_EMG, "neg", "緩和ブレーキ", current_time)
             elif is_stabilized:
                 self.smee_eb_frozen = False
                 if curr_state_unfrozen == "IDLE": 
-                    if abs(self.bve_speed) > 0.0 and not getattr(self, 'idle_entered_while_stopped', False):
+                    if abs(self.bve_speed) > 0.0 and not getattr(self, 'idle_entered_while_stopped', False) and not is_rel_exempt:
                         add_score_popup(self, -100, "緩和ブレーキ -100", COLOR_B_EMG, "neg", "緩和ブレーキ", current_time)
         else: self.bcp_history.clear()
 
@@ -759,7 +785,25 @@ def update_physics_and_scoring(self, current_time, dt):
 
     if is_operational_stop and getattr(self, 'is_approaching', False) and self.bve_speed == 0.0 and not getattr(self, 'has_scored_stop_this_station', False):
         if not getattr(self, 'jump_lock', False) and not getattr(self, 'is_first_station', False):
+            
+            # 1. 先に時分採点を行う
+            curr_sta_idx = -1
+            p_loc = getattr(self, 'prev_next_loc', getattr(self, 'bve_next_loc', -1.0))
+            for i, st in enumerate(getattr(self, 'station_list', [])):
+                if abs(st["location"] - p_loc) < 1.0:
+                    curr_sta_idx = i
+                    break
+            is_scoring_end_station_op = (curr_sta_idx == getattr(self, 'setting_end_idx', -1)) or (getattr(self, 'prev_term', 0) == 1)
+            is_timing_active_op = self.is_station_timing(curr_sta_idx) if curr_sta_idx >= 0 else False
+            
+            if is_scoring_end_station_op and is_timing_active_op and not getattr(self, 'has_scored_time_this_station', False):
+                apply_time_score(self, getattr(self, 'prev_diff_s', 0), current_time)
+                self.is_official_retry = False
+                self.has_scored_time_this_station = True
+
+            # 2. そのあとに到着判定（ここで終了フラグ is_scoring_finished が立つ）
             evaluate_arrival(self, current_time)
+                
         self.has_scored_stop_this_station = True
 
     # ★ 謎2解決：終了駅（TERM:1 または ユーザー指定駅）での扉開け時の時分採点
