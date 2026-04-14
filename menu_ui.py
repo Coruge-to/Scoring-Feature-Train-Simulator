@@ -1,5 +1,5 @@
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QFontMetrics, QPen
+from PyQt6.QtGui import QColor, QFontMetrics, QPen, QFont
 from config import *
 from utils import draw_text_with_outline
 import math
@@ -116,7 +116,7 @@ def draw_menu(self, painter, logical_width):
         return "不明"
 
     if self.menu_state == 1:
-        items = self.menu_items_on if self.is_scoring_mode else self.menu_items_off
+        items = getattr(self, 'current_menu_items', getattr(self, 'menu_items_off', []))
         for i, text in enumerate(items):
             draw_menu_item(text, 465 + i * 80, (i == self.menu_cursor), i, "center")
 
@@ -1147,10 +1147,62 @@ def draw_menu(self, painter, logical_width):
         slider_y = 265
         slider_w = 1200
         slider_x = center_x - (slider_w / 2)
+
+        # 各ランクの境界となるX座標を計算
+        x_d = slider_x
+        x_c = slider_x + (slider_w * rank_c_pct / 100.0)
+        x_b = slider_x + (slider_w * rank_b_pct / 100.0)
+        x_a = slider_x + (slider_w * rank_a_pct / 100.0)
+        x_end = slider_x + slider_w
+
+        # 色を安全にQColor化するヘルパー関数
+        def get_qc(color_val):
+            return QColor(*color_val) if isinstance(color_val, tuple) else QColor(color_val)
+
+        c_gray = get_qc((150, 150, 150))
+        c_blue = get_qc(COLOR_P)
+        c_green = get_qc(COLOR_N)
+        c_red = get_qc(COLOR_B_EMG)
+
+        # ==========================================================
+        # ① 鶴さん考案の下地ハック：両端の丸み（RoundCap）を色付きで補完する
+        # 左半分をグレー、右半分を赤で RoundCap として引いておく
+        painter.setPen(QPen(c_gray, 16, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(int(slider_x), int(slider_y), int(center_x), int(slider_y))
         
-        # 太い黒(グレー)のベースライン
-        painter.setPen(QPen(QColor(50, 50, 50), 16, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-        painter.drawLine(int(slider_x), int(slider_y), int(slider_x + slider_w), int(slider_y))
+        painter.setPen(QPen(c_red, 16, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(int(center_x), int(slider_y), int(x_end), int(slider_y))
+        # ==========================================================
+
+        # ② FlatCap(平らな端)で各ランクのセグメントを正確に上塗りする
+        painter.setPen(QPen(c_gray, 16, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
+        painter.drawLine(int(x_d), int(slider_y), int(x_c), int(slider_y))
+
+        painter.setPen(QPen(c_blue, 16, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
+        painter.drawLine(int(x_c), int(slider_y), int(x_b), int(slider_y))
+
+        painter.setPen(QPen(c_green, 16, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
+        painter.drawLine(int(x_b), int(slider_y), int(x_a), int(slider_y))
+
+        painter.setPen(QPen(c_red, 16, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
+        painter.drawLine(int(x_a), int(slider_y), int(x_end), int(slider_y))
+
+        # ==========================================================
+        # ③ 各バーの中央に「白縁取り ＋ バーと同色」の文字を描画する
+        mid_d = (x_d + x_c) / 2
+        mid_c = (x_c + x_b) / 2
+        mid_b = (x_b + x_a) / 2
+        mid_a = (x_a + x_end) / 2
+
+        # 文字のY座標をバーの中心に合わせるための微調整
+        text_y = slider_y + 10 
+        font_rank_label = self.font_desc # やや小さめのフォント(25pt)を指定
+
+        draw_text_with_outline(painter, "D", font_rank_label, c_gray, COLOR_WHITE, mid_d, text_y, "center", passes=8)
+        draw_text_with_outline(painter, "C", font_rank_label, c_blue, COLOR_WHITE, mid_c, text_y, "center", passes=8)
+        draw_text_with_outline(painter, "B", font_rank_label, c_green, COLOR_WHITE, mid_b, text_y, "center", passes=8)
+        draw_text_with_outline(painter, "A", font_rank_label, c_red, COLOR_WHITE, mid_a, text_y, "center", passes=8)
+        # ==========================================================
 
         # 両端のテキスト
         draw_text_with_outline(painter, "0%", self.font_ui, COLOR_WHITE, COLOR_OUTLINE_BLACK, slider_x - 30, slider_y + 20, "right", passes=8)
@@ -1256,78 +1308,13 @@ def draw_menu(self, painter, logical_width):
             "基本制動の採点対象となる駅の総数n₂ : 始発駅以外 かつ 基本制動設定がOFF ではない停車駅の数",
             "運転時分の採点対象となる駅の総数n₃ : 採時駅の数",
             "",
-            "Rank A は理論値の 60～100％ の間で調整が可能です。",
+            "Rank A は理論値の 60～90％ の間で調整が可能です。",
             "Rank B = Rank A × 0.8、Rank C = Rank B × 0.8 （整数値に四捨五入）で自動的に計算されます。",
             "やり直しをせずに試験を終え、かつ Rank A 以上の点数の場合には Rank S が与えられます。"
         ]
         for j, line in enumerate(desc_lines):
             draw_text_with_outline(painter, line, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, 180, desc_y + 35 + (j * 33), "left", passes=8)
-
-    # ==========================================================
-    # ★ 新規追加: 操作説明（ヘルプ）ボタンと小ウィンドウの描画
-    # ==========================================================
-    if self.menu_state not in [0, 3, 8]:
-        # 画面右下にヘルプボタンを描画
-        help_text = "操作説明 : H"
-        fm_help = QFontMetrics(self.font_desc)
-        hw = fm_help.horizontalAdvance(help_text) + 30
-        hh = fm_help.height() + 10
-        
-        # ★ ウィンドウサイズが変わっても「常に右下」に追従させるための逆算ロジック
-        logical_right = self.width() / (2 * menu_scale) + BASE_SCREEN_W / 2
-        logical_bottom = self.height() / (2 * menu_scale) + BASE_SCREEN_H / 2
-        
-        hx = logical_right - hw - 10
-        hy = logical_bottom - hh - 10
-        
-        painter.setPen(QPen(QColor(200, 200, 200), 2))
-        painter.setBrush(QColor(50, 50, 50, 200))
-        painter.drawRoundedRect(int(hx), int(hy), int(hw), int(hh), 5, 5)
-        text_y_offset = 2  # ★この数値を 2 や 4 などに変えることで、文字だけが上下します
-        
-        draw_text_with_outline(painter, help_text, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, hx + 15, hy + fm_help.ascent() + 5 + text_y_offset, "left", passes=8)
-        
-        self.menu_click_zones.append((hx, hy, hx + hw, hy + hh, 999))
-        
-        if getattr(self, 'show_help', False):
-            # 画面全体を暗転（どんなサイズでも覆えるように巨大な矩形を描画）
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(0, 0, 0, 180))
-            painter.drawRect(-2000, -2000, 6000, 6000)
-
-            # 小ウィンドウのサイズと位置
-            win_w, win_h = 500, 330
-            win_x = center_x - (win_w / 2)
-            win_y = (BASE_SCREEN_H - win_h) / 2
-            
-            # 色を他のサブウィンドウと統一
-            painter.setBrush(QColor(30, 30, 30, 240))
-            painter.setPen(QPen(QColor(150, 150, 150), 3))
-            painter.drawRoundedRect(int(win_x), int(win_y), int(win_w), int(win_h), 12, 12)
-            
-            draw_text_with_outline(painter, "=== 操作説明 ===", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, win_y + 60, "center", passes=8)
-            
-            move_keys = "↑↓" if self.menu_state in [1, 2, 3] else "↑↓←→"
-            
-            help_items = [
-                (move_keys, "移動"),
-                ("Enter", "決定"),
-                ("Backspace", "戻る"),
-                ("F6", "閉じる")
-            ]
-            
-            # コロンのX座標を固定して縦を揃える
-            colon_x = center_x + 45 
-            
-            for i, (left_text, right_text) in enumerate(help_items):
-                y_pos = win_y + 140 + i * 55
-                # 左側（キー操作）を右揃え
-                draw_text_with_outline(painter, left_text, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, colon_x - 20, y_pos, "right", passes=8)
-                # 中央のコロン
-                draw_text_with_outline(painter, ":", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, colon_x, y_pos, "center", passes=8)
-                # 右側（説明）を左揃え
-                draw_text_with_outline(painter, right_text, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, colon_x + 20, y_pos, "left", passes=8)
-
+    
     if getattr(self, 'dropdown_active', False) and len(getattr(self, 'dropdown_options', [])) > 0:
         fm = QFontMetrics(self.font_menu)
         max_w = max([fm.horizontalAdvance(opt["name"]) for opt in self.dropdown_options]) + 60
@@ -1360,5 +1347,243 @@ def draw_menu(self, painter, logical_width):
             
         if getattr(self, 'dropdown_scroll', 0) + 7 < len(getattr(self, 'dropdown_options', [])):
             draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, start_y + box_h + 47, "center", passes=8)
+    
+    # ==========================================================
+    # ★ 新規追加: 採点結果画面 (menu_state == 11)
+    # ==========================================================
+    elif self.menu_state == 11:
+        painter.setPen(Qt.PenStyle.NoPen)
+        # 背景を極大化して塗りつぶす（解像度変更時の黒切れ防止）
+        painter.setBrush(QColor(15, 15, 15, 245))
+        painter.drawRect(-5000, -5000, 10000, 10000)
+
+        # ---------------------------------------------
+        # 1. ヘッダー情報
+        # ---------------------------------------------
+        # [Y座標調整] ヘッダー全体の上部からの基本位置
+        header_y = 137 
+        
+        draw_text_with_outline(painter, "=== 採点結果 ===", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, header_y, "center", passes=8)
+        
+        font_meta = self.font_normal
+        # [Y座標調整] タイトル関連の行間 (header_y からの相対距離)
+        draw_text_with_outline(painter, getattr(self, 'meta_route', '路線データ未取得'), font_meta, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, header_y + 90, "center", passes=8)
+        draw_text_with_outline(painter, getattr(self, 'meta_vehicle', '車両データ未取得'), font_meta, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, header_y + 270, "center", passes=8)
+        draw_text_with_outline(painter, getattr(self, 'meta_title', 'シナリオデータ未取得'), font_meta, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, header_y + 150, "center", passes=8)
+
+        sta_start = get_sta_name(getattr(self, 'setting_start_idx', 0))
+        sta_end = get_sta_name(getattr(self, 'setting_end_idx', -1))
+        # [Y座標調整] 区間の表示位置
+        draw_text_with_outline(painter, f"区間 ： {sta_start} ～ {sta_end}", font_meta, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, header_y + 210, "center", passes=8)
+
+        # [Y座標調整] 区間とテーブルを区切る上の水平線の位置
+        painter.setPen(QPen(QColor(100, 100, 100), 3))
+        painter.drawLine(int(center_x - 650), int(header_y + 295), int(center_x + 650), int(header_y + 295))
+
+        # ---------------------------------------------
+        # 2. 内訳テーブルの描画
+        # ---------------------------------------------
+        table_y = header_y + 355
+        row_h = 58 
+        
+        col1_lbl_x = center_x - 600
+        col1_val_x = center_x - 100
+        col2_lbl_x = center_x + 100
+        col2_val_x = center_x + 600
+
+        sd = getattr(self, 'score_details', {})
+        
+        # ==========================================================
+        # ★ 冗長なgetattrをやめ、直接変数を参照してOFF判定！
+        is_ats_off   = not self.pen_ats
+        is_limit_off = not self.pen_limit
+        is_jerk_off  = not self.pen_jerk
+        is_eb_off    = not self.pen_eb
+        is_init_off  = all(r.get("apply", "") == "OFF" for r in self.penalty_init_rules)
+        is_rel_off   = all(r.get("release", "") == "OFF" for r in self.penalty_init_rules)
+        #is_time_off = (len(self.get_timing_target_stas()) == 0)
+        is_time_off  = getattr(self, 'is_time_off', False)
+        is_base_off  = getattr(self, 'is_base_off', False)
+
+        # 色を安全にQColor化するヘルパー
+        def get_qc(color_val):
+            return QColor(*color_val) if isinstance(color_val, tuple) else QColor(color_val)
+
+        def draw_score_row(label1, key1, label2, key2, y_pos, is_off1=False, is_off2=False):
+            # 点数の色判定用ヘルパー
+            def get_val_color(val, is_off):
+                c = get_qc(COLOR_B_EMG if val < 0 else (COLOR_N if val > 0 else COLOR_WHITE))
+                if is_off: c.setAlpha(60)
+                return c
+
+            # --- 左列 ---
+            val1 = sd.get(key1, 0)
+            # ★修正: 確実に get_qc() を通す
+            lbl_c1 = get_qc(COLOR_WHITE)
+            v1_out = get_qc(COLOR_WHITE if val1 != 0 and not is_off1 else COLOR_OUTLINE_BLACK)
+
+            val_str1 = str(val1)
+            if is_off1: 
+                lbl_c1.setAlpha(60) # ラベル透明度下げる
+                val_str1 = ""       # OFFの時は「0」の数字ごと消し去る
+
+            draw_text_with_outline(painter, label1, self.font_menu, lbl_c1, COLOR_OUTLINE_BLACK, col1_lbl_x, y_pos, "left", passes=8)
+            draw_text_with_outline(painter, val_str1, self.font_menu, get_val_color(val1, is_off1), v1_out, col1_val_x, y_pos, "right", passes=8)
+            
+            # --- 右列 ---
+            val2 = sd.get(key2, 0)
+            # ★修正: 確実に get_qc() を通す
+            lbl_c2 = get_qc(COLOR_WHITE)
+            v2_out = get_qc(COLOR_WHITE if val2 != 0 and not is_off2 else COLOR_OUTLINE_BLACK)
+
+            val_str2 = str(val2)
+            if is_off2: 
+                lbl_c2.setAlpha(60)
+                val_str2 = ""       # OFFの時は「0」の数字ごと消し去る
+
+            draw_text_with_outline(painter, label2, self.font_menu, lbl_c2, COLOR_OUTLINE_BLACK, col2_lbl_x, y_pos, "left", passes=8)
+            draw_text_with_outline(painter, val_str2, self.font_menu, get_val_color(val2, is_off2), v2_out, col2_val_x, y_pos, "right", passes=8)
+
+        draw_score_row("運転時分", "time", "ATS信号無視", "ats", table_y, is_time_off, is_ats_off)
+        draw_score_row("停止位置", "stop", "速度制限超過", "limit", table_y + row_h, False, is_limit_off)
+        draw_score_row("基本制動", "base_brake", "初動ブレーキ", "init_brake", table_y + row_h * 2, is_base_off, is_init_off)
+        draw_score_row("転動", "roll", "緩和ブレーキ", "rel_brake", table_y + row_h * 3, False, is_rel_off)
+        draw_score_row("停車時衝動", "jerk", "非常ブレーキ", "eb", table_y + row_h * 4, is_jerk_off, is_eb_off)
+        # ==========================================================
+
+        bonus_val = sd.get("bonus", 0)
+        b_color = COLOR_N if bonus_val > 0 else COLOR_WHITE
+        bo_color = COLOR_WHITE if bonus_val > 0 else COLOR_OUTLINE_BLACK
+        draw_text_with_outline(painter, "ボーナス", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x - 250, table_y + row_h * 5.5, "left", passes=8)
+        draw_text_with_outline(painter, f"{bonus_val} 点", self.font_menu, b_color, bo_color, center_x + 250, table_y + row_h * 5.5, "right", passes=8)
+
+        painter.setPen(QPen(QColor(100, 100, 100), 3))
+        painter.drawLine(int(center_x - 650), int(table_y + row_h * 5.9), int(center_x + 650), int(table_y + row_h * 5.9))
+
+        # ---------------------------------------------
+        # 3. 総合評価の計算と描画
+        # ---------------------------------------------
+        total_score = getattr(self, 'score', 0)
+        retries = getattr(self, 'total_retry_count', 0)
+        
+        rank_a_pct = int(round(getattr(self, 'rank_a_ratio', 0.8) * 100))
+        theory_score = getattr(self, 'theoretical_score', 12500)
+        score_a = int(round(theory_score * (rank_a_pct / 100.0)))
+        score_b = int(round(score_a * 0.8))
+        score_c = int(round(score_a * 0.8 * 0.8))
+
+        eval_rank = "D"
+        eval_color = (150, 150, 150)
+        
+        if total_score >= score_a:
+            if retries == 0:
+                eval_rank = "S"
+                eval_color = (255, 215, 0)
+            else:
+                eval_rank = "A"
+                eval_color = COLOR_B_EMG
+        elif total_score >= score_b:
+            eval_rank = "B"
+            eval_color = COLOR_N
+        elif total_score >= score_c:
+            eval_rank = "C"
+            eval_color = COLOR_P
+
+        bottom_y = table_y + row_h * 7.4
+        draw_text_with_outline(painter, "合計", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x - 600, bottom_y, "left", passes=8)
+        draw_text_with_outline(painter, f"{total_score} 点", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x + 100, bottom_y, "right", passes=8)
+        
+        draw_text_with_outline(painter, "評価", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x + 325, bottom_y, "left", passes=8)
+        
+        painter.setPen(Qt.PenStyle.NoPen)
+        glow_c = QColor(*eval_color) if isinstance(eval_color, tuple) else QColor(eval_color)
+        glow_c.setAlpha(50)
+        painter.setBrush(glow_c)
+        painter.drawEllipse(int(center_x + 505), int(bottom_y - 74), 90, 90)
+        
+        f_rank = QFont(self.font_big)
+        if f_rank.pointSize() > 0:
+            f_rank.setPointSize(int(f_rank.pointSize()*1.2))
+        elif f_rank.pixelSize() > 0:
+            f_rank.setPixelSize(int(f_rank.pixelSize()*1.2))
+            
+        draw_text_with_outline(painter, eval_rank, f_rank, eval_color, COLOR_WHITE, center_x + 550, bottom_y + 5, "center", passes=8)
+
+        # ==========================================================
+        # 4. 操作ボタンと [H] ボタンの描画 (スクショ中は隠す！)
+        # ==========================================================
+        if not getattr(self, 'is_capturing_screenshot', False):
+            btn_text = "閉じる" if getattr(self, 'is_result_saved', False) else "結果を保存する"
+            draw_menu_item(btn_text, bottom_y + 110, (self.menu_cursor == 0), 0, "center")
+
+    # ==========================================================
+    # ★ 新規追加: 操作説明（ヘルプ）ボタンと小ウィンドウの描画
+    # ==========================================================
+    if self.menu_state not in [0, 3, 8] and not getattr(self, 'is_capturing_screenshot', False):
+        # 画面右下にヘルプボタンを描画
+        help_text = "操作説明 : H"
+        fm_help = QFontMetrics(self.font_desc)
+        hw = fm_help.horizontalAdvance(help_text) + 30
+        hh = fm_help.height() + 10
+        
+        logical_right = self.width() / (2 * menu_scale) + BASE_SCREEN_W / 2
+        logical_bottom = self.height() / (2 * menu_scale) + BASE_SCREEN_H / 2
+        hx, hy = logical_right - hw - 10, logical_bottom - hh - 10
+        
+        painter.setPen(QPen(QColor(200, 200, 200), 2))
+        painter.setBrush(QColor(50, 50, 50, 200))
+        painter.drawRoundedRect(int(hx), int(hy), int(hw), int(hh), 5, 5)
+        
+        draw_text_with_outline(painter, help_text, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, hx + 15, hy + fm_help.ascent() + 7, "left", passes=8)
+        self.menu_click_zones.append((hx, hy, hx + hw, hy + hh, 999))
+
+        # ==========================================================
+    # ★ 修正: 操作説明 [H] オーバーレイ (リストの行数で高さが自動可変)
+    # ==========================================================
+    if getattr(self, 'show_help', False):
+        # 画面全体を暗転
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 180))
+        painter.drawRect(-2000, -2000, 6000, 6000)
+
+        # 1. 状態に応じたリストを先に作る
+        help_items = []
+        if self.menu_state in [1, 2, 3]:
+            help_items.append(("↑↓", "移動"))
+        elif self.menu_state != 11:
+            help_items.append(("↑↓←→", "移動"))
+        
+        # 保存前のリザルト画面は Enter のみ。それ以外は戻る・閉じるを追加。
+        if self.menu_state == 11 and not getattr(self, 'is_result_saved', False):
+            help_items.append(("Enter", "決定"))
+        else:
+            help_items.extend([
+                ("Enter", "決定"),
+                ("Backspace", "戻る"),
+                ("F6", "閉じる")
+            ])
+
+        # 2. リストの数(len)に応じて、ウィンドウの高さを自動計算！
+        # (例: 1行なら185px, 4行なら350px)
+        win_w = 500
+        win_h = 130 + (len(help_items) * 55)
+        win_x = center_x - (win_w / 2)
+        win_y = (BASE_SCREEN_H - win_h) / 2
+        
+        # 3. 枠とタイトルの描画
+        painter.setBrush(QColor(30, 30, 30, 240))
+        painter.setPen(QPen(QColor(150, 150, 150), 3))
+        painter.drawRoundedRect(int(win_x), int(win_y), int(win_w), int(win_h), 12, 12)
+        draw_text_with_outline(painter, "=== 操作説明 ===", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, win_y + 60, "center", passes=8)
+        
+        # 4. 項目の描画
+        colon_x = center_x + 45 
+        start_y = win_y + 130 # 高さが可変になったので、パディング等の複雑な計算は不要！
+        
+        for i, (left_text, right_text) in enumerate(help_items):
+            y_pos = start_y + i * 55
+            draw_text_with_outline(painter, left_text, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, colon_x - 20, y_pos, "right", passes=8)
+            draw_text_with_outline(painter, ":", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, colon_x, y_pos, "center", passes=8)
+            draw_text_with_outline(painter, right_text, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, colon_x + 20, y_pos, "left", passes=8)
 
     painter.restore()

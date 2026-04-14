@@ -11,6 +11,8 @@ def execute_retry(self, index, is_bve_advancing):
         
     self.is_official_retry = (index > 0)
     self.is_first_station = (index == 0)
+    if index == 0:
+        self.total_retry_count = 0
     self.is_scoring_finished = False  
     self.has_departed = False
     self.is_approaching = False
@@ -268,6 +270,7 @@ def evaluate_arrival(self, current_time):
         self.is_scoring_finished = True
         # ★ 謎4解決：5秒後にメッセージを出すためのタイマーをセット
         self.end_message_time = current_time + 5.0
+        self.result_screen_time = current_time + 10.0
 
         try:
             total_details = sum(self.score_details.values())
@@ -432,6 +435,16 @@ def update_physics_and_scoring(self, current_time, dt):
     if getattr(self, 'end_message_time', 0.0) > 0 and current_time >= self.end_message_time:
         add_score_popup(self, 0, "運転お疲れ様でした。", COLOR_WHITE, "big", "終了", current_time, force=True)
         self.end_message_time = 0.0
+    
+    # ★ 新規追加: 10秒経過で自動的にリザルト画面(11)を開く
+    if getattr(self, 'result_screen_time', 0.0) > 0 and current_time >= self.result_screen_time:
+        # ★ 修正: 直接 True を渡して確実に一時停止(Pキー送信)させる！
+        self.toggle_menu(True) 
+        
+        self.menu_state = 11       
+        self.menu_cursor = 0
+        self.result_screen_time = 0.0
+        getattr(self, 'popups', []).clear()
 
     decel_g = -self.bve_calc_g
     self.g_history.append((current_time, decel_g, self.bve_brk_notch, self.bve_brk_max))
@@ -480,6 +493,14 @@ def update_physics_and_scoring(self, current_time, dt):
             # 一致していなくても、0.5秒経ったら強制解除！（永久無敵になるのを防ぐ保険）
             elif real_now - getattr(self, 'jump_start_real_time', 0.0) >= 0.5:
                 self.is_official_jumping = False
+
+            #???
+            if not self.is_official_jumping:
+                self.prev_door = getattr(self, 'bve_door', 0)
+                self.prev_doordir = getattr(self, 'bve_doordir', 1)
+                self.prev_next_loc = self.bve_next_loc
+                self.prev_is_pass = self.bve_is_pass
+                self.prev_is_timing = self.bve_is_timing
                 
         if not is_valid_jump and getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False):
             self.is_scoring_mode = False

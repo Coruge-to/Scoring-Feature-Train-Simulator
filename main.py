@@ -5,9 +5,9 @@ import win32api
 import win32gui
 import win32con
 from datetime import datetime
-from PyQt6.QtWidgets import QApplication, QWidget
+from PyQt6.QtWidgets import QApplication, QWidget, QFileDialog
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont, QPainter, QFontDatabase, QColor, QFontMetrics, QPen
+from PyQt6.QtGui import QFont, QPainter, QFontDatabase, QColor, QFontMetrics, QPixmap 
 from PyQt6.QtNetwork import QUdpSocket, QHostAddress
 import keyboard
 
@@ -19,7 +19,8 @@ from utils import write_desktop_log
 
 KERNING_OFFSETS = {
     "メ": 12,
-    "°": 35
+    "°": 35,
+    "）" : 28
 }
 
 class Overlay(QWidget):
@@ -114,6 +115,8 @@ class Overlay(QWidget):
         
         self.current_scenario_id = -1
         self.needs_margin_recalc = True
+
+        self.is_capturing_screenshot = False
         
         self.brake_rules = [
             {"end_idx": -1, "apply": "階段", "release": "階段"}
@@ -156,6 +159,8 @@ class Overlay(QWidget):
         self.rollback_msg = ""
         self.rollback_msg_timer = 0.0
         self.prev_frame_loc = 0.0
+
+        self.is_result_saved = False
 
         self.blink_phase = 0.0
         self.blink_active = False
@@ -547,6 +552,12 @@ class Overlay(QWidget):
             self.menu_state = 1
             self.menu_cursor = 0
             self.menu_cursor_x = -1
+
+            base_items = self.menu_items_on.copy() if self.is_scoring_mode else self.menu_items_off.copy()
+            if getattr(self, 'is_scoring_finished', False):
+                base_items.insert(1, "採点結果を表示する")
+            self.current_menu_items = base_items # これがないと handle_menu_enter でエラーになります
+            
             if is_bve_advancing and self.bve_hwnd:
                 win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
                 win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
@@ -555,6 +566,7 @@ class Overlay(QWidget):
                 self.finalize_margin_input()
             self.menu_state = 0
             self.input_mode_active = False
+            self.show_help = False
             if not is_bve_advancing and self.bve_hwnd:
                 win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
                 win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
@@ -573,6 +585,9 @@ class Overlay(QWidget):
             self.input_mode_active = False
 
     def handle_menu_up(self):
+        if self.menu_state == 11: 
+            self.menu_cursor = 0 # 強制固定
+            return
         if self.menu_state == 10:
             if getattr(self, 'input_mode_active', False): return
             self.menu_cursor = 0 if self.menu_cursor == 1 else 1
@@ -640,7 +655,7 @@ class Overlay(QWidget):
 
         self.menu_cursor -= 1
         if self.menu_state == 1:
-            items = getattr(self, 'menu_items_on', []) if getattr(self, 'is_scoring_mode', False) else getattr(self, 'menu_items_off', [])
+            items = getattr(self, 'current_menu_items', getattr(self, 'menu_items_off', []))
             if self.menu_cursor < 0: self.menu_cursor = len(items) - 1
         elif self.menu_state == 2:
             if self.menu_cursor < 0: self.menu_cursor = 0
@@ -651,6 +666,9 @@ class Overlay(QWidget):
             if self.menu_cursor < 0: self.menu_cursor = 6
 
     def handle_menu_down(self):
+        if self.menu_state == 11: 
+            self.menu_cursor = 0 # 強制固定
+            return
         if self.menu_state == 10:
             if getattr(self, 'input_mode_active', False): return
             self.menu_cursor = 1 if self.menu_cursor == 0 else 0
@@ -724,7 +742,7 @@ class Overlay(QWidget):
 
         self.menu_cursor += 1
         if self.menu_state == 1:
-            items = getattr(self, 'menu_items_on', []) if getattr(self, 'is_scoring_mode', False) else getattr(self, 'menu_items_off', [])
+            items = getattr(self, 'current_menu_items', getattr(self, 'menu_items_off', []))
             if self.menu_cursor >= len(items): self.menu_cursor = 0
         elif self.menu_state == 2:
             max_idx = max(0, len(getattr(self, 'save_data', [])) - 1)
@@ -787,12 +805,17 @@ class Overlay(QWidget):
         elif self.menu_state == 10:
             if getattr(self, 'input_mode_active', False): return
             if self.menu_cursor == 0:
-                self.rank_a_ratio = min(1.00, round(self.rank_a_ratio + 0.01, 2))
+                self.rank_a_ratio = min(0.9, round(self.rank_a_ratio + 0.01, 2))
 
     def handle_menu_enter(self, is_bve_advancing):
         if self.menu_state == 1:
-            items = getattr(self, 'menu_items_on', []) if getattr(self, 'is_scoring_mode', False) else getattr(self, 'menu_items_off', [])
+            items = getattr(self, 'current_menu_items', getattr(self, 'menu_items_off', []))
+            if not items: return
             selected = items[self.menu_cursor]
+            if selected == "採点結果を表示する":
+                self.menu_state = 11
+                self.menu_cursor = 0
+                return # 遷移したら即終了して他の処理を混ぜない
             if selected == "運転を再開する": self.toggle_menu(is_bve_advancing)
             elif selected == "採点設定":
                 self.menu_state = 5
@@ -801,6 +824,7 @@ class Overlay(QWidget):
             elif selected == "採点を中断する":
                 self.is_scoring_mode = False
                 self.is_scoring_finished = False
+                self.is_result_saved = False
                 getattr(self, 'popups', []).clear()
                 self.toggle_menu(is_bve_advancing)
             elif selected == "選択した駅からやり直す":
@@ -827,7 +851,11 @@ class Overlay(QWidget):
         elif self.menu_state == 3:
             if self.menu_cursor == 0: 
                 execute_retry(self, getattr(self, 'target_retry_idx', -1), is_bve_advancing)
-                self.total_retry_count += 1 # ★ 追加：Sランク判定のためにやり直し回数をカウント
+                
+                # ★ 修正: 無駄な変数をやめ、self.target_retry_idx を直接判定！
+                if getattr(self, 'target_retry_idx', -1) > 0:
+                    self.total_retry_count += 1 
+                
             elif self.menu_cursor == 1: 
                 self.menu_state = 2
                 self.menu_cursor = getattr(self, 'target_retry_idx', 0)
@@ -941,6 +969,8 @@ class Overlay(QWidget):
                             n3 += 1
                 
                 self.theoretical_score = (n1 * 500) + (n2 * 500) + (n3 * 300)
+                self.is_base_off = (n2 == 0)
+                self.is_time_off = (n3 == 0)
                 self.menu_state = 10
                 self.menu_cursor = 0
                 self.input_mode_active = False
@@ -1031,7 +1061,7 @@ class Overlay(QWidget):
                     if self.input_buffer:
                         try:
                             val = int(self.input_buffer)
-                            if not (60 <= val <= 100): val = 80
+                            if not (60 <= val <= 90): val = 80
                             self.rank_a_ratio = val / 100.0
                         except ValueError: pass
                     self.input_mode_active = False
@@ -1040,6 +1070,7 @@ class Overlay(QWidget):
                 # ここに、以前 menu_state == 6 にあった以下の長い処理を丸ごと置きます。
                 self.is_scoring_mode = True
                 self.score = 0
+                self.is_result_saved = False
                 # =================================================================
                 # ★ これから新しいプレイが始まるので、貯金箱もやり直し回数も完全に綺麗にする
                 # =================================================================
@@ -1123,6 +1154,14 @@ class Overlay(QWidget):
                     self.udp_socket.writeDatagram(retry_cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)
                 
                 self.toggle_menu(is_bve_advancing)
+        elif self.menu_state == 11:
+            if self.menu_cursor == 0: 
+                if not getattr(self, 'is_result_saved', False):
+                    # 1回目：スクショを撮影する（この中でフラグがTrueになる）
+                    self.take_result_screenshot()
+                else:
+                    # 2回目：メニューを閉じる
+                    self.toggle_menu(is_bve_advancing)
 
     def handle_dropdown_enter(self):
         selected_opt = getattr(self, 'dropdown_options', [])[getattr(self, 'dropdown_cursor', 0)]
@@ -1192,6 +1231,10 @@ class Overlay(QWidget):
         if getattr(self, 'show_help', False):
             self.show_help = False
             return
+        if self.menu_state == 11:
+            if getattr(self, 'is_result_saved', False):
+                self.toggle_menu(is_bve_advancing)
+            return
         
         if self.menu_state == 5 and self.menu_cursor == 1 and getattr(self, 'input_mode_active', False):
             self.input_fresh = False 
@@ -1228,7 +1271,7 @@ class Overlay(QWidget):
             else:
                 self.menu_state = 6
                 self.menu_cursor = 6
-
+        
     def find_bve_window(self):
         found_hwnd = None
         def callback(hwnd, _):
@@ -1240,8 +1283,90 @@ class Overlay(QWidget):
         win32gui.EnumWindows(callback, None)
         return found_hwnd
 
+    # =================================================================
+    # ★ 修正: 透明レイヤー合成方式による「絶対に失敗しない座標ずらし」
+    # =================================================================
+    def take_result_screenshot(self):
+        self.is_capturing_screenshot = True
+        self.repaint() 
+        QApplication.processEvents() 
+        time.sleep(0.05) 
+
+        try:
+            # ----------------------------------------------------
+            # 1. 【透明レイヤー】を作成し、そこにメニューを描画する
+            # ----------------------------------------------------
+            layer_pixmap = QPixmap(1920, 1080)
+            layer_pixmap.fill(QColor(0, 0, 0, 0)) # アルファ値0(完全透明)で塗りつぶし
+            
+            layer_painter = QPainter(layer_pixmap)
+            layer_painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            layer_painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+            
+            class VirtualWindow:
+                def __init__(self, orig): self._orig = orig
+                def __getattr__(self, name): return getattr(self._orig, name)
+                def width(self): return 1920
+                def height(self): return 1080
+                def geometry(self):
+                    from PyQt6.QtCore import QRect
+                    return QRect(0, 0, 1920, 1080)
+
+            fake_self = VirtualWindow(self)
+            
+            # 透明なキャンバスにFHDで描画
+            draw_menu(fake_self, layer_painter, 1920.0)
+            layer_painter.end() # レイヤーの描画を完了して画像を固める
+
+            # ----------------------------------------------------
+            # 2. 【背景キャンバス】を作成し、ずらしてレイヤーを貼り付ける
+            # ----------------------------------------------------
+            fhd_pixmap = QPixmap(1920, 1080)
+            fhd_pixmap.fill(QColor(15, 15, 15, 255)) # いつものダークグレー背景
+            
+            final_painter = QPainter(fhd_pixmap)
+            
+            # ===================================================
+            y_offset = 30  # ★ ここでずらすピクセル数を指定！ (プラスで下へ)
+            # ===================================================
+            
+            # 透明レイヤーを指定ピクセルだけ下にずらしてスタンプする
+            final_painter.drawPixmap(0, y_offset, layer_pixmap)
+            final_painter.end()
+
+            # ----------------------------------------------------
+            # 3. 以降は通常通りの保存処理
+            # ----------------------------------------------------
+            if getattr(self, 'keys_blocked', False):
+                for hook in getattr(self, 'hook_dict', {}).values():
+                    if hook: keyboard.unhook(hook)
+                self.hook_dict.clear()
+                self.keys_blocked = False
+            if getattr(self, 'f7_blocked', False):
+                if hasattr(self, 'f7_hook') and self.f7_hook: keyboard.unhook(self.f7_hook)
+                self.f7_blocked = False
+
+            desktop = os.path.join(os.environ["USERPROFILE"], "Desktop")
+            default_name = datetime.now().strftime("Result_%Y%m%d_%H%M%S.jpg")
+            save_path, _ = QFileDialog.getSaveFileName(self, "採点結果を保存", os.path.join(desktop, default_name), "JPEG Image (*.jpg);;PNG Image (*.png)")
+            
+            if save_path:
+                fhd_pixmap.save(save_path, "JPG", 100) # 完成した合成画像を保存
+                #self.popups.append({"text": "採点結果を保存しました", "color": COLOR_N, "expire_time": (self.bve_time_ms/1000.0) + 3.0, "type": "pos", "category": "システム"})
+                self.is_result_saved = True
+                self.saved_file_path = save_path
+        except Exception as e:
+            write_desktop_log(f"[ERROR] スクショ保存失敗: {e}")
+            
+        self.is_capturing_screenshot = False
+        self.update()
+    
     def update_logic(self):
         if keyboard.is_pressed('esc'): QApplication.quit()
+        if self.menu_state == 11 and getattr(self, 'is_result_saved', False):
+            if hasattr(self, 'saved_file_path') and not os.path.exists(self.saved_file_path):
+                self.is_result_saved = False
+                self.update()
 
         is_bve_active = False
         if self.bve_hwnd is None or not win32gui.IsWindow(self.bve_hwnd):
@@ -1285,13 +1410,14 @@ class Overlay(QWidget):
 
         if self.bve_time_ms != self.last_bve_time_ms:
             self.last_time_change_real = time.time()
-        is_bve_advancing = (time.time() - self.last_time_change_real) < 0.1
+        is_bve_advancing = (time.time() - self.last_time_change_real) < 0.5
 
         # =================================================================
         # ★ 追加：F7キー（時刻表ジャンプ）の物理的ブロック
         # 採点モード中かつBVEアクティブ時なら、常にF7を無効化する
         # =================================================================
-        should_block_f7 = getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False) and is_bve_active
+        should_block_f7 = (self.menu_state != 0 or (getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False))) and is_bve_active
+        
         if should_block_f7 and not getattr(self, 'f7_blocked', False):
             self.f7_hook = keyboard.on_press_key('f7', lambda e: None, suppress=True)
             self.f7_blocked = True
@@ -1356,7 +1482,7 @@ class Overlay(QWidget):
             if slider_y - 100 <= ly <= slider_y + 100:
                 # X座標からパーセンテージを逆算
                 pct = (lx - slider_x) / slider_w
-                pct = max(0.60, min(1.00, pct))
+                pct = max(0.60, min(0.9, pct))
                 self.rank_a_ratio = round(pct, 2)
                 self.menu_cursor = 0 # カーソルをスライダーに合わせる
                 self.input_mode_active = False # 手入力をキャンセル
@@ -1395,8 +1521,12 @@ class Overlay(QWidget):
                             self.input_fresh = False
                         elif len(self.input_buffer) < 3:
                             self.input_buffer += key
-                            
-                elif key == 'f6': self.toggle_menu(is_bve_advancing)
+                elif key == 'f6': 
+                    if self.menu_state == 11 and not getattr(self, 'is_result_saved', False):
+                            pass # 未保存時はF6無効
+                    else:
+                        self.toggle_menu(is_bve_advancing)
+                    
                 elif key == 'h' and self.menu_state != 0: # ★ Hキーが押された場合
                     self.show_help = not getattr(self, 'show_help', False)
                 elif self.menu_state != 0:
