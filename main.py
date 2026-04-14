@@ -804,10 +804,18 @@ class Overlay(QWidget):
                 getattr(self, 'popups', []).clear()
                 self.toggle_menu(is_bve_advancing)
             elif selected == "選択した駅からやり直す":
-                if len(getattr(self, 'save_data', [])) > 0:
+                save_len = len(getattr(self, 'save_data', []))
+                if save_len > 0:
                     self.menu_state = 2
-                    self.menu_cursor = 0
-                    self.menu_scroll = 0
+                    # ★ 変更: 一番最後（最新）のインデックスにカーソルを合わせる
+                    self.menu_cursor = save_len - 1
+                    
+                    # ★ 追加: カーソルが画面内に収まるようにスクロール位置を自動計算
+                    VISIBLE_COUNT = 7 # menu_ui.py の SAVE_VISIBLE_COUNT と同じ値
+                    if save_len > VISIBLE_COUNT:
+                        self.menu_scroll = save_len - VISIBLE_COUNT
+                    else:
+                        self.menu_scroll = 0
             elif "環境設定" in selected:
                 self.menu_state = 4
                 self.menu_cursor = 0
