@@ -331,6 +331,14 @@ class Overlay(QWidget):
                         self.meta_route = parts[2]
                         self.meta_vehicle = parts[3]
                         self.meta_author = parts[4]
+                elif text.startswith("STATUS:LOADED"):
+                    status = text.split(':')[-1]
+                    self.bve_actual_state = status # 'PAUSED' or 'RUNNING'
+                    self.is_bve_loaded = True
+                    if not getattr(self, 'is_bve_loaded', False):
+                        write_desktop_log(f"[UDP] BVEのロード完了を確認 (初期状態: {status})")
+                        self.is_bve_loaded = True
+                    
                 else:
                     latest_telemetry = text
             except Exception:
@@ -557,26 +565,16 @@ class Overlay(QWidget):
             if getattr(self, 'is_scoring_finished', False):
                 base_items.insert(1, "採点結果を表示する")
             self.current_menu_items = base_items # これがないと handle_menu_enter でエラーになります
-             
-            if self.bve_hwnd:
-                if is_bve_advancing:
-                    # 走行中なら通常通り一時停止
-                    win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
-                    win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
-                elif not getattr(self, 'station_list', []):
-                    # =================================================================
-                    # ★ 追加: 一時停止中でデータが無い場合、一時的に解除してデータを待つ
-                    self.auto_pause_pending = True
-                    win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
-                    win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
-                    # =================================================================
+            
+            if is_bve_advancing and self.bve_hwnd:
+                win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
+                win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
         else:
             if self.menu_state == 5 and self.input_mode_active:
                 self.finalize_margin_input()
             self.menu_state = 0
             self.input_mode_active = False
             self.show_help = False
-            self.auto_pause_pending = False
             if not is_bve_advancing and self.bve_hwnd:
                 win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
                 win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
@@ -1081,15 +1079,11 @@ class Overlay(QWidget):
                 self.is_scoring_mode = True
                 self.score = 0
                 self.is_result_saved = False
-                # =================================================================
-                # ★ これから新しいプレイが始まるので、貯金箱もやり直し回数も完全に綺麗にする
-                # =================================================================
+
                 for k in self.score_details:
                     self.score_details[k] = 0
-                
-                self.total_retry_count = 0 # ★ Sランク判定用に 0 からスタート！
-                # =================================================================
                 self.total_retry_count = 0 # ★Sランク判定用に初期化
+                
                 getattr(self, 'save_data', []).clear()
                 getattr(self, 'popups', []).clear()
                 self.debug_all_penalties = False
@@ -1147,6 +1141,10 @@ class Overlay(QWidget):
               
                 self.is_official_jumping = True
                 self.jump_start_real_time = time.time()
+
+                self.is_bve_loaded = False
+                self.initial_kickstart_done = False
+
                 self.expected_target_loc = start_loc
                 self.expected_target_time = target_time_ms
                 
@@ -1337,7 +1335,7 @@ class Overlay(QWidget):
             final_painter = QPainter(fhd_pixmap)
             
             # ===================================================
-            y_offset = 30  # ★ ここでずらすピクセル数を指定！ (プラスで下へ)
+            y_offset = 38  # ★ ここでずらすピクセル数を指定！ (プラスで下へ)
             # ===================================================
             
             # 透明レイヤーを指定ピクセルだけ下にずらしてスタンプする
@@ -1373,15 +1371,16 @@ class Overlay(QWidget):
     
     def update_logic(self):
         if keyboard.is_pressed('esc'): QApplication.quit()
-        if self.menu_state == 11 and getattr(self, 'is_result_saved', False):
-            if hasattr(self, 'saved_file_path') and not os.path.exists(self.saved_file_path):
-                self.is_result_saved = False
-                self.update()
 
         is_bve_active = False
         if self.bve_hwnd is None or not win32gui.IsWindow(self.bve_hwnd):
             self.bve_hwnd = self.find_bve_window()
             self.is_linked = False
+            
+            # ★ 修正: BVEを見失ったらフラグを全てリセット
+            self.is_bve_loaded = False
+            self.initial_kickstart_done = False
+            
             if self.was_bve_found and self.bve_hwnd is None:
                 QApplication.quit()
                 return
@@ -1389,6 +1388,22 @@ class Overlay(QWidget):
         if self.bve_hwnd:
             self.was_bve_found = True 
             is_bve_active = (win32gui.GetForegroundWindow() == self.bve_hwnd)
+            
+            # =================================================================
+            if getattr(self, 'is_bve_loaded', False):
+                # 駅リストが無く、未実行で、かつBVEが「PAUSED」と叫んでいる時だけ！
+                if not getattr(self, 'station_list', []) and not getattr(self, 'initial_kickstart_done', False):
+                    if getattr(self, 'bve_actual_state', '') == 'PAUSED':
+                        self.auto_pause_pending = True
+                        self.initial_kickstart_done = True
+                        
+                        write_desktop_log("[MAIN] BVEの凍結を確認。キックスタートを実行します。")
+                        win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
+                        win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
+                    
+                    elif getattr(self, 'bve_actual_state', '') == 'RUNNING':
+                        # 既に動いているなら、Pを送る必要はないのでフラグだけ立てて終了
+                        self.initial_kickstart_done = True
             
             if not self.is_linked:
                 try:
@@ -1422,11 +1437,14 @@ class Overlay(QWidget):
             self.last_time_change_real = time.time()
         is_bve_advancing = (time.time() - self.last_time_change_real) < 0.8
         
+        # =================================================================
+        # ★ 修正: 万が一手動で停止されていた場合の逆転を防ぐフェイルセーフ
         if getattr(self, 'auto_pause_pending', False) and getattr(self, 'station_list', []):
             if self.bve_hwnd and is_bve_advancing: # ← ★ ここに「本当に動いているか」の確認を追加！
                 win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
                 win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
             self.auto_pause_pending = False
+        # =================================================================
 
         # =================================================================
         # ★ 追加：F7キー（時刻表ジャンプ）の物理的ブロック

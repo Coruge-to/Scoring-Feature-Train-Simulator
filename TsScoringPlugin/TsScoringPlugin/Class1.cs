@@ -7,6 +7,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Timers;
 
 namespace TsScoringPlugin
 {
@@ -36,6 +37,9 @@ namespace TsScoringPlugin
         private IPEndPoint endPoint;
         private UdpClient udpReceiver;
 
+        private Timer heartbeatTimer;
+        private DateTime lastTickTime = DateTime.MinValue;
+
         private string lastUdpData = "";
         private string lastStaListPacket = "";
         private object currentScenario = null;
@@ -54,6 +58,7 @@ namespace TsScoringPlugin
         private int opStopDelayStartMs = -1;
         private bool initialStaListSent = false;
         private DateTime lastStaListSendTime = DateTime.MinValue;
+        private DateTime lastHeartbeatTime = DateTime.MinValue;
 
         private bool isTextsCached = false;
         private string allRevTexts = "切";
@@ -87,18 +92,45 @@ namespace TsScoringPlugin
                 endPoint = new IPEndPoint(IPAddress.Parse("127.0.0.1"), 54321);
                 udpReceiver = new UdpClient(54322);
                 udpReceiver.Client.Blocking = false;
+
+                heartbeatTimer = new Timer(50); // 0.5秒間隔
+                heartbeatTimer.Elapsed += HeartbeatTimer_Elapsed;
+                heartbeatTimer.Start();
             }
             catch { }
         }
+        private void HeartbeatTimer_Elapsed(object sender, ElapsedEventArgs e)
+        {
+            try
+            {
+                // BVEがポーズ中でも、ScenarioCreatedがTrueなら送信！
+                if (BveHacker.IsScenarioCreated)
+                {
+                    bool isPaused = (DateTime.Now - lastTickTime).TotalMilliseconds > 100;
+                    string statusSuffix = isPaused ? "PAUSED" : "RUNNING";
+                    byte[] hbBytes = Encoding.UTF8.GetBytes($"STATUS:LOADED:{statusSuffix}");
+                    if (udpClient != null) udpClient.Send(hbBytes, hbBytes.Length, endPoint);
 
+                    // (必要なら確認用のログ)
+                    // System.IO.File.AppendAllText(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "bve_debug.log"), $"[{DateTime.Now:HH:mm:ss.fff}] [Timer] STATUS:LOADED 送信\n");
+                }
+            }
+            catch { }
+        }
         public override void Dispose()
         {
+            if (heartbeatTimer != null)
+            {
+                heartbeatTimer.Stop();
+                heartbeatTimer.Dispose();
+            }
             if (udpClient != null) { udpClient.Close(); udpClient = null; }
             if (udpReceiver != null) { udpReceiver.Close(); udpReceiver = null; }
         }
 
         public override void Tick(TimeSpan elapsed)
         {
+            lastTickTime = DateTime.Now;
             if (!BveHacker.IsScenarioCreated)
             {
                 lastUdpData = "";
@@ -112,6 +144,8 @@ namespace TsScoringPlugin
                 currentScenario = null;
                 return;
             }
+
+            
 
             if (udpClient != null)
             {
@@ -285,16 +319,12 @@ namespace TsScoringPlugin
                 dynamic vehicle = null;
                 bool areDoorsClosed = true;
 
-                try
-                {
-                    speed = BveHacker.Scenario.VehicleLocation.Speed * 3.6;
-                    location = BveHacker.Scenario.VehicleLocation.Location;
-                    timeMs = (int)BveHacker.Scenario.TimeManager.Time.TotalMilliseconds;
-                    map = BveHacker.Scenario.Map;
-                    vehicle = BveHacker.Scenario.Vehicle;
-                    try { areDoorsClosed = vehicle.Doors.AreAllClosed; } catch { }
-                }
-                catch { }
+                try { map = BveHacker.Scenario.Map; } catch { }
+                try { vehicle = BveHacker.Scenario.Vehicle; } catch { }
+                try { timeMs = (int)BveHacker.Scenario.TimeManager.Time.TotalMilliseconds; } catch { }
+                try { location = BveHacker.Scenario.VehicleLocation.Location; } catch { }
+                try { speed = BveHacker.Scenario.VehicleLocation.Speed * 3.6; } catch { }
+                try { if (vehicle != null) areDoorsClosed = vehicle.Doors.AreAllClosed; } catch { }
 
                 // =================================================================
                 // ★ 方針②：ドア（cc）とパラメータ（d3）の数値をすべて暴く！

@@ -16,7 +16,7 @@ def draw_hud(self, painter, logical_width):
     pos_x_left, pos_x_right = MARGIN_LEFT, logical_width - MARGIN_RIGHT
     pos_x_label = pos_x_right - LABEL_WIDTH
 
-    dbg_y = 550
+    dbg_y = 500
     painter.setFont(QFont("sans-serif", 14, QFont.Weight.Bold))
     
     if self.bb_is_in_zone:
@@ -83,7 +83,7 @@ def draw_hud(self, painter, logical_width):
     if self.show_graph:
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(0, 0, 0, 150))
-        painter.drawRect(10, dbg_y - 20, 950, len(dbg_texts) * 20 + 10)
+        painter.drawRect(5, dbg_y - 20, 950, len(dbg_texts) * 20 + 10)
 
         painter.setFont(QFont("sans-serif", 14, QFont.Weight.Bold))
         for i, text in enumerate(dbg_texts):
@@ -98,8 +98,8 @@ def draw_hud(self, painter, logical_width):
     if self.show_graph and len(self.g_history) > 1:
         graph_w = 800
         graph_h = 250
-        graph_x = 10
-        graph_y = BASE_SCREEN_H - graph_h - 80
+        graph_x = 5
+        graph_y = BASE_SCREEN_H - graph_h - 40
         
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(0, 0, 0, 200))
