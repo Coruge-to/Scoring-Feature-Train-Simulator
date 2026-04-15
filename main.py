@@ -859,6 +859,8 @@ class Overlay(QWidget):
         elif self.menu_state == 3:
             if self.menu_cursor == 0: 
                 execute_retry(self, getattr(self, 'target_retry_idx', -1), is_bve_advancing)
+                self.is_result_saved = False
+                self.saved_file_path = ""
                 
                 # ★ 修正: 無駄な変数をやめ、self.target_retry_idx を直接判定！
                 if getattr(self, 'target_retry_idx', -1) > 0:
@@ -1354,9 +1356,10 @@ class Overlay(QWidget):
                 if hasattr(self, 'f7_hook') and self.f7_hook: keyboard.unhook(self.f7_hook)
                 self.f7_blocked = False
 
-            desktop = os.path.join(os.environ["USERPROFILE"], "Desktop")
+            save_dir = os.path.join(os.environ["USERPROFILE"], "Documents", "bve_score")
+            os.makedirs(save_dir, exist_ok=True)
             default_name = datetime.now().strftime("Result_%Y%m%d_%H%M%S.jpg")
-            save_path, _ = QFileDialog.getSaveFileName(self, "採点結果を保存", os.path.join(desktop, default_name), "JPEG Image (*.jpg);;PNG Image (*.png)")
+            save_path, _ = QFileDialog.getSaveFileName(self, "採点結果を保存", os.path.join(save_dir, default_name), "JPEG Image (*.jpg);;PNG Image (*.png)")
             
             if save_path:
                 fhd_pixmap.save(save_path, "JPG", 100) # 完成した合成画像を保存

@@ -1,5 +1,5 @@
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QFontMetrics, QPen, QFont
+from PyQt6.QtGui import QFont, QPainter, QFontDatabase, QColor, QFontMetrics, QPixmap, QPainterPath, QLinearGradient, QPen
 from config import *
 from utils import draw_text_with_outline
 import math
@@ -1519,13 +1519,11 @@ def draw_menu(self, painter, logical_width):
         draw_text_with_outline(painter, "合計", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x - 600, bottom_y, "left", passes=8)
         draw_text_with_outline(painter, f"{total_score} 点", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x + 100, bottom_y, "right", passes=8)
         
-        draw_text_with_outline(painter, "評価", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x + 325, bottom_y, "left", passes=8)
+        draw_text_with_outline(painter, "評価", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x + 355, bottom_y, "left", passes=8)
         
-        painter.setPen(Qt.PenStyle.NoPen)
-        glow_c = QColor(*eval_color) if isinstance(eval_color, tuple) else QColor(eval_color)
-        glow_c.setAlpha(50)
-        painter.setBrush(glow_c)
-        painter.drawEllipse(int(center_x + 505), int(bottom_y - 74), 90, 90)
+        # ==========================================================
+        # ★ 修正: 背景の●(円)描画を完全に削除しました
+        # ==========================================================
         
         f_rank = QFont(self.font_big)
         if f_rank.pointSize() > 0:
@@ -1533,12 +1531,58 @@ def draw_menu(self, painter, logical_width):
         elif f_rank.pixelSize() > 0:
             f_rank.setPixelSize(int(f_rank.pixelSize()*1.2))
             
-        draw_text_with_outline(painter, eval_rank, f_rank, eval_color, COLOR_WHITE, center_x + 550, bottom_y + 5, "center", passes=8)
+        # ==========================================================
+        # ★ 修正: A～Dは従来通り描画、Sランクのみ金属光沢(グラデーション)を描画
+        # ==========================================================
+        if eval_rank == "S":
+            painter.save()
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            
+            fm_rank = QFontMetrics(f_rank)
+            path = QPainterPath()
+            
+            # "center" 合わせの座標計算 (微調整済みの座標 center_x + 550 を維持)
+            rank_x = (center_x + 577) - (fm_rank.horizontalAdvance(eval_rank) / 2.0)
+            rank_y = bottom_y + 5
+            path.addText(rank_x, rank_y, f_rank, eval_rank)
+            
+            # Sランク専用：超高級ゴールドメタリックグラデーション
+            gradient = QLinearGradient(0, rank_y - fm_rank.ascent(), 0, rank_y)
+            gradient.setColorAt(0.00, QColor(210, 190, 110)) # 0%  (上端): 少し暗くした、くすんだ薄金色
+            gradient.setColorAt(0.20, QColor(255, 230, 140)) # 20% (上部): 白を排除した、明るい黄色
+            gradient.setColorAt(0.50, QColor(240, 180,  15)) # 50% (中央): 重厚感のある純金カラー
+            gradient.setColorAt(0.75, QColor(160, 100,  10)) # 75% (下部): 立体感を強調するシャドウ
+            gradient.setColorAt(1.00, QColor(230, 190,  50)) # 100%(下端): 下からの照り返し
+            
+            # 白縁取り (draw_text_with_outlineの白縁を太ペンで再現)
+            pen = QPen(QColor(255, 255, 255), 8)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(path)
+            
+            # グラデーション塗りつぶし
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(gradient)
+            painter.drawPath(path)
+            
+            painter.restore()
+        else:
+            # A, B, C, D ランクは従来通りの描画
+            draw_text_with_outline(painter, eval_rank, f_rank, eval_color, COLOR_WHITE, center_x + 577, bottom_y + 5, "center", passes=8)
 
         # ==========================================================
         # 4. 操作ボタンと [H] ボタンの描画 (スクショ中は隠す！)
         # ==========================================================
         if not getattr(self, 'is_capturing_screenshot', False):
+            
+            # ★ 追加: 保存されたファイルが削除・移動されたか監視し、無い場合はフラグを戻す
+            if getattr(self, 'is_result_saved', False) and hasattr(self, 'saved_file_path'):
+                import os
+                if not os.path.exists(self.saved_file_path):
+                    self.is_result_saved = False
+                    self.saved_file_path = ""
+
             btn_text = "閉じる" if getattr(self, 'is_result_saved', False) else "結果を保存する"
             draw_menu_item(btn_text, bottom_y + 110, (self.menu_cursor == 0), 0, "center")
 
