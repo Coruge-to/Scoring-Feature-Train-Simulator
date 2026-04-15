@@ -56,7 +56,7 @@ class Overlay(QWidget):
         self.speed_penalty_score = 0
         self.last_penalty_time = 0.0
         
-        keys_to_track = ['0','1','2','3','4','5','6','7','8','9','f5','f6','f8','p','up','down','left','right','enter','backspace', 'h']
+        keys_to_track = ['0','1','2','3','4','5','6','7','8','9','f1','f2','f5','f8','p','up','down','left','right','enter','backspace', 'h']
         self.key_states = {k: False for k in keys_to_track}
         self.show_help = False # ★ ヘルプ表示フラグ
         
@@ -149,7 +149,7 @@ class Overlay(QWidget):
         # =================================================================
         # ★ 新規追加: 評価点(Rank)設定用の変数
         # =================================================================
-        self.rank_a_ratio = 0.80  # Aランクの閾値 (0.60 ～ 1.00)
+        self.rank_a_ratio = 0.75  # Aランクの閾値 (0.60 ～ 1.00)
         self.theoretical_score = 0 # 理論値
         self.total_retry_count = 0 # Sランク判定用のやり直し回数
         
@@ -165,7 +165,7 @@ class Overlay(QWidget):
         self.blink_phase = 0.0
         self.blink_active = False
         self.last_update_time = 0.0
-        self.show_graph = True 
+        self.show_graph = False
         self.g_history = []  
 
         self.bve_hwnd = None
@@ -557,16 +557,26 @@ class Overlay(QWidget):
             if getattr(self, 'is_scoring_finished', False):
                 base_items.insert(1, "採点結果を表示する")
             self.current_menu_items = base_items # これがないと handle_menu_enter でエラーになります
-            
-            if is_bve_advancing and self.bve_hwnd:
-                win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
-                win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
+             
+            if self.bve_hwnd:
+                if is_bve_advancing:
+                    # 走行中なら通常通り一時停止
+                    win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
+                    win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
+                elif not getattr(self, 'station_list', []):
+                    # =================================================================
+                    # ★ 追加: 一時停止中でデータが無い場合、一時的に解除してデータを待つ
+                    self.auto_pause_pending = True
+                    win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
+                    win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
+                    # =================================================================
         else:
             if self.menu_state == 5 and self.input_mode_active:
                 self.finalize_margin_input()
             self.menu_state = 0
             self.input_mode_active = False
             self.show_help = False
+            self.auto_pause_pending = False
             if not is_bve_advancing and self.bve_hwnd:
                 win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
                 win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
@@ -1061,7 +1071,7 @@ class Overlay(QWidget):
                     if self.input_buffer:
                         try:
                             val = int(self.input_buffer)
-                            if not (60 <= val <= 90): val = 80
+                            if not (60 <= val <= 90): val = 75
                             self.rank_a_ratio = val / 100.0
                         except ValueError: pass
                     self.input_mode_active = False
@@ -1410,7 +1420,13 @@ class Overlay(QWidget):
 
         if self.bve_time_ms != self.last_bve_time_ms:
             self.last_time_change_real = time.time()
-        is_bve_advancing = (time.time() - self.last_time_change_real) < 0.5
+        is_bve_advancing = (time.time() - self.last_time_change_real) < 0.8
+        
+        if getattr(self, 'auto_pause_pending', False) and getattr(self, 'station_list', []):
+            if self.bve_hwnd and is_bve_advancing: # ← ★ ここに「本当に動いているか」の確認を追加！
+                win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
+                win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
+            self.auto_pause_pending = False
 
         # =================================================================
         # ★ 追加：F7キー（時刻表ジャンプ）の物理的ブロック
@@ -1425,10 +1441,10 @@ class Overlay(QWidget):
             if hasattr(self, 'f7_hook') and self.f7_hook:
                 keyboard.unhook(self.f7_hook)
             self.f7_blocked = False
-        
+      
         # =================================================================
         # ★ 課題2解決：「時刻と位置」ウィンドウの無力化（グレーアウト）
-        # F6メニューを開いている時、または「採点中かつ終了前」の時に操作不能にする
+        # F1メニューを開いている時、または「採点中かつ終了前」の時に操作不能にする
         # =================================================================
         try:
             # BVEのダイヤグラムウィンドウをタイトルで検索
@@ -1521,11 +1537,16 @@ class Overlay(QWidget):
                             self.input_fresh = False
                         elif len(self.input_buffer) < 3:
                             self.input_buffer += key
-                elif key == 'f6': 
+                elif key == 'f1': 
                     if self.menu_state == 11 and not getattr(self, 'is_result_saved', False):
-                            pass # 未保存時はF6無効
+                            pass # 未保存時はF1無効
                     else:
                         self.toggle_menu(is_bve_advancing)
+                elif key == 'f2':
+                    # X線ゴーグル（全隠しペナルティ表示）
+                    self.debug_all_penalties = not getattr(self, 'debug_all_penalties', False)
+                    # Gのグラフ表示
+                    self.show_graph = not getattr(self, 'show_graph', False)
                     
                 elif key == 'h' and self.menu_state != 0: # ★ Hキーが押された場合
                     self.show_help = not getattr(self, 'show_help', False)

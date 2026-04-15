@@ -1366,16 +1366,42 @@ def draw_menu(self, painter, logical_width):
         draw_text_with_outline(painter, "=== 採点結果 ===", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, header_y, "center", passes=8)
         
         font_meta = self.font_normal
-        # [Y座標調整] タイトル関連の行間 (header_y からの相対距離)
-        draw_text_with_outline(painter, getattr(self, 'meta_route', '路線データ未取得'), font_meta, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, header_y + 90, "center", passes=8)
-        draw_text_with_outline(painter, getattr(self, 'meta_vehicle', '車両データ未取得'), font_meta, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, header_y + 270, "center", passes=8)
-        draw_text_with_outline(painter, getattr(self, 'meta_title', 'シナリオデータ未取得'), font_meta, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, header_y + 150, "center", passes=8)
-
+        
+        # ★ 修正: 変数の定義を描画より前に移動（エラー防止）
         sta_start = get_sta_name(getattr(self, 'setting_start_idx', 0))
         sta_end = get_sta_name(getattr(self, 'setting_end_idx', -1))
-        # [Y座標調整] 区間の表示位置
-        draw_text_with_outline(painter, f"区間 ： {sta_start} ～ {sta_end}", font_meta, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, header_y + 210, "center", passes=8)
+        
+        # ★ 修正: 横幅が1300pxを超える場合、縦横比を維持して全体を縮小するヘルパー関数
+        def draw_scaled_meta_text(text, y_pos):
+            fm = QFontMetrics(font_meta)
+            text_w = fm.horizontalAdvance(text)
+            
+            # テキストの横幅が1300pxを超えている場合のみ縮小処理を発動
+            if text_w > 1300:
+                # 縮小率を計算 (例: 2600px幅の文字なら 1300/2600 = 0.5倍)
+                ratio = 1300.0 / text_w
+                
+                y_offset = (fm.ascent() * (1.0 - ratio)) / 2.0
+                
+                painter.save()
+                # ★ 修正: 床(Y座標)を、計算した y_offset の分だけ上に持ち上げる！
+                painter.translate(center_x, y_pos - y_offset)
+                painter.scale(ratio, ratio)
+                
+                draw_text_with_outline(painter, text, font_meta, COLOR_WHITE, COLOR_OUTLINE_BLACK, 0, 0, "center", passes=8)
+                
+                painter.restore() # Painterの状態を元に戻す
+            else:
+                # 1300px以下の場合は、そのままのサイズ・指定座標で描画
+                draw_text_with_outline(painter, text, font_meta, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, y_pos, "center", passes=8)
 
+        # [Y座標調整] タイトル関連の行間 (header_y からの相対距離)
+        # ヘルパー関数を通して描画させる
+        draw_scaled_meta_text(getattr(self, 'meta_route', '路線データ未取得'), header_y + 90)
+        draw_scaled_meta_text(getattr(self, 'meta_title', 'シナリオデータ未取得'), header_y + 150)
+        draw_scaled_meta_text(f"区間 ： {sta_start} ～ {sta_end}", header_y + 210)
+        draw_scaled_meta_text(getattr(self, 'meta_vehicle', '車両データ未取得'), header_y + 270)
+        
         # [Y座標調整] 区間とテーブルを区切る上の水平線の位置
         painter.setPen(QPen(QColor(100, 100, 100), 3))
         painter.drawLine(int(center_x - 650), int(header_y + 295), int(center_x + 650), int(header_y + 295))
@@ -1537,7 +1563,7 @@ def draw_menu(self, painter, logical_width):
         draw_text_with_outline(painter, help_text, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, hx + 15, hy + fm_help.ascent() + 7, "left", passes=8)
         self.menu_click_zones.append((hx, hy, hx + hw, hy + hh, 999))
 
-        # ==========================================================
+    # ==========================================================
     # ★ 修正: 操作説明 [H] オーバーレイ (リストの行数で高さが自動可変)
     # ==========================================================
     if getattr(self, 'show_help', False):
@@ -1560,13 +1586,13 @@ def draw_menu(self, painter, logical_width):
             help_items.extend([
                 ("Enter", "決定"),
                 ("Backspace", "戻る"),
-                ("F6", "閉じる")
+                ("F1", "閉じる")
             ])
 
         # 2. リストの数(len)に応じて、ウィンドウの高さを自動計算！
         # (例: 1行なら185px, 4行なら350px)
         win_w = 500
-        win_h = 130 + (len(help_items) * 55)
+        win_h = 100 + (len(help_items) * 55)
         win_x = center_x - (win_w / 2)
         win_y = (BASE_SCREEN_H - win_h) / 2
         
