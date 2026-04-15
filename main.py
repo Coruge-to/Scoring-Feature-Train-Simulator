@@ -332,7 +332,7 @@ class Overlay(QWidget):
                         self.meta_vehicle = parts[3]
                         self.meta_author = parts[4]
                 elif text.startswith("STATUS:LOADED"):
-                    status = text.split(':')[-1]
+                    status = text.split(':')[-1].strip()
                     self.bve_actual_state = status # 'PAUSED' or 'RUNNING'
                     self.is_bve_loaded = True
                     if not getattr(self, 'is_bve_loaded', False):
@@ -564,7 +564,9 @@ class Overlay(QWidget):
             base_items = self.menu_items_on.copy() if self.is_scoring_mode else self.menu_items_off.copy()
             if getattr(self, 'is_scoring_finished', False):
                 base_items.insert(1, "採点結果を表示する")
-            self.current_menu_items = base_items # これがないと handle_menu_enter でエラーになります
+            self.current_menu_items = base_items 
+
+            self.was_advancing_before_menu = is_bve_advancing 
             
             if is_bve_advancing and self.bve_hwnd:
                 win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
@@ -575,7 +577,8 @@ class Overlay(QWidget):
             self.menu_state = 0
             self.input_mode_active = False
             self.show_help = False
-            if not is_bve_advancing and self.bve_hwnd:
+            self.dropdown_active = False
+            if getattr(self, 'was_advancing_before_menu', False) and self.bve_hwnd:
                 win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
                 win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
 
@@ -858,6 +861,7 @@ class Overlay(QWidget):
                 self.menu_cursor = 0
         elif self.menu_state == 3:
             if self.menu_cursor == 0: 
+                self.was_advancing_before_menu = True
                 execute_retry(self, getattr(self, 'target_retry_idx', -1), is_bve_advancing)
                 self.is_result_saved = False
                 self.saved_file_path = ""
@@ -1162,6 +1166,7 @@ class Overlay(QWidget):
                 if retry_cmd != "":
                     write_desktop_log(f"[MENU 6] 送信コマンド: {retry_cmd} / 予想時間: {target_time_ms}")
                     self.udp_socket.writeDatagram(retry_cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)
+                self.was_advancing_before_menu = True
                 
                 self.toggle_menu(is_bve_advancing)
         elif self.menu_state == 11:
@@ -1349,12 +1354,19 @@ class Overlay(QWidget):
             # ----------------------------------------------------
             if getattr(self, 'keys_blocked', False):
                 for hook in getattr(self, 'hook_dict', {}).values():
-                    if hook: keyboard.unhook(hook)
+                    if hook:
+                        try: keyboard.unhook(hook)
+                        except Exception: pass
                 self.hook_dict.clear()
                 self.keys_blocked = False
-            if getattr(self, 'f7_blocked', False):
-                if hasattr(self, 'f7_hook') and self.f7_hook: keyboard.unhook(self.f7_hook)
-                self.f7_blocked = False
+                
+            if getattr(self, 'sys_keys_blocked', False):
+                for hook in getattr(self, 'sys_hook_dict', {}).values():
+                    if hook:
+                        try: keyboard.unhook(hook)
+                        except Exception: pass
+                self.sys_hook_dict.clear()
+                self.sys_keys_blocked = False
 
             save_dir = os.path.join(os.environ["USERPROFILE"], "Documents", "bve_score")
             os.makedirs(save_dir, exist_ok=True)
@@ -1399,10 +1411,11 @@ class Overlay(QWidget):
                     if getattr(self, 'bve_actual_state', '') == 'PAUSED':
                         self.auto_pause_pending = True
                         self.initial_kickstart_done = True
-                        
+                        self.kick_bve_time = self.bve_time_ms
                         write_desktop_log("[MAIN] BVEの凍結を確認。キックスタートを実行します。")
                         win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
                         win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
+                        self.bve_actual_state = 'RUNNING'
                     
                     elif getattr(self, 'bve_actual_state', '') == 'RUNNING':
                         # 既に動いているなら、Pを送る必要はないのでフラグだけ立てて終了
@@ -1436,32 +1449,48 @@ class Overlay(QWidget):
 
         current_time = self.bve_time_ms / 1000.0
 
-        if self.bve_time_ms != self.last_bve_time_ms:
-            self.last_time_change_real = time.time()
-        is_bve_advancing = (time.time() - self.last_time_change_real) < 0.8
-        
         # =================================================================
-        # ★ 修正: 万が一手動で停止されていた場合の逆転を防ぐフェイルセーフ
+        if getattr(self, 'bve_actual_state', '') != '':
+            is_bve_advancing = ('RUNNING' in self.bve_actual_state)
+        else:
+            # 万が一C#からの状態が届いていない場合のみ、従来の予備ロジックを使う
+            if self.bve_time_ms != self.last_bve_time_ms:
+                self.last_time_change_real = time.time()
+            is_bve_advancing = (time.time() - getattr(self, 'last_time_change_real', 0)) < 0.8
+        # =================================================================
+
+        # =================================================================
+        # ★ 究極のストッパー: BVEの内部時間が「1ミリ秒」でも進んだ瞬間（＝1フレーム経過）に即停止
         if getattr(self, 'auto_pause_pending', False) and getattr(self, 'station_list', []):
-            if self.bve_hwnd and is_bve_advancing: # ← ★ ここに「本当に動いているか」の確認を追加！
-                win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
-                win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
-            self.auto_pause_pending = False
+            if self.bve_time_ms > getattr(self, 'kick_bve_time', self.bve_time_ms):
+                if self.bve_hwnd and is_bve_advancing:
+                    win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
+                    win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
+                self.auto_pause_pending = False
         # =================================================================
 
         # =================================================================
         # ★ 追加：F7キー（時刻表ジャンプ）の物理的ブロック
         # 採点モード中かつBVEアクティブ時なら、常にF7を無効化する
         # =================================================================
-        should_block_f7 = (self.menu_state != 0 or (getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False))) and is_bve_active
+        should_block_sys = (self.menu_state != 0 or (getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False))) and is_bve_active
         
-        if should_block_f7 and not getattr(self, 'f7_blocked', False):
-            self.f7_hook = keyboard.on_press_key('f7', lambda e: None, suppress=True)
-            self.f7_blocked = True
-        elif not should_block_f7 and getattr(self, 'f7_blocked', False):
-            if hasattr(self, 'f7_hook') and self.f7_hook:
-                keyboard.unhook(self.f7_hook)
-            self.f7_blocked = False
+        if should_block_sys and not getattr(self, 'sys_keys_blocked', False):
+            sys_block_keys = ['f7', 'p'] # ★ ここに 'a' などを足すだけで追加ブロック可能！
+            if not hasattr(self, 'sys_hook_dict'):
+                self.sys_hook_dict = {}
+            for k in sys_block_keys:
+                self.sys_hook_dict[k] = keyboard.on_press_key(k, lambda e: None, suppress=True)
+            self.sys_keys_blocked = True
+            
+        elif not should_block_sys and getattr(self, 'sys_keys_blocked', False):
+            if hasattr(self, 'sys_hook_dict'):
+                for hook in self.sys_hook_dict.values():
+                    if hook:
+                        try: keyboard.unhook(hook)
+                        except Exception: pass
+                self.sys_hook_dict.clear()
+            self.sys_keys_blocked = False
       
         # =================================================================
         # ★ 課題2解決：「時刻と位置」ウィンドウの無力化（グレーアウト）
@@ -1484,7 +1513,7 @@ class Overlay(QWidget):
 
         should_block_keys = (self.menu_state != 0) and is_bve_active
         if should_block_keys and not self.keys_blocked:
-            block_keys = ['0','1','2','3','4','5','6','7','8','9','p','f8','up','down','left','right','enter','backspace', 'h']
+            block_keys = ['0','1','2','3','4','5','6','7','8','9','f8','up','down','left','right','enter','backspace', 'h']
             for k in block_keys:
                 self.hook_dict[k] = keyboard.on_press_key(k, lambda e: None, suppress=True)
             self.keys_blocked = True

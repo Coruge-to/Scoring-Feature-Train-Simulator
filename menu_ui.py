@@ -966,7 +966,7 @@ def draw_menu(self, painter, logical_width):
             0: "【 転動 】\nドア開扉中に車両が完全に停止していたかを採点します。\n（※ドア開扉中に5cm以上動くと-500点）",
             1: "【 ATS信号無視 】\n未実装\n（※保安装置が働く度に-500点）",
             2: "【 速度制限超過 】\n速度制限・信号制限を守ったかを採点します。\n（※1秒毎に超過した速度(km/h)を累積減点）",
-            3: "【 停車時衝動 】\n列車が完全に停止する際のショックの大きさを停止直前の0.5秒におけるGの平均値により採点します。\n（※0.06G≒2.1km/h/s以上で-100点、0.10G≒3.5km/h/s以上で-200点）",
+            3: "【 停車時衝動 】\n列車が完全に停止する際のショックの大きさを停止直前の0.5秒におけるGの平均値により採点します。\n（※0.065G≒2.3km/h/s以上で-100点、0.10G≒3.5km/h/s以上で-200点）",
             4: "【 非常ブレーキ 】\n走行中に非常ブレーキを使用したかどうかを採点します。\n（※非常ブレーキを使用するごとに-500点）",
             5: "【 初動・緩和ブレーキ 】\n基本制動のルールを設定した区間ごとに、\n異なる初動・緩和ブレーキのルールを適用したい場合に追加・編集します。",
             6: "次の設定ページ（評価点の設定）へ進みます。"
@@ -1517,7 +1517,7 @@ def draw_menu(self, painter, logical_width):
 
         bottom_y = table_y + row_h * 7.4
         draw_text_with_outline(painter, "合計", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x - 600, bottom_y, "left", passes=8)
-        draw_text_with_outline(painter, f"{total_score} 点", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x + 100, bottom_y, "right", passes=8)
+        draw_text_with_outline(painter, f"{total_score} 点", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x - 50, bottom_y, "right", passes=8)
         
         draw_text_with_outline(painter, "評価", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x + 355, bottom_y, "left", passes=8)
         

@@ -544,7 +544,7 @@ def update_physics_and_scoring(self, current_time, dt):
             if getattr(self, 'pen_jerk', True):
                 if abs_stop_g >= 0.10:
                     add_score_popup(self, -200, "停車時衝動 -200", COLOR_B_EMG, "neg", "停車時衝動", current_time)
-                elif abs_stop_g >= 0.06:
+                elif abs_stop_g >= 0.065:
                     add_score_popup(self, -100, "停車時衝動 -100", COLOR_B_EMG, "neg", "停車時衝動", current_time)
             self.is_stopping_zone = False
             
