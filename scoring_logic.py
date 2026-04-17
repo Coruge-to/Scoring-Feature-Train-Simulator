@@ -916,8 +916,13 @@ def update_physics_and_scoring(self, current_time, dt):
         target_type = self.base_limit_type
         target_loc = self.bve_location
 
-    active_red = None
-    running_base_speed = base_limit 
+    active_red = None # ←この1行と、下の for loc, val, l_type in future_targets: の中身を丸ごと書き換えます。
+
+    # =================================================================
+    # ★ 新ロジック1：全ての制限の警告状態を一旦ストックする
+    future_evals = []
+    active_zone_end_dist = -1.0
+    running_base_speed = base_limit
 
     for loc, val, l_type in future_targets:
         if loc > self.bve_location:
@@ -946,15 +951,9 @@ def update_physics_and_scoring(self, current_time, dt):
             
             v_assumed = max(val, min(peak_speed, v_apex))
             
-            # =================================================================
-            # ★ 究極の賢いターゲット選択：「すでに進んだ距離」を足し戻し、
-            # 走行中に距離が縮んで騙される現象を完全にシャットアウト！
-            # =================================================================
             if val < target_val:
                 advanced_dist = max(0.0, self.bve_train_length - self.bve_clear_dist)
                 zone_length = (loc - self.bve_location) + advanced_dist
-                
-                # 浮動小数点の誤差を吸収するため +1.0m のマージンを取る
                 if is_waiting_tail and zone_length <= self.bve_train_length + 1.0:
                     target_val = val
                     target_type = l_type
@@ -970,13 +969,54 @@ def update_physics_and_scoring(self, current_time, dt):
                 decel_dist, warn_dist = calculate_warning_distance(calc_v, val)
                 dist_to_limit = loc - self.bve_location
                 
-                if dist_to_limit <= warn_dist:
-                    urgency = dist_to_limit - decel_dist
-                    if not active_red or val < active_red['val']:
-                        active_red = {'val': val, 'dist': dist_to_limit, 'decel_dist': decel_dist, 'urgency': urgency, 'type': l_type}
+                urgency = dist_to_limit - decel_dist
+                is_warning = (dist_to_limit <= warn_dist)
+                
+                # 結果をリストに保存
+                future_evals.append({
+                    'loc': loc, 'val': val, 'dist': dist_to_limit, 
+                    'decel_dist': decel_dist, 'urgency': urgency, 'type': l_type
+                })
+                
+                # ★ 警告が発動している「最も遠い距離」を記録する
+                if is_warning:
+                    active_zone_end_dist = max(active_zone_end_dist, dist_to_limit)
 
             if val < running_base_speed:
                 running_base_speed = val
+
+    # =================================================================
+    # ★ 新ロジック2：巻き込み発動（ブラックホール）
+    active_reds = []
+    if active_zone_end_dist > 0:
+        for ev in future_evals:
+            # 警告が出ている最も遠い制限よりも「手前」にある制限は、計算結果を無視して全てプレビュー対象として拉致する！
+            if ev['dist'] <= active_zone_end_dist:
+                active_reds.append(ev)
+
+    # =================================================================
+    # ★ 新ロジック3：勝ち抜き戦（シーケンス表示の決定）
+    active_red = None
+    if active_reds:
+        # 手前にある順（距離が近い順）に並べ替え
+        active_reds.sort(key=lambda x: x['dist'])
+        
+        if not hasattr(self, 'limit_flash_counts'):
+            self.limit_flash_counts = {}
+            
+        for i, r in enumerate(active_reds):
+            # 制限固有のキーを作成 (例: "4500.5_65.0")
+            key = f"{r['loc']}_{r['val']}"
+            count = self.limit_flash_counts.get(key, 0)
+            
+            # 「最後の1つ(一番奥の本命)」 または 「まだ2回点滅していない」ならこれを表示！
+            if i == len(active_reds) - 1 or count < 2:
+                active_red = r
+                self.current_flashing_key = key
+                break
+    else:
+        self.current_flashing_key = None
+    # =================================================================
 
     active_blue = None
     if target_val > self.effective_limit: 
@@ -1021,6 +1061,13 @@ def update_physics_and_scoring(self, current_time, dt):
         self.blink_phase += dt / blink_cycle
         if self.blink_phase >= 1.0: 
             self.blink_phase -= 1.0
+            
+            # =========================================================
+            # ★ 追加: 1回の点滅が終わった瞬間に、その制限のカウントを増やす！
+            if getattr(self, 'current_flashing_key', None):
+                k = self.current_flashing_key
+                self.limit_flash_counts[k] = self.limit_flash_counts.get(k, 0) + 1
+            # =========================================================
     else:
         self.blink_phase = 0.0
         

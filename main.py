@@ -1089,6 +1089,7 @@ class Overlay(QWidget):
                 for k in self.score_details:
                     self.score_details[k] = 0
                 self.total_retry_count = 0 # ★Sランク判定用に初期化
+                self.limit_flash_counts = {}
                 
                 getattr(self, 'save_data', []).clear()
                 getattr(self, 'popups', []).clear()
