@@ -895,6 +895,8 @@ def update_physics_and_scoring(self, current_time, dt):
         # =========================================================
 
     allow_score = not getattr(self, 'jump_lock', False) or getattr(self, 'is_official_retry', False)
+    
+    '''
     if not is_operational_stop and getattr(self, 'prev_door', 0) == 1 and getattr(self, 'bve_door', 0) == 0:
         # =========================================================
         # ★ 修正：ワープ待機中の「幻のドア開閉」をシャットアウト
@@ -905,7 +907,7 @@ def update_physics_and_scoring(self, current_time, dt):
                     self.is_official_retry = False 
                 self.has_scored_time_this_station = True
         # =========================================================
-
+    '''
     self.prev_next_loc = self.bve_next_loc
     self.prev_door = getattr(self, 'bve_door', 0)
     self.prev_doordir = getattr(self, 'bve_doordir', 1)
