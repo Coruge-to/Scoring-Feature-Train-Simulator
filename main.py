@@ -609,20 +609,28 @@ class Overlay(QWidget):
             return
         if self.menu_state == 5:
             if getattr(self, 'input_mode_active', False): return
+            # スクロール可能な場合のみスクロールしてリターン。限界なら上の行へ移動！
             if self.menu_cursor == 4 and getattr(self, 'menu_cursor_x', 0) == 1:
-                self.summary_scroll = max(0, getattr(self, 'summary_scroll', 0) - 1)
-                return
-            if getattr(self, 'menu_cursor_x', 0) == -1:
-                self.menu_cursor -= 1
-                if self.menu_cursor < 0: self.menu_cursor = 5
+                if getattr(self, 'summary_scroll', 0) > 0:
+                    self.summary_scroll -= 1
+                    return
+            
+            # X座標の制限を撤廃し、行を移動したらX座標を「1列目(-1)」にリセットする
+            self.menu_cursor -= 1
+            if self.menu_cursor < 0: self.menu_cursor = 5
+            self.menu_cursor_x = -1 
             return
+            
         elif self.menu_state == 6:
+            if getattr(self, 'input_mode_active', False): return 
             if self.menu_cursor == 5 and getattr(self, 'menu_cursor_x', 0) == 1:
-                self.init_summary_scroll = max(0, getattr(self, 'init_summary_scroll', 0) - 1)
-                return
-            if getattr(self, 'menu_cursor_x', 0) == -1:
-                self.menu_cursor -= 1
-                if self.menu_cursor < 0: self.menu_cursor = 6
+                if getattr(self, 'init_summary_scroll', 0) > 0:
+                    self.init_summary_scroll -= 1
+                    return
+            
+            self.menu_cursor -= 1
+            if self.menu_cursor < 0: self.menu_cursor = 6
+            self.menu_cursor_x = -1
             return
 
         if self.menu_state in [7, 9]:
@@ -694,20 +702,25 @@ class Overlay(QWidget):
                 vis_rules = min(3, len(getattr(self, 'brake_rules', [])))
                 if getattr(self, 'summary_scroll', 0) + vis_rules < len(getattr(self, 'brake_rules', [])):
                     self.summary_scroll += 1
-                return
-            if getattr(self, 'menu_cursor_x', 0) == -1:
-                self.menu_cursor += 1
-                if self.menu_cursor > 5: self.menu_cursor = 0
+                    return # スクロールできた場合のみここで止める
+            
+            # どこからでも下へ移動可能にし、移動後は1列目に戻す
+            self.menu_cursor += 1
+            if self.menu_cursor > 5: self.menu_cursor = 0
+            self.menu_cursor_x = -1
             return
+            
         elif self.menu_state == 6:
+            if getattr(self, 'input_mode_active', False): return 
             if self.menu_cursor == 5 and getattr(self, 'menu_cursor_x', 0) == 1:
                 vis_rules = min(3, len(getattr(self, 'penalty_init_rules', [])))
                 if getattr(self, 'init_summary_scroll', 0) + vis_rules < len(getattr(self, 'penalty_init_rules', [])):
                     self.init_summary_scroll += 1
-                return
-            if getattr(self, 'menu_cursor_x', 0) == -1:
-                self.menu_cursor += 1
-                if self.menu_cursor > 6: self.menu_cursor = 0
+                    return
+            
+            self.menu_cursor += 1
+            if self.menu_cursor > 6: self.menu_cursor = 0
+            self.menu_cursor_x = -1
             return
             
         if self.menu_state in [7, 9]:
@@ -934,7 +947,11 @@ class Overlay(QWidget):
                     getattr(self, 'penalty_init_rules', []).append({"apply": default_apply, "release": "ON①"})
                 if len(getattr(self, 'penalty_init_rules', [])) > len(getattr(self, 'brake_rules', [])):
                     self.penalty_init_rules = getattr(self, 'penalty_init_rules', [])[:len(getattr(self, 'brake_rules', []))]
-                    
+
+                max_scroll = max(0, len(getattr(self, 'penalty_init_rules', [])) - 3)
+                if getattr(self, 'init_summary_scroll', 0) > max_scroll:
+                    self.init_summary_scroll = max_scroll
+
                 for i, p_rule in enumerate(getattr(self, 'penalty_init_rules', [])):
                     if i < len(getattr(self, 'brake_rules', [])):
                         if getattr(self, 'brake_rules', [])[i].get("apply", "") == "1段" and p_rule.get("apply", "") == "ON①":
