@@ -610,7 +610,7 @@ namespace TsScoringPlugin
                         {
                             string sName = string.IsNullOrEmpty(st.Name) ? "不明な駅" : st.Name.Replace(",", "").Replace("=", "");
                             int sTiming = st.IsScoring ? 1 : 0;
-                            staInfoList.Add($"{sName}={sTiming}={st.Location}={st.RawArrTime}={st.RawDepTime}={st.DefaultTime}={st.StoppageTime}={(st.IsPass ? 1 : 0)}");
+                            staInfoList.Add($"{sName}={sTiming}={st.Location}={st.ArrTime}={st.DepTime}={st.DefaultTime}={st.StoppageTime}={(st.IsPass ? 1 : 0)}");
                         }
                         if (staInfoList.Count > 0)
                         {
@@ -691,11 +691,26 @@ namespace TsScoringPlugin
                         }
                         else
                         {
-                            if (targetSt.IsPass) nextStationTime = targetSt.ArrTime > 0 ? targetSt.ArrTime : targetSt.InterpolatedTime;
-                            else if (targetSt.DoorDir == 0) nextStationTime = targetSt.DepTime > 0 ? targetSt.DepTime : targetSt.InterpolatedTime;
+                            if (targetSt.IsPass)
+                            {
+                                nextStationTime = targetSt.ArrTime > 0 ? targetSt.ArrTime : targetSt.InterpolatedTime;
+                            }
                             else
                             {
-                                if (hasDoorOpenedAtTarget && !areDoorsClosed) nextStationTime = targetSt.DepTime > 0 ? targetSt.DepTime : targetSt.InterpolatedTime;
+                                // ★ 修正2: 運転停車駅も到着判定(hasDoorOpenedAtTarget)を基準に発車時刻へ切り替える
+                                bool isReadyToDepart = false;
+                                if (targetSt.DoorDir == 0)
+                                {
+                                    // 運転停車駅：許容範囲に停車してフラグが立った瞬間から発車時刻へ
+                                    isReadyToDepart = hasDoorOpenedAtTarget;
+                                }
+                                else
+                                {
+                                    // 通常の停車駅：ドアが開いている間は発車時刻へ
+                                    isReadyToDepart = (hasDoorOpenedAtTarget && !areDoorsClosed);
+                                }
+
+                                if (isReadyToDepart) nextStationTime = targetSt.DepTime > 0 ? targetSt.DepTime : targetSt.InterpolatedTime;
                                 else nextStationTime = targetSt.ArrTime > 0 ? targetSt.ArrTime : targetSt.InterpolatedTime;
                             }
                         }

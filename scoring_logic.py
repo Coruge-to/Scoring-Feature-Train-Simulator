@@ -195,7 +195,7 @@ def evaluate_arrival(self, current_time):
             break
             
     is_end_sta_match = (curr_sta_idx != -1 and curr_sta_idx == getattr(self, 'setting_end_idx', -1)) or (getattr(self, 'prev_term', 0) == 1)
-    is_scoring_end_station = is_end_sta_match and not getattr(self, 'jump_lock', False)
+    is_scoring_end_station = is_end_sta_match and not getattr(self, 'jump_lock', False) and getattr(self, 'is_scoring_mode', False)
 
     is_zero_stop = False
     if not getattr(self, 'is_first_station', False) and getattr(self, 'has_departed', False) and not getattr(self, 'has_scored_stop_this_station', False):
@@ -319,21 +319,45 @@ def evaluate_departure(self, current_time):
     if p_idx >= 0:
         # F6メニューの設定(override)も含めて判定する関数を呼ぶ
         is_timing_active = self.is_station_timing(p_idx)
+    
+    # =================================================================
+    # ★ デバッグ用トラップ：出発判定が呼ばれた瞬間の全フラグを出力！
+    debug_msg = f"[DEPARTURE ENTRY] p_loc={p_loc:.1f}, p_idx={p_idx}\n"
+    debug_msg += f"  - allow_score: {allow_score} (jump_lock: {getattr(self, 'jump_lock', False)})\n"
+    debug_msg += f"  - ignore_next: {getattr(self, 'ignore_next_pass_score', False)}\n"
+    debug_msg += f"  - is_first_station: {getattr(self, 'is_first_station', False)}\n"
+    debug_msg += f"  - is_timing_active: {is_timing_active}\n"
+    debug_msg += f"  - prev_is_pass: {getattr(self, 'prev_is_pass', 0)}, prev_doordir: {getattr(self, 'prev_doordir', 1)}\n"
+    debug_msg += f"  - has_scored_time: {getattr(self, 'has_scored_time_this_station', False)}\n"
+    
+    write_desktop_log(debug_msg)
+    # =================================================================
 
     if not getattr(self, 'ignore_next_pass_score', False) and allow_score and not getattr(self, 'is_first_station', False):
-        # ★ prev_is_timing == 1 を is_timing_active に置き換え
         if getattr(self, 'prev_is_pass', 0) == 1 and is_timing_active:
             if not getattr(self, 'has_scored_time_this_station', False):
                 apply_time_score(self, getattr(self, 'prev_diff_s', 0), current_time)
                 self.has_scored_time_this_station = True
                 self.is_official_retry = False 
-        elif getattr(self, 'prev_is_pass', 0) == 0 and getattr(self, 'prev_doordir', 1) == 0 and is_timing_active:
+        elif getattr(self, 'prev_is_pass', 0) == 0 and is_timing_active:
             if not getattr(self, 'has_scored_time_this_station', False):
                 d = p_loc - self.bve_location
-                if (-self.bve_margin_f <= d <= self.bve_margin_b):
-                    apply_time_score(self, getattr(self, 'prev_diff_s', 0), current_time)
+                
+                # 過去にちゃんと許容範囲で止まっており、かつ、出発時刻の今この瞬間も許容範囲内にいること
+                if getattr(self, 'has_scored_stop_this_station', False) and (-self.bve_margin_f <= d <= self.bve_margin_b):
+                    # 発車時刻(raw_dep)を自力で引っ張り出して計算
+                    dep_target_s = -1
+                    if p_idx >= 0:
+                        dep_target_s = getattr(self, 'station_list', [])[p_idx].get("raw_dep", -1) // 1000
+                    if dep_target_s < 0:
+                        dep_target_s = getattr(self, 'prev_next_time', self.bve_time_ms) // 1000
+                    
+                    dep_diff_s = dep_target_s - (self.bve_time_ms // 1000)
+                    
+                    apply_time_score(self, dep_diff_s, current_time)
                     self.has_scored_time_this_station = True
                     self.is_official_retry = False
+                # =================================================================
 
 def process_bb_transition(self, stable_notch):
     if stable_notch != self.bb_prev_stable_notch:
@@ -432,19 +456,23 @@ def update_physics_and_scoring(self, current_time, dt):
     self.popups = [p for p in getattr(self, 'popups', []) if p["expire_time"] > current_time]
     
     # ★ 謎4解決：5秒遅延させた「お疲れ様」メッセージの発火
+    # ★ 謎4解決：5秒遅延させた「お疲れ様」メッセージの発火
     if getattr(self, 'end_message_time', 0.0) > 0 and current_time >= self.end_message_time:
-        add_score_popup(self, 0, "運転お疲れ様でした。", COLOR_WHITE, "big", "終了", current_time, force=True)
+        # ★ 修正: 採点が正しく終了(is_scoring_finished)している場合のみ表示。中断されていたら弾く！
+        if getattr(self, 'is_scoring_finished', False):
+            add_score_popup(self, 0, "運転お疲れ様でした。", COLOR_WHITE, "big", "終了", current_time, force=True)
         self.end_message_time = 0.0
     
     # ★ 新規追加: 10秒経過で自動的にリザルト画面(11)を開く
     if getattr(self, 'result_screen_time', 0.0) > 0 and current_time >= self.result_screen_time:
-        # ★ 修正: 直接 True を渡して確実に一時停止(Pキー送信)させる！
-        self.toggle_menu(True) 
-        
-        self.menu_state = 11       
-        self.menu_cursor = 0
+        # ★ 修正: 採点が正しく終了している場合のみリザルト画面を開く！
+        if getattr(self, 'is_scoring_finished', False):
+            # ★ 修正: 直接 True を渡して確実に一時停止(Pキー送信)させる！
+            self.toggle_menu(True) 
+            self.menu_state = 11       
+            self.menu_cursor = 0
+            getattr(self, 'popups', []).clear()
         self.result_screen_time = 0.0
-        getattr(self, 'popups', []).clear()
 
     decel_g = -self.bve_calc_g
     self.g_history.append((current_time, decel_g, self.bve_brk_notch, self.bve_brk_max))
@@ -805,27 +833,40 @@ def update_physics_and_scoring(self, current_time, dt):
             self.is_stopped_out_of_range = True 
 
     if is_operational_stop and getattr(self, 'is_approaching', False) and self.bve_speed == 0.0 and not getattr(self, 'has_scored_stop_this_station', False):
-        if not getattr(self, 'jump_lock', False) and not getattr(self, 'is_first_station', False):
-            
-            # 1. 先に時分採点を行う
-            curr_sta_idx = -1
-            p_loc = getattr(self, 'prev_next_loc', getattr(self, 'bve_next_loc', -1.0))
-            for i, st in enumerate(getattr(self, 'station_list', [])):
-                if abs(st["location"] - p_loc) < 1.0:
-                    curr_sta_idx = i
-                    break
-            is_scoring_end_station_op = (curr_sta_idx == getattr(self, 'setting_end_idx', -1)) or (getattr(self, 'prev_term', 0) == 1)
-            is_timing_active_op = self.is_station_timing(curr_sta_idx) if curr_sta_idx >= 0 else False
-            
-            if is_scoring_end_station_op and is_timing_active_op and not getattr(self, 'has_scored_time_this_station', False):
-                apply_time_score(self, getattr(self, 'prev_diff_s', 0), current_time)
-                self.is_official_retry = False
-                self.has_scored_time_this_station = True
-
-            # 2. そのあとに到着判定（ここで終了フラグ is_scoring_finished が立つ）
-            evaluate_arrival(self, current_time)
+        # =================================================================
+        # ★ 修正②: 作者定義の停止位置許容範囲内(-margin_f ~ margin_b)で停車した時だけ発動させる！
+        # =================================================================
+        dist_to_stop = self.bve_next_loc - self.bve_location
+        if (-self.bve_margin_f <= dist_to_stop <= self.bve_margin_b):
+            if not getattr(self, 'jump_lock', False) and not getattr(self, 'is_first_station', False):
                 
-        self.has_scored_stop_this_station = True
+                # 1. 先に時分採点を行う
+                curr_sta_idx = -1
+                p_loc = getattr(self, 'prev_next_loc', getattr(self, 'bve_next_loc', -1.0))
+                for i, st in enumerate(getattr(self, 'station_list', [])):
+                    if abs(st["location"] - p_loc) < 1.0:
+                        curr_sta_idx = i
+                        break
+                is_scoring_end_station_op = (curr_sta_idx == getattr(self, 'setting_end_idx', -1)) or (getattr(self, 'prev_term', 0) == 1)
+                is_timing_active_op = self.is_station_timing(curr_sta_idx) if curr_sta_idx >= 0 else False
+                
+                if is_scoring_end_station_op and is_timing_active_op and not getattr(self, 'has_scored_time_this_station', False):
+                    # =================================================================
+                    # ★ 修正④: 終了駅の到着時はC#の計算を無視して、着時刻(raw_arr)から正確に算出する
+                    # =================================================================
+                    arr_target_s = self.bve_next_time // 1000
+                    if curr_sta_idx >= 0 and getattr(self, 'station_list', [])[curr_sta_idx].get("raw_arr", -1) >= 0:
+                        arr_target_s = getattr(self, 'station_list', [])[curr_sta_idx]["raw_arr"] // 1000
+                    arr_diff_s = arr_target_s - (self.bve_time_ms // 1000)
+                    
+                    apply_time_score(self, arr_diff_s, current_time)
+                    self.is_official_retry = False
+                    self.has_scored_time_this_station = True
+
+                # 2. そのあとに到着判定（ここで終了フラグ is_scoring_finished が立つ）
+                evaluate_arrival(self, current_time)
+                    
+            self.has_scored_stop_this_station = True
 
     # ★ 謎2解決：終了駅（TERM:1 または ユーザー指定駅）での扉開け時の時分採点
     curr_sta_idx = -1

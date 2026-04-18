@@ -504,7 +504,7 @@ class Overlay(QWidget):
                             write_desktop_log(f"[UDP] ドア時間(CloseTime)を受信: {val} ms")
                             self._debug_door_time_printed = val
                 except Exception: continue 
-
+            
     def is_station_timing(self, sta_idx):
         if sta_idx == self.setting_start_idx:
             return False 
