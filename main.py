@@ -56,9 +56,13 @@ class Overlay(QWidget):
         self.speed_penalty_score = 0
         self.last_penalty_time = 0.0
         
-        keys_to_track = ['0','1','2','3','4','5','6','7','8','9','f1','f2','f5','f8','p','up','down','left','right','enter','backspace', 'h']
+        keys_to_track = ['0','1','2','3','4','5','6','7','8','9','f1','f2','f5','f8','f11','f12','p','up','down','left','right','enter','backspace', 'h']
         self.key_states = {k: False for k in keys_to_track}
         self.show_help = False # ★ ヘルプ表示フラグ
+
+        self.is_borderless_fullscreen = False
+        self.bve_original_placement = None  # RectではなくPlacementを使う
+        self.bve_original_style = None
         
         self.eb_applied = False
         self.smee_eb_frozen = False
@@ -1298,6 +1302,80 @@ class Overlay(QWidget):
                     found_hwnd = hwnd
         win32gui.EnumWindows(callback, None)
         return found_hwnd
+    
+    def find_bve_window(self):
+        found_hwnd = None
+        def callback(hwnd, _):
+            nonlocal found_hwnd
+            if win32gui.IsWindowVisible(hwnd):
+                title = win32gui.GetWindowText(hwnd)
+                if "bve trainsim" in title.lower():
+                    found_hwnd = hwnd
+        win32gui.EnumWindows(callback, None)
+        return found_hwnd
+
+    # =================================================================
+    # ★ 完璧版: 0秒ディレイ(非同期実行) ＋ 復元時のチラつき防止
+    # =================================================================
+    def toggle_borderless_fullscreen(self):
+        if not self.bve_hwnd or not win32gui.IsWindow(self.bve_hwnd): 
+            return
+
+        if not self.is_borderless_fullscreen:
+            # 1. 復元用に元のスタイルと配置を記憶
+            self.bve_original_style = win32gui.GetWindowLong(self.bve_hwnd, win32con.GWL_STYLE)
+            self.bve_original_placement = win32gui.GetWindowPlacement(self.bve_hwnd)
+
+            # --- 鶴さん実証済みの最強コード ---
+            def apply_the_best_code():
+                if not self.bve_hwnd or not win32gui.IsWindow(self.bve_hwnd): return
+                try:
+                    # 今この瞬間のスタイルを取得して枠を削る
+                    current_style = win32gui.GetWindowLong(self.bve_hwnd, win32con.GWL_STYLE)
+                    new_style = current_style & ~(win32con.WS_CAPTION | win32con.WS_THICKFRAME | win32con.WS_MINIMIZEBOX | win32con.WS_MAXIMIZEBOX | win32con.WS_SYSMENU)
+                    win32gui.SetWindowLong(self.bve_hwnd, win32con.GWL_STYLE, new_style)
+
+                    # モニター解像度に広げてタスクバーを完全に殺す
+                    monitor = win32api.MonitorFromWindow(self.bve_hwnd, win32con.MONITOR_DEFAULTTONEAREST)
+                    monitor_info = win32api.GetMonitorInfo(monitor)
+                    x, y, r, b = monitor_info['Monitor']
+                    w, h = r - x, b - y
+
+                    win32gui.SetWindowPos(self.bve_hwnd, win32con.HWND_TOP, x, y, w, h, win32con.SWP_NOZORDER | win32con.SWP_FRAMECHANGED | win32con.SWP_SHOWWINDOW)
+                    
+                    self.is_borderless_fullscreen = True
+                except Exception as e:
+                    write_desktop_log(f"[WINDOW] フルスクリーン化エラー: {e}")
+
+            # --- 実行ロジック ---
+            is_maximized = (self.bve_original_placement[1] == win32con.SW_SHOWMAXIMIZED)
+            
+            if not is_maximized:
+                # 安全な最大化信号を送る
+                win32gui.SendMessage(self.bve_hwnd, win32con.WM_SYSCOMMAND, win32con.SC_MAXIMIZE, 0)
+                # 鶴さん発見の「0秒」指定。OSの最大化処理が終わった瞬間に非同期で枠を消す！
+                QTimer.singleShot(0, apply_the_best_code)
+            else:
+                # 既に最大化されているなら即発動
+                apply_the_best_code()
+
+        else:
+            try:
+                # 1. スタイル(枠)を復元
+                if self.bve_original_style is not None:
+                    win32gui.SetWindowLong(self.bve_hwnd, win32con.GWL_STYLE, self.bve_original_style)
+                    win32gui.SetWindowPos(self.bve_hwnd, 0, 0, 0, 0, 0, win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOZORDER | win32con.SWP_FRAMECHANGED)
+                
+                # ★ 修正: チラつきの原因だった余計な「SC_RESTORE」を削除！
+                
+                # 2. Placementだけで一発で元の配置・状態を完全復元する
+                if self.bve_original_placement is not None:
+                    win32gui.SetWindowPlacement(self.bve_hwnd, self.bve_original_placement)
+                
+                self.is_borderless_fullscreen = False
+            except Exception as e:
+                write_desktop_log(f"[WINDOW] 復元エラー: {e}")
+    # =================================================================
 
     # =================================================================
     # ★ 修正: 透明レイヤー合成方式による「絶対に失敗しない座標ずらし」
@@ -1598,6 +1676,26 @@ class Overlay(QWidget):
                     self.debug_all_penalties = not getattr(self, 'debug_all_penalties', False)
                     # Gのグラフ表示
                     self.show_graph = not getattr(self, 'show_graph', False)
+                elif key == 'f11':
+                    self.toggle_borderless_fullscreen()
+
+                elif key == 'f12':
+                    # ★ 【究極のパニックリセットボタン】
+                    # ボタン消失やフリーズ等、異常が起きたBVEを「標準のウィンドウモード」へ強制送還する
+                    if self.bve_hwnd:
+                        # WS_OVERLAPPEDWINDOW はタイトルバー、枠、システムメニュー、最小化・最大化ボタンのセット
+                        standard_style = win32con.WS_OVERLAPPEDWINDOW | win32con.WS_VISIBLE
+                        win32gui.SetWindowLong(self.bve_hwnd, win32con.GWL_STYLE, standard_style)
+                        
+                        # OSに「最大化解除」のコマンドを送り、内部状態を「通常」にリセットする
+                        win32gui.SendMessage(self.bve_hwnd, win32con.WM_SYSCOMMAND, win32con.SC_RESTORE, 0)
+                        
+                        # 適正なサイズ（1280x720）と位置に配置し直し、描画を完全にリフレッシュする
+                        win32gui.SetWindowPos(self.bve_hwnd, 0, 100, 100, 1280, 720, 
+                                              win32con.SWP_NOZORDER | win32con.SWP_FRAMECHANGED | win32con.SWP_SHOWWINDOW)
+                        
+                        self.is_borderless_fullscreen = False
+                        write_desktop_log("[DEBUG] F12: 標準ウィンドウ状態へ強制復元しました")
                     
                 elif key == 'h' and self.menu_state != 0: # ★ Hキーが押された場合
                     self.show_help = not getattr(self, 'show_help', False)
