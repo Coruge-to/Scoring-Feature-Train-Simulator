@@ -785,9 +785,16 @@ def draw_menu(self, painter, logical_width):
                 draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, ARROW_DOWN_Y, "center", passes=8)
                 
             btn_text = "設定完了"
-            btn_w = fm.horizontalAdvance(btn_text) + 60
+            text_w = fm.horizontalAdvance(btn_text)
+            
+            pad_left = 25   # 左側の余白
+            pad_right = 13   # 右側の余白（元は20だったのを大幅にカット）
+            
+            btn_w = text_w + pad_left + pad_right
             btn_h = fm.height() + 16
-            btn_x = center_x - (btn_w / 2)
+            
+            # x座標の開始位置を、文字の左端からpad_left分だけ左にずらした位置にする
+            btn_x = center_x - (text_w / 2) - pad_left
             btn_rect_y = BTN_Y - fm.ascent() - 6 - (fm.descent() // 2) + 1
             
             if getattr(self, 'timing_cursor', 0) == len(targets):
@@ -797,6 +804,58 @@ def draw_menu(self, painter, logical_width):
                 
             draw_text_with_outline(painter, btn_text, self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, BTN_Y, "center", passes=8)
             self.menu_click_zones.append((btn_x, btn_rect_y, btn_x + btn_w, btn_rect_y + btn_h, len(targets)))
+        
+            # ==========================================================
+            # ★ 新規追加: 一括採時ボタン (Aキー) の枠内右下描画
+            # ==========================================================
+            s_idx = getattr(self, 'setting_start_idx', 0)
+        
+        # 初期設定が「全駅採時」かをチェック
+        default_all_timing = True
+        for idx in targets:
+            if idx == s_idx: continue
+            st = getattr(self, 'station_list', [])[idx]
+            if not st.get("is_timing", False):
+                default_all_timing = False
+                break
+        
+        # 現在の状態が「初期設定から変更されているか」をチェック
+        is_modified_from_default = False
+        for idx in targets:
+            if idx == s_idx: continue
+            st = getattr(self, 'station_list', [])[idx]
+            default_timing = st.get("is_timing", False)
+            current_timing = self.is_station_timing(idx) if hasattr(self, 'is_station_timing') else False
+            if default_timing != current_timing:
+                is_modified_from_default = True
+                break
+        
+        show_btn = False
+        btn_a_text = ""
+        
+        # 条件判定
+        if is_modified_from_default:
+            show_btn = True
+            btn_a_text = "初期設定に戻す : A"
+        elif not default_all_timing:
+            show_btn = True
+            btn_a_text = "始発駅以外を採時駅にする : A"
+            
+        # 表示すべき時だけ描画する
+        if show_btn:
+            fm_btn = QFontMetrics(self.font_desc)
+            btn_a_w = fm_btn.horizontalAdvance(btn_a_text) + 30
+            btn_a_h = fm_btn.height() + 10
+            
+            btn_a_x = SUB_X + TIMING_SUB_W - btn_a_w - 10
+            btn_a_y = SUB_Y + TIMING_SUB_H - btn_a_h - 10
+            
+            painter.setPen(QPen(QColor(200, 200, 200), 2))
+            painter.setBrush(QColor(50, 50, 50, 200))
+            painter.drawRoundedRect(int(btn_a_x), int(btn_a_y), int(btn_a_w), int(btn_a_h), 5, 5)
+            
+            draw_text_with_outline(painter, btn_a_text, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, btn_a_x + 15, btn_a_y + fm_btn.ascent() + 7, "left", passes=8)
+            self.menu_click_zones.append((btn_a_x, btn_a_y, btn_a_x + btn_a_w, btn_a_y + btn_a_h, 998))
 
     # ==========================================================
     # ★ 新規追加: 採点設定 (2/2) 減点項目のメイン描画 (menu_state == 6)
@@ -1589,7 +1648,7 @@ def draw_menu(self, painter, logical_width):
     # ==========================================================
     # ★ 新規追加: 操作説明（ヘルプ）ボタンと小ウィンドウの描画
     # ==========================================================
-    if self.menu_state not in [0, 3, 8] and not getattr(self, 'is_capturing_screenshot', False):
+    if self.menu_state not in [0, 3] and not getattr(self, 'is_capturing_screenshot', False):
         # 画面右下にヘルプボタンを描画
         help_text = "操作説明 : H"
         fm_help = QFontMetrics(self.font_desc)
@@ -1618,7 +1677,7 @@ def draw_menu(self, painter, logical_width):
 
         # 1. 状態に応じたリストを先に作る
         help_items = []
-        if self.menu_state in [1, 2, 3]:
+        if self.menu_state in [1, 2, 3, 8]:
             help_items.append(("↑↓", "移動"))
         elif self.menu_state != 11:
             help_items.append(("↑↓←→", "移動"))

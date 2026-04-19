@@ -56,7 +56,7 @@ class Overlay(QWidget):
         self.speed_penalty_score = 0
         self.last_penalty_time = 0.0
         
-        keys_to_track = ['0','1','2','3','4','5','6','7','8','9','f1','f2','f5','f8','f11','f12','p','up','down','left','right','enter','backspace', 'h']
+        keys_to_track = ['0','1','2','3','4','5','6','7','8','9','a','f1','f2','f5','f8','f11','f12','p','up','down','left','right','enter','backspace', 'h']
         self.key_states = {k: False for k in keys_to_track}
         self.show_help = False # ★ ヘルプ表示フラグ
 
@@ -599,6 +599,35 @@ class Overlay(QWidget):
                 pass
             self.input_mode_active = False
 
+    # =================================================================
+    # ★ 修正: 運転時分の一括トグル切り替え（初期設定との完全比較）
+    # =================================================================
+    def toggle_all_timing(self):
+        targets = self.get_timing_target_stas() if hasattr(self, 'get_timing_target_stas') else []
+        if not targets: return
+        s_idx = getattr(self, 'setting_start_idx', 0)
+
+        # 現在の状態が「初期設定から変更されているか」を調べる
+        is_modified_from_default = False
+        for idx in targets:
+            if idx == s_idx: continue
+            st = getattr(self, 'station_list', [])[idx]
+            default_timing = st.get("is_timing", False)
+            current_timing = self.is_station_timing(idx) if hasattr(self, 'is_station_timing') else False
+            if default_timing != current_timing:
+                is_modified_from_default = True
+                break
+
+        if is_modified_from_default:
+            # 変更されているなら初期設定に戻す（クリア）
+            self.user_timing_overrides.clear()
+        else:
+            # 初期設定のままなら、全駅を採時にする
+            for idx in targets:
+                if idx == s_idx: continue
+                if not getattr(self, 'station_list', [])[idx].get("is_timing", False):
+                    self.user_timing_overrides[idx] = True
+
     def handle_menu_up(self):
         if self.menu_state == 11: 
             self.menu_cursor = 0 # 強制固定
@@ -1079,6 +1108,8 @@ class Overlay(QWidget):
             if targets:
                 if getattr(self, 'timing_cursor', 0) == len(targets):
                     self.menu_state = 5
+                    self.menu_cursor = 2
+                    self.menu_cursor_x = 0
                 elif 0 <= getattr(self, 'timing_cursor', 0) < len(targets):
                     sta_idx = targets[self.timing_cursor]
                     if sta_idx != getattr(self, 'setting_start_idx', 0):
@@ -1666,6 +1697,9 @@ class Overlay(QWidget):
                         if action_idx == 999: # ★ ヘルプボタンが押された場合
                             self.show_help = not getattr(self, 'show_help', False)
                             break
+                        elif action_idx == 998: # ★ 追加: 一括採時ボタンが押された場合
+                            self.toggle_all_timing()
+                            break
                         self.menu_cursor = action_idx
                         self.menu_cursor_x = -1
                         self.handle_menu_enter(is_bve_advancing)
@@ -1716,6 +1750,8 @@ class Overlay(QWidget):
                     
                 elif key == 'h' and self.menu_state != 0: # ★ Hキーが押された場合
                     self.show_help = not getattr(self, 'show_help', False)
+                elif key == 'a' and self.menu_state == 8: # ★ 追加: Aキー (一括採時)
+                    self.toggle_all_timing()
                 elif self.menu_state != 0:
                     if self.dropdown_active:
                         if key == 'up':
