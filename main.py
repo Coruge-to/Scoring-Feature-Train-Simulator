@@ -58,6 +58,7 @@ class Overlay(QWidget):
         
         keys_to_track = ['0','1','2','3','4','5','6','7','8','9','a','f1','f2','f5','f8','f11','f12','p','up','down','left','right','enter','backspace', 'h']
         self.key_states = {k: False for k in keys_to_track}
+        self.key_press_timers = {k: 0.0 for k in keys_to_track}
         self.show_help = False # ★ ヘルプ表示フラグ
 
         self.is_borderless_fullscreen = False
@@ -634,20 +635,18 @@ class Overlay(QWidget):
             return
         if self.menu_state == 10:
             if getattr(self, 'input_mode_active', False): return
-            self.menu_cursor = 0 if self.menu_cursor == 1 else 1
+            if self.menu_cursor > 0: self.menu_cursor -= 1
             return
         if self.menu_state == 5:
             if getattr(self, 'input_mode_active', False): return
-            # スクロール可能な場合のみスクロールしてリターン。限界なら上の行へ移動！
             if self.menu_cursor == 4 and getattr(self, 'menu_cursor_x', 0) == 1:
                 if getattr(self, 'summary_scroll', 0) > 0:
                     self.summary_scroll -= 1
                     return
             
-            # X座標の制限を撤廃し、行を移動したらX座標を「1列目(-1)」にリセットする
-            self.menu_cursor -= 1
-            if self.menu_cursor < 0: self.menu_cursor = 5
-            self.menu_cursor_x = -1 
+            if self.menu_cursor > 0:
+                self.menu_cursor -= 1
+                self.menu_cursor_x = -1 
             return
             
         elif self.menu_state == 6:
@@ -657,9 +656,9 @@ class Overlay(QWidget):
                     self.init_summary_scroll -= 1
                     return
             
-            self.menu_cursor -= 1
-            if self.menu_cursor < 0: self.menu_cursor = 6
-            self.menu_cursor_x = -1
+            if self.menu_cursor > 0:
+                self.menu_cursor -= 1
+                self.menu_cursor_x = -1
             return
 
         if self.menu_state in [7, 9]:
@@ -672,9 +671,12 @@ class Overlay(QWidget):
             row_done = len(rules) + 1 if len(rules) > 1 and self.menu_state == 7 else len(rules)
             
             old_sub_c = sub_c
-            sub_c -= 1
-            if sub_c == row_undo and row_undo != -1: sub_c -= 1
-            if sub_c < 0: sub_c = row_done
+            
+            # ★ 修正: ループせず、0でストップする
+            if sub_c > 0:
+                sub_c -= 1
+                if sub_c == row_undo and row_undo != -1: 
+                    if sub_c > 0: sub_c -= 1 # 戻るボタンの行はスキップ
             
             if sub_c < len(rules):
                 if sub_c < sub_s: sub_s = sub_c
@@ -698,24 +700,25 @@ class Overlay(QWidget):
         if self.menu_state == 8:
             targets = self.get_timing_target_stas() if hasattr(self, 'get_timing_target_stas') else []
             if not targets: return
-            if getattr(self, 'timing_cursor', 0) > 1: self.timing_cursor -= 1
-            if getattr(self, 'timing_cursor', 0) == 1 and getattr(self, 'timing_scroll', 0) > 0:
-                self.timing_scroll = 0
-            elif getattr(self, 'timing_cursor', 0) < len(targets) and getattr(self, 'timing_cursor', 0) < getattr(self, 'timing_scroll', 0):
-                self.timing_scroll = getattr(self, 'timing_cursor', 0)
+            if getattr(self, 'timing_cursor', 0) > 1: 
+                self.timing_cursor -= 1
+                if getattr(self, 'timing_cursor', 0) == 1 and getattr(self, 'timing_scroll', 0) > 0:
+                    self.timing_scroll = 0
+                elif getattr(self, 'timing_cursor', 0) < len(targets) and getattr(self, 'timing_cursor', 0) < getattr(self, 'timing_scroll', 0):
+                    self.timing_scroll = getattr(self, 'timing_cursor', 0)
             return
 
-        self.menu_cursor -= 1
+        # その他のメニュー画面のストッパー
         if self.menu_state == 1:
-            items = getattr(self, 'current_menu_items', getattr(self, 'menu_items_off', []))
-            if self.menu_cursor < 0: self.menu_cursor = len(items) - 1
+            if self.menu_cursor > 0: self.menu_cursor -= 1
         elif self.menu_state == 2:
-            if self.menu_cursor < 0: self.menu_cursor = 0
-            if self.menu_cursor < getattr(self, 'menu_scroll', 0): self.menu_scroll = self.menu_cursor
+            if self.menu_cursor > 0: 
+                self.menu_cursor -= 1
+                if self.menu_cursor < getattr(self, 'menu_scroll', 0): self.menu_scroll = self.menu_cursor
         elif self.menu_state == 3:
-            if self.menu_cursor < 0: self.menu_cursor = 1
+            if self.menu_cursor > 0: self.menu_cursor -= 1
         elif self.menu_state == 4:
-            if self.menu_cursor < 0: self.menu_cursor = 6
+            if self.menu_cursor > 0: self.menu_cursor -= 1
 
     def handle_menu_down(self):
         if self.menu_state == 11: 
@@ -723,7 +726,7 @@ class Overlay(QWidget):
             return
         if self.menu_state == 10:
             if getattr(self, 'input_mode_active', False): return
-            self.menu_cursor = 1 if self.menu_cursor == 0 else 0
+            if self.menu_cursor < 1: self.menu_cursor += 1
             return
         if self.menu_state == 5:
             if getattr(self, 'input_mode_active', False): return
@@ -731,12 +734,11 @@ class Overlay(QWidget):
                 vis_rules = min(3, len(getattr(self, 'brake_rules', [])))
                 if getattr(self, 'summary_scroll', 0) + vis_rules < len(getattr(self, 'brake_rules', [])):
                     self.summary_scroll += 1
-                    return # スクロールできた場合のみここで止める
+                    return 
             
-            # どこからでも下へ移動可能にし、移動後は1列目に戻す
-            self.menu_cursor += 1
-            if self.menu_cursor > 5: self.menu_cursor = 0
-            self.menu_cursor_x = -1
+            if self.menu_cursor < 5:
+                self.menu_cursor += 1
+                self.menu_cursor_x = -1
             return
             
         elif self.menu_state == 6:
@@ -747,9 +749,9 @@ class Overlay(QWidget):
                     self.init_summary_scroll += 1
                     return
             
-            self.menu_cursor += 1
-            if self.menu_cursor > 6: self.menu_cursor = 0
-            self.menu_cursor_x = -1
+            if self.menu_cursor < 6:
+                self.menu_cursor += 1
+                self.menu_cursor_x = -1
             return
             
         if self.menu_state in [7, 9]:
@@ -762,11 +764,12 @@ class Overlay(QWidget):
             row_done = len(rules) + 1 if len(rules) > 1 and self.menu_state == 7 else len(rules)
             
             old_sub_c = sub_c
-            sub_c += 1
-            if row_undo != -1 and sub_c == row_undo: pass 
-            elif row_undo == -1 and sub_c == len(rules): sub_c = row_done
             
-            if sub_c > row_done: sub_c = 0
+            # ★ 修正: ループせず、最下段(row_done)でストップする
+            if sub_c < row_done:
+                sub_c += 1
+                if row_undo != -1 and sub_c == row_undo: 
+                    pass # 戻るボタンに到達した場合はそのまま
             
             if sub_c < len(rules):
                 if sub_c >= sub_s + 5: sub_s = sub_c - 5 + 1
@@ -791,25 +794,27 @@ class Overlay(QWidget):
             targets = self.get_timing_target_stas() if hasattr(self, 'get_timing_target_stas') else []
             if not targets: return
             max_cursor = len(targets) 
-            if getattr(self, 'timing_cursor', 0) < max_cursor: self.timing_cursor += 1
-            if getattr(self, 'timing_cursor', 0) < len(targets):
-                if getattr(self, 'timing_cursor', 0) >= getattr(self, 'timing_scroll', 0) + 6:
-                    self.timing_scroll = getattr(self, 'timing_cursor', 0) - 6 + 1
+            if getattr(self, 'timing_cursor', 0) < max_cursor: 
+                self.timing_cursor += 1
+                if getattr(self, 'timing_cursor', 0) < len(targets):
+                    if getattr(self, 'timing_cursor', 0) >= getattr(self, 'timing_scroll', 0) + 6:
+                        self.timing_scroll = getattr(self, 'timing_cursor', 0) - 6 + 1
             return
 
-        self.menu_cursor += 1
+        # その他のメニュー画面のストッパー
         if self.menu_state == 1:
             items = getattr(self, 'current_menu_items', getattr(self, 'menu_items_off', []))
-            if self.menu_cursor >= len(items): self.menu_cursor = 0
+            if self.menu_cursor < len(items) - 1: self.menu_cursor += 1
         elif self.menu_state == 2:
             max_idx = max(0, len(getattr(self, 'save_data', [])) - 1)
-            if self.menu_cursor > max_idx: self.menu_cursor = max_idx
-            if self.menu_cursor >= getattr(self, 'menu_scroll', 0) + 7:
-                self.menu_scroll = self.menu_cursor - 7 + 1
+            if self.menu_cursor < max_idx:
+                self.menu_cursor += 1
+                if self.menu_cursor >= getattr(self, 'menu_scroll', 0) + 7:
+                    self.menu_scroll = self.menu_cursor - 7 + 1
         elif self.menu_state == 3:
-            if self.menu_cursor > 1: self.menu_cursor = 0
+            if self.menu_cursor < 1: self.menu_cursor += 1
         elif self.menu_state == 4:
-            if self.menu_cursor > 6: self.menu_cursor = 0
+            if self.menu_cursor < 6: self.menu_cursor += 1
 
     def handle_menu_left(self):
         if self.menu_state == 5:
@@ -1708,7 +1713,27 @@ class Overlay(QWidget):
 
         for key in self.key_states.keys():
             is_pressed = keyboard.is_pressed(key)
-            if is_pressed and not self.key_states[key] and is_bve_active:
+            trigger_key = False
+
+            if is_pressed and is_bve_active:
+                if not self.key_states[key]:
+                    # 最初に押された瞬間
+                    trigger_key = True
+                    self.key_press_timers[key] = time.time()
+                else:
+                    # 押しっぱなしの場合（上下左右キーのみ連射を許可）
+                    if key in ['up', 'down', 'left', 'right']:
+                        held_duration = time.time() - self.key_press_timers[key]
+                        if held_duration > 0.4: # ★ 0.4秒長押しで連射開始
+                            trigger_key = True
+                            # 次の連射間隔を0.05秒にするための時間調整
+                            self.key_press_timers[key] = time.time() - 0.4 + 0.05
+            else:
+                # キーを離したらタイマーをリセット
+                self.key_press_timers[key] = 0.0
+
+            # 従来の if is_pressed and not self.key_states[key] の代わりに trigger_key を使う
+            if trigger_key:
                 
                 if key in [str(i) for i in range(10)]:
                     if (self.menu_state == 5 and self.menu_cursor == 1 and self.input_mode_active) or (self.menu_state == 10 and self.menu_cursor == 0 and self.input_mode_active):
