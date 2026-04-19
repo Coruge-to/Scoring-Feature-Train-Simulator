@@ -61,6 +61,10 @@ class Overlay(QWidget):
         self.key_press_timers = {k: 0.0 for k in keys_to_track}
         self.show_help = False # ★ ヘルプ表示フラグ
 
+        self.active_panel_rect = None
+        self.active_dropdown_rect = None
+        self.active_help_rect = None
+
         self.is_borderless_fullscreen = False
         self.bve_original_placement = None  # RectではなくPlacementを使う
         self.bve_original_style = None
@@ -700,11 +704,13 @@ class Overlay(QWidget):
         if self.menu_state == 8:
             targets = self.get_timing_target_stas() if hasattr(self, 'get_timing_target_stas') else []
             if not targets: return
-            if getattr(self, 'timing_cursor', 0) > 1: 
+            if getattr(self, 'timing_cursor', 0) > 1 or getattr(self, 'timing_scroll', 0) > 0:
                 self.timing_cursor -= 1
                 if getattr(self, 'timing_cursor', 0) == 1 and getattr(self, 'timing_scroll', 0) > 0:
+                    # 始発駅(0)の次は1だが、スクロールして見えなくなっている場合は1を選択しつつスクロールも戻す
                     self.timing_scroll = 0
                 elif getattr(self, 'timing_cursor', 0) < len(targets) and getattr(self, 'timing_cursor', 0) < getattr(self, 'timing_scroll', 0):
+                    # 上にスクロール
                     self.timing_scroll = getattr(self, 'timing_cursor', 0)
             return
 
@@ -1696,19 +1702,76 @@ class Overlay(QWidget):
                 lx = (cursor_pos[0] - geom.x() - offset_x) / menu_scale
                 ly = (cursor_pos[1] - geom.y() - offset_y) / menu_scale
                 
+                clicked_zone = False
+                
                 for zone in self.menu_click_zones:
-                    x1, y1, x2, y2, action_idx = zone
+                    if len(zone) == 5:
+                        x1, y1, x2, y2, action_idx = zone
+                        action_x = -1
+                    else:
+                        x1, y1, x2, y2, action_idx, action_x = zone
+
                     if x1 <= lx <= x2 and y1 <= ly <= y2:
-                        if action_idx == 999: # ★ ヘルプボタンが押された場合
+                        clicked_zone = True
+                        if action_idx == 999: # ヘルプボタン
                             self.show_help = not getattr(self, 'show_help', False)
                             break
-                        elif action_idx == 998: # ★ 追加: 一括採時ボタンが押された場合
+                        elif action_idx == 998: # 一括採時ボタン
                             self.toggle_all_timing()
                             break
-                        self.menu_cursor = action_idx
-                        self.menu_cursor_x = -1
-                        self.handle_menu_enter(is_bve_advancing)
+                        # =========================================================
+                        # ★ 追加: ドロップダウンの項目がクリックされた時の処理
+                        elif action_idx == 997:
+                            self.dropdown_cursor = action_x
+                            self.handle_dropdown_enter()
+                            break
+                        # =========================================================
+                        
+                        cur_idx, cur_x = self.menu_cursor, getattr(self, 'menu_cursor_x', -1)
+                        if self.menu_state == 8:
+                            cur_idx, cur_x = getattr(self, 'timing_cursor', 0), -1
+                        elif self.menu_state == 7:
+                            cur_idx, cur_x = getattr(self, 'sub_cursor', 0), getattr(self, 'sub_cursor_x', 0)
+                        elif self.menu_state == 9:
+                            cur_idx, cur_x = getattr(self, 'init_sub_cursor', 0), getattr(self, 'init_sub_cursor_x', 0)
+
+                        if cur_idx == action_idx and cur_x == action_x:
+                            self.handle_menu_enter(is_bve_advancing)
+                        else:
+                            if self.menu_state == 8:
+                                self.timing_cursor = action_idx
+                            elif self.menu_state == 7:
+                                self.sub_cursor = action_idx
+                                self.sub_cursor_x = action_x
+                            elif self.menu_state == 9:
+                                self.init_sub_cursor = action_idx
+                                self.init_sub_cursor_x = action_x
+                            else:
+                                self.menu_cursor = action_idx
+                                self.menu_cursor_x = action_x
                         break
+                        
+                # =========================================================
+                # ★ 修正: 完璧な「枠外クリック」の判定ロジック
+                # =========================================================
+                if not clicked_zone:
+                    # 1. ヘルプ画面外クリック
+                    if getattr(self, 'show_help', False):
+                        hr = getattr(self, 'active_help_rect', None)
+                        if hr and not (hr[0] <= lx <= hr[2] and hr[1] <= ly <= hr[3]):
+                            self.show_help = False
+                    
+                    # 2. ドロップダウン外クリック
+                    elif getattr(self, 'dropdown_active', False):
+                        dr = getattr(self, 'active_dropdown_rect', None)
+                        if dr and not (dr[0] <= lx <= dr[2] and dr[1] <= ly <= dr[3]):
+                            self.dropdown_active = False
+                            
+                    # 3. サブ画面 (7, 8, 9) の外側クリックで戻る
+                    elif self.menu_state in [7, 8, 9]:
+                        pr = getattr(self, 'active_panel_rect', None)
+                        if pr and not (pr[0] <= lx <= pr[2] and pr[1] <= ly <= pr[3]):
+                            self.handle_menu_backspace(is_bve_advancing)
         self.last_left_click = is_left_clicked
 
         for key in self.key_states.keys():

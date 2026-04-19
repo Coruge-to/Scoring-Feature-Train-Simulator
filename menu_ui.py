@@ -293,28 +293,29 @@ def draw_menu(self, painter, logical_width):
         sta_start = get_sta_name(getattr(self, 'setting_start_idx', 0))
         sta_end = get_sta_name(getattr(self, 'setting_end_idx', -1))
 
-        # =========================================================
-        # ★ メイン設定画面 (1/2) のレイアウト微調整パラメータ
-        # =========================================================
         MAIN_X_OFFSET = 50   
         list_y_start  = 212 + MAIN_SHIFT_Y
         row_h         = 65
         label_x       = 100 + MAIN_X_OFFSET      
         val_x_start   = 550 + MAIN_X_OFFSET  
-        # =========================================================
         
         fm = QFontMetrics(self.font_menu)
-        # ★ "階段" の文字幅を基準に固定幅を計算
         fixed_apply_w = fm.horizontalAdvance("階段")
 
         def draw_label(row_idx, text, y, text_color, outline_color):
-            # ★ 修正: 化石ロジックを消去し、カーソルが合っている時だけ青枠を出すようにしました
+            box_y = y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET
+            label_w = fm.horizontalAdvance(text)
+            
+            # =========================================================
+            # ★ 追加: ラベル文字の上をクリックしたら、その行(x=-1)にフォーカスする
+            self.menu_click_zones.append((label_x - 15 + GLOBAL_BOX_X_OFFSET, box_y, label_x - 15 + GLOBAL_BOX_X_OFFSET + label_w + 30, box_y + fm.height() + 12, row_idx, -1))
+            # =========================================================
+            
             if self.menu_state == 5 and self.menu_cursor == row_idx:
                 if getattr(self, 'menu_cursor_x', 0) == -1:
                     painter.setPen(Qt.PenStyle.NoPen)
                     painter.setBrush(HIGHLIGHT_COLOR)
-                    label_w = fm.horizontalAdvance(text)
-                    painter.drawRoundedRect(int(label_x - 15 + GLOBAL_BOX_X_OFFSET), int(y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(label_w + 30), int(fm.height() + 12), 6, 6)
+                    painter.drawRoundedRect(int(label_x - 15 + GLOBAL_BOX_X_OFFSET), int(box_y), int(label_w + 30), int(fm.height() + 12), 6, 6)
             draw_text_with_outline(painter, text, self.font_menu, text_color, outline_color, label_x, y, "left", passes=8)
 
         def draw_blocks(row_idx, blocks, y, is_sub_window=False):
@@ -338,21 +339,30 @@ def draw_menu(self, painter, logical_width):
                 else:
                     actual_box_w = text_w
 
+                box_y = y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET
+
                 if is_interactive:
                     if not is_sub_window:
                         is_focused = (self.menu_state == 5 and self.menu_cursor == row_idx and getattr(self, 'menu_cursor_x', 0) == interactive_idx and not getattr(self, 'dropdown_active', False))
                     else:
                         is_focused = (self.menu_state == 7 and getattr(self, 'sub_cursor', 0) == row_idx and getattr(self, 'sub_cursor_x', 0) == interactive_idx and not getattr(self, 'dropdown_active', False))
                         
+                    # 案B対応: インタラクティブな要素のクリックエリア
+                    self.menu_click_zones.append((cx - 10 + GLOBAL_BOX_X_OFFSET, box_y, cx + actual_box_w + 10 + GLOBAL_BOX_X_OFFSET, box_y + fm.height() + 12, row_idx, interactive_idx))
+                    
                     if is_focused:
                         painter.setPen(Qt.PenStyle.NoPen)
                         if self.menu_state == 5 and row_idx == 1 and getattr(self, 'input_mode_active', False):
                             painter.setBrush(QColor(150, 50, 50, 200)) 
                         else:
                             painter.setBrush(HIGHLIGHT_COLOR)
-                        box_y = y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET
                         painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(box_y), int(actual_box_w + 20), int(fm.height() + 12), 6, 6)
                     interactive_idx += 1
+                else:
+                    # =========================================================
+                    # ★ 追加: 動かせない文字(ONやmなど)をクリックしてもその行を選択できるようにする
+                    self.menu_click_zones.append((cx - 10 + GLOBAL_BOX_X_OFFSET, box_y, cx + actual_box_w + 10 + GLOBAL_BOX_X_OFFSET, box_y + fm.height() + 12, row_idx, -1))
+                    # =========================================================
 
                 if is_scaled:
                     cy = y - fm.ascent() + fm.height() / 2.0
@@ -387,10 +397,16 @@ def draw_menu(self, painter, logical_width):
             draw_label(2, "運転時分", list_y_start + row_h*2, COLOR_N, COLOR_WHITE)
             change_x_time = label_x + fm.horizontalAdvance("運転時分　")
             is_focused_time = (self.menu_cursor == 2 and getattr(self, 'menu_cursor_x', 0) == 0 and not getattr(self, 'dropdown_active', False))
+            
+            # ★ 案B対応: 運転時分の「変更」ボタンのクリックエリア
+            chg_box_y = list_y_start + row_h*2 - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET
+            chg_box_w = fm.horizontalAdvance("変更") + 20
+            self.menu_click_zones.append((change_x_time - 10 + GLOBAL_BOX_X_OFFSET, chg_box_y, change_x_time - 10 + GLOBAL_BOX_X_OFFSET + chg_box_w, chg_box_y + fm.height() + 12, 2, 0))
+            
             if is_focused_time:
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(HIGHLIGHT_COLOR)
-                painter.drawRoundedRect(int(change_x_time - 10 + GLOBAL_BOX_X_OFFSET), int(list_y_start + row_h*2 - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(fm.horizontalAdvance("変更") + 20), int(fm.height() + 12), 6, 6)
+                painter.drawRoundedRect(int(change_x_time - 10 + GLOBAL_BOX_X_OFFSET), int(chg_box_y), int(chg_box_w), int(fm.height() + 12), 6, 6)
             draw_text_with_outline(painter, "変更", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, change_x_time, list_y_start + row_h*2, "left", passes=8)
             
             has_timing_station = False
@@ -416,10 +432,15 @@ def draw_menu(self, painter, logical_width):
             change_text = "変更"
             text_w = fm.horizontalAdvance(change_text)
             is_focused = (self.menu_cursor == 4 and getattr(self, 'menu_cursor_x', 0) == 0 and not getattr(self, 'dropdown_active', False))
+            
+            # ★ 案B対応: 基本制動の「変更」ボタンのクリックエリア
+            chg2_box_y = list_y_start + row_h*4 - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET
+            self.menu_click_zones.append((change_x - 10 + GLOBAL_BOX_X_OFFSET, chg2_box_y, change_x - 10 + GLOBAL_BOX_X_OFFSET + text_w + 20, chg2_box_y + fm.height() + 12, 4, 0))
+
             if is_focused:
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(HIGHLIGHT_COLOR)
-                painter.drawRoundedRect(int(change_x - 10 + GLOBAL_BOX_X_OFFSET), int(list_y_start + row_h*4 - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(text_w + 20), int(fm.height() + 12), 6, 6)
+                painter.drawRoundedRect(int(change_x - 10 + GLOBAL_BOX_X_OFFSET), int(chg2_box_y), int(text_w + 20), int(fm.height() + 12), 6, 6)
             draw_text_with_outline(painter, change_text, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, change_x, list_y_start + row_h*4, "left", passes=8)
 
             vis_rules = min(3, len(getattr(self, 'brake_rules', [])))
@@ -429,11 +450,16 @@ def draw_menu(self, painter, logical_width):
             box_width = 1210
             box_height = row_h * vis_rules + 5
             
+            # ★ 案B対応: サマリー枠全体のクリックエリア
+            sum_box_x = val_x_start - 20 + GLOBAL_BOX_X_OFFSET
+            sum_box_y = list_y_start + row_h*4 - fm.ascent() - box_y_offset
+            self.menu_click_zones.append((sum_box_x, sum_box_y, sum_box_x + box_width, sum_box_y + box_height, 4, 1))
+
             is_summary_focused = (self.menu_cursor == 4 and getattr(self, 'menu_cursor_x', 0) == 1 and not getattr(self, 'dropdown_active', False))
             if is_summary_focused:
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(QColor(30, 80, 150, 150))
-                painter.drawRoundedRect(int(val_x_start - 20 + GLOBAL_BOX_X_OFFSET), int(list_y_start + row_h*4 - fm.ascent() - box_y_offset), box_width, int(box_height), 6, 6)
+                painter.drawRoundedRect(int(sum_box_x), int(sum_box_y), box_width, int(box_height), 6, 6)
 
             colon_x = val_x_start + FIXED_STA_W + 15 + fm.horizontalAdvance("～") + 15 + FIXED_STA_W + 15
             col_summary_x = colon_x + (fm.horizontalAdvance(":") // 2)
@@ -491,7 +517,7 @@ def draw_menu(self, painter, logical_width):
                 else:
                     apply_val = rule.get("apply", "階段")
                     actual_w = fm.horizontalAdvance(apply_val)
-                    offset_x = fixed_apply_w - actual_w # 右揃えのためのオフセット
+                    offset_x = fixed_apply_w - actual_w 
                     draw_text_with_outline(painter, apply_val, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx + offset_x, r_y, "left", passes=8)
                     cx += fixed_apply_w + 15 
                     
@@ -500,7 +526,7 @@ def draw_menu(self, painter, logical_width):
                     
                     rel_val = rule.get("release", "階段")
                     actual_rel_w = fm.horizontalAdvance(rel_val)
-                    offset_rel_x = fixed_apply_w - actual_rel_w # 右揃えのためのオフセット
+                    offset_rel_x = fixed_apply_w - actual_rel_w 
                     draw_text_with_outline(painter, rel_val, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx + offset_rel_x, r_y, "left", passes=8)
                     cx += fixed_apply_w + 15
                     
@@ -541,162 +567,174 @@ def draw_menu(self, painter, logical_width):
             for j, line in enumerate(desc_text.split('\n')):
                 draw_text_with_outline(painter, line, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, 180, desc_y + 40 + (j * 40), "left", passes=8)
 
-    if self.menu_state == 7:
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(0,0,0, 180))
-        painter.drawRect(0,0, int(BASE_SCREEN_W), int(BASE_SCREEN_H))
-        
-        sub_w, sub_h = 1700, 850
-        sub_x, sub_y = 110, (BASE_SCREEN_H - sub_h) / 2
-        
-        painter.setBrush(QColor(30, 30, 30, 240))
-        painter.setPen(QPen(QColor(150, 150, 150), 3))
-        painter.drawRoundedRect(int(sub_x), int(sub_y), int(sub_w), int(sub_h), 12, 12)
-        
-        draw_text_with_outline(painter, "=== 基本制動 設定 ===", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, sub_y + 130, "center", passes=8)
-        
-        vis_rules = min(5, len(getattr(self, 'brake_rules', []))) 
-        
-        sub_val_x_start = 300  
-        SUB_FIXED_STA_W = 350  
-        gap_tilde = 15         
-        gap_sta2 = 15          
-        gap_colon = 15         
-        gap_rule = 20          
-        
-        fm = QFontMetrics(self.font_menu)
-        fixed_apply_w = fm.horizontalAdvance("階段") 
-        colon_x = sub_val_x_start + SUB_FIXED_STA_W + gap_tilde + fm.horizontalAdvance("～") + gap_sta2 + SUB_FIXED_STA_W + gap_colon
-        sub_col_summary_x = colon_x + (fm.horizontalAdvance(":") // 2)
+        if self.menu_state == 7:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(0,0,0, 180))
+            painter.drawRect(0,0, int(BASE_SCREEN_W), int(BASE_SCREEN_H))
+            
+            sub_w, sub_h = 1700, 850
+            sub_x, sub_y = 110, (BASE_SCREEN_H - sub_h) / 2
 
-        if getattr(self, 'sub_scroll', 0) > 0:
-            draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, sub_col_summary_x, sub_y + 200, "center", passes=8)
-        
-        sub_list_y_start = sub_y + 275 
-        
-        for i in range(vis_rules):
-            r_idx = getattr(self, 'sub_scroll', 0) + i
-            if r_idx >= len(getattr(self, 'brake_rules', [])): break
-            rule = getattr(self, 'brake_rules', [])[r_idx]
-            r_start = get_sta_name(getattr(self, 'setting_start_idx', 0)) if r_idx == 0 else get_sta_name(getattr(self, 'brake_rules', [])[r_idx-1]["end_idx"])
-            r_end = get_sta_name(getattr(self, 'setting_end_idx', -1)) if rule.get("end_idx", -1) == -1 else get_sta_name(rule["end_idx"])
-            is_last = (r_idx == len(getattr(self, 'brake_rules', [])) - 1)
-            r_y = sub_list_y_start + (i * 70) 
+            self.active_panel_rect = (sub_x, sub_y, sub_x + sub_w, sub_y + sub_h)
             
-            cx = sub_val_x_start 
+            painter.setBrush(QColor(30, 30, 30, 240))
+            painter.setPen(QPen(QColor(150, 150, 150), 3))
+            painter.drawRoundedRect(int(sub_x), int(sub_y), int(sub_w), int(sub_h), 12, 12)
             
-            w_start = fm.horizontalAdvance(r_start)
-            if w_start > SUB_FIXED_STA_W:
-                sr = SUB_FIXED_STA_W / w_start
-                cy = r_y - fm.ascent() + fm.height() / 2.0
-                painter.save()
-                painter.translate(cx, cy)
-                painter.scale(sr, sr)
-                painter.translate(0, -cy + r_y)
-                draw_text_with_outline(painter, r_start, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, 0, 0, "left", passes=8)
-                painter.restore()
-            else:
-                draw_text_with_outline(painter, r_start, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
-            cx += SUB_FIXED_STA_W + gap_tilde
+            draw_text_with_outline(painter, "=== 基本制動 設定 ===", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, sub_y + 130, "center", passes=8)
             
-            draw_text_with_outline(painter, "～", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
-            cx += fm.horizontalAdvance("～") + gap_sta2
+            vis_rules = min(5, len(getattr(self, 'brake_rules', []))) 
             
-            w_end = fm.horizontalAdvance(r_end)
-            is_focused = (getattr(self, 'sub_cursor', 0) == r_idx and getattr(self, 'sub_cursor_x', 0) == 0 and not getattr(self, 'dropdown_active', False))
+            sub_val_x_start = 300  
+            SUB_FIXED_STA_W = 350  
+            gap_tilde = 15         
+            gap_sta2 = 15          
+            gap_colon = 15         
+            gap_rule = 20          
             
-            if w_end > SUB_FIXED_STA_W:
-                if is_focused and is_last:
-                    painter.setPen(Qt.PenStyle.NoPen)
-                    painter.setBrush(HIGHLIGHT_COLOR)
-                    painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(SUB_FIXED_STA_W + 20), int(fm.height() + 12), 6, 6)
+            fm = QFontMetrics(self.font_menu)
+            fixed_apply_w = fm.horizontalAdvance("階段") 
+            colon_x = sub_val_x_start + SUB_FIXED_STA_W + gap_tilde + fm.horizontalAdvance("～") + gap_sta2 + SUB_FIXED_STA_W + gap_colon
+            sub_col_summary_x = colon_x + (fm.horizontalAdvance(":") // 2)
+
+            if getattr(self, 'sub_scroll', 0) > 0:
+                draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, sub_col_summary_x, sub_y + 200, "center", passes=8)
+            
+            sub_list_y_start = sub_y + 275 
+            
+            for i in range(vis_rules):
+                r_idx = getattr(self, 'sub_scroll', 0) + i
+                if r_idx >= len(getattr(self, 'brake_rules', [])): break
+                rule = getattr(self, 'brake_rules', [])[r_idx]
+                r_start = get_sta_name(getattr(self, 'setting_start_idx', 0)) if r_idx == 0 else get_sta_name(getattr(self, 'brake_rules', [])[r_idx-1]["end_idx"])
+                r_end = get_sta_name(getattr(self, 'setting_end_idx', -1)) if rule.get("end_idx", -1) == -1 else get_sta_name(rule["end_idx"])
+                is_last = (r_idx == len(getattr(self, 'brake_rules', [])) - 1)
+                r_y = sub_list_y_start + (i * 70) 
+                
+                cx = sub_val_x_start 
+                
+                w_start = fm.horizontalAdvance(r_start)
+                if w_start > SUB_FIXED_STA_W:
+                    sr = SUB_FIXED_STA_W / w_start
+                    cy = r_y - fm.ascent() + fm.height() / 2.0
+                    painter.save()
+                    painter.translate(cx, cy)
+                    painter.scale(sr, sr)
+                    painter.translate(0, -cy + r_y)
+                    draw_text_with_outline(painter, r_start, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, 0, 0, "left", passes=8)
+                    painter.restore()
+                else:
+                    draw_text_with_outline(painter, r_start, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+                cx += SUB_FIXED_STA_W + gap_tilde
+                
+                draw_text_with_outline(painter, "～", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+                cx += fm.horizontalAdvance("～") + gap_sta2
+                
+                w_end = fm.horizontalAdvance(r_end)
+                is_focused = (getattr(self, 'sub_cursor', 0) == r_idx and getattr(self, 'sub_cursor_x', 0) == 0 and not getattr(self, 'dropdown_active', False))
+                
+                # ★ 案B対応: 駅名(終了)のクリックエリア
+                sta_box_y = r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET
+                self.menu_click_zones.append((cx - 10 + GLOBAL_BOX_X_OFFSET, sta_box_y, cx - 10 + GLOBAL_BOX_X_OFFSET + min(w_end, SUB_FIXED_STA_W) + 20, sta_box_y + fm.height() + 12, r_idx, 0))
+
+                if w_end > SUB_FIXED_STA_W:
+                    if is_focused and is_last:
+                        painter.setPen(Qt.PenStyle.NoPen)
+                        painter.setBrush(HIGHLIGHT_COLOR)
+                        painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(sta_box_y), int(SUB_FIXED_STA_W + 20), int(fm.height() + 12), 6, 6)
+                        
+                    sr = SUB_FIXED_STA_W / w_end
+                    cy = r_y - fm.ascent() + fm.height() / 2.0
+                    painter.save()
+                    painter.translate(cx, cy)
+                    painter.scale(sr, sr)
+                    painter.translate(0, -cy + r_y)
+                    draw_text_with_outline(painter, r_end, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, 0, 0, "left", passes=8)
+                    painter.restore()
+                else:
+                    if is_focused and is_last:
+                        painter.setPen(Qt.PenStyle.NoPen)
+                        painter.setBrush(HIGHLIGHT_COLOR)
+                        painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(sta_box_y), int(w_end + 20), int(fm.height() + 12), 6, 6)
+                    draw_text_with_outline(painter, r_end, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+                cx += SUB_FIXED_STA_W + gap_colon
+                
+                draw_text_with_outline(painter, ":", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+                cx += fm.horizontalAdvance(":") + gap_rule
+                
+                idx_apply = 1 if is_last else 0
+                idx_release = 2 if is_last else 1
+
+                if rule.get("apply", "OFF") == "OFF":
+                    actual_w = fm.horizontalAdvance("OFF")
+                    # ★ 案B対応: OFF文字のクリックエリア
+                    self.menu_click_zones.append((cx - 10 + GLOBAL_BOX_X_OFFSET, sta_box_y, cx - 10 + GLOBAL_BOX_X_OFFSET + actual_w + 20, sta_box_y + fm.height() + 12, r_idx, idx_apply))
                     
-                sr = SUB_FIXED_STA_W / w_end
-                cy = r_y - fm.ascent() + fm.height() / 2.0
-                painter.save()
-                painter.translate(cx, cy)
-                painter.scale(sr, sr)
-                painter.translate(0, -cy + r_y)
-                draw_text_with_outline(painter, r_end, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, 0, 0, "left", passes=8)
-                painter.restore()
-            else:
-                if is_focused and is_last:
-                    painter.setPen(Qt.PenStyle.NoPen)
-                    painter.setBrush(HIGHLIGHT_COLOR)
-                    painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(w_end + 20), int(fm.height() + 12), 6, 6)
-                draw_text_with_outline(painter, r_end, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
-            cx += SUB_FIXED_STA_W + gap_colon
-            
-            draw_text_with_outline(painter, ":", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
-            cx += fm.horizontalAdvance(":") + gap_rule
-            
-            idx_apply = 1 if is_last else 0
-            idx_release = 2 if is_last else 1
+                    if getattr(self, 'sub_cursor', 0) == r_idx and getattr(self, 'sub_cursor_x', 0) == idx_apply and not getattr(self, 'dropdown_active', False):
+                        painter.setPen(Qt.PenStyle.NoPen)
+                        painter.setBrush(HIGHLIGHT_COLOR)
+                        painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(sta_box_y), int(actual_w + 20), int(fm.height() + 12), 6, 6)
+                    draw_text_with_outline(painter, "OFF", self.font_menu, COLOR_B_EMG, COLOR_WHITE, cx, r_y, "left", passes=8)
+                else:
+                    apply_val = rule.get("apply", "階段")
+                    actual_w = fm.horizontalAdvance(apply_val)
+                    offset_x = fixed_apply_w - actual_w 
+                    
+                    # ★ 案B対応: 初動文字のクリックエリア
+                    self.menu_click_zones.append((cx + offset_x - 10 + GLOBAL_BOX_X_OFFSET, sta_box_y, cx + offset_x - 10 + GLOBAL_BOX_X_OFFSET + actual_w + 20, sta_box_y + fm.height() + 12, r_idx, idx_apply))
+                    
+                    if getattr(self, 'sub_cursor', 0) == r_idx and getattr(self, 'sub_cursor_x', 0) == idx_apply and not getattr(self, 'dropdown_active', False):
+                        painter.setPen(Qt.PenStyle.NoPen)
+                        painter.setBrush(HIGHLIGHT_COLOR)
+                        painter.drawRoundedRect(int(cx + offset_x - 10 + GLOBAL_BOX_X_OFFSET), int(sta_box_y), int(actual_w + 20), int(fm.height() + 12), 6, 6)
+                    draw_text_with_outline(painter, apply_val, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx + offset_x, r_y, "left", passes=8)
+                    cx += fixed_apply_w + 15
+                    
+                    draw_text_with_outline(painter, "制動 /", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
+                    cx += fm.horizontalAdvance("制動 /") + 15
+                    
+                    rel_val = rule.get("release", "階段")
+                    actual_rel_w = fm.horizontalAdvance(rel_val)
+                    offset_rel_x = fixed_apply_w - actual_rel_w 
+                    
+                    # ★ 案B対応: 緩和文字のクリックエリア
+                    self.menu_click_zones.append((cx + offset_rel_x - 10 + GLOBAL_BOX_X_OFFSET, sta_box_y, cx + offset_rel_x - 10 + GLOBAL_BOX_X_OFFSET + actual_rel_w + 20, sta_box_y + fm.height() + 12, r_idx, idx_release))
+                    
+                    if getattr(self, 'sub_cursor', 0) == r_idx and getattr(self, 'sub_cursor_x', 0) == idx_release and not getattr(self, 'dropdown_active', False):
+                        painter.setPen(Qt.PenStyle.NoPen)
+                        painter.setBrush(HIGHLIGHT_COLOR)
+                        painter.drawRoundedRect(int(cx + offset_rel_x - 10 + GLOBAL_BOX_X_OFFSET), int(sta_box_y), int(actual_rel_w + 20), int(fm.height() + 12), 6, 6)
+                    draw_text_with_outline(painter, rel_val, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx + offset_rel_x, r_y, "left", passes=8)
+                    cx += fixed_apply_w + 15
+                    draw_text_with_outline(painter, "緩め", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
 
-            if rule.get("apply", "OFF") == "OFF":
-                actual_w = fm.horizontalAdvance("OFF")
-                if getattr(self, 'sub_cursor', 0) == r_idx and getattr(self, 'sub_cursor_x', 0) == idx_apply and not getattr(self, 'dropdown_active', False):
-                    painter.setPen(Qt.PenStyle.NoPen)
-                    painter.setBrush(HIGHLIGHT_COLOR)
-                    painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(actual_w + 20), int(fm.height() + 12), 6, 6)
-                draw_text_with_outline(painter, "OFF", self.font_menu, COLOR_B_EMG, COLOR_WHITE, cx, r_y, "left", passes=8)
-            else:
-                apply_val = rule.get("apply", "階段")
-                actual_w = fm.horizontalAdvance(apply_val)
-                offset_x = fixed_apply_w - actual_w # 右揃え
-                if getattr(self, 'sub_cursor', 0) == r_idx and getattr(self, 'sub_cursor_x', 0) == idx_apply and not getattr(self, 'dropdown_active', False):
-                    painter.setPen(Qt.PenStyle.NoPen)
-                    painter.setBrush(HIGHLIGHT_COLOR)
-                    painter.drawRoundedRect(int(cx + offset_x - 10 + GLOBAL_BOX_X_OFFSET), int(r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(actual_w + 20), int(fm.height() + 12), 6, 6)
-                draw_text_with_outline(painter, apply_val, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx + offset_x, r_y, "left", passes=8)
-                cx += fixed_apply_w + 15
-                
-                draw_text_with_outline(painter, "制動 /", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
-                cx += fm.horizontalAdvance("制動 /") + 15
-                
-                rel_val = rule.get("release", "階段")
-                actual_rel_w = fm.horizontalAdvance(rel_val)
-                offset_rel_x = fixed_apply_w - actual_rel_w # 右揃え
-                if getattr(self, 'sub_cursor', 0) == r_idx and getattr(self, 'sub_cursor_x', 0) == idx_release and not getattr(self, 'dropdown_active', False):
-                    painter.setPen(Qt.PenStyle.NoPen)
-                    painter.setBrush(HIGHLIGHT_COLOR)
-                    painter.drawRoundedRect(int(cx + offset_rel_x - 10 + GLOBAL_BOX_X_OFFSET), int(r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(actual_rel_w + 20), int(fm.height() + 12), 6, 6)
-                draw_text_with_outline(painter, rel_val, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx + offset_rel_x, r_y, "left", passes=8)
-                cx += fixed_apply_w + 15
-                
-                draw_text_with_outline(painter, "緩め", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
-
-        if getattr(self, 'sub_scroll', 0) + 5 < len(getattr(self, 'brake_rules', [])):
-            draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, sub_col_summary_x, sub_list_y_start + (5 * 70) + 10, "center", passes=8)
-        
-        row_undo = len(getattr(self, 'brake_rules', [])) if len(getattr(self, 'brake_rules', [])) > 1 else -1
-        row_done = len(getattr(self, 'brake_rules', [])) + 1 if len(getattr(self, 'brake_rules', [])) > 1 else len(getattr(self, 'brake_rules', []))
-        
-        btn_base_y = sub_list_y_start + (5 * 70) + 90 
-        if row_undo != -1:
-            draw_menu_item("１つ前の設定を修正する (この行を削除)", btn_base_y, (getattr(self, 'sub_cursor', 0) == row_undo), row_undo, "center")
-        draw_menu_item("設定完了", btn_base_y + 80, (getattr(self, 'sub_cursor', 0) == row_done), row_done, "center")
+            if getattr(self, 'sub_scroll', 0) + 5 < len(getattr(self, 'brake_rules', [])):
+                draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, sub_col_summary_x, sub_list_y_start + (5 * 70) + 10, "center", passes=8)
+            
+            row_undo = len(getattr(self, 'brake_rules', [])) if len(getattr(self, 'brake_rules', [])) > 1 else -1
+            row_done = len(getattr(self, 'brake_rules', [])) + 1 if len(getattr(self, 'brake_rules', [])) > 1 else len(getattr(self, 'brake_rules', []))
+            
+            btn_base_y = sub_list_y_start + (5 * 70) + 90 
+            if row_undo != -1:
+                draw_menu_item("１つ前の設定を修正する (この行を削除)", btn_base_y, (getattr(self, 'sub_cursor', 0) == row_undo), row_undo, "center")
+            draw_menu_item("設定完了", btn_base_y + 80, (getattr(self, 'sub_cursor', 0) == row_done), row_done, "center")
 
     elif self.menu_state == 8:
-        # ==========================================================
-        # ★★★ 運転時分 設定画面の微調整パラメータ ★★★
-        # ==========================================================
-        TIMING_SUB_W = 1300                 # ウィンドウの横幅
-        TIMING_SUB_H = 900                  # ウィンドウの縦幅
-        TIMING_TITLE_Y_OFFSET = 125         # 表題のY座標
-        TIMING_ARROW_UP_Y_OFFSET = 215      # ▲のY座標
-        TIMING_LIST_Y_OFFSET = 290          # リスト(駅名)が始まるY座標
-        TIMING_ROW_H = 75                   # 1行あたりの高さ
-        TIMING_VISIBLE_COUNT = 6            # 1画面に表示する件数
-        TIMING_ARROW_DOWN_Y_OFFSET = 7      # リスト下端から▼までの距離
-        TIMING_BTN_Y_OFFSET = 70            # ウィンドウ下端から設定完了ボタンまでの距離
-        TIMING_BOX_W = 1100                  # 選択時の青枠の横幅
-        TIMING_BOX_X_OFFSET = 0             # 選択時の青枠のX座標ズレ調整
-        TIMING_STA_MAX_W = 600              # 駅名の最大幅(これを超えると縮小)
-        TIMING_INNER_MARGIN_X = 125         # ウィンドウ端から文字(駅名・ON/OFF)までの距離
-        TIMING_HIGHLIGHT_OFFSET_X = 0       # 選択時の青枠微調整X
-        TIMING_HIGHLIGHT_OFFSET_Y = 0       # 選択時の青枠微調整Y
-        # ==========================================================
+        TIMING_SUB_W = 1300                 
+        TIMING_SUB_H = 900                  
+        TIMING_TITLE_Y_OFFSET = 125         
+        TIMING_ARROW_UP_Y_OFFSET = 215      
+        TIMING_LIST_Y_OFFSET = 290          
+        TIMING_ROW_H = 75                   
+        TIMING_VISIBLE_COUNT = 6            
+        TIMING_ARROW_DOWN_Y_OFFSET = 7      
+        TIMING_BTN_Y_OFFSET = 70            
+        TIMING_BOX_W = 1100                  
+        TIMING_BOX_X_OFFSET = 0             
+        TIMING_STA_MAX_W = 600              
+        TIMING_INNER_MARGIN_X = 125         
+        TIMING_HIGHLIGHT_OFFSET_X = 0       
+        TIMING_HIGHLIGHT_OFFSET_Y = 0       
         
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(0, 0, 0, 180))
@@ -705,6 +743,8 @@ def draw_menu(self, painter, logical_width):
         SUB_X = (BASE_SCREEN_W - TIMING_SUB_W) / 2
         SUB_Y = (BASE_SCREEN_H - TIMING_SUB_H) / 2
         
+        self.active_panel_rect = (SUB_X, SUB_Y, SUB_X + TIMING_SUB_W, SUB_Y + TIMING_SUB_H)
+
         TITLE_Y = SUB_Y + TIMING_TITLE_Y_OFFSET
         ARROW_UP_Y = SUB_Y + TIMING_ARROW_UP_Y_OFFSET
         LIST_Y = SUB_Y + TIMING_LIST_Y_OFFSET
@@ -760,12 +800,16 @@ def draw_menu(self, painter, logical_width):
                     painter.setPen(Qt.PenStyle.NoPen)
                     painter.setBrush(HIGHLIGHT_COLOR)
                     painter.drawRoundedRect(int(box_x_base + TIMING_HIGHLIGHT_OFFSET_X), int(box_y + TIMING_HIGHLIGHT_OFFSET_Y), int(TIMING_BOX_W), int(box_h), 8, 8)
-
+                
                 if not is_start:
-                    self.menu_click_zones.append((box_x_base, box_y, box_x_base + TIMING_BOX_W, box_y + box_h, list_idx))
-
+                    self.menu_click_zones.append((box_x_base, box_y, box_x_base + TIMING_BOX_W, box_y + box_h, list_idx, -1))
+                # =========================================================
+                
+                # ★ 案B対応: 駅名テキストの幅に合わせたクリックエリア
                 cx_sta = SUB_X + TIMING_INNER_MARGIN_X
                 actual_w = fm.horizontalAdvance(sta_name)
+                self.menu_click_zones.append((cx_sta - 10, box_y, cx_sta + min(actual_w, TIMING_STA_MAX_W) + 10, box_y + box_h, list_idx, -1))
+
                 if actual_w > TIMING_STA_MAX_W:
                     sr = TIMING_STA_MAX_W / actual_w
                     cy = y - fm.ascent() + fm.height() / 2.0
@@ -786,14 +830,10 @@ def draw_menu(self, painter, logical_width):
                 
             btn_text = "設定完了"
             text_w = fm.horizontalAdvance(btn_text)
-            
-            pad_left = 25   # 左側の余白
-            pad_right = 13   # 右側の余白（元は20だったのを大幅にカット）
-            
+            pad_left = 20
+            pad_right = 5
             btn_w = text_w + pad_left + pad_right
             btn_h = fm.height() + 16
-            
-            # x座標の開始位置を、文字の左端からpad_left分だけ左にずらした位置にする
             btn_x = center_x - (text_w / 2) - pad_left
             btn_rect_y = BTN_Y - fm.ascent() - 6 - (fm.descent() // 2) + 1
             
@@ -804,13 +844,9 @@ def draw_menu(self, painter, logical_width):
                 
             draw_text_with_outline(painter, btn_text, self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, BTN_Y, "center", passes=8)
             self.menu_click_zones.append((btn_x, btn_rect_y, btn_x + btn_w, btn_rect_y + btn_h, len(targets)))
+
+        s_idx = getattr(self, 'setting_start_idx', 0)
         
-            # ==========================================================
-            # ★ 新規追加: 一括採時ボタン (Aキー) の枠内右下描画
-            # ==========================================================
-            s_idx = getattr(self, 'setting_start_idx', 0)
-        
-        # 初期設定が「全駅採時」かをチェック
         default_all_timing = True
         for idx in targets:
             if idx == s_idx: continue
@@ -819,7 +855,6 @@ def draw_menu(self, painter, logical_width):
                 default_all_timing = False
                 break
         
-        # 現在の状態が「初期設定から変更されているか」をチェック
         is_modified_from_default = False
         for idx in targets:
             if idx == s_idx: continue
@@ -833,7 +868,6 @@ def draw_menu(self, painter, logical_width):
         show_btn = False
         btn_a_text = ""
         
-        # 条件判定
         if is_modified_from_default:
             show_btn = True
             btn_a_text = "初期設定に戻す : A"
@@ -841,14 +875,13 @@ def draw_menu(self, painter, logical_width):
             show_btn = True
             btn_a_text = "始発駅以外を採時駅にする : A"
             
-        # 表示すべき時だけ描画する
         if show_btn:
             fm_btn = QFontMetrics(self.font_desc)
             btn_a_w = fm_btn.horizontalAdvance(btn_a_text) + 30
             btn_a_h = fm_btn.height() + 10
             
-            btn_a_x = SUB_X + TIMING_SUB_W - btn_a_w - 10
-            btn_a_y = SUB_Y + TIMING_SUB_H - btn_a_h - 10
+            btn_a_x = SUB_X + TIMING_SUB_W - btn_a_w - 20
+            btn_a_y = SUB_Y + TIMING_SUB_H - btn_a_h - 20
             
             painter.setPen(QPen(QColor(200, 200, 200), 2))
             painter.setBrush(QColor(50, 50, 50, 200))
@@ -865,7 +898,6 @@ def draw_menu(self, painter, logical_width):
         list_y_start  = 212 + MAIN_SHIFT_Y
         row_h         = 65
         
-        # ★ 1/2と位置を完全に同期
         label_x       = 100 + MAIN_X_OFFSET 
         val_x_start   = 550 + MAIN_X_OFFSET
         
@@ -873,23 +905,30 @@ def draw_menu(self, painter, logical_width):
         fixed_apply_w = fm.horizontalAdvance("ON①")
 
         def draw_toggle_row(cursor_idx, label_text, is_on, base_y):
+            box_y = base_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET
+            label_w = fm.horizontalAdvance(label_text)
+            # ★ 案B対応: ラベルテキストのクリックエリア
+            self.menu_click_zones.append((label_x - 15 + GLOBAL_BOX_X_OFFSET, box_y, label_x - 15 + GLOBAL_BOX_X_OFFSET + label_w + 30, box_y + fm.height() + 12, cursor_idx, -1))
+            
             if self.menu_cursor == cursor_idx and getattr(self, 'menu_cursor_x', 0) == -1:
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(HIGHLIGHT_COLOR)
-                label_w = fm.horizontalAdvance(label_text)
-                painter.drawRoundedRect(int(label_x - 15 + GLOBAL_BOX_X_OFFSET), int(base_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(label_w + 30), int(fm.height() + 12), 6, 6)
+                painter.drawRoundedRect(int(label_x - 15 + GLOBAL_BOX_X_OFFSET), int(box_y), int(label_w + 30), int(fm.height() + 12), 6, 6)
             draw_text_with_outline(painter, label_text, self.font_menu, COLOR_B_EMG, COLOR_WHITE, label_x, base_y, "left", passes=8)
             
             val_text = "ON" if is_on else "OFF"
             val_col = COLOR_P if is_on else COLOR_B_EMG
             
+            val_w = fm.horizontalAdvance(val_text)
+            # ★ 案B対応: ON/OFF値のクリックエリア
+            self.menu_click_zones.append((val_x_start - 10 + GLOBAL_BOX_X_OFFSET, box_y, val_x_start - 10 + GLOBAL_BOX_X_OFFSET + val_w + 20, box_y + fm.height() + 12, cursor_idx, 0))
+
             is_val_focused = (self.menu_cursor == cursor_idx and getattr(self, 'menu_cursor_x', 0) == 0)
             if cursor_idx != 0: 
                 if is_val_focused:
                     painter.setPen(Qt.PenStyle.NoPen)
                     painter.setBrush(HIGHLIGHT_COLOR)
-                    val_w = fm.horizontalAdvance(val_text)
-                    painter.drawRoundedRect(int(val_x_start - 10 + GLOBAL_BOX_X_OFFSET), int(base_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(val_w + 20), int(fm.height() + 12), 6, 6)
+                    painter.drawRoundedRect(int(val_x_start - 10 + GLOBAL_BOX_X_OFFSET), int(box_y), int(val_w + 20), int(fm.height() + 12), 6, 6)
                 
             draw_text_with_outline(painter, val_text, self.font_menu, val_col, COLOR_WHITE, val_x_start, base_y, "left", passes=8)
 
@@ -900,11 +939,18 @@ def draw_menu(self, painter, logical_width):
         draw_toggle_row(4, "非常ブレーキ", getattr(self, 'pen_eb', True), list_y_start + row_h * 4)
 
         y_init = list_y_start + row_h * 5
+        label_w = fm.horizontalAdvance("初動ブレーキ")
+        init_box_y = y_init - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET
+        
+        # =========================================================
+        # ★ 追加: 初動・緩和ラベルのクリックエリア (2行分の高さをカバー)
+        self.menu_click_zones.append((label_x - 15 + GLOBAL_BOX_X_OFFSET, init_box_y, label_x - 15 + GLOBAL_BOX_X_OFFSET + label_w + 30, init_box_y + row_h + fm.height() + 12, 5, -1))
+        # =========================================================
+
         if self.menu_cursor == 5 and getattr(self, 'menu_cursor_x', 0) == -1:
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(HIGHLIGHT_COLOR)
-            label_w = fm.horizontalAdvance("初動ブレーキ")
-            painter.drawRoundedRect(int(label_x - 15 + GLOBAL_BOX_X_OFFSET), int(y_init - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(label_w + 30), int(row_h + fm.height() + 12), 6, 6)
+            painter.drawRoundedRect(int(label_x - 15 + GLOBAL_BOX_X_OFFSET), int(init_box_y), int(label_w + 30), int(row_h + fm.height() + 12), 6, 6)
             
         draw_text_with_outline(painter, "初動ブレーキ", self.font_menu, COLOR_B_EMG, COLOR_WHITE, label_x, y_init, "left", passes=8)
         draw_text_with_outline(painter, "緩和ブレーキ", self.font_menu, COLOR_B_EMG, COLOR_WHITE, label_x, y_init + row_h, "left", passes=8)
@@ -913,10 +959,15 @@ def draw_menu(self, painter, logical_width):
         change_text = "変更"
         text_w = fm.horizontalAdvance(change_text)
         is_focused = (self.menu_cursor == 5 and getattr(self, 'menu_cursor_x', 0) == 0 and not getattr(self, 'dropdown_active', False))
+        
+        # ★ 案B対応: 初動・緩和「変更」ボタンのクリックエリア
+        chg_init_y = y_init - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET
+        self.menu_click_zones.append((change_x - 10 + GLOBAL_BOX_X_OFFSET, chg_init_y, change_x - 10 + GLOBAL_BOX_X_OFFSET + text_w + 20, chg_init_y + fm.height() + 12, 5, 0))
+
         if is_focused:
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(HIGHLIGHT_COLOR)
-            painter.drawRoundedRect(int(change_x - 10 + GLOBAL_BOX_X_OFFSET), int(y_init - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(text_w + 20), int(fm.height() + 12), 6, 6)
+            painter.drawRoundedRect(int(change_x - 10 + GLOBAL_BOX_X_OFFSET), int(chg_init_y), int(text_w + 20), int(fm.height() + 12), 6, 6)
         draw_text_with_outline(painter, change_text, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, change_x, y_init, "left", passes=8)
         
         init_rules = getattr(self, 'penalty_init_rules', [{"apply": "ON①", "release": "ON①"}])
@@ -934,6 +985,9 @@ def draw_menu(self, painter, logical_width):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(30, 80, 150, 150))
             painter.drawRoundedRect(int(list_cx_start - 20 + GLOBAL_BOX_X_OFFSET), int(y_init - fm.ascent() - box_y_offset), box_width, int(box_height), 6, 6)
+            
+        # ★ 案B対応: 初動・緩和サマリー枠のクリックエリア
+        self.menu_click_zones.append((list_cx_start - 20 + GLOBAL_BOX_X_OFFSET, y_init - fm.ascent() - box_y_offset, list_cx_start - 20 + GLOBAL_BOX_X_OFFSET + box_width, y_init - fm.ascent() - box_y_offset + box_height, 5, 1))
             
         col_summary_x = list_cx_start + FIXED_STA_W + 15 + fm.horizontalAdvance("～") + 15 + FIXED_STA_W + 15 + (fm.horizontalAdvance(":") // 2)
         summary_scroll = getattr(self, 'init_summary_scroll', 0)
@@ -1010,11 +1064,9 @@ def draw_menu(self, painter, logical_width):
         if summary_scroll + 3 < len(getattr(self, 'brake_rules', [])):
             draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, col_summary_x, y_init + row_h*vis_rules, "center", passes=8)
         
-        # 6: 採点開始 (前へを廃止し中央へ)
         btn_y = 830
         draw_menu_item("次へ (評価点の設定)", btn_y, (self.menu_cursor == 6 and getattr(self, 'menu_cursor_x', 0) == -1), 6, "center", x_offset=0)
 
-        # 説明文
         desc_y = 870 
         desc_h = 135 
         painter.setPen(QPen(QColor(150, 150, 150), 2))
@@ -1040,9 +1092,6 @@ def draw_menu(self, painter, logical_width):
         for j, line in enumerate(desc_text.split('\n')):
             draw_text_with_outline(painter, line, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, 180, desc_y + 40 + (j * 40), "left", passes=8)
 
-    # ==========================================================
-    # ★ 新規追加: 初動・緩和ブレーキ区間設定 サブウィンドウ (menu_state == 9)
-    # ==========================================================
     elif self.menu_state == 9:
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(0,0,0, 180))
@@ -1051,6 +1100,8 @@ def draw_menu(self, painter, logical_width):
         sub_w, sub_h = 1700, 940
         sub_x, sub_y = 110, (BASE_SCREEN_H - sub_h) / 2
         SHIFT_Y = 30
+
+        self.active_panel_rect = (sub_x, sub_y, sub_x + sub_w, sub_y + sub_h)
         
         painter.setBrush(QColor(30, 30, 30, 240))
         painter.setPen(QPen(QColor(150, 150, 150), 3))
@@ -1140,10 +1191,15 @@ def draw_menu(self, painter, logical_width):
             
             apply_val = p_rule.get("apply", "ON①")
             actual_w = fm.horizontalAdvance(apply_val)
+            
+            # ★ 案B対応: 初動文字のクリックエリア
+            box_y = r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET
+            self.menu_click_zones.append((cx - 10 + GLOBAL_BOX_X_OFFSET, box_y, cx - 10 + GLOBAL_BOX_X_OFFSET + actual_w + 20, box_y + fm.height() + 12, r_idx, idx_apply))
+            
             if sub_cursor == r_idx and sub_cursor_x == idx_apply and not getattr(self, 'dropdown_active', False):
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(HIGHLIGHT_COLOR)
-                painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(actual_w + 20), int(fm.height() + 12), 6, 6)
+                painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(box_y), int(actual_w + 20), int(fm.height() + 12), 6, 6)
             a_col = COLOR_P if "ON" in apply_val else COLOR_B_EMG
             draw_text_with_outline(painter, apply_val, self.font_menu, a_col, COLOR_WHITE, cx, r_y, "left", passes=8)
             cx += fixed_apply_w + 15 
@@ -1157,10 +1213,14 @@ def draw_menu(self, painter, logical_width):
             
             rel_val = p_rule.get("release", "ON①")
             actual_rel_w = fm.horizontalAdvance(rel_val)
+            
+            # ★ 案B対応: 緩和文字のクリックエリア
+            self.menu_click_zones.append((cx - 10 + GLOBAL_BOX_X_OFFSET, box_y, cx - 10 + GLOBAL_BOX_X_OFFSET + actual_rel_w + 20, box_y + fm.height() + 12, r_idx, idx_release))
+            
             if sub_cursor == r_idx and sub_cursor_x == idx_release and not getattr(self, 'dropdown_active', False):
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(HIGHLIGHT_COLOR)
-                painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET), int(actual_rel_w + 20), int(fm.height() + 12), 6, 6)
+                painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(box_y), int(actual_rel_w + 20), int(fm.height() + 12), 6, 6)
             r_col = COLOR_P if "ON" in rel_val else COLOR_B_EMG
             draw_text_with_outline(painter, rel_val, self.font_menu, r_col, COLOR_WHITE, cx, r_y, "left", passes=8)
 
@@ -1171,7 +1231,6 @@ def draw_menu(self, painter, logical_width):
         btn_base_y = sub_list_y_start + (5 * 70)
         draw_menu_item("設定完了", btn_base_y + 80, (sub_cursor == row_done), row_done, "center")
 
-        # 説明文
         desc_y = btn_base_y + 120
         desc_h = 175 
         painter.setPen(QPen(QColor(150, 150, 150), 2))
@@ -1376,36 +1435,53 @@ def draw_menu(self, painter, logical_width):
     
     if getattr(self, 'dropdown_active', False) and len(getattr(self, 'dropdown_options', [])) > 0:
         fm = QFontMetrics(self.font_menu)
-        max_w = max([fm.horizontalAdvance(opt["name"]) for opt in self.dropdown_options]) + 60
+        # 名前が空でもエラーにならないよう str() と "不明" でガード
+        max_w = max([fm.horizontalAdvance(str(opt.get("name", "不明"))) for opt in self.dropdown_options]) + 60
         box_w = max(250, max_w) 
         
         visible_opts = self.dropdown_options[getattr(self, 'dropdown_scroll', 0) : getattr(self, 'dropdown_scroll', 0) + 7]
         row_h = fm.height() + 16
         box_h = row_h * len(visible_opts) + 20
         
-        start_x = center_x - (box_w / 2)
-        start_y = BASE_SCREEN_H / 2 - (box_h / 2)
+        start_x = (BASE_SCREEN_W / 2) - (box_w / 2)
+        start_y = (BASE_SCREEN_H / 2) - (box_h / 2)
+        
+        self.active_dropdown_rect = (start_x, start_y, start_x + box_w, start_y + box_h)
+        # ★ 超重要: ドロップダウンが開いている間は、背後のクリック判定をすべて消去し、ドロップダウン専用にする！
+        self.menu_click_zones.clear()
         
         painter.setPen(QPen(QColor(100, 100, 100), 4))
         painter.setBrush(QColor(20, 20, 20, 240))
         painter.drawRoundedRect(int(start_x), int(start_y), int(box_w), int(box_h), 8, 8)
         
         if getattr(self, 'dropdown_scroll', 0) > 0:
-            draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, start_y - 10, "center", passes=8)
+            draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, BASE_SCREEN_W / 2, start_y - 10, "center", passes=8)
             
         for i, opt in enumerate(visible_opts):
             actual_idx = getattr(self, 'dropdown_scroll', 0) + i
             item_y = start_y + 10 + (i * row_h)
+            
+            # ★ 追加: ドロップダウン項目のクリックエリア (action_idx=997, action_x=実際のインデックス)
+            self.menu_click_zones.append((start_x, item_y, start_x + box_w, item_y + row_h, 997, actual_idx))
+            
             if actual_idx == getattr(self, 'dropdown_cursor', 0):
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(HIGHLIGHT_COLOR)
                 painter.drawRoundedRect(int(start_x + 5), int(item_y), int(box_w - 10), int(row_h), 4, 4)
                 
             text_y_base = item_y + fm.ascent() + 8
-            draw_text_with_outline(painter, opt["name"], self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, text_y_base, "center", passes=8)
+            name_str = str(opt.get("name", "不明"))
+            draw_text_with_outline(painter, name_str, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, BASE_SCREEN_W / 2, text_y_base, "center", passes=8)
             
         if getattr(self, 'dropdown_scroll', 0) + 7 < len(getattr(self, 'dropdown_options', [])):
-            draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, start_y + box_h + 47, "center", passes=8)
+            draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, BASE_SCREEN_W / 2, start_y + box_h + 47, "center", passes=8)
+            
+        for i, opt in enumerate(visible_opts):
+            actual_idx = getattr(self, 'dropdown_scroll', 0) + i
+            item_y = start_y + 10 + (i * row_h)
+            
+            # ★ 追加: ドロップダウンの各項目のクリックエリア (action_x = -2 として区別)
+            self.menu_click_zones.append((start_x + 5, item_y, start_x + box_w - 5, item_y + row_h, actual_idx, -2))
     
     # ==========================================================
     # ★ 新規追加: 採点結果画面 (menu_state == 11)
@@ -1580,10 +1656,6 @@ def draw_menu(self, painter, logical_width):
         
         draw_text_with_outline(painter, "評価", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x + 355, bottom_y, "left", passes=8)
         
-        # ==========================================================
-        # ★ 修正: 背景の●(円)描画を完全に削除しました
-        # ==========================================================
-        
         f_rank = QFont(self.font_big)
         if f_rank.pointSize() > 0:
             f_rank.setPointSize(int(f_rank.pointSize()*1.2))
@@ -1698,6 +1770,8 @@ def draw_menu(self, painter, logical_width):
         win_h = 100 + (len(help_items) * 55)
         win_x = center_x - (win_w / 2)
         win_y = (BASE_SCREEN_H - win_h) / 2
+        
+        self.active_help_rect = (win_x, win_y, win_x + win_w, win_y + win_h)
         
         # 3. 枠とタイトルの描画
         painter.setBrush(QColor(30, 30, 30, 240))
