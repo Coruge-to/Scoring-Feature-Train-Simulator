@@ -144,6 +144,7 @@ def draw_menu(self, painter, logical_width):
         else:
             if self.menu_scroll > 0:
                 draw_text_with_outline(painter, "▲", self.font_normal, MENU_TEXT, MENU_OUTLINE, center_x, SAVE_ARROW_UP_Y, "center", passes=8)
+                self.menu_click_zones.append((center_x - 20, SAVE_ARROW_UP_Y - 35, center_x + 20, SAVE_ARROW_UP_Y + 10, 996))
             
             fm = QFontMetrics(self.font_normal)
             box_x_base = center_x - (SAVE_COL_BOX_W / 2) + SAVE_COL_BOX_X_OFFSET
@@ -155,8 +156,6 @@ def draw_menu(self, painter, logical_width):
             COL_POS_L   = COL_STA_L + SAVE_COL_STA_W + SAVE_COL_GAP
             COL_SCORE_L = COL_POS_L + SAVE_COL_POS_W + SAVE_COL_GAP
             COL_TIME_L  = COL_SCORE_L + SAVE_COL_SCORE_W + SAVE_COL_GAP
-            
-            self.menu_click_zones.clear()
             
             for i in range(SAVE_VISIBLE_COUNT):
                 idx = self.menu_scroll + i
@@ -228,6 +227,7 @@ def draw_menu(self, painter, logical_width):
 
             if self.menu_scroll + SAVE_VISIBLE_COUNT < len(self.save_data):
                 draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, SAVE_LIST_Y + SAVE_VISIBLE_COUNT * SAVE_ROW_H, "center", passes=8)
+                self.menu_click_zones.append((center_x - 20, SAVE_LIST_Y + SAVE_VISIBLE_COUNT * SAVE_ROW_H - 35, center_x + 20, SAVE_LIST_Y + SAVE_VISIBLE_COUNT * SAVE_ROW_H + 10, 995))
 
     elif self.menu_state == 3:
         CONFIRM_SHIFT_Y = 50 # ★ ここの数字で上下にエレベーター移動します
@@ -466,6 +466,7 @@ def draw_menu(self, painter, logical_width):
 
             if getattr(self, 'summary_scroll', 0) > 0:
                 draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, col_summary_x, list_y_start + row_h*4 - 68, "center", passes=8)
+                self.menu_click_zones.append((col_summary_x - 20, list_y_start + row_h*4 - 68 - 35, col_summary_x + 20, list_y_start + row_h*4 - 68 + 10, 996))
                 
             for i in range(vis_rules):
                 r_idx = getattr(self, 'summary_scroll', 0) + i
@@ -534,6 +535,7 @@ def draw_menu(self, painter, logical_width):
 
             if getattr(self, 'summary_scroll', 0) + 3 < len(getattr(self, 'brake_rules', [])):
                 draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, col_summary_x, list_y_start + row_h*(4 + vis_rules), "center", passes=8)
+                self.menu_click_zones.append((col_summary_x - 20, list_y_start + row_h*(4 + vis_rules) - 35, col_summary_x + 20, list_y_start + row_h*(4 + vis_rules) + 10, 995))
 
             last_row = 5
             btn_y = 830 
@@ -599,6 +601,7 @@ def draw_menu(self, painter, logical_width):
 
             if getattr(self, 'sub_scroll', 0) > 0:
                 draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, sub_col_summary_x, sub_y + 200, "center", passes=8)
+                self.menu_click_zones.append((sub_col_summary_x - 20, sub_y + 200 - 35, sub_col_summary_x + 20, sub_y + 200 + 10, 996))
             
             sub_list_y_start = sub_y + 275 
             
@@ -710,6 +713,7 @@ def draw_menu(self, painter, logical_width):
 
             if getattr(self, 'sub_scroll', 0) + 5 < len(getattr(self, 'brake_rules', [])):
                 draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, sub_col_summary_x, sub_list_y_start + (5 * 70) + 10, "center", passes=8)
+                self.menu_click_zones.append((sub_col_summary_x - 20, sub_list_y_start + (5 * 70) + 10 - 35, sub_col_summary_x + 20, sub_list_y_start + (5 * 70) + 10 + 10, 995))
             
             row_undo = len(getattr(self, 'brake_rules', [])) if len(getattr(self, 'brake_rules', [])) > 1 else -1
             row_done = len(getattr(self, 'brake_rules', [])) + 1 if len(getattr(self, 'brake_rules', [])) > 1 else len(getattr(self, 'brake_rules', []))
@@ -767,6 +771,7 @@ def draw_menu(self, painter, logical_width):
         else:
             if getattr(self, 'timing_scroll', 0) > 0:
                 draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, ARROW_UP_Y, "center", passes=8)
+                self.menu_click_zones.append((center_x - 20, ARROW_UP_Y - 35, center_x + 20, ARROW_UP_Y + 10, 996))
             
             fm = QFontMetrics(self.font_normal)
             box_x_base = center_x - (TIMING_BOX_W / 2) + TIMING_BOX_X_OFFSET
@@ -827,6 +832,7 @@ def draw_menu(self, painter, logical_width):
 
             if getattr(self, 'timing_scroll', 0) + TIMING_VISIBLE_COUNT < len(targets):
                 draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, ARROW_DOWN_Y, "center", passes=8)
+                self.menu_click_zones.append((center_x - 20, ARROW_DOWN_Y - 35, center_x + 20, ARROW_DOWN_Y + 10, 995))
                 
             btn_text = "設定完了"
             text_w = fm.horizontalAdvance(btn_text)
@@ -994,6 +1000,7 @@ def draw_menu(self, painter, logical_width):
         
         if summary_scroll > 0:
             draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, col_summary_x, y_init - 68, "center", passes=8)
+            self.menu_click_zones.append((col_summary_x - 20, y_init - 68 - 35, col_summary_x + 20, y_init - 68 + 10, 996))
             
         for i in range(vis_rules):
             r_idx = summary_scroll + i
@@ -1063,6 +1070,7 @@ def draw_menu(self, painter, logical_width):
             
         if summary_scroll + 3 < len(getattr(self, 'brake_rules', [])):
             draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, col_summary_x, y_init + row_h*vis_rules, "center", passes=8)
+            self.menu_click_zones.append((col_summary_x - 20, y_init + row_h*vis_rules - 35, col_summary_x + 20, y_init + row_h*vis_rules + 10, 995))
         
         btn_y = 830
         draw_menu_item("次へ (評価点の設定)", btn_y, (self.menu_cursor == 6 and getattr(self, 'menu_cursor_x', 0) == -1), 6, "center", x_offset=0)
@@ -1130,6 +1138,7 @@ def draw_menu(self, painter, logical_width):
 
         if sub_scroll > 0:
             draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, sub_col_summary_x, sub_y + 170 + SHIFT_Y, "center", passes=8)
+            self.menu_click_zones.append((sub_col_summary_x - 20, sub_y + 170 + SHIFT_Y - 35, sub_col_summary_x + 20, sub_y + 170 + SHIFT_Y + 10, 996))
         
         sub_list_y_start = sub_y + 240 + SHIFT_Y
         sta_start = get_sta_name(getattr(self, 'setting_start_idx', 0))
@@ -1226,6 +1235,7 @@ def draw_menu(self, painter, logical_width):
 
         if sub_scroll + 5 < len(getattr(self, 'brake_rules', [])):
             draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, sub_col_summary_x, sub_list_y_start + (5 * 70) + 10, "center", passes=8)
+            self.menu_click_zones.append((sub_col_summary_x - 20, sub_list_y_start + (5 * 70) + 10 - 35, sub_col_summary_x + 20, sub_list_y_start + (5 * 70) + 10 + 10, 995))
         
         row_done = len(getattr(self, 'brake_rules', []))
         btn_base_y = sub_list_y_start + (5 * 70)
@@ -1458,6 +1468,7 @@ def draw_menu(self, painter, logical_width):
         
         if getattr(self, 'dropdown_scroll', 0) > 0:
             draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, BASE_SCREEN_W / 2, start_y - 10, "center", passes=8)
+            self.menu_click_zones.append((BASE_SCREEN_W / 2 - 20, start_y - 10 - 35, BASE_SCREEN_W / 2 + 20, start_y - 10 + 10, 996))
             
         for i, opt in enumerate(visible_opts):
             actual_idx = getattr(self, 'dropdown_scroll', 0) + i
@@ -1477,6 +1488,7 @@ def draw_menu(self, painter, logical_width):
             
         if getattr(self, 'dropdown_scroll', 0) + 7 < len(getattr(self, 'dropdown_options', [])):
             draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, BASE_SCREEN_W / 2, start_y + box_h + 47, "center", passes=8)
+            self.menu_click_zones.append((BASE_SCREEN_W / 2 - 20, start_y + box_h + 47 - 35, BASE_SCREEN_W / 2 + 20, start_y + box_h + 47 + 10, 995))
             
         for i, opt in enumerate(visible_opts):
             actual_idx = getattr(self, 'dropdown_scroll', 0) + i

@@ -695,11 +695,11 @@ class Overlay(QWidget):
                 
                 self.sub_cursor = sub_c
                 self.sub_scroll = sub_s
-                self.sub_cursor_x = sub_x if sub_c < len(rules) else 0
+                self.sub_cursor_x = max(0, sub_x) if sub_c < len(rules) else -1
             else:
                 self.init_sub_cursor = sub_c
                 self.init_sub_scroll = sub_s
-                self.init_sub_cursor_x = sub_x if sub_c < len(rules) else 0
+                self.init_sub_cursor_x = max(0, sub_x) if sub_c < len(rules) else -1
             return
 
         if self.menu_state == 8:
@@ -790,11 +790,11 @@ class Overlay(QWidget):
                 
                 self.sub_cursor = sub_c
                 self.sub_scroll = sub_s
-                self.sub_cursor_x = sub_x if sub_c < len(rules) else 0
+                self.sub_cursor_x = max(0, sub_x) if sub_c < len(rules) else -1
             else:
                 self.init_sub_cursor = sub_c
                 self.init_sub_scroll = sub_s
-                self.init_sub_cursor_x = sub_x if sub_c < len(rules) else 0
+                self.init_sub_cursor_x = max(0, sub_x) if sub_c < len(rules) else -1
             return
 
         if self.menu_state == 8:
@@ -1720,13 +1720,28 @@ class Overlay(QWidget):
                         elif action_idx == 998: # 一括採時ボタン
                             self.toggle_all_timing()
                             break
-                        # =========================================================
-                        # ★ 追加: ドロップダウンの項目がクリックされた時の処理
                         elif action_idx == 997:
                             self.dropdown_cursor = action_x
                             self.handle_dropdown_enter()
                             break
-                        # =========================================================
+                        elif action_idx == 996: # ▲ (上移動/スクロール)
+                            if getattr(self, 'dropdown_active', False):
+                                if self.dropdown_cursor > 0:
+                                    self.dropdown_cursor -= 1
+                                    if self.dropdown_cursor < self.dropdown_scroll:
+                                        self.dropdown_scroll = self.dropdown_cursor
+                            else:
+                                self.handle_menu_up()
+                            break
+                        elif action_idx == 995: # ▼ (下移動/スクロール)
+                            if getattr(self, 'dropdown_active', False):
+                                if self.dropdown_cursor < len(self.dropdown_options) - 1:
+                                    self.dropdown_cursor += 1
+                                    if self.dropdown_cursor >= self.dropdown_scroll + 7:
+                                        self.dropdown_scroll = self.dropdown_cursor - 7 + 1
+                            else:
+                                self.handle_menu_down()
+                            break
                         
                         cur_idx, cur_x = self.menu_cursor, getattr(self, 'menu_cursor_x', -1)
                         if self.menu_state == 8:
