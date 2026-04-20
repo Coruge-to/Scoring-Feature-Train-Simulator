@@ -158,7 +158,8 @@ class Overlay(QWidget):
         # =================================================================
         # ★ 新規追加: 評価点(Rank)設定用の変数
         # =================================================================
-        self.rank_a_ratio = 0.75  # Aランクの閾値 (0.60 ～ 1.00)
+        self.rank_a_ratio = 0.7  # Aランクの閾値 (0.60 ～ 1.00)
+        self.rank_multi = 0.70    # ★追加: Rank B, Cの減衰倍率 (難易度調整用)
         self.theoretical_score = 0 # 理論値
         self.total_retry_count = 0 # Sランク判定用のやり直し回数
         
@@ -837,7 +838,7 @@ class Overlay(QWidget):
         elif self.menu_state == 10:
             if getattr(self, 'input_mode_active', False): return
             if self.menu_cursor == 0:
-                self.rank_a_ratio = max(0.60, round(self.rank_a_ratio - 0.01, 2))
+                self.rank_a_ratio = max(0.50, round(self.rank_a_ratio - 0.01, 2))
 
     def handle_menu_right(self):
         if self.menu_state == 5:
@@ -1138,7 +1139,7 @@ class Overlay(QWidget):
                     if self.input_buffer:
                         try:
                             val = int(self.input_buffer)
-                            if not (60 <= val <= 90): val = 75
+                            if not (50 <= val <= 90): val = 70
                             self.rank_a_ratio = val / 100.0
                         except ValueError: pass
                     self.input_mode_active = False
@@ -1686,7 +1687,7 @@ class Overlay(QWidget):
             if slider_y - 100 <= ly <= slider_y + 100:
                 # X座標からパーセンテージを逆算
                 pct = (lx - slider_x) / slider_w
-                pct = max(0.60, min(0.9, pct))
+                pct = max(0.50, min(0.9, pct))
                 self.rank_a_ratio = round(pct, 2)
                 self.menu_cursor = 0 # カーソルをスライダーに合わせる
                 self.input_mode_active = False # 手入力をキャンセル

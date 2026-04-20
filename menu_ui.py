@@ -1250,14 +1250,16 @@ def draw_menu(self, painter, logical_width):
         draw_text_with_outline(painter, title_text, self.font_big, MENU_TEXT, MENU_OUTLINE, center_x, title_y, "center", passes=8)
 
         # 数値の計算
-        rank_a_pct = int(round(getattr(self, 'rank_a_ratio', 0.8) * 100))
-        rank_b_pct = int(round(rank_a_pct * 0.8))
-        rank_c_pct = int(round(rank_b_pct * 0.8))
+        rank_a_pct = int(round(getattr(self, 'rank_a_ratio', 0.70) * 100))
+        rank_multi = getattr(self, 'rank_multi', 0.70) # ★変数を取得
+
+        rank_b_pct = int(round(rank_a_pct * rank_multi))
+        rank_c_pct = int(round(rank_b_pct * rank_multi))
 
         theory_score = getattr(self, 'theoretical_score', 12500)
         score_a = int(round(theory_score * (rank_a_pct / 100.0)))
-        score_b = int(round(score_a * 0.8))
-        score_c = int(round(score_a * 0.8 * 0.8))
+        score_b = int(round(score_a * rank_multi))
+        score_c = int(round(score_a * rank_multi * rank_multi))
 
         # ---------------------------------------------
         # 1. スライダーの描画
@@ -1359,7 +1361,7 @@ def draw_menu(self, painter, logical_width):
             painter.drawEllipse(int(nx - 22), int(slider_y - 22), 44, 44)
             
             # 上の吹き出しボックス
-            box_w = 100
+            box_w = 90
             box_h = 45
             box_y = slider_y - 85
             painter.setPen(QPen(qc, 3))
@@ -1426,8 +1428,8 @@ def draw_menu(self, painter, logical_width):
             "基本制動の採点対象となる駅の総数n₂ : 始発駅以外 かつ 基本制動設定がOFF ではない停車駅の数",
             "運転時分の採点対象となる駅の総数n₃ : 採時駅の数",
             "",
-            "Rank A は理論値の 60～90％ の間で調整が可能です。",
-            "Rank B = Rank A × 0.8、Rank C = Rank B × 0.8 （整数値に四捨五入）で自動的に計算されます。",
+            "Rank A は理論値の 50～90％ の間で調整が可能です。",
+            f"Rank B = Rank A × {rank_multi}、Rank C = Rank B × {rank_multi}（整数値に四捨五入）で自動的に計算されます。", # ★f文字列で変数を埋め込み
             "やり直しをせずに試験を終え、かつ Rank A 以上の点数の場合には Rank S が与えられます。"
         ]
         for j, line in enumerate(desc_lines):
@@ -1627,11 +1629,16 @@ def draw_menu(self, painter, logical_width):
         total_score = getattr(self, 'score', 0)
         retries = getattr(self, 'total_retry_count', 0)
         
-        rank_a_pct = int(round(getattr(self, 'rank_a_ratio', 0.8) * 100))
+        rank_a_pct = int(round(getattr(self, 'rank_a_ratio', 0.70) * 100))
+        rank_multi = getattr(self, 'rank_multi', 0.70) # ★変数を取得
+
+        rank_b_pct = int(round(rank_a_pct * rank_multi))
+        rank_c_pct = int(round(rank_b_pct * rank_multi))
+
         theory_score = getattr(self, 'theoretical_score', 12500)
         score_a = int(round(theory_score * (rank_a_pct / 100.0)))
-        score_b = int(round(score_a * 0.8))
-        score_c = int(round(score_a * 0.8 * 0.8))
+        score_b = int(round(score_a * rank_multi))
+        score_c = int(round(score_a * rank_multi * rank_multi))
 
         eval_rank = "D"
         eval_color = (150, 150, 150)
