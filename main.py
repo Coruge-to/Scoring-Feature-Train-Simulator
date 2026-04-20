@@ -445,7 +445,7 @@ class Overlay(QWidget):
                     elif part.startswith("TRAINLEN:"): 
                         self.bve_train_length = max(float(part.split(':')[1]), 20.0)
                         if getattr(self, 'needs_margin_recalc', False) or self.setting_stop_distance == -1:
-                            self.setting_stop_distance = int(self.bve_train_length) * 2
+                            self.setting_stop_distance = round(int(self.bve_train_length) * 1.1)
                             self.needs_margin_recalc = False
 
                     elif part.startswith("MAPLIMITS:"):
