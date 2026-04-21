@@ -344,7 +344,7 @@ def evaluate_departure(self, current_time):
                 d = p_loc - self.bve_location
                 
                 # 過去にちゃんと許容範囲で止まっており、かつ、出発時刻の今この瞬間も許容範囲内にいること
-                if getattr(self, 'has_scored_stop_this_station', False) and (-self.bve_margin_f <= d <= self.bve_margin_b):
+                if (getattr(self, 'has_scored_stop_this_station', False) or getattr(self, 'is_official_retry', False)) and (-self.bve_margin_f <= d <= self.bve_margin_b):
                     # 発車時刻(raw_dep)を自力で引っ張り出して計算
                     dep_target_s = -1
                     if p_idx >= 0:
