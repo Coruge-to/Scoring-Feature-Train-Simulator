@@ -1002,10 +1002,15 @@ def update_physics_and_scoring(self, current_time, dt):
                     target_type = l_type
                     target_loc = loc
                             
-            # 赤点滅判定
+            # =========================================================
+            # ★ 修正1: calc_v の階段崩壊バグを修正！
+            # 全てを現在速度から計算せず、ちゃんと階段状(v_assumed)に計算する
+            # =========================================================
             if val < peak_speed and val < self.effective_limit:
-                if running_base_speed >= 999.0 or target_val >= 999.0:
+                if running_base_speed >= 999.0:
                     calc_v = max(self.bve_speed, val + 1.0)
+                    if self.prev_base_limit < 999.0 and self.bve_speed < self.prev_base_limit:
+                        calc_v = max(calc_v, self.prev_base_limit)
                 else:
                     calc_v = max(v_assumed, val + 1.0)
                 
@@ -1015,13 +1020,11 @@ def update_physics_and_scoring(self, current_time, dt):
                 urgency = dist_to_limit - decel_dist
                 is_warning = (dist_to_limit <= warn_dist)
                 
-                # 結果をリストに保存
                 future_evals.append({
                     'loc': loc, 'val': val, 'dist': dist_to_limit, 
                     'decel_dist': decel_dist, 'urgency': urgency, 'type': l_type
                 })
                 
-                # ★ 警告が発動している「最も遠い距離」を記録する
                 if is_warning:
                     active_zone_end_dist = max(active_zone_end_dist, dist_to_limit)
 
@@ -1033,32 +1036,60 @@ def update_physics_and_scoring(self, current_time, dt):
     active_reds = []
     if active_zone_end_dist > 0:
         for ev in future_evals:
-            # 警告が出ている最も遠い制限よりも「手前」にある制限は、計算結果を無視して全てプレビュー対象として拉致する！
             if ev['dist'] <= active_zone_end_dist:
                 active_reds.append(ev)
 
     # =================================================================
-    # ★ 新ロジック3：勝ち抜き戦（シーケンス表示の決定）
-    active_red = None
-    if active_reds:
-        # 手前にある順（距離が近い順）に並べ替え
+    # ★ 新ロジック3：勝ち抜き戦と「絶対防壁ラチェット（ハイジャック防止）」
+    # =================================================================
+    if not hasattr(self, 'strictest_flashed_val'):
+        self.strictest_flashed_val = 999.0
+        self.strictest_flashed_key = None
+
+    if not active_reds:
+        self.current_flashing_key = None
+        active_red = None
+    else:
         active_reds.sort(key=lambda x: x['dist'])
         
+        # 通過検知による防壁リセット
+        current_keys = [f"{r['loc']}_{r['val']}" for r in active_reds]
+        if getattr(self, 'current_flashing_key', None) not in current_keys:
+            self.strictest_flashed_val = 999.0
+            
         if not hasattr(self, 'limit_flash_counts'):
             self.limit_flash_counts = {}
             
+        active_red = None
         for i, r in enumerate(active_reds):
-            # 制限固有のキーを作成 (例: "4500.5_65.0")
+            # ハイジャック防止：既に点滅した厳しい制限より緩いものは横入りさせない
+            if r['val'] > self.strictest_flashed_val:
+                continue
+                
             key = f"{r['loc']}_{r['val']}"
             count = self.limit_flash_counts.get(key, 0)
             
-            # 「最後の1つ(一番奥の本命)」 または 「まだ2回点滅していない」ならこれを表示！
+            # 「最後の1つ(本命)」 または 「まだ2回点滅していない」ならこれを表示！
             if i == len(active_reds) - 1 or count < 2:
                 active_red = r
                 self.current_flashing_key = key
+                self.strictest_flashed_val = r['val']
+                self.strictest_flashed_key = key
                 break
-    else:
-        self.current_flashing_key = None
+                
+        if active_red is None:
+            self.current_flashing_key = None
+            
+    # ロックした制限を通過した時の確実な解除処理
+    is_passed = True
+    if getattr(self, 'strictest_flashed_key', None):
+        for loc, val, _ in future_targets:
+            if f"{loc}_{val}" == self.strictest_flashed_key:
+                is_passed = False
+                break
+    if is_passed:
+        self.strictest_flashed_val = 999.0
+        self.strictest_flashed_key = None
     # =================================================================
 
     active_blue = None
@@ -1067,9 +1098,13 @@ def update_physics_and_scoring(self, current_time, dt):
         dist_for_blue = (target_loc - self.bve_location) if is_capped else max(1.0, self.bve_clear_dist)
         active_blue = {'val': target_val, 'dist': max(1.0, dist_for_blue), 'type': target_type}
 
+    # =================================================================
+    # ★ 修正: デバッグ変数の代入と、配列(active_reds)の文字列化
     self.dbg_target_cap = target_val
     self.dbg_red = str(active_red['val']) if active_red else "None"
     self.dbg_blue = str(active_blue['val']) if active_blue else "None"
+    self.dbg_active_reds = ", ".join([f"{r['val']}km/h({r['dist']:.0f}m)" for r in active_reds]) if active_reds else "None"
+    # =================================================================
 
     self.blink_active = False
     self.target_type = self.base_limit_type
@@ -1104,33 +1139,60 @@ def update_physics_and_scoring(self, current_time, dt):
         self.blink_phase += dt / blink_cycle
         if self.blink_phase >= 1.0: 
             self.blink_phase -= 1.0
-            
-            # =========================================================
-            # ★ 追加: 1回の点滅が終わった瞬間に、その制限のカウントを増やす！
             if getattr(self, 'current_flashing_key', None):
                 k = self.current_flashing_key
                 self.limit_flash_counts[k] = self.limit_flash_counts.get(k, 0) + 1
-            # =========================================================
     else:
         self.blink_phase = 0.0
         
     self.prev_frame_loc = self.bve_location
 
-    """
+    #"""
     # =================================================================
-    # ★ 原因究明用：デスクトップに Debug.log を出力するトラップ
+    # ★ 原因究明用：デスクトップに Debug.log を出力するトラップ (賢い版 - 距離変動無視)
     # =================================================================
     import os
     debug_file = os.path.join(os.path.expanduser("~"), "Desktop", "Debug.log")
+    
+    future_str = str(future_targets[:2])
+    
+    # ★ 修正: Redsの距離変動でログが埋まらないよう、キーには「速度」だけを含める！
+    # (例: "90.0, 70.0" のように速度だけを抽出)
+    active_reds_key = ",".join([str(r['val']) for r in active_reds]) if active_reds else "None"
+    
+    # 状態を一意に特定するための「キー」を作成（Loc、時刻、そして「変動する距離」を排除）
+    current_state_key = f"{self.map_head_limit}_{self.map_tail_limit}_{self.effective_limit}_{is_waiting_tail}_{target_val}_{self.dbg_target_cap}_{self.dbg_blue}_{self.dbg_red}_{active_reds_key}_{future_str}"
+    
+    # 2. ログに出力するテキスト本体 (出力する時はしっかり距離も出す)
+    log_text = (f"[{current_time:.1f}s] Loc:{self.bve_location:.1f}m | HeadLmt:{self.map_head_limit} TailLmt:{self.map_tail_limit} Eff:{self.effective_limit}\n"
+                f"    wait_tail:{is_waiting_tail} | tgt_val:{target_val} | clear_dist:{self.bve_clear_dist:.1f}\n"
+                f"    future:{future_str}... \n"
+                f"    RESULT -> TC:{self.dbg_target_cap} AB:{self.dbg_blue} AR:{self.dbg_red} | Reds:[{self.dbg_active_reds}]\n\n")
+
     try:
-        # ファイルサイズが大きくなりすぎないよう、現在地が更新された時だけ出力
-        if not hasattr(self, 'last_debug_loc') or abs(self.bve_location - self.last_debug_loc) >= 0.5:
+        # 初回起動時：とりあえず最初の1回目を書き込む
+        if not hasattr(self, 'last_debug_state_key'):
+            self.last_debug_state_key = current_state_key
+            self.last_pending_log = log_text
             with open(debug_file, "a", encoding="utf-8") as f:
-                f.write(f"[{current_time:.1f}s] Loc:{self.bve_location:.1f}m | HeadLmt:{self.map_head_limit} TailLmt:{self.map_tail_limit} Eff:{self.effective_limit}\n")
-                f.write(f"    wait_tail:{is_waiting_tail} | tgt_val:{target_val} | clear_dist:{self.bve_clear_dist}\n")
-                f.write(f"    future:{future_targets[:2]}... (中略)\n") # 近い未来の制限だけ2つ出力
-                f.write(f"    RESULT -> TC:{self.dbg_target_cap} AB:{self.dbg_blue} AR:{self.dbg_red}\n\n")
-            self.last_debug_loc = self.bve_location
+                f.write("====== DEBUG LOG START ======\n\n")
+                f.write(log_text)
+                
+        # 状態が変化した瞬間！
+        elif current_state_key != self.last_debug_state_key:
+            with open(debug_file, "a", encoding="utf-8") as f:
+                f.write(self.last_pending_log)
+                f.write("--- 状態変化 ---\n")
+                f.write(log_text)
+                
+            self.last_debug_state_key = current_state_key
+            self.last_pending_log = log_text
+            
+        # 状態が全く同じ時（普段走っている間）
+        else:
+            self.last_pending_log = log_text
+            
     except Exception:
         pass
-    """
+    # =================================================================
+    #"""
