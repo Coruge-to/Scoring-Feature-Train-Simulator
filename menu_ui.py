@@ -1737,9 +1737,46 @@ def draw_menu(self, painter, logical_width):
             draw_menu_item(btn_text, bottom_y + 110, (self.menu_cursor == 0), 0, "center")
 
     # ==========================================================
+    # ★ 追加: 採点中断の確認画面 (menu_state == 12)
+    # ==========================================================
+    elif self.menu_state == 12:
+        CONFIRM_SHIFT_Y = 50 
+
+        msg = "採点を中断しますか？"
+        fm_big = QFontMetrics(self.font_big)
+        
+        msg_y = 350 + CONFIRM_SHIFT_Y
+        warn_y = 450 + CONFIRM_SHIFT_Y
+        btn_start_y = 600 + CONFIRM_SHIFT_Y
+        
+        draw_text_with_outline(painter, msg, self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, msg_y, "center", passes=8)
+        draw_text_with_outline(painter, "※現在の記録は全て破棄されます", self.font_normal, COLOR_B_EMG, COLOR_WHITE, center_x, warn_y, "center", passes=8)
+        
+        self.menu_click_zones.clear()
+        fm_normal = QFontMetrics(self.font_normal)
+        
+        fixed_box_w = 220  
+        fixed_box_h = fm_normal.height() + 16 
+        box_offset_x = -2  
+        
+        for i, text in enumerate(["はい", "いいえ"]):
+            draw_x = center_x
+            box_x = center_x - (fixed_box_w / 2) + box_offset_x
+            box_y = btn_start_y + i * 80 - fm_normal.ascent() - 6 - (fm_normal.descent() // 2) + 1
+            
+            if i == self.menu_cursor:
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QColor(30, 80, 150, 200))
+                painter.drawRoundedRect(int(box_x), int(box_y), int(fixed_box_w), int(fixed_box_h), 8, 8)
+                
+            draw_text_with_outline(painter, text, self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, draw_x, btn_start_y + i * 80, "center", passes=8)
+            self.menu_click_zones.append((box_x, box_y, box_x + fixed_box_w, box_y + fixed_box_h, i))
+
+
+    # ==========================================================
     # ★ 新規追加: 操作説明（ヘルプ）ボタンと小ウィンドウの描画
     # ==========================================================
-    if self.menu_state not in [0, 3] and not getattr(self, 'is_capturing_screenshot', False):
+    if self.menu_state != 0 and not getattr(self, 'is_capturing_screenshot', False):
         # 画面右下にヘルプボタンを描画
         help_text = "操作説明 : H"
         fm_help = QFontMetrics(self.font_desc)
@@ -1768,7 +1805,7 @@ def draw_menu(self, painter, logical_width):
 
         # 1. 状態に応じたリストを先に作る
         help_items = []
-        if self.menu_state in [1, 2, 3, 8]:
+        if self.menu_state in [1, 2, 3, 4, 8, 12]:
             help_items.append(("↑↓", "移動"))
         elif self.menu_state != 11:
             help_items.append(("↑↓←→", "移動"))

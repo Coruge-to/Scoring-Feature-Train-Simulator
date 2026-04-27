@@ -142,6 +142,8 @@ class Overlay(QWidget):
         
         self.keys_blocked = False
         self.hook_dict = {}
+
+        
         
         self.debug_all_penalties = False
         
@@ -722,7 +724,7 @@ class Overlay(QWidget):
             if self.menu_cursor > 0: 
                 self.menu_cursor -= 1
                 if self.menu_cursor < getattr(self, 'menu_scroll', 0): self.menu_scroll = self.menu_cursor
-        elif self.menu_state == 3:
+        elif self.menu_state in [3, 12]:
             if self.menu_cursor > 0: self.menu_cursor -= 1
         elif self.menu_state == 4:
             if self.menu_cursor > 0: self.menu_cursor -= 1
@@ -818,7 +820,7 @@ class Overlay(QWidget):
                 self.menu_cursor += 1
                 if self.menu_cursor >= getattr(self, 'menu_scroll', 0) + 7:
                     self.menu_scroll = self.menu_cursor - 7 + 1
-        elif self.menu_state == 3:
+        elif self.menu_state in [3, 12]:
             if self.menu_cursor < 1: self.menu_cursor += 1
         elif self.menu_state == 4:
             if self.menu_cursor < 6: self.menu_cursor += 1
@@ -891,11 +893,9 @@ class Overlay(QWidget):
                 self.menu_cursor = 0
                 self.menu_cursor_x = -1
             elif selected == "採点を中断する":
-                self.is_scoring_mode = False
-                self.is_scoring_finished = False
-                self.is_result_saved = False
+                self.menu_state = 12
+                self.menu_cursor = 1
                 getattr(self, 'popups', []).clear()
-                self.toggle_menu(is_bve_advancing)
             elif selected == "選択した駅からやり直す":
                 save_len = len(getattr(self, 'save_data', []))
                 if save_len > 0:
@@ -1242,6 +1242,21 @@ class Overlay(QWidget):
                 else:
                     # 2回目：メニューを閉じる
                     self.toggle_menu(is_bve_advancing)
+        
+        elif self.menu_state == 12:
+            if self.menu_cursor == 0: # 「はい」を選択
+                self.is_scoring_mode = False
+                self.is_scoring_finished = False
+                self.is_result_saved = False
+                getattr(self, 'popups', []).clear()
+                self.toggle_menu(is_bve_advancing)
+            elif self.menu_cursor == 1: # 「いいえ」を選択
+                self.menu_state = 1
+                # 元のメニューの「採点を中断する」にカーソルを戻してあげる
+                if "採点を中断する" in getattr(self, 'current_menu_items', []):
+                    self.menu_cursor = self.current_menu_items.index("採点を中断する")
+                else:
+                    self.menu_cursor = 1
 
     def handle_dropdown_enter(self):
         selected_opt = getattr(self, 'dropdown_options', [])[getattr(self, 'dropdown_cursor', 0)]
@@ -1351,6 +1366,12 @@ class Overlay(QWidget):
             else:
                 self.menu_state = 6
                 self.menu_cursor = 6
+        elif self.menu_state == 12:
+            self.menu_state = 1
+            if "採点を中断する" in getattr(self, 'current_menu_items', []):
+                self.menu_cursor = self.current_menu_items.index("採点を中断する")
+            else:
+                self.menu_cursor = 1
         
     def find_bve_window(self):
         found_hwnd = None

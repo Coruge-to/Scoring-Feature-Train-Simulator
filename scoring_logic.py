@@ -579,7 +579,7 @@ def update_physics_and_scoring(self, current_time, dt):
         curr_n = self.bve_brk_notch
         self.hb_prev_notch = curr_n
         
-    elif 0.0 < abs(self.bve_speed) <= 1.5:
+    elif 0.0 < abs(self.bve_speed): #<= 1.5
         self.is_stopping_zone = True
             
     is_eb_handle = (self.bve_brk_notch >= self.bve_brk_max or "非常" in self.bve_brk_text or "EB" in self.bve_brk_text.upper())
