@@ -158,6 +158,15 @@ class Overlay(QWidget):
         self.init_sub_cursor_x = 0
 
         # =================================================================
+        # ★ 新規追加: F8キー（早送り）禁止機能のデバッグ用フラグと検知用変数
+        # =================================================================
+        self.F8_disable = False  # True: 走行中のF8を無効化＆強制解除 / False: デバッグ用(制限なし)
+        self.ff_check_real_time = 0.0
+        self.ff_check_bve_time = 0
+        self.is_fast_forwarding = False
+        # =================================================================
+
+        # =================================================================
         # ★ 新規追加: 評価点(Rank)設定用の変数
         # =================================================================
         self.rank_a_ratio = 0.7  # Aランクの閾値 (0.60 ～ 1.00)
@@ -1610,6 +1619,38 @@ class Overlay(QWidget):
         current_time = self.bve_time_ms / 1000.0
 
         # =================================================================
+        # ★ 新機能: BVE内時間と現実時間の比較による「早送り(F8)」検知と強制解除
+        # =================================================================
+        real_now = time.time()
+        if self.ff_check_real_time == 0.0:
+            self.ff_check_real_time = real_now
+            self.ff_check_bve_time = self.bve_time_ms
+        elif real_now - self.ff_check_real_time >= 0.05: # ★ 0.5秒 -> 0.1秒へ短縮し俊敏に！
+            real_dt = real_now - self.ff_check_real_time
+            bve_dt = (self.bve_time_ms - self.ff_check_bve_time) / 1000.0
+            
+            # 通常は1.0前後。5倍以上なら早送りと即座に判定
+            if bve_dt > 0 and (bve_dt / real_dt) >= 10.0:
+                self.is_fast_forwarding = True
+            else:
+                self.is_fast_forwarding = False
+                
+            self.ff_check_real_time = real_now
+            self.ff_check_bve_time = self.bve_time_ms
+
+        # フラグON かつ 採点中 かつ 走行中(0.1km/h以上) に早送りを検知したら強制解除
+        if self.F8_disable and getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False):
+            if abs(self.bve_speed) >= 0.1 and self.is_fast_forwarding:
+                # ★ 追加: ジャンプ中(is_official_jumping)の誤検知でF8を誤爆送信しないための安全装置！
+                if not getattr(self, 'is_official_jumping', False):
+                    if self.bve_hwnd:
+                        write_desktop_log("[MAIN] 走行中の早送りを検知しました。強制解除(等倍速戻し)を実行します。")
+                        win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x77, 0) # F8
+                        win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x77, 0)
+                        self.is_fast_forwarding = False
+        # =================================================================
+
+        # =================================================================
         if getattr(self, 'bve_actual_state', '') != '':
             is_bve_advancing = ('RUNNING' in self.bve_actual_state)
         else:
@@ -1651,6 +1692,27 @@ class Overlay(QWidget):
                         except Exception: pass
                 self.sys_hook_dict.clear()
             self.sys_keys_blocked = False
+
+        # =================================================================
+        # ★ 新機能: 走行中のF8キー（早送り）の物理的ブロック
+        # =================================================================
+        # メニューが閉じている、かつ走行中（0.1km/h以上）の時のみF8入力を完全に握り潰す
+        should_block_f8 = self.F8_disable and getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False) and self.bve_speed >= 0.1 and is_bve_active and self.menu_state == 0
+        
+        if should_block_f8 and not getattr(self, 'f8_physically_blocked', False):
+            if not hasattr(self, 'f8_hook_dict'):
+                self.f8_hook_dict = {}
+            self.f8_hook_dict['f8'] = keyboard.on_press_key('f8', lambda e: None, suppress=True)
+            self.f8_physically_blocked = True
+            
+        elif not should_block_f8 and getattr(self, 'f8_physically_blocked', False):
+            if hasattr(self, 'f8_hook_dict') and 'f8' in self.f8_hook_dict:
+                if self.f8_hook_dict['f8']:
+                    try: keyboard.unhook(self.f8_hook_dict['f8'])
+                    except Exception: pass
+            self.f8_hook_dict.clear()
+            self.f8_physically_blocked = False
+        # =================================================================
       
         # =================================================================
         # ★ 課題2解決：「時刻と位置」ウィンドウの無力化（グレーアウト）

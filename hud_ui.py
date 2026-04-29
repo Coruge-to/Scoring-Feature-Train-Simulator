@@ -67,11 +67,21 @@ def draw_hud(self, painter, logical_width):
 
 
     mode_str = "ON" if self.is_scoring_mode else "OFF"
+
+    # =================================================================
+    # ★ F8デバッグ情報の生成
+    f8_flag = getattr(self, 'F8_disable', False)
+    f8_blocked = getattr(self, 'f8_physically_blocked', False)
+    ff_detect = getattr(self, 'is_fast_forwarding', False)
+    f8_dbg_str = f"  └ [F8] Flag:{'ON' if f8_flag else 'OFF'} | Blocked:{'ON' if f8_blocked else 'OFF'} | FF_Detect:{'ON' if ff_detect else 'OFF'}"
+    # =================================================================
+
     dbg_texts.extend([
         save_debug_str, 
         f"[TIMING] Mode: {mode_str} | Target is_timing: {self.bve_is_timing} | Prev is_timing: {self.prev_is_timing}",
         f"[STATE] 1st_Sta: {self.is_first_station} | Appr: {self.is_approaching} | StopScored: {self.has_scored_stop_this_station} | TimeScored: {self.has_scored_time_this_station}",
         f"[DEBUG X-RAY]{jump_warn}{ecb_debug_str}",
+        f8_dbg_str,  # ← ここに追加
         f"BrakeType: {self.bve_btype} | InitExempt: {IGNORE_INITIAL_BRAKE} | RelExempt: {IGNORE_RELEASE_BRAKE}",
         cushion_str,
         bb_debug_text,
