@@ -374,6 +374,8 @@ class Overlay(QWidget):
                         if self.current_scenario_id != new_id:
                             if self.current_scenario_id != -1:
                                 self.is_scoring_mode = False
+                                self.is_scoring_finished = False  # ★追加: 採点終了フラグをリセット
+                                self.is_result_saved = False      # ★追加: スクショ保存済フラグも念のためリセット
                                 self.score = 0
                                 self.save_data.clear()
                                 self.popups.clear()
