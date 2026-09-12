@@ -777,14 +777,34 @@ def update_physics_and_scoring(self, current_time, dt):
 
     if getattr(self, 'bve_door', 0) == 1:
         if getattr(self, 'prev_door', 0) == 0:
+            # 開扉した位置を、最初の転動判定の基準位置にする
             self.door_open_loc = self.bve_location
             self.roll_penalized = False
-        else:
-            if not getattr(self, 'roll_penalized', False):
-                if abs(self.bve_location - getattr(self, 'door_open_loc', self.bve_location)) >= 0.05: 
-                    add_score_popup(self, -500, "転動 -500", COLOR_B_EMG, "neg", "転動", current_time)
-                    self.roll_penalized = True
+
+        elif not getattr(self, 'roll_penalized', False):
+            # 基準位置から5cm以上動いたら、1回の転動として減点
+            if abs(
+                self.bve_location
+                - getattr(self, 'door_open_loc', self.bve_location)
+            ) >= 0.05:
+                add_score_popup(
+                    self,
+                    -500,
+                    "転動 -500",
+                    COLOR_B_EMG,
+                    "neg",
+                    "転動",
+                    current_time
+                )
+                self.roll_penalized = True
+
+        elif self.bve_speed == 0.0:
+            # 減点後に完全停止したら、現在位置を次回判定の基準にして再装填
+            self.door_open_loc = self.bve_location
+            self.roll_penalized = False
+
     else:
+        # 閉扉時は、次回開扉に備えて状態を解除
         self.roll_penalized = False
 
     if getattr(self, 'bb_is_in_zone', False) and self.bve_speed < 0:
