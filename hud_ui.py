@@ -166,13 +166,11 @@ def draw_hud(self, painter, logical_width):
         painter.drawText(int(graph_x + 10), int(y_z2 - 5), "ZONE2 (0.055G)")
 
     display_list = []
+
     for p in self.popups:
         if p["type"] == "pos" or p["type"] == "neg":
             display_list.append(p)
-    
-    if self.is_speed_penalty and self.is_scoring_mode:
-        display_list.append({"text": f"速度制限超過 -{self.speed_penalty_score}", "color": COLOR_B_EMG, "type": "neg", "category": "速度制限超過"})
-        
+
     display_list.sort(key=lambda x: CATEGORY_ORDER.get(x.get("category", ""), 99))
 
     y_off = 0

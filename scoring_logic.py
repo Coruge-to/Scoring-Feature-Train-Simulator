@@ -73,6 +73,17 @@ def reset_result_display_state(self):
     self.result_screen_time = 0.0
 
 
+def reset_speed_penalty_state(self):
+    """
+    速度制限超過の継続判定と表示用累積値を初期化する。
+
+    総得点、得点内訳、制限速度予告の表示状態は変更しない。
+    """
+    self.is_speed_limit_exceeded = False
+    self.last_speed_limit_penalty_time = 0.0
+    self.accumulated_speed_penalty = 0
+
+
 def execute_retry(self, index, is_bve_advancing):
     if index < 0 or index >= len(self.save_data): return
 
@@ -83,6 +94,7 @@ def execute_retry(self, index, is_bve_advancing):
         self.total_retry_count = 0
 
     reset_result_display_state(self)
+    reset_speed_penalty_state(self)
 
     self.has_departed = False
     reset_station_evaluation_state(self)
@@ -802,7 +814,13 @@ def update_physics_and_scoring(self, current_time, dt):
             self.bb_is_stable = True
             process_bb_transition(self, self.bb_current_notch)
 
-    if getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False) and getattr(self, 'pen_limit', True):
+    if (
+        getattr(self, 'is_scoring_mode', False)
+        and not getattr(self, 'is_scoring_finished', False)
+        and not getattr(self, 'is_official_jumping', False)
+        and not getattr(self, 'is_first_udp', False)
+        and getattr(self, 'pen_limit', True)
+    ):
         current_limit = getattr(self, 'effective_limit', 1000.0)
         
         # ★ 修正1：後退時（マイナス）の速度超過も絶対値で検知する

@@ -19,6 +19,7 @@ from scoring_logic import (
     reset_station_evaluation_state,
     reset_score_accumulation,
     reset_result_display_state,
+    reset_speed_penalty_state,
 )
 from menu_ui import draw_menu
 from hud_ui import draw_hud
@@ -58,11 +59,12 @@ class Overlay(QWidget):
         }
         self.settings_keys = list(self.disp_settings.keys())
         self.settings_names = ["現在時刻", "残り時間", "現在速度", "制限速度", "残距離", "ハンドル・レバーサ位置", "勾配"]
-        
-        self.is_speed_penalty = False
-        self.speed_penalty_score = 0
-        self.last_penalty_time = 0.0
-        
+
+        # 実際の速度制限超過採点
+        self.is_speed_limit_exceeded = False
+        self.last_speed_limit_penalty_time = 0.0
+        self.accumulated_speed_penalty = 0
+
         keys_to_track = ['0','1','2','3','4','5','6','7','8','9','a','f1','f2','f5','f8','f11','f12','p','up','down','left','right','enter','backspace', 'h']
         self.key_states = {k: False for k in keys_to_track}
         self.key_press_timers = {k: 0.0 for k in keys_to_track}
@@ -406,10 +408,8 @@ class Overlay(QWidget):
                                 if self.menu_state != 0:
                                     self.menu_state = 0
                                 self.user_timing_overrides.clear()
-                                self.is_speed_limit_exceeded = False
-                                self.last_speed_limit_penalty_time = 0.0
-                                if hasattr(self, 'accumulated_speed_penalty'):
-                                    self.accumulated_speed_penalty = 0
+                                reset_speed_penalty_state(self)
+
                             self.needs_margin_recalc = True
                             self.current_scenario_id = new_id
                             
@@ -1176,6 +1176,7 @@ class Overlay(QWidget):
                 self.is_scoring_mode = True
                 reset_result_display_state(self)
                 reset_score_accumulation(self)
+                reset_speed_penalty_state(self)
 
                 self.total_retry_count = 0 # ★Sランク判定用に初期化
                 self.limit_flash_counts = {}
@@ -1267,6 +1268,7 @@ class Overlay(QWidget):
             if self.menu_cursor == 0: # 「はい」を選択
                 self.is_scoring_mode = False
                 reset_result_display_state(self)
+                reset_speed_penalty_state(self)
                 getattr(self, 'popups', []).clear()
                 self.toggle_menu(is_bve_advancing)
             elif self.menu_cursor == 1: # 「いいえ」を選択
@@ -1970,9 +1972,6 @@ class Overlay(QWidget):
                         elif key == 'right': self.handle_menu_right()
                         elif key == 'enter': self.handle_menu_enter(is_bve_advancing)
                         elif key == 'backspace': self.handle_menu_backspace(is_bve_advancing)
-                elif key == '4' and self.menu_state == 0:
-                    self.is_speed_penalty = not self.is_speed_penalty
-                    if self.is_speed_penalty: self.speed_penalty_score, self.last_penalty_time = 10, current_time
             self.key_states[key] = is_pressed
 
         if self.last_update_time == 0.0 or current_time < self.last_update_time:
