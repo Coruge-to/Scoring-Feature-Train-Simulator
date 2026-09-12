@@ -190,8 +190,9 @@ class Overlay(QWidget):
         self.g_history = []  
 
         self.bve_hwnd = None
-        self.was_bve_found = False 
-        self.is_linked = False 
+        self.was_bve_found = False
+        self.is_linked = False
+        self.was_bve_minimized = False
         
         self.udp_socket = QUdpSocket(self)
         self.udp_socket.bind(QHostAddress.SpecialAddress.LocalHost, 54321)
@@ -1381,6 +1382,46 @@ class Overlay(QWidget):
                 self.menu_cursor = self.current_menu_items.index("採点を中断する")
             else:
                 self.menu_cursor = 1
+    def restore_overlay_z_order(self):
+        """
+        BVEの最小化解除後に、オーバーレイをBVE本体より前へ戻す。
+
+        HWND_TOPMOSTは使用せず、BVEが非アクティブなときに
+        他アプリの前へ居座らないようにする。
+        """
+        if not self.bve_hwnd or not win32gui.IsWindow(self.bve_hwnd):
+            return
+
+        overlay_hwnd = int(self.winId())
+
+        if not win32gui.IsWindow(overlay_hwnd):
+            return
+
+        try:
+            # 最小化・復元によって崩れた所有関係を再設定
+            win32gui.SetWindowLong(
+                overlay_hwnd,
+                win32con.GWL_HWNDPARENT,
+                self.bve_hwnd
+            )
+
+            # アクティブウィンドウを変更せず、オーバーレイを前面へ戻す
+            win32gui.SetWindowPos(
+                overlay_hwnd,
+                win32con.HWND_TOP,
+                0,
+                0,
+                0,
+                0,
+                win32con.SWP_NOMOVE
+                | win32con.SWP_NOSIZE
+                | win32con.SWP_NOACTIVATE
+                | win32con.SWP_SHOWWINDOW
+            )
+        except Exception as e:
+            write_desktop_log(
+                f"[WINDOW] オーバーレイのZオーダー復元に失敗: {e}"
+            )
         
     def find_bve_window(self):
         found_hwnd = None
@@ -1560,6 +1601,7 @@ class Overlay(QWidget):
         if self.bve_hwnd is None or not win32gui.IsWindow(self.bve_hwnd):
             self.bve_hwnd = self.find_bve_window()
             self.is_linked = False
+            self.was_bve_minimized = False
             
             # ★ 修正: BVEを見失ったらフラグを全てリセット
             self.is_bve_loaded = False
@@ -1597,21 +1639,46 @@ class Overlay(QWidget):
                     self.show()
                 except Exception: pass
             try:
-                if win32gui.IsIconic(self.bve_hwnd):
-                    if self.isVisible(): self.hide()
+                is_bve_minimized = win32gui.IsIconic(self.bve_hwnd)
+
+                if is_bve_minimized:
+                    self.was_bve_minimized = True
+
+                    if self.isVisible():
+                        self.hide()
                 else:
+                    was_just_restored = self.was_bve_minimized
+                    self.was_bve_minimized = False
+
                     client_rect = win32gui.GetClientRect(self.bve_hwnd)
+
                     if client_rect[2] > 0 and client_rect[3] > 0:
-                        client_x, client_y = win32gui.ClientToScreen(self.bve_hwnd, (0, 0))
+                        client_x, client_y = win32gui.ClientToScreen(
+                            self.bve_hwnd,
+                            (0, 0)
+                        )
                         w, h = client_rect[2], client_rect[3]
                         current_geom = self.geometry()
-                        if (current_geom.x() != client_x or current_geom.y() != client_y or 
-                            current_geom.width() != w or current_geom.height() != h):
+
+                        if (
+                            current_geom.x() != client_x
+                            or current_geom.y() != client_y
+                            or current_geom.width() != w
+                            or current_geom.height() != h
+                        ):
                             self.setGeometry(client_x, client_y, w, h)
-                    if not self.isVisible(): self.show()
+
+                    if not self.isVisible():
+                        self.show()
+
+                    if was_just_restored:
+                        # BVE自身の復元処理が完了した後に前後関係を直す
+                        QTimer.singleShot(100, self.restore_overlay_z_order)
+
             except Exception:
                 self.bve_hwnd = None
                 self.is_linked = False
+                self.was_bve_minimized = False
                 self.hide()
         else:
             self.hide()
