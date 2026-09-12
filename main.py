@@ -104,7 +104,12 @@ class Overlay(QWidget):
         self.bb_is_stable = True
 
         self.door_open_loc = 0.0
-        self.roll_penalized = False
+        self.roll_penalty_count = 0
+
+        # 転動ポップアップを、停止から停止までの事象ごとに分ける
+        self.roll_event_id = 0
+        self.roll_was_moving = False
+
         self.bve_jump_count = 0
         self.last_jump_count = 0
         self.jump_lock = False

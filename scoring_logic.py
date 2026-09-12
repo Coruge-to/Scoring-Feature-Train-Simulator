@@ -776,36 +776,106 @@ def update_physics_and_scoring(self, current_time, dt):
     self.hb_prev_notch = curr_n
 
     if getattr(self, 'bve_door', 0) == 1:
-        if getattr(self, 'prev_door', 0) == 0:
-            # 開扉した位置を、最初の転動判定の基準位置にする
-            self.door_open_loc = self.bve_location
-            self.roll_penalized = False
+        is_rolling = self.bve_speed != 0.0
 
-        elif not getattr(self, 'roll_penalized', False):
-            # 基準位置から5cm以上動いたら、1回の転動として減点
-            if abs(
+        if getattr(self, 'prev_door', 0) == 0:
+            # 開扉した位置を転動距離の基準位置にする
+            self.door_open_loc = self.bve_location
+            self.roll_penalty_count = 0
+
+            # 開扉後の最初の転動事象
+            self.roll_event_id += 1
+            self.roll_was_moving = is_rolling
+
+        else:
+            # 勾配による転動方向は基本的に一定とみなし、
+            # 開扉位置からの変位を転動距離として扱う
+            roll_distance = abs(
                 self.bve_location
                 - getattr(self, 'door_open_loc', self.bve_location)
-            ) >= 0.05:
-                add_score_popup(
-                    self,
-                    -500,
-                    "転動 -500",
-                    COLOR_B_EMG,
-                    "neg",
-                    "転動",
-                    current_time
-                )
-                self.roll_penalized = True
+            )
+            current_roll_count = int((roll_distance + 1e-9) / 0.05)
 
-        elif self.bve_speed == 0.0:
-            # 減点後に完全停止したら、現在位置を次回判定の基準にして再装填
-            self.door_open_loc = self.bve_location
-            self.roll_penalized = False
+            # 開扉中の累積変位について、未減点の回数を求める
+            new_penalty_count = (
+                current_roll_count
+                - getattr(self, 'roll_penalty_count', 0)
+            )
+
+            if new_penalty_count > 0:
+                penalty_points = 500 * new_penalty_count
+                current_event_id = getattr(self, 'roll_event_id', 0)
+
+                # 現在の転動事象に対応するポップアップだけを探す。
+                # 前回の転動表示が残っていても再利用しない。
+                roll_popup = next(
+                    (
+                        popup
+                        for popup in getattr(self, 'popups', [])
+                        if popup.get("category") == "転動"
+                        and popup.get("type") == "neg"
+                        and popup.get("roll_event_id") == current_event_id
+                    ),
+                    None
+                )
+
+                if roll_popup is None:
+                    # 新しい転動事象、または既存表示が消えた後なので、
+                    # 今回成立した減点額から新規表示する
+                    add_score_popup(
+                        self,
+                        -penalty_points,
+                        f"転動 -{penalty_points}",
+                        COLOR_B_EMG,
+                        "neg",
+                        "転動",
+                        current_time
+                    )
+
+                    # 直前に追加された転動ポップアップへ、
+                    # 転動事象IDと表示期間内の累積額を記録する
+                    for popup in reversed(getattr(self, 'popups', [])):
+                        if (
+                            popup.get("category") == "転動"
+                            and popup.get("type") == "neg"
+                            and "roll_event_id" not in popup
+                        ):
+                            popup["roll_event_id"] = current_event_id
+                            popup["roll_display_penalty"] = penalty_points
+                            break
+
+                else:
+                    # 同じ転動事象が続いている間だけ、同じ行へ累積する
+                    display_penalty = (
+                        roll_popup.get("roll_display_penalty", 0)
+                        + penalty_points
+                    )
+
+                    roll_popup["roll_display_penalty"] = display_penalty
+                    roll_popup["text"] = f"転動 -{display_penalty}"
+                    roll_popup["expire_time"] = current_time + 5.0
+
+                    # add_score_popup()を呼ばないため、
+                    # 新たに成立した分を得点と内訳へ直接反映する
+                    self.score -= penalty_points
+                    self.score_details["roll"] -= penalty_points
+
+                # 開扉中の累積減点回数を更新
+                self.roll_penalty_count = current_roll_count
+
+            # 動いていた状態から完全停止した瞬間に、
+            # 次回の転動を新しい表示事象として扱う
+            if getattr(self, 'roll_was_moving', False) and not is_rolling:
+                self.roll_event_id += 1
+
+            self.roll_was_moving = is_rolling
 
     else:
-        # 閉扉時は、次回開扉に備えて状態を解除
-        self.roll_penalized = False
+        # 閉扉時は転動距離をリセットする。
+        # event_idは以前のポップアップとの衝突を防ぐため維持する。
+        self.door_open_loc = self.bve_location
+        self.roll_penalty_count = 0
+        self.roll_was_moving = False
 
     if getattr(self, 'bb_is_in_zone', False) and self.bve_speed < 0:
         self.bb_state = "FAILED"
