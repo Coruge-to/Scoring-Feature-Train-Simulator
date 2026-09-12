@@ -17,6 +17,7 @@ from scoring_logic import (
     update_physics_and_scoring,
     reset_transient_scoring_state,
     reset_station_evaluation_state,
+    reset_score_accumulation,
 )
 from menu_ui import draw_menu
 from hud_ui import draw_hud
@@ -396,7 +397,7 @@ class Overlay(QWidget):
                                 self.rollback_msg = ""
                                 self.rollback_msg_timer = 0.0
 
-                                self.score = 0
+                                reset_score_accumulation(self)
                                 self.save_data.clear()
                                 self.popups.clear()
                                 self.brake_rules = [{"end_idx": -1, "apply": "階段", "release": "階段"}]
@@ -1178,11 +1179,9 @@ class Overlay(QWidget):
             elif self.menu_cursor == 1: # 「採点を開始する」
                 # ここに、以前 menu_state == 6 にあった以下の長い処理を丸ごと置きます。
                 self.is_scoring_mode = True
-                self.score = 0
                 self.is_result_saved = False
 
-                for k in self.score_details:
-                    self.score_details[k] = 0
+                reset_score_accumulation(self)
 
                 self.total_retry_count = 0 # ★Sランク判定用に初期化
                 self.limit_flash_counts = {}

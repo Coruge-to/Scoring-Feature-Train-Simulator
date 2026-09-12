@@ -46,6 +46,19 @@ def reset_station_evaluation_state(self):
     self.has_scored_stop_this_station = False
 
 
+def reset_score_accumulation(self):
+    """
+    総得点と採点内訳を同時に0へ戻す。
+
+    チェックポイント、リトライ回数、採点設定、
+    採点中・終了済みなどの状態は変更しない。
+    """
+    self.score = 0
+
+    for key in self.score_details:
+        self.score_details[key] = 0
+
+
 def execute_retry(self, index, is_bve_advancing):
     if index < 0 or index >= len(self.save_data): return
 
