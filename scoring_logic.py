@@ -59,6 +59,20 @@ def reset_score_accumulation(self):
         self.score_details[key] = 0
 
 
+def reset_result_display_state(self):
+    """
+    前回の採点終了後に残る、結果表示・保存関連の状態を初期化する。
+
+    採点中かどうか、得点、得点内訳、チェックポイント、
+    リトライ回数、採点設定は変更しない。
+    """
+    self.is_scoring_finished = False
+    self.is_result_saved = False
+    self.saved_file_path = ""
+    self.end_message_time = 0.0
+    self.result_screen_time = 0.0
+
+
 def execute_retry(self, index, is_bve_advancing):
     if index < 0 or index >= len(self.save_data): return
 
@@ -68,10 +82,10 @@ def execute_retry(self, index, is_bve_advancing):
     if index == 0:
         self.total_retry_count = 0
 
-    self.is_scoring_finished = False
+    reset_result_display_state(self)
+
     self.has_departed = False
     reset_station_evaluation_state(self)
-    self.end_message_time = 0.0
     self.is_first_udp = True
 
     self.save_data = self.save_data[:index + 1]

@@ -18,6 +18,7 @@ from scoring_logic import (
     reset_transient_scoring_state,
     reset_station_evaluation_state,
     reset_score_accumulation,
+    reset_result_display_state,
 )
 from menu_ui import draw_menu
 from hud_ui import draw_hud
@@ -387,11 +388,7 @@ class Overlay(QWidget):
                                 self.is_scoring_mode = False
 
                                 # 前シナリオの採点終了・リザルト表示状態を破棄
-                                self.is_scoring_finished = False
-                                self.is_result_saved = False
-                                self.saved_file_path = ""
-                                self.end_message_time = 0.0
-                                self.result_screen_time = 0.0
+                                reset_result_display_state(self)
 
                                 # 前シナリオのロールバック通知を破棄
                                 self.rollback_msg = ""
@@ -953,8 +950,6 @@ class Overlay(QWidget):
             if self.menu_cursor == 0: 
                 self.was_advancing_before_menu = True
                 execute_retry(self, getattr(self, 'target_retry_idx', -1), is_bve_advancing)
-                self.is_result_saved = False
-                self.saved_file_path = ""
                 
                 # ★ 修正: 無駄な変数をやめ、self.target_retry_idx を直接判定！
                 if getattr(self, 'target_retry_idx', -1) > 0:
@@ -1179,8 +1174,7 @@ class Overlay(QWidget):
             elif self.menu_cursor == 1: # 「採点を開始する」
                 # ここに、以前 menu_state == 6 にあった以下の長い処理を丸ごと置きます。
                 self.is_scoring_mode = True
-                self.is_result_saved = False
-
+                reset_result_display_state(self)
                 reset_score_accumulation(self)
 
                 self.total_retry_count = 0 # ★Sランク判定用に初期化
@@ -1191,7 +1185,6 @@ class Overlay(QWidget):
                 self.debug_all_penalties = False
 
                 self.expected_jump = True
-                self.end_message_time = 0.0
                 self.is_first_udp = True
                 self.is_first_station = True
                 self.has_departed = False
@@ -1273,8 +1266,7 @@ class Overlay(QWidget):
         elif self.menu_state == 12:
             if self.menu_cursor == 0: # 「はい」を選択
                 self.is_scoring_mode = False
-                self.is_scoring_finished = False
-                self.is_result_saved = False
+                reset_result_display_state(self)
                 getattr(self, 'popups', []).clear()
                 self.toggle_menu(is_bve_advancing)
             elif self.menu_cursor == 1: # 「いいえ」を選択
