@@ -380,13 +380,22 @@ class Overlay(QWidget):
                 try:
                     if part.startswith("SCENARIO_ID:"):
                         new_id = int(part.split(':')[1])
+
                         if self.current_scenario_id != new_id:
                             if self.current_scenario_id != -1:
                                 self.is_scoring_mode = False
-                                self.is_scoring_finished = False  # ★追加: 採点終了フラグをリセット
-                                self.is_result_saved = False      # ★追加: スクショ保存済フラグも念のためリセット
+
+                                # 前シナリオの採点終了・リザルト表示状態を破棄
+                                self.is_scoring_finished = False
+                                self.is_result_saved = False
+                                self.saved_file_path = ""
+                                self.end_message_time = 0.0
+                                self.result_screen_time = 0.0
+
+                                # 前シナリオのロールバック通知を破棄
                                 self.rollback_msg = ""
                                 self.rollback_msg_timer = 0.0
+
                                 self.score = 0
                                 self.save_data.clear()
                                 self.popups.clear()
