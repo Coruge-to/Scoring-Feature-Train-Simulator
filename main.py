@@ -186,7 +186,12 @@ class Overlay(QWidget):
         self.rollback_msg_timer = 0.0
         self.prev_frame_loc = 0.0
 
+        # 採点終了・リザルト表示状態
+        self.is_scoring_finished = False
         self.is_result_saved = False
+        self.saved_file_path = ""
+        self.end_message_time = 0.0
+        self.result_screen_time = 0.0
 
         self.blink_phase = 0.0
         self.blink_active = False
@@ -282,7 +287,6 @@ class Overlay(QWidget):
         self.is_stopped_out_of_range = False
         self.has_scored_time_this_station = False
         self.has_scored_stop_this_station = False
-        self.end_message_time = 0.0
         self.has_departed = False
 
         self.map_head_limit = 1000.0
