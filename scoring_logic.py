@@ -32,23 +32,37 @@ def reset_transient_scoring_state(self):
     # 初動・緩和ブレーキ判定
     self.hb_strong_entered = False
 
-def execute_retry(self, index, is_bve_advancing):
-    if index < 0 or index >= len(self.save_data): return
-        
-    self.is_official_retry = (index > 0)
-    self.is_first_station = (index == 0)
-    if index == 0:
-        self.total_retry_count = 0
-    self.is_scoring_finished = False  
-    self.has_departed = False
+
+def reset_station_evaluation_state(self):
+    """
+    現在の対象駅に対する接近・範囲外停車・採点済み状態を初期化する。
+
+    出発済み状態、基本制動の内部状態、得点、採点設定、
+    リトライ回数は変更しない。
+    """
     self.is_approaching = False
     self.is_stopped_out_of_range = False
     self.has_scored_time_this_station = False
     self.has_scored_stop_this_station = False
+
+
+def execute_retry(self, index, is_bve_advancing):
+    if index < 0 or index >= len(self.save_data): return
+
+    self.is_official_retry = (index > 0)
+    self.is_first_station = (index == 0)
+
+    if index == 0:
+        self.total_retry_count = 0
+
+    self.is_scoring_finished = False
+    self.has_departed = False
+    reset_station_evaluation_state(self)
     self.end_message_time = 0.0
     self.is_first_udp = True
-    
+
     self.save_data = self.save_data[:index + 1]
+
     cp = self.save_data[-1]
     self.score = cp["score"]
 
@@ -829,18 +843,18 @@ def update_physics_and_scoring(self, current_time, dt):
     
     if getattr(self, 'prev_next_loc', -1.0) != -1.0 and self.bve_next_loc != self.prev_next_loc:
         is_forward_transition = (self.bve_next_loc > self.prev_next_loc)
+
         if is_forward_transition:
             evaluate_departure(self, current_time)
-            
+
         self.ignore_next_pass_score = False
         self.is_first_station = False
-        self.is_approaching = False
-        self.is_stopped_out_of_range = False
-        self.has_scored_time_this_station = False
-        self.has_scored_stop_this_station = False
+
+        reset_station_evaluation_state(self)
+
         self.bb_evaluated = False
         self.bb_is_in_zone = False
-        
+
     if not getattr(self, 'is_approaching', False) and self.bve_next_loc >= 0:
         actual_margin = getattr(self, 'setting_stop_distance', -1) if getattr(self, 'setting_stop_distance', -1) != -1 else (self.bve_train_length + STATION_MARGIN)
         if abs(self.bve_next_loc - self.bve_location) < actual_margin:

@@ -12,7 +12,12 @@ from PyQt6.QtNetwork import QUdpSocket, QHostAddress
 import keyboard
 
 from config import *
-from scoring_logic import execute_retry, update_physics_and_scoring, reset_transient_scoring_state
+from scoring_logic import (
+    execute_retry,
+    update_physics_and_scoring,
+    reset_transient_scoring_state,
+    reset_station_evaluation_state,
+)
 from menu_ui import draw_menu
 from hud_ui import draw_hud
 from utils import write_desktop_log
@@ -1165,27 +1170,24 @@ class Overlay(QWidget):
 
                 for k in self.score_details:
                     self.score_details[k] = 0
+
                 self.total_retry_count = 0 # ★Sランク判定用に初期化
                 self.limit_flash_counts = {}
-                
+
                 getattr(self, 'save_data', []).clear()
                 getattr(self, 'popups', []).clear()
                 self.debug_all_penalties = False
-                
+
                 self.expected_jump = True
                 self.end_message_time = 0.0
                 self.is_first_udp = True
                 self.is_first_station = True
                 self.has_departed = False
-                self.is_approaching = False
-                self.is_stopped_out_of_range = False
-                self.has_scored_time_this_station = False
-                self.has_scored_stop_this_station = False
-                
+                reset_station_evaluation_state(self)
+
                 start_loc = 0.0
                 start_sta_name = "不明な駅"
                 target_time_ms = -1
-
                 retry_cmd = ""
                 
                 if getattr(self, 'station_list', []) and 0 <= getattr(self, 'setting_start_idx', 0) < len(getattr(self, 'station_list', [])):
