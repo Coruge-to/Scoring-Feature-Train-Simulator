@@ -376,6 +376,8 @@ class Overlay(QWidget):
                                 self.is_scoring_mode = False
                                 self.is_scoring_finished = False  # ★追加: 採点終了フラグをリセット
                                 self.is_result_saved = False      # ★追加: スクショ保存済フラグも念のためリセット
+                                self.rollback_msg = ""
+                                self.rollback_msg_timer = 0.0
                                 self.score = 0
                                 self.save_data.clear()
                                 self.popups.clear()
