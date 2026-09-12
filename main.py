@@ -12,7 +12,7 @@ from PyQt6.QtNetwork import QUdpSocket, QHostAddress
 import keyboard
 
 from config import *
-from scoring_logic import execute_retry, update_physics_and_scoring
+from scoring_logic import execute_retry, update_physics_and_scoring, reset_transient_scoring_state
 from menu_ui import draw_menu
 from hud_ui import draw_hud
 from utils import write_desktop_log
@@ -1971,19 +1971,14 @@ class Overlay(QWidget):
 
         if self.last_update_time == 0.0 or current_time < self.last_update_time:
             dt = 0.0
-            self.g_history.clear()
-            self.bcp_history.clear()
-            self.popups.clear()
-            self.ecb_eb_accum_time = 0.0
-            self.ecb_eb_cooling_time = 0.0
-            self.smee_eb_frozen = False
-            self.eb_applied = False
+            # 初回更新または時刻巻き戻り時に、
+            # 継続不能になった物理・ブレーキ判定状態を破棄
+            reset_transient_scoring_state(self)
+
+            # 時刻巻き戻り時に固有の同期状態
             self.jump_lock = False
-            self.ignore_next_pass_score = False  
-            self.bb_state = "IDLE"
-            self.bb_apply_count = 0
-            self.bb_release_count = 0
-            self.hb_strong_entered = False 
+            self.ignore_next_pass_score = False
+
             self.last_update_time = current_time
         else:
             dt = current_time - self.last_update_time

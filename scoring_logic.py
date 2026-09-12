@@ -6,6 +6,32 @@ import os
 from datetime import datetime
 import time
 
+def reset_transient_scoring_state(self):
+    """
+    ジャンプや時刻巻き戻りによって継続不能になった、
+    フレーム間の一時的な採点・物理判定状態を初期化する。
+
+    総得点、得点内訳、採点設定、リトライ回数、
+    駅単位の採点済み状態は変更しない。
+    """
+    self.g_history.clear()
+    self.bcp_history.clear()
+    self.popups.clear()
+
+    # 非常ブレーキ判定
+    self.ecb_eb_accum_time = 0.0
+    self.ecb_eb_cooling_time = 0.0
+    self.smee_eb_frozen = False
+    self.eb_applied = False
+
+    # 基本制動判定
+    self.bb_state = "IDLE"
+    self.bb_apply_count = 0
+    self.bb_release_count = 0
+
+    # 初動・緩和ブレーキ判定
+    self.hb_strong_entered = False
+
 def execute_retry(self, index, is_bve_advancing):
     if index < 0 or index >= len(self.save_data): return
         
@@ -491,17 +517,10 @@ def update_physics_and_scoring(self, current_time, dt):
         if getattr(self, 'is_official_jumping', False):
             is_valid_jump = True
             
-        self.g_history.clear()
-        self.bcp_history.clear()
-        self.popups.clear()
-        self.ecb_eb_accum_time = 0.0
-        self.ecb_eb_cooling_time = 0.0
-        self.smee_eb_frozen = False
-        self.eb_applied = False
-        self.bb_state = "IDLE"
-        self.bb_apply_count = 0
-        self.bb_release_count = 0
-        self.hb_strong_entered = False
+        # ジャンプ前の物理・ブレーキ判定状態を破棄
+        reset_transient_scoring_state(self)
+
+        # ジャンプ検出時だけ初期化する状態
         self.has_evaluated_initial_brake = False
         self.idle_entered_while_stopped = False
         
