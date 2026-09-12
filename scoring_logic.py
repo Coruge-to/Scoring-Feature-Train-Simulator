@@ -263,11 +263,23 @@ def create_save_data(self):
             "stop_error": stop_error
         })
 
-def evaluate_arrival(self, current_time):
-    if getattr(self, 'is_scoring_finished', False): return
+def evaluate_arrival(self, current_time, arrival_target_loc=None):
+    if getattr(self, 'is_scoring_finished', False):
+        return
+
     curr_sta_idx = -1
-    # ★ 謎2解決：bve_next_loc がすでに更新されてしまっていることを防ぐため、prev_next_loc を使う
-    p_loc = getattr(self, 'prev_next_loc', getattr(self, 'bve_next_loc', -1.0))
+
+    if arrival_target_loc is None:
+        # 運転停車など、従来経路では直前のターゲット駅を使用する
+        p_loc = getattr(
+            self,
+            'prev_next_loc',
+            getattr(self, 'bve_next_loc', -1.0)
+        )
+    else:
+        # 通常停車駅の開扉時は、BVE公式が示している現在の駅を使用する
+        p_loc = arrival_target_loc
+
     for i, st in enumerate(getattr(self, 'station_list', [])):
         if abs(st["location"] - p_loc) < 1.0:
             curr_sta_idx = i
@@ -1036,31 +1048,84 @@ def update_physics_and_scoring(self, current_time, dt):
                     
             self.has_scored_stop_this_station = True
 
-    # ★ 謎2解決：終了駅（TERM:1 または ユーザー指定駅）での扉開け時の時分採点
+    # 通常停車駅の開扉時は、BVE公式が現在示している駅を対象にする
     curr_sta_idx = -1
-    p_loc = getattr(self, 'prev_next_loc', getattr(self, 'bve_next_loc', -1.0))
+    arrival_target_loc = getattr(self, 'bve_next_loc', -1.0)
+
     for i, st in enumerate(getattr(self, 'station_list', [])):
-        if abs(st["location"] - p_loc) < 1.0:
+        if abs(st["location"] - arrival_target_loc) < 1.0:
             curr_sta_idx = i
             break
-    is_scoring_end_station = (curr_sta_idx == getattr(self, 'setting_end_idx', -1)) or (getattr(self, 'prev_term', 0) == 1)
 
-    is_timing_active = self.is_station_timing(curr_sta_idx) if curr_sta_idx >= 0 else False
+    is_scoring_end_station = (
+        curr_sta_idx == getattr(self, 'setting_end_idx', -1)
+    ) or (
+        getattr(self, 'bve_term', 0) == 1
+    )
 
-    if not is_operational_stop and getattr(self, 'prev_door', 0) == 0 and getattr(self, 'bve_door', 0) == 1:
-        # =========================================================
-        # ★ 修正：ワープ待機中の「幻のドア開閉」を完全にシャットアウト
-        if not getattr(self, 'is_official_jumping', False):
-            if is_scoring_end_station and is_timing_active and not getattr(self, 'has_scored_time_this_station', False):
-                allow_score = not getattr(self, 'jump_lock', False) or getattr(self, 'is_official_retry', False)
-                if allow_score and not getattr(self, 'is_first_station', False):
-                    apply_time_score(self, getattr(self, 'prev_diff_s', 0), current_time)
+    is_timing_active = (
+        self.is_station_timing(curr_sta_idx)
+        if curr_sta_idx >= 0
+        else False
+    )
+
+    if (
+        not is_operational_stop
+        and getattr(self, 'prev_door', 0) == 0
+        and getattr(self, 'bve_door', 0) == 1
+    ):
+        # 開扉後にBVE公式が示している対象駅との停止位置誤差
+        arrival_stop_error = (
+            arrival_target_loc
+            - self.bve_location
+        )
+
+        is_within_arrival_target_margin = (
+            arrival_target_loc >= 0.0
+            and -self.bve_margin_f
+            <= arrival_stop_error
+            <= self.bve_margin_b
+        )
+
+        # 公式ジャンプ中の幻の開扉、および対象駅以外での開扉を拒否
+        if (
+            not getattr(self, 'is_official_jumping', False)
+            and curr_sta_idx >= 0
+            and is_within_arrival_target_margin
+        ):
+            if (
+                is_scoring_end_station
+                and is_timing_active
+                and not getattr(
+                    self,
+                    'has_scored_time_this_station',
+                    False
+                )
+            ):
+                allow_score = (
+                    not getattr(self, 'jump_lock', False)
+                    or getattr(self, 'is_official_retry', False)
+                )
+
+                if (
+                    allow_score
+                    and not getattr(self, 'is_first_station', False)
+                ):
+                    apply_time_score(
+                        self,
+                        getattr(self, 'prev_diff_s', 0),
+                        current_time
+                    )
                     self.is_official_retry = False
+
                 self.has_scored_time_this_station = True
-                
-            evaluate_arrival(self, current_time)
+
+            evaluate_arrival(
+                self,
+                current_time,
+                arrival_target_loc
+            )
             self.has_scored_stop_this_station = True
-        # =========================================================
 
     allow_score = not getattr(self, 'jump_lock', False) or getattr(self, 'is_official_retry', False)
     
