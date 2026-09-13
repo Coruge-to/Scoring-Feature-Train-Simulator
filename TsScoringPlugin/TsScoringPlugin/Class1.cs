@@ -263,18 +263,6 @@ namespace TsScoringPlugin
                                                     Environment.SpecialFolder.Desktop
                                                 );
 
-                                                System.IO.File.WriteAllText(
-                                                    System.IO.Path.Combine(
-                                                        desktopPath,
-                                                        "jump_method_candidates.txt"
-                                                    ),
-                                                    $"RawScenarioType={rawScenario.GetType().FullName}\r\n"
-                                                    + $"CandidateCount={jumpStaCandidates.Count}\r\n"
-                                                    + candidateLog
-                                                    + "\r\n",
-                                                    Encoding.UTF8
-                                                );
-
                                                 // 現行処理と同じく、候補の先頭を選択
                                                 var jumpStaMethod =
                                                     jumpStaCandidates.FirstOrDefault();
@@ -286,20 +274,6 @@ namespace TsScoringPlugin
                                                         jumpStaMethod
                                                             .GetParameters()
                                                             .Select(p => p.ParameterType.FullName)
-                                                    );
-
-                                                    System.IO.File.AppendAllText(
-                                                        System.IO.Path.Combine(
-                                                            desktopPath,
-                                                            "jump_method_probe.txt"
-                                                        ),
-                                                        $"[{DateTime.Now:HH:mm:ss.fff}] "
-                                                        + $"SelectedMethod="
-                                                        + $"{jumpStaMethod.DeclaringType?.FullName}"
-                                                        + $".{jumpStaMethod.Name}"
-                                                        + $"({parameterTypes})"
-                                                        + $", StationIndex={sIdx}\r\n",
-                                                        Encoding.UTF8
                                                     );
 
                                                     double locationBeforeInvoke = -1.0;
@@ -327,24 +301,6 @@ namespace TsScoringPlugin
                                                     catch
                                                     {
                                                     }
-
-                                                    System.IO.File.AppendAllText(
-                                                        System.IO.Path.Combine(
-                                                            Environment.GetFolderPath(
-                                                                Environment.SpecialFolder.Desktop
-                                                            ),
-                                                            "station_target_probe.txt"
-                                                        ),
-                                                        $"[{DateTime.Now:HH:mm:ss.fff}] BEFORE JUMP COMMAND"
-                                                        + $", RequestedIndex={sIdx}"
-                                                        + $", targetStationIndex={targetStationIndex}"
-                                                        + $", hasDoorOpened={hasDoorOpenedAtTarget}"
-                                                        + $", isInitialized={isInitialized}"
-                                                        + $"\r\n",
-                                                        Encoding.UTF8
-                                                    );
-
-
 
                                                     jumpStaMethod.Invoke(
                                                         rawScenario,
@@ -380,38 +336,6 @@ namespace TsScoringPlugin
                                                         targetStationName = stationList[sIdx].Name;
                                                         targetStationLocation = stationList[sIdx].Location;
                                                     }
-
-                                                    System.IO.File.AppendAllText(
-                                                        System.IO.Path.Combine(
-                                                            desktopPath,
-                                                            "jump_method_probe.txt"
-                                                        ),
-                                                        $"[{DateTime.Now:HH:mm:ss.fff}] "
-                                                        + $"InvokeResult"
-                                                        + $", StationIndex={sIdx}"
-                                                        + $", TargetName={targetStationName}"
-                                                        + $", TargetLocation={targetStationLocation}"
-                                                        + $", LocationBefore={locationBeforeInvoke}"
-                                                        + $", LocationAfter={locationAfterInvoke}"
-                                                        + $", TimeBefore={timeBeforeInvoke}"
-                                                        + $", TimeAfter={timeAfterInvoke}"
-                                                        + $", RequestedTime={rTimeMs}"
-                                                        + $"\r\n",
-                                                        Encoding.UTF8
-                                                    );
-                                                }
-                                                else
-                                                {
-                                                    System.IO.File.AppendAllText(
-                                                        System.IO.Path.Combine(
-                                                            desktopPath,
-                                                            "jump_method_probe.txt"
-                                                        ),
-                                                        $"[{DateTime.Now:HH:mm:ss.fff}] "
-                                                        + $"SelectedMethod=(none)"
-                                                        + $", StationIndex={sIdx}\r\n",
-                                                        Encoding.UTF8
-                                                    );
                                                 }
 
                                                 // 2. 時計の針（TimeManager）だけを強引に過去(セーブデータ)に合わせる
@@ -444,24 +368,6 @@ namespace TsScoringPlugin
                                                     catch
                                                     {
                                                     }
-
-                                                    System.IO.File.AppendAllText(
-                                                        System.IO.Path.Combine(
-                                                            Environment.GetFolderPath(
-                                                                Environment.SpecialFolder.Desktop
-                                                            ),
-                                                            "station_target_probe.txt"
-                                                        ),
-                                                        $"[{DateTime.Now:HH:mm:ss.fff}] AFTER JUMP COMMAND"
-                                                        + $", RequestedIndex={sIdx}"
-                                                        + $", location={locationAfterCommand}"
-                                                        + $", doorsClosed={doorsClosedAfterCommand}"
-                                                        + $", targetStationIndex={targetStationIndex}"
-                                                        + $", hasDoorOpened={hasDoorOpenedAtTarget}"
-                                                        + $", isInitialized={isInitialized}"
-                                                        + $"\r\n",
-                                                        Encoding.UTF8
-                                                    );
                                                 }
 
                                                 // 駅ジャンプ前の対象駅状態を破棄し、現在位置から再初期化させる
@@ -574,104 +480,18 @@ namespace TsScoringPlugin
                 try { speed = BveHacker.Scenario.VehicleLocation.Speed * 3.6; } catch { }
                 try { if (vehicle != null) areDoorsClosed = vehicle.Doors.AreAllClosed; } catch { }
 
-                // =================================================================
-                // ★ 方針②：ドア（cc）とパラメータ（d3）の数値をすべて暴く！
-                // =================================================================
-                if (!isInitialized && vehicle != null)
-                {
-                    try
-                    {
-                        string logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "debug_doors_deep.log");
-                        if (!System.IO.File.Exists(logPath))
-                        {
-                            StringBuilder sb = new StringBuilder();
-                            sb.AppendLine($"\n[{DateTime.Now:HH:mm:ss.fff}] ===== DEEP DOOR DUMP =====");
-
-                            object rawVehicle = vehicle.GetType().GetProperty("Src", bindFlagsAll)?.GetValue(vehicle);
-                            if (rawVehicle != null)
-                            {
-                                // パラメータ群（d3 = h）をダンプ
-                                object d3Obj = rawVehicle.GetType().GetField("h", bindFlagsAll)?.GetValue(rawVehicle);
-                                if (d3Obj != null)
-                                {
-                                    sb.AppendLine("\n--- Parameters (h / d3) ---");
-                                    foreach (var f in d3Obj.GetType().GetFields(bindFlagsAll))
-                                    {
-                                        object val = f.GetValue(d3Obj);
-                                        if (val is double || val is float || val is int || val is long)
-                                            sb.AppendLine($"{f.Name} = {val}");
-                                    }
-                                }
-
-                                // ドア群（cc = m）をダンプ
-                                object ccObj = rawVehicle.GetType().GetField("m", bindFlagsAll)?.GetValue(rawVehicle);
-                                if (ccObj != null)
-                                {
-                                    sb.AppendLine("\n--- Doors (m / cc) ---");
-                                    object cfArray = ccObj.GetType().GetField("c", bindFlagsAll)?.GetValue(ccObj); // cf[]
-                                    if (cfArray is Array arr && arr.Length > 0)
-                                    {
-                                        object firstDoor = arr.GetValue(0); // 1つ目のドアオブジェクトを取得
-                                        if (firstDoor != null)
-                                        {
-                                            sb.AppendLine($"First Door Type: {firstDoor.GetType().Name}");
-                                            foreach (var f in firstDoor.GetType().GetFields(bindFlagsAll))
-                                            {
-                                                object val = f.GetValue(firstDoor);
-                                                if (val is double || val is float || val is int || val is long)
-                                                    sb.AppendLine($"DoorField {f.Name} = {val}");
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            System.IO.File.WriteAllText(logPath, sb.ToString());
-                        }
-                    }
-                    catch { }
-                }
-                // =================================================================
-
                 if (map == null) return;
 
                 double jumpTimeErrorMs = timeMs - lastTimeMs - elapsed.TotalMilliseconds;
 
                 if (lastTimeMs != 0 && Math.Abs(jumpTimeErrorMs) > 300)
                 {
-                    System.IO.File.AppendAllText(
-                        System.IO.Path.Combine(
-                            Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
-                            "jump_counter_probe.txt"
-                        ),
-                        $"[{DateTime.Now:HH:mm:ss.fff}] "
-                        + $"CounterBefore={jumpCounter}"
-                        + $", LastTimeMs={lastTimeMs}"
-                        + $", CurrentTimeMs={timeMs}"
-                        + $", ElapsedMs={elapsed.TotalMilliseconds:F3}"
-                        + $", TimeErrorMs={jumpTimeErrorMs:F3}"
-                        + $", Location={location}"
-                        + $", IsInitialized={isInitialized}"
-                        + $"\r\n",
-                        Encoding.UTF8
-                    );
-
                     isInitialized = false;
                     isTextsCached = false;
                     terminalFrozenDiffSeconds = -999;
                     wasTerminalDoorOpened = false;
                     opStopDelayStartMs = -1;
                     jumpCounter++;
-
-                    System.IO.File.AppendAllText(
-                        System.IO.Path.Combine(
-                            Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
-                            "jump_counter_probe.txt"
-                        ),
-                        $"[{DateTime.Now:HH:mm:ss.fff}] "
-                        + $"CounterAfter={jumpCounter}"
-                        + $"\r\n",
-                        Encoding.UTF8
-                    );
                 }
 
                 int cabBrakeNotches = 8;
@@ -1029,28 +849,6 @@ namespace TsScoringPlugin
                                 break;
                             }
                         }
-                        System.IO.File.AppendAllText(
-                            System.IO.Path.Combine(
-                                Environment.GetFolderPath(
-                                    Environment.SpecialFolder.Desktop
-                                ),
-                                "station_target_probe.txt"
-                            ),
-                            $"[{DateTime.Now:HH:mm:ss.fff}] AFTER STATION INIT"
-                            + $", location={location}"
-                            + $", doorsClosed={areDoorsClosed}"
-                            + $", targetStationIndex={targetStationIndex}"
-                            + $", targetName="
-                            + (
-                                targetStationIndex >= 0
-                                && targetStationIndex < stationList.Count
-                                    ? stationList[targetStationIndex].Name
-                                    : "(out of range)"
-                            )
-                            + $", hasDoorOpened={hasDoorOpenedAtTarget}"
-                            + $"\r\n",
-                            Encoding.UTF8
-                        );
                         isInitialized = true;
                     }
 
@@ -1097,24 +895,6 @@ namespace TsScoringPlugin
                         {
                             if (location > nextStationLoc && !isTerminal)
                             {
-                                System.IO.File.AppendAllText(
-                                    System.IO.Path.Combine(
-                                        Environment.GetFolderPath(
-                                            Environment.SpecialFolder.Desktop
-                                        ),
-                                        "station_target_probe.txt"
-                                    ),
-                                    $"[{DateTime.Now:HH:mm:ss.fff}] TARGET INCREMENT"
-                                    + $", oldIndex={targetStationIndex}"
-                                    + $", oldName={targetSt.Name}"
-                                    + $", location={location}"
-                                    + $", doorsClosed={areDoorsClosed}"
-                                    + $", hasDoorOpened={hasDoorOpenedAtTarget}"
-                                    + $", isInitialized={isInitialized}"
-                                    + $"\r\n",
-                                    Encoding.UTF8
-                                );
-
                                 targetStationIndex++;
                                 hasDoorOpenedAtTarget = false;
                                 opStopDelayStartMs = -1;
@@ -1557,21 +1337,6 @@ namespace TsScoringPlugin
                             completeBytes,
                             completeBytes.Length,
                             endPoint
-                        );
-
-                        System.IO.File.AppendAllText(
-                            System.IO.Path.Combine(
-                                Environment.GetFolderPath(
-                                    Environment.SpecialFolder.Desktop
-                                ),
-                                "jump_complete_probe.txt"
-                            ),
-                            $"[{DateTime.Now:HH:mm:ss.fff}] "
-                            + completeMessage
-                            + $", TargetLocation={pendingJumpTargetLocation}"
-                            + $", TargetTime={pendingJumpTargetTime}"
-                            + $"\r\n",
-                            Encoding.UTF8
                         );
 
                         pendingJumpComplete = false;
