@@ -224,14 +224,187 @@ namespace TsScoringPlugin
                                             object rawScenario = srcProp.GetValue(scenario);
                                             if (rawScenario != null)
                                             {
-                                                // 1. 公式のクリーンな駅ジャンプを実行（音も環境も綺麗にリセット）
-                                                var jumpStaMethod = rawScenario.GetType().GetMethods(bindFlagsAll)
-                                                    .FirstOrDefault(m => m.GetParameters().Length == 1 &&
-                                                                         m.GetParameters()[0].ParameterType == typeof(int) &&
-                                                                         m.ReturnType == typeof(void));
+                                                // 1. 駅ジャンプ候補となるメソッドをすべて取得
+                                                var jumpStaCandidates = rawScenario
+                                                    .GetType()
+                                                    .GetMethods(bindFlagsAll)
+                                                    .Where(
+                                                        m =>
+                                                            m.GetParameters().Length == 1
+                                                            && m.GetParameters()[0].ParameterType == typeof(int)
+                                                            && m.ReturnType == typeof(void)
+                                                    )
+                                                    .ToList();
+
+                                                // 候補一覧をログへ記録
+                                                string candidateLog = string.Join(
+                                                    "\r\n",
+                                                    jumpStaCandidates.Select(
+                                                        m =>
+                                                            $"{m.DeclaringType?.FullName}.{m.Name}"
+                                                            + $"("
+                                                            + string.Join(
+                                                                ", ",
+                                                                m.GetParameters()
+                                                                    .Select(p => p.ParameterType.FullName)
+                                                            )
+                                                            + $")"
+                                                    )
+                                                );
+
+                                                string desktopPath = Environment.GetFolderPath(
+                                                    Environment.SpecialFolder.Desktop
+                                                );
+
+                                                System.IO.File.WriteAllText(
+                                                    System.IO.Path.Combine(
+                                                        desktopPath,
+                                                        "jump_method_candidates.txt"
+                                                    ),
+                                                    $"RawScenarioType={rawScenario.GetType().FullName}\r\n"
+                                                    + $"CandidateCount={jumpStaCandidates.Count}\r\n"
+                                                    + candidateLog
+                                                    + "\r\n",
+                                                    Encoding.UTF8
+                                                );
+
+                                                // 現行処理と同じく、候補の先頭を選択
+                                                var jumpStaMethod =
+                                                    jumpStaCandidates.FirstOrDefault();
+
                                                 if (jumpStaMethod != null)
                                                 {
-                                                    jumpStaMethod.Invoke(rawScenario, new object[] { sIdx });
+                                                    string parameterTypes = string.Join(
+                                                        ", ",
+                                                        jumpStaMethod
+                                                            .GetParameters()
+                                                            .Select(p => p.ParameterType.FullName)
+                                                    );
+
+                                                    System.IO.File.AppendAllText(
+                                                        System.IO.Path.Combine(
+                                                            desktopPath,
+                                                            "jump_method_probe.txt"
+                                                        ),
+                                                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                                                        + $"SelectedMethod="
+                                                        + $"{jumpStaMethod.DeclaringType?.FullName}"
+                                                        + $".{jumpStaMethod.Name}"
+                                                        + $"({parameterTypes})"
+                                                        + $", StationIndex={sIdx}\r\n",
+                                                        Encoding.UTF8
+                                                    );
+
+                                                    double locationBeforeInvoke = -1.0;
+                                                    double locationAfterInvoke = -1.0;
+                                                    int timeBeforeInvoke = -1;
+                                                    int timeAfterInvoke = -1;
+
+                                                    try
+                                                    {
+                                                        locationBeforeInvoke =
+                                                            BveHacker.Scenario.VehicleLocation.Location;
+                                                    }
+                                                    catch
+                                                    {
+                                                    }
+
+                                                    try
+                                                    {
+                                                        timeBeforeInvoke =
+                                                            (int)BveHacker.Scenario
+                                                                .TimeManager
+                                                                .Time
+                                                                .TotalMilliseconds;
+                                                    }
+                                                    catch
+                                                    {
+                                                    }
+
+                                                    System.IO.File.AppendAllText(
+                                                        System.IO.Path.Combine(
+                                                            Environment.GetFolderPath(
+                                                                Environment.SpecialFolder.Desktop
+                                                            ),
+                                                            "station_target_probe.txt"
+                                                        ),
+                                                        $"[{DateTime.Now:HH:mm:ss.fff}] BEFORE JUMP COMMAND"
+                                                        + $", RequestedIndex={sIdx}"
+                                                        + $", targetStationIndex={targetStationIndex}"
+                                                        + $", hasDoorOpened={hasDoorOpenedAtTarget}"
+                                                        + $", isInitialized={isInitialized}"
+                                                        + $"\r\n",
+                                                        Encoding.UTF8
+                                                    );
+
+
+
+                                                    jumpStaMethod.Invoke(
+                                                        rawScenario,
+                                                        new object[] { sIdx }
+                                                    );
+
+                                                    try
+                                                    {
+                                                        locationAfterInvoke =
+                                                            BveHacker.Scenario.VehicleLocation.Location;
+                                                    }
+                                                    catch
+                                                    {
+                                                    }
+
+                                                    try
+                                                    {
+                                                        timeAfterInvoke =
+                                                            (int)BveHacker.Scenario
+                                                                .TimeManager
+                                                                .Time
+                                                                .TotalMilliseconds;
+                                                    }
+                                                    catch
+                                                    {
+                                                    }
+
+                                                    string targetStationName = "(out of range)";
+                                                    double targetStationLocation = -1.0;
+
+                                                    if (sIdx >= 0 && sIdx < stationList.Count)
+                                                    {
+                                                        targetStationName = stationList[sIdx].Name;
+                                                        targetStationLocation = stationList[sIdx].Location;
+                                                    }
+
+                                                    System.IO.File.AppendAllText(
+                                                        System.IO.Path.Combine(
+                                                            desktopPath,
+                                                            "jump_method_probe.txt"
+                                                        ),
+                                                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                                                        + $"InvokeResult"
+                                                        + $", StationIndex={sIdx}"
+                                                        + $", TargetName={targetStationName}"
+                                                        + $", TargetLocation={targetStationLocation}"
+                                                        + $", LocationBefore={locationBeforeInvoke}"
+                                                        + $", LocationAfter={locationAfterInvoke}"
+                                                        + $", TimeBefore={timeBeforeInvoke}"
+                                                        + $", TimeAfter={timeAfterInvoke}"
+                                                        + $", RequestedTime={rTimeMs}"
+                                                        + $"\r\n",
+                                                        Encoding.UTF8
+                                                    );
+                                                }
+                                                else
+                                                {
+                                                    System.IO.File.AppendAllText(
+                                                        System.IO.Path.Combine(
+                                                            desktopPath,
+                                                            "jump_method_probe.txt"
+                                                        ),
+                                                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                                                        + $"SelectedMethod=(none)"
+                                                        + $", StationIndex={sIdx}\r\n",
+                                                        Encoding.UTF8
+                                                    );
                                                 }
 
                                                 // 2. 時計の針（TimeManager）だけを強引に過去(セーブデータ)に合わせる
@@ -244,7 +417,52 @@ namespace TsScoringPlugin
                                                         var timeField = rawTimeMgr.GetType().GetField("c", bindFlagsAll);
                                                         if (timeField != null && rTimeMs >= 0) timeField.SetValue(rawTimeMgr, rTimeMs);
                                                     }
+                                                    double locationAfterCommand = -1.0;
+                                                    bool doorsClosedAfterCommand = true;
+
+                                                    try
+                                                    {
+                                                        locationAfterCommand =
+                                                            BveHacker.Scenario.VehicleLocation.Location;
+                                                    }
+                                                    catch
+                                                    {
+                                                    }
+
+                                                    try
+                                                    {
+                                                        doorsClosedAfterCommand =
+                                                            BveHacker.Scenario.Vehicle.Doors.AreAllClosed;
+                                                    }
+                                                    catch
+                                                    {
+                                                    }
+
+                                                    System.IO.File.AppendAllText(
+                                                        System.IO.Path.Combine(
+                                                            Environment.GetFolderPath(
+                                                                Environment.SpecialFolder.Desktop
+                                                            ),
+                                                            "station_target_probe.txt"
+                                                        ),
+                                                        $"[{DateTime.Now:HH:mm:ss.fff}] AFTER JUMP COMMAND"
+                                                        + $", RequestedIndex={sIdx}"
+                                                        + $", location={locationAfterCommand}"
+                                                        + $", doorsClosed={doorsClosedAfterCommand}"
+                                                        + $", targetStationIndex={targetStationIndex}"
+                                                        + $", hasDoorOpened={hasDoorOpenedAtTarget}"
+                                                        + $", isInitialized={isInitialized}"
+                                                        + $"\r\n",
+                                                        Encoding.UTF8
+                                                    );
                                                 }
+
+                                                // 駅ジャンプ前の対象駅状態を破棄し、現在位置から再初期化させる
+                                                isInitialized = false;
+                                                hasDoorOpenedAtTarget = false;
+                                                opStopDelayStartMs = -1;
+                                                terminalFrozenDiffSeconds = -999;
+                                                wasTerminalDoorOpened = false;
                                             }
                                         }
                                     }
@@ -393,14 +611,44 @@ namespace TsScoringPlugin
 
                 if (map == null) return;
 
-                if (lastTimeMs != 0 && Math.Abs(timeMs - lastTimeMs - elapsed.TotalMilliseconds) > 300)
+                double jumpTimeErrorMs = timeMs - lastTimeMs - elapsed.TotalMilliseconds;
+
+                if (lastTimeMs != 0 && Math.Abs(jumpTimeErrorMs) > 300)
                 {
+                    System.IO.File.AppendAllText(
+                        System.IO.Path.Combine(
+                            Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+                            "jump_counter_probe.txt"
+                        ),
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + $"CounterBefore={jumpCounter}"
+                        + $", LastTimeMs={lastTimeMs}"
+                        + $", CurrentTimeMs={timeMs}"
+                        + $", ElapsedMs={elapsed.TotalMilliseconds:F3}"
+                        + $", TimeErrorMs={jumpTimeErrorMs:F3}"
+                        + $", Location={location}"
+                        + $", IsInitialized={isInitialized}"
+                        + $"\r\n",
+                        Encoding.UTF8
+                    );
+
                     isInitialized = false;
                     isTextsCached = false;
                     terminalFrozenDiffSeconds = -999;
                     wasTerminalDoorOpened = false;
                     opStopDelayStartMs = -1;
                     jumpCounter++;
+
+                    System.IO.File.AppendAllText(
+                        System.IO.Path.Combine(
+                            Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+                            "jump_counter_probe.txt"
+                        ),
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + $"CounterAfter={jumpCounter}"
+                        + $"\r\n",
+                        Encoding.UTF8
+                    );
                 }
 
                 int cabBrakeNotches = 8;
@@ -758,6 +1006,28 @@ namespace TsScoringPlugin
                                 break;
                             }
                         }
+                        System.IO.File.AppendAllText(
+                            System.IO.Path.Combine(
+                                Environment.GetFolderPath(
+                                    Environment.SpecialFolder.Desktop
+                                ),
+                                "station_target_probe.txt"
+                            ),
+                            $"[{DateTime.Now:HH:mm:ss.fff}] AFTER STATION INIT"
+                            + $", location={location}"
+                            + $", doorsClosed={areDoorsClosed}"
+                            + $", targetStationIndex={targetStationIndex}"
+                            + $", targetName="
+                            + (
+                                targetStationIndex >= 0
+                                && targetStationIndex < stationList.Count
+                                    ? stationList[targetStationIndex].Name
+                                    : "(out of range)"
+                            )
+                            + $", hasDoorOpened={hasDoorOpenedAtTarget}"
+                            + $"\r\n",
+                            Encoding.UTF8
+                        );
                         isInitialized = true;
                     }
 
@@ -804,6 +1074,24 @@ namespace TsScoringPlugin
                         {
                             if (location > nextStationLoc && !isTerminal)
                             {
+                                System.IO.File.AppendAllText(
+                                    System.IO.Path.Combine(
+                                        Environment.GetFolderPath(
+                                            Environment.SpecialFolder.Desktop
+                                        ),
+                                        "station_target_probe.txt"
+                                    ),
+                                    $"[{DateTime.Now:HH:mm:ss.fff}] TARGET INCREMENT"
+                                    + $", oldIndex={targetStationIndex}"
+                                    + $", oldName={targetSt.Name}"
+                                    + $", location={location}"
+                                    + $", doorsClosed={areDoorsClosed}"
+                                    + $", hasDoorOpened={hasDoorOpenedAtTarget}"
+                                    + $", isInitialized={isInitialized}"
+                                    + $"\r\n",
+                                    Encoding.UTF8
+                                );
+
                                 targetStationIndex++;
                                 hasDoorOpenedAtTarget = false;
                                 opStopDelayStartMs = -1;

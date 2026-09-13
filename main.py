@@ -123,6 +123,7 @@ class Overlay(QWidget):
         self.jump_start_real_time = 0.0
         self.expected_target_loc = -1.0
         self.expected_target_time = -1
+        self.official_jump_event_seen = False
 
         self.save_data = []
         self.menu_state = 0   
@@ -377,6 +378,27 @@ class Overlay(QWidget):
 
                     if new_list:
                         self.station_list = new_list
+
+                        ####
+                        if not getattr(self, '_station_time_probe_logged', False):
+                            print("\n===== STATION TIME PROBE =====")
+
+                            for i, station in enumerate(self.station_list):
+                                print(
+                                    f"[{i}] "
+                                    f"name={station.get('name')}, "
+                                    f"arr={station.get('raw_arr')}, "
+                                    f"dep={station.get('raw_dep')}, "
+                                    f"default={station.get('def_time')}, "
+                                    f"stop={station.get('stop_time')}, "
+                                    f"pass={station.get('is_pass')}, "
+                                    f"timing={station.get('is_timing')}, "
+                                    f"terminal={station.get('is_terminal')}"
+                                )
+
+                            self._station_time_probe_logged = True
+                        ####
+
                 elif text.startswith("META:"):
                     parts = text.split(':')
                     if len(parts) >= 6:

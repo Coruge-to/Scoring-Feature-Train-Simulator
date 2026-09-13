@@ -16,7 +16,13 @@ def reset_transient_scoring_state(self):
     """
     self.g_history.clear()
     self.bcp_history.clear()
-    self.popups.clear()
+
+    # 不正ジャンプなどの警告は、後続の時刻巻き戻りリセットでも保持する
+    self.popups = [
+        popup
+        for popup in getattr(self, 'popups', [])
+        if popup.get("category") == "警告"
+    ]
 
     # 非常ブレーキ判定
     self.ecb_eb_accum_time = 0.0
@@ -108,6 +114,7 @@ def begin_official_jump(self, target_loc, target_time):
     self.jump_start_real_time = time.time()
     self.expected_target_loc = target_loc
     self.expected_target_time = target_time
+    self.official_jump_event_seen = False
 
 
 def execute_retry(self, index, is_bve_advancing):
@@ -464,7 +471,33 @@ def evaluate_departure(self, current_time):
                     if p_idx >= 0:
                         dep_target_s = getattr(self, 'station_list', [])[p_idx].get("raw_dep", -1) // 1000
                     if dep_target_s < 0:
-                        dep_target_s = getattr(self, 'prev_next_time', self.bve_time_ms) // 1000
+                        station = (
+                            getattr(self, 'station_list', [])[p_idx]
+                            if 0 <= p_idx < len(getattr(self, 'station_list', []))
+                            else {}
+                        )
+
+                        write_desktop_log(
+                            "[TIMING FALLBACK]\n"
+                            f"  - station: {station.get('name', '不明な駅')}\n"
+                            f"  - station_idx: {p_idx}\n"
+                            f"  - station_loc: {p_loc}\n"
+                            f"  - raw_dep: {station.get('raw_dep', -1)}\n"
+                            f"  - def_time: {station.get('def_time', -1)}\n"
+                            f"  - stop_time: {station.get('stop_time', -1)}\n"
+                            f"  - is_timing: {is_timing_active}\n"
+                            f"  - is_terminal: {station.get('is_terminal', False)}\n"
+                            f"  - prev_next_time_exists: {hasattr(self, 'prev_next_time')}\n"
+                            f"  - prev_next_time: {getattr(self, 'prev_next_time', None)}\n"
+                            f"  - bve_time_ms: {self.bve_time_ms}\n"
+                            f"  - is_official_retry: {getattr(self, 'is_official_retry', False)}\n"
+                        )
+
+                        dep_target_s = getattr(
+                            self,
+                            'prev_next_time',
+                            self.bve_time_ms
+                        ) // 1000
                     
                     dep_diff_s = dep_target_s - (self.bve_time_ms // 1000)
                     
@@ -593,49 +626,166 @@ def update_physics_and_scoring(self, current_time, dt):
     cutoff_time = current_time - 10.0
     self.g_history = [h for h in self.g_history if h[0] > cutoff_time]
 
+    # =============================================================
+    # 一時調査: 位置変化とJUMP通知の到着順を確認
+    # =============================================================
+    probe_prev_loc = getattr(
+        self,
+        '_location_probe_prev',
+        None
+    )
+
+    if probe_prev_loc is not None:
+        location_delta = (
+            self.bve_location
+            - probe_prev_loc
+        )
+
+        if abs(location_delta) >= 10.0:
+            write_desktop_log(
+                "[LARGE LOCATION CHANGE]\n"
+                f"  - previous_location: {probe_prev_loc}\n"
+                f"  - current_location: {self.bve_location}\n"
+                f"  - delta: {location_delta}\n"
+                f"  - jump_count: {self.bve_jump_count}\n"
+                f"  - last_jump_count: "
+                f"{getattr(self, 'last_jump_count', 0)}\n"
+                f"  - official_jumping: "
+                f"{getattr(self, 'is_official_jumping', False)}\n"
+                f"  - jump_lock: "
+                f"{getattr(self, 'jump_lock', False)}\n"
+                f"  - door: "
+                f"{getattr(self, 'bve_door', 0)}\n"
+                f"  - prev_door: "
+                f"{getattr(self, 'prev_door', 0)}\n"
+                f"  - door_open_loc: "
+                f"{getattr(self, 'door_open_loc', None)}\n"
+                f"  - roll_penalty_count: "
+                f"{getattr(self, 'roll_penalty_count', None)}\n"
+                f"  - roll_event_id: "
+                f"{getattr(self, 'roll_event_id', None)}\n"
+                f"  - next_loc: "
+                f"{getattr(self, 'bve_next_loc', -1.0)}\n"
+                f"  - prev_next_loc: "
+                f"{getattr(self, 'prev_next_loc', -1.0)}\n"
+            )
+
+    self._location_probe_prev = self.bve_location
+    # =============================================================
+
     if self.bve_jump_count != getattr(self, 'last_jump_count', 0):
         write_desktop_log(f"[JUMP DETECT] BVEジャンプ検知！ カウント: {getattr(self, 'last_jump_count', 0)} -> {self.bve_jump_count}")
-        real_now = time.time()
+
+        # 前回の不正ジャンプ警告が表示中なら、
+        # 追加のジャンプが発生した時点で表示を終了する
+        self.popups = [
+            popup
+            for popup in getattr(self, 'popups', [])
+            if popup.get("category") != "警告"
+        ]
+
+        write_desktop_log(
+        "[JUMP POPUP STATE AT ENTRY]\n"
+            f"  - jump_count: {self.bve_jump_count}\n"
+            f"  - last_jump_count: {getattr(self, 'last_jump_count', 0)}\n"
+            f"  - is_scoring_mode: {getattr(self, 'is_scoring_mode', False)}\n"
+            f"  - is_official_jumping: {getattr(self, 'is_official_jumping', False)}\n"
+            f"  - popup_count: {len(getattr(self, 'popups', []))}\n"
+            f"  - popups: {[p.get('text', '') for p in getattr(self, 'popups', [])]}\n"
+        )
         is_valid_jump = False
-        
-        # =================================================================
-        # ★ 謎1解決：鶴さん考案「座標・時間の一致判定」による絶対的ガード（完全復元版）
-        # 2段ジャンプを考慮し、位置か時間の「どちらか」が目標値と一致すれば許容する
-        # =================================================================
-        if getattr(self, 'is_official_jumping', False):
-            is_valid_jump = True
-            
+        was_official_jumping = getattr(
+            self,
+            'is_official_jumping',
+            False
+        )
+
+        if was_official_jumping:
+            self.official_jump_event_seen = True
+
+            expected_location = getattr(
+                self,
+                'expected_target_loc',
+                -1.0
+            )
+
+            location_matches = (
+                expected_location >= 0.0
+                and abs(
+                    self.bve_location
+                    - expected_location
+                ) < 0.01
+            )
+
+            if location_matches:
+                # JUMP通知を受信し、目標位置にも到達したので公式ジャンプ完了
+                is_valid_jump = True
+            else:
+                # 公式ジャンプ待機中でも、目標外へのジャンプは許可しない
+                is_valid_jump = False
+
+            # 最初のJUMP通知で公式ジャンプの成否を確定する
+            self.is_official_jumping = False
+
+        write_desktop_log(
+            "[JUMP STATE BEFORE RESET]\n"
+            f"  - location: {self.bve_location}\n"
+            f"  - door: {getattr(self, 'bve_door', 0)}\n"
+            f"  - prev_door: {getattr(self, 'prev_door', 0)}\n"
+            f"  - door_open_loc: {getattr(self, 'door_open_loc', None)}\n"
+            f"  - next_loc: {getattr(self, 'bve_next_loc', -1.0)}\n"
+            f"  - prev_next_loc: {getattr(self, 'prev_next_loc', -1.0)}\n"
+            f"  - roll_penalty_count: {getattr(self, 'roll_penalty_count', None)}\n"
+            f"  - roll_was_moving: {getattr(self, 'roll_was_moving', None)}\n"
+            f"  - roll_event_id: {getattr(self, 'roll_event_id', None)}\n"
+        )
+
         # ジャンプ前の物理・ブレーキ判定状態を破棄
         reset_transient_scoring_state(self)
+
+        write_desktop_log(
+            "[JUMP STATE AFTER RESET]\n"
+            f"  - location: {self.bve_location}\n"
+            f"  - door: {getattr(self, 'bve_door', 0)}\n"
+            f"  - prev_door: {getattr(self, 'prev_door', 0)}\n"
+            f"  - door_open_loc: {getattr(self, 'door_open_loc', None)}\n"
+            f"  - roll_penalty_count: {getattr(self, 'roll_penalty_count', None)}\n"
+            f"  - roll_was_moving: {getattr(self, 'roll_was_moving', None)}\n"
+            f"  - roll_event_id: {getattr(self, 'roll_event_id', None)}\n"
+        )
 
         # ジャンプ検出時だけ初期化する状態
         self.has_evaluated_initial_brake = False
         self.idle_entered_while_stopped = False
-        
-        # =================================================================
-        # ★ 解除フェーズ：データが追いついたか確認し、シールドを破棄する
-        # =================================================================
-        if getattr(self, 'is_official_jumping', False):
-            exp_loc = getattr(self, 'expected_target_loc', -1.0)
-            exp_time = getattr(self, 'expected_target_time', -1)
-            
-            loc_match = abs(self.bve_location - exp_loc) < 0.01
-            time_match = abs(self.bve_time_ms - exp_time) < 100
-            
-            # データが追いついて一致したら、0.5秒待たずに「即座に」シールド解除！
-            if loc_match and time_match:
-                self.is_official_jumping = False
-            # 一致していなくても、0.5秒経ったら強制解除！（永久無敵になるのを防ぐ保険）
-            elif real_now - getattr(self, 'jump_start_real_time', 0.0) >= 0.5:
-                self.is_official_jumping = False
 
-            #???
-            if not self.is_official_jumping:
-                self.prev_door = getattr(self, 'bve_door', 0)
-                self.prev_doordir = getattr(self, 'bve_doordir', 1)
-                self.prev_next_loc = self.bve_next_loc
-                self.prev_is_pass = self.bve_is_pass
-                self.prev_is_timing = self.bve_is_timing
+        if was_official_jumping and is_valid_jump:
+            # 公式ジャンプ完了時点の状態を基準値として同期
+            self.prev_door = getattr(self, 'bve_door', 0)
+            self.prev_doordir = getattr(self, 'bve_doordir', 1)
+            self.prev_next_loc = self.bve_next_loc
+            self.prev_is_pass = self.bve_is_pass
+            self.prev_is_timing = self.bve_is_timing
+
+        write_desktop_log(
+            "[JUMP VALIDATION]\n"
+            f"  - was_official_jumping: {was_official_jumping}\n"
+            f"  - official_jump_event_seen: "
+            f"{getattr(self, 'official_jump_event_seen', False)}\n"
+            f"  - is_valid_jump: {is_valid_jump}\n"
+            f"  - is_official_jumping: "
+            f"{getattr(self, 'is_official_jumping', False)}\n"
+            f"  - is_scoring_mode: "
+            f"{getattr(self, 'is_scoring_mode', False)}\n"
+            f"  - is_scoring_finished: "
+            f"{getattr(self, 'is_scoring_finished', False)}\n"
+            f"  - jump_count: {self.bve_jump_count}\n"
+            f"  - last_jump_count: "
+            f"{getattr(self, 'last_jump_count', 0)}\n"
+            f"  - location: {self.bve_location}\n"
+            f"  - expected_target_loc: "
+            f"{getattr(self, 'expected_target_loc', -1.0)}\n"
+        )
+
                 
         if not is_valid_jump and getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False):
             self.is_scoring_mode = False
@@ -810,7 +960,13 @@ def update_physics_and_scoring(self, current_time, dt):
 
     self.hb_prev_notch = curr_n
 
-    if getattr(self, 'bve_door', 0) == 1:
+    if getattr(self, 'is_official_jumping', False):
+        # 公式ジャンプによる位置変化を転動として扱わない
+        self.door_open_loc = self.bve_location
+        self.roll_penalty_count = 0
+        self.roll_was_moving = False
+
+    elif getattr(self, 'bve_door', 0) == 1:
         is_rolling = self.bve_speed != 0.0
 
         if getattr(self, 'prev_door', 0) == 0:
