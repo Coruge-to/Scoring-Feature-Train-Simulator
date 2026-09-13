@@ -1020,15 +1020,21 @@ def update_physics_and_scoring(self, current_time, dt):
         self.prev_doordir = getattr(self, 'bve_doordir', 1)
         self.prev_next_loc = self.bve_next_loc
         if abs(self.bve_next_loc - self.bve_location) > 100.0:
-            self.is_first_station = False 
+            self.is_first_station = False
         self.is_first_udp = False
         
-    if self.bve_speed >= 1.0 and getattr(self, 'bve_door', 0) == 0:
+    if (
+        not getattr(self, 'is_official_jumping', False)
+        and self.bve_speed >= 1.0
+        and getattr(self, 'bve_door', 0) == 0
+    ):
         self.has_departed = True
         self.stop_notch_state = "IDLE"
+
         if getattr(self, 'jump_lock', False):
             self.jump_lock = False
-        self.is_first_station = False 
+
+        self.is_first_station = False
         
     current_s = self.bve_time_ms // 1000
     target_s = self.bve_next_time // 1000
