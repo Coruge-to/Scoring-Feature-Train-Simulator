@@ -116,7 +116,14 @@ class Overlay(QWidget):
         self.jump_lock = False
         self.ignore_next_pass_score = False
 
-        self.save_data = []  
+        # 公式ジャンプの保護・同期状態
+        self.is_official_jumping = False
+        self.is_official_retry = False
+        self.jump_start_real_time = 0.0
+        self.expected_target_loc = -1.0
+        self.expected_target_time = -1
+
+        self.save_data = []
         self.menu_state = 0   
         self.menu_cursor = 0  
         self.menu_scroll = 0  
@@ -1193,7 +1200,6 @@ class Overlay(QWidget):
                 getattr(self, 'popups', []).clear()
                 self.debug_all_penalties = False
 
-                self.expected_jump = True
                 self.is_first_udp = True
                 self.is_first_station = True
                 self.has_departed = False
