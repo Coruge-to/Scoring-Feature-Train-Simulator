@@ -56,6 +56,13 @@ namespace TsScoringPlugin
         private int terminalFrozenDiffSeconds = -999;
         private bool wasTerminalDoorOpened = false;
 
+        // Pythonから要求された公式ジャンプの完了通知待機状態
+        private bool pendingJumpComplete = false;
+        private string pendingJumpType = "";
+        private int pendingJumpStationIndex = -1;
+        private double pendingJumpTargetLocation = -1.0;
+        private int pendingJumpTargetTime = -1;
+
         private int opStopDelayStartMs = -1;
         private bool initialStaListSent = false;
         private DateTime lastStaListSendTime = DateTime.MinValue;
@@ -463,6 +470,15 @@ namespace TsScoringPlugin
                                                 opStopDelayStartMs = -1;
                                                 terminalFrozenDiffSeconds = -999;
                                                 wasTerminalDoorOpened = false;
+                                                // このTick後半の駅状態再初期化が完了した後にPythonへ通知する
+                                                pendingJumpComplete = true;
+                                                pendingJumpType = "STA";
+                                                pendingJumpStationIndex = sIdx;
+                                                pendingJumpTargetLocation =
+                                                    sIdx >= 0 && sIdx < stationList.Count
+                                                        ? stationList[sIdx].Location
+                                                        : -1.0;
+                                                pendingJumpTargetTime = rTimeMs;
                                             }
                                         }
                                     }
@@ -510,6 +526,13 @@ namespace TsScoringPlugin
                                                         if (timeField != null && rTimeMs >= 0) timeField.SetValue(rawTimeMgr, rTimeMs);
                                                     }
                                                 }
+                                                // 座標ジャンプについても、Tick後半の状態反映後に完了通知を返す
+                                                pendingJumpComplete = true;
+                                                pendingJumpType = "LOC";
+                                                pendingJumpStationIndex = -1;
+                                                pendingJumpTargetLocation = rLoc;
+                                                pendingJumpTargetTime = rTimeMs;
+
                                             }
                                         }
                                     }
@@ -1493,6 +1516,69 @@ namespace TsScoringPlugin
                     {
                         byte[] bytes = Encoding.UTF8.GetBytes(lastUdpData);
                         udpClient.Send(bytes, bytes.Length, endPoint);
+                    }
+                    if (pendingJumpComplete && isInitialized)
+                    {
+                        double completedLocation = -1.0;
+                        int completedTime = -1;
+
+                        try
+                        {
+                            completedLocation =
+                                BveHacker.Scenario.VehicleLocation.Location;
+                        }
+                        catch
+                        {
+                        }
+
+                        try
+                        {
+                            completedTime =
+                                (int)BveHacker.Scenario
+                                    .TimeManager
+                                    .Time
+                                    .TotalMilliseconds;
+                        }
+                        catch
+                        {
+                        }
+
+                        string completeMessage =
+                            $"JUMP_COMPLETE:{pendingJumpType}"
+                            + $":{pendingJumpStationIndex}"
+                            + $":{completedLocation}"
+                            + $":{completedTime}"
+                            + $":{jumpCounter}";
+
+                        byte[] completeBytes =
+                            Encoding.UTF8.GetBytes(completeMessage);
+
+                        udpClient.Send(
+                            completeBytes,
+                            completeBytes.Length,
+                            endPoint
+                        );
+
+                        System.IO.File.AppendAllText(
+                            System.IO.Path.Combine(
+                                Environment.GetFolderPath(
+                                    Environment.SpecialFolder.Desktop
+                                ),
+                                "jump_complete_probe.txt"
+                            ),
+                            $"[{DateTime.Now:HH:mm:ss.fff}] "
+                            + completeMessage
+                            + $", TargetLocation={pendingJumpTargetLocation}"
+                            + $", TargetTime={pendingJumpTargetTime}"
+                            + $"\r\n",
+                            Encoding.UTF8
+                        );
+
+                        pendingJumpComplete = false;
+                        pendingJumpType = "";
+                        pendingJumpStationIndex = -1;
+                        pendingJumpTargetLocation = -1.0;
+                        pendingJumpTargetTime = -1;
                     }
                 }
                 catch { }

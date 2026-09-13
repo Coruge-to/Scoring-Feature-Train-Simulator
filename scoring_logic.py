@@ -115,6 +115,7 @@ def begin_official_jump(self, target_loc, target_time):
     self.expected_target_loc = target_loc
     self.expected_target_time = target_time
     self.official_jump_event_seen = False
+    self.official_jump_complete_received = False
 
 
 def execute_retry(self, index, is_bve_advancing):
@@ -703,29 +704,9 @@ def update_physics_and_scoring(self, current_time, dt):
         if was_official_jumping:
             self.official_jump_event_seen = True
 
-            expected_location = getattr(
-                self,
-                'expected_target_loc',
-                -1.0
-            )
-
-            location_matches = (
-                expected_location >= 0.0
-                and abs(
-                    self.bve_location
-                    - expected_location
-                ) < 0.01
-            )
-
-            if location_matches:
-                # JUMP通知を受信し、目標位置にも到達したので公式ジャンプ完了
-                is_valid_jump = True
-            else:
-                # 公式ジャンプ待機中でも、目標外へのジャンプは許可しない
-                is_valid_jump = False
-
-            # 最初のJUMP通知で公式ジャンプの成否を確定する
-            self.is_official_jumping = False
+            # 公式ジャンプ中のJUMP通知は、C#の完了通知が届くまで保留する。
+            # この通知だけでは公式ジャンプの成否を確定しない。
+            is_valid_jump = True
 
         write_desktop_log(
             "[JUMP STATE BEFORE RESET]\n"
@@ -757,14 +738,6 @@ def update_physics_and_scoring(self, current_time, dt):
         # ジャンプ検出時だけ初期化する状態
         self.has_evaluated_initial_brake = False
         self.idle_entered_while_stopped = False
-
-        if was_official_jumping and is_valid_jump:
-            # 公式ジャンプ完了時点の状態を基準値として同期
-            self.prev_door = getattr(self, 'bve_door', 0)
-            self.prev_doordir = getattr(self, 'bve_doordir', 1)
-            self.prev_next_loc = self.bve_next_loc
-            self.prev_is_pass = self.bve_is_pass
-            self.prev_is_timing = self.bve_is_timing
 
         write_desktop_log(
             "[JUMP VALIDATION]\n"

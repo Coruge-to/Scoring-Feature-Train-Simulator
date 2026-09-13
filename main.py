@@ -124,6 +124,8 @@ class Overlay(QWidget):
         self.expected_target_loc = -1.0
         self.expected_target_time = -1
         self.official_jump_event_seen = False
+        self.official_jump_complete_received = False
+        self.pending_jump_complete = None
 
         self.save_data = []
         self.menu_state = 0   
@@ -406,6 +408,18 @@ class Overlay(QWidget):
                         self.meta_route = parts[2]
                         self.meta_vehicle = parts[3]
                         self.meta_author = parts[4]
+                elif text.startswith("JUMP_COMPLETE:"):
+                    complete_parts = text.split(':')
+
+                    if len(complete_parts) >= 6:
+                        self.pending_jump_complete = {
+                            "type": complete_parts[1],
+                            "station_index": int(complete_parts[2]),
+                            "location": float(complete_parts[3]),
+                            "time": int(complete_parts[4]),
+                            "jump_count": int(complete_parts[5])
+                        }
+
                 elif text.startswith("STATUS:LOADED"):
                     status = text.split(':')[-1].strip()
                     self.bve_actual_state = status # 'PAUSED' or 'RUNNING'
@@ -587,6 +601,82 @@ class Overlay(QWidget):
                             write_desktop_log(f"[UDP] ドア時間(CloseTime)を受信: {val} ms")
                             self._debug_door_time_printed = val
                 except Exception: continue 
+
+        if self.pending_jump_complete is not None:
+            complete = self.pending_jump_complete
+            self.pending_jump_complete = None
+
+            completed_location = complete["location"]
+            completed_time = complete["time"]
+            completed_jump_count = complete["jump_count"]
+
+            expected_location = getattr(
+                self,
+                'expected_target_loc',
+                -1.0
+            )
+
+            location_matches = (
+                expected_location >= 0.0
+                and abs(
+                    completed_location
+                    - expected_location
+                ) < 0.01
+            )
+
+            write_desktop_log(
+                "[JUMP COMPLETE RECEIVED]\n"
+                f"  - type: {complete['type']}\n"
+                f"  - station_index: {complete['station_index']}\n"
+                f"  - completed_location: {completed_location}\n"
+                f"  - completed_time: {completed_time}\n"
+                f"  - completed_jump_count: {completed_jump_count}\n"
+                f"  - expected_location: {expected_location}\n"
+                f"  - expected_time: "
+                f"{getattr(self, 'expected_target_time', -1)}\n"
+                f"  - telemetry_location: {self.bve_location}\n"
+                f"  - telemetry_time: {self.bve_time_ms}\n"
+                f"  - location_matches: {location_matches}\n"
+                f"  - official_jumping_before: "
+                f"{getattr(self, 'is_official_jumping', False)}\n"
+            )
+
+            if (
+                getattr(self, 'is_official_jumping', False)
+                and location_matches
+            ):
+                self.official_jump_complete_received = True
+                self.is_official_jumping = False
+
+                # 完了通知に含まれる公式ジャンプカウントを吸収
+                self.bve_jump_count = completed_jump_count
+                self.last_jump_count = completed_jump_count
+
+                # 最新テレメトリーをジャンプ後の新しい基準状態にする
+                self.prev_door = getattr(self, 'bve_door', 0)
+                self.prev_doordir = getattr(self, 'bve_doordir', 1)
+                self.prev_next_loc = getattr(self, 'bve_next_loc', -1.0)
+                self.prev_is_pass = getattr(self, 'bve_is_pass', 0)
+                self.prev_is_timing = getattr(self, 'bve_is_timing', 0)
+                self.prev_term = getattr(self, 'bve_term', 0)
+
+                self.door_open_loc = completed_location
+                self.roll_penalty_count = 0
+                self.roll_was_moving = False
+
+                write_desktop_log(
+                    "[JUMP COMPLETE ACCEPTED]\n"
+                    f"  - location: {completed_location}\n"
+                    f"  - telemetry_location: {self.bve_location}\n"
+                    f"  - jump_count: {completed_jump_count}\n"
+                )
+            else:
+                write_desktop_log(
+                    "[JUMP COMPLETE REJECTED]\n"
+                    f"  - location_matches: {location_matches}\n"
+                    f"  - is_official_jumping: "
+                    f"{getattr(self, 'is_official_jumping', False)}\n"
+                )
             
     def is_station_timing(self, sta_idx):
         if sta_idx == self.setting_start_idx:
