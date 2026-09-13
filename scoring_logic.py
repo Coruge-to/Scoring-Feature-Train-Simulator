@@ -84,6 +84,19 @@ def reset_speed_penalty_state(self):
     self.accumulated_speed_penalty = 0
 
 
+def reset_roll_state(self):
+    """
+    転動距離と移動中状態を初期化し、
+    次の転動を新しい表示事象として扱う。
+
+    総得点、転動の得点内訳、既存ポップアップは変更しない。
+    """
+    self.door_open_loc = self.bve_location
+    self.roll_penalty_count = 0
+    self.roll_was_moving = False
+    self.roll_event_id += 1
+
+
 def execute_retry(self, index, is_bve_advancing):
     if index < 0 or index >= len(self.save_data): return
 
@@ -95,6 +108,7 @@ def execute_retry(self, index, is_bve_advancing):
 
     reset_result_display_state(self)
     reset_speed_penalty_state(self)
+    reset_roll_state(self)
 
     self.has_departed = False
     reset_station_evaluation_state(self)

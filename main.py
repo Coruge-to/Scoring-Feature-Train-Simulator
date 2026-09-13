@@ -20,6 +20,7 @@ from scoring_logic import (
     reset_score_accumulation,
     reset_result_display_state,
     reset_speed_penalty_state,
+    reset_roll_state,
 )
 from menu_ui import draw_menu
 from hud_ui import draw_hud
@@ -414,6 +415,7 @@ class Overlay(QWidget):
                                     self.menu_state = 0
                                 self.user_timing_overrides.clear()
                                 reset_speed_penalty_state(self)
+                                reset_roll_state(self)
 
                             self.needs_margin_recalc = True
                             self.current_scenario_id = new_id
@@ -1182,6 +1184,7 @@ class Overlay(QWidget):
                 reset_result_display_state(self)
                 reset_score_accumulation(self)
                 reset_speed_penalty_state(self)
+                reset_roll_state(self)
 
                 self.total_retry_count = 0 # ★Sランク判定用に初期化
                 self.limit_flash_counts = {}
@@ -1274,6 +1277,7 @@ class Overlay(QWidget):
                 self.is_scoring_mode = False
                 reset_result_display_state(self)
                 reset_speed_penalty_state(self)
+                reset_roll_state(self)
                 getattr(self, 'popups', []).clear()
                 self.toggle_menu(is_bve_advancing)
             elif self.menu_cursor == 1: # 「いいえ」を選択
