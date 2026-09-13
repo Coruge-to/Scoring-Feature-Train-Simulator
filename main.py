@@ -21,6 +21,7 @@ from scoring_logic import (
     reset_result_display_state,
     reset_speed_penalty_state,
     reset_roll_state,
+    begin_official_jump,
 )
 from menu_ui import draw_menu
 from hud_ui import draw_hud
@@ -1245,14 +1246,10 @@ class Overlay(QWidget):
                     else:
                         retry_cmd = f"JUMP_STA_TIME:{self.setting_start_idx}:{target_time_ms}"
               
-                self.is_official_jumping = True
-                self.jump_start_real_time = time.time()
+                begin_official_jump(self, start_loc, target_time_ms)
 
                 self.is_bve_loaded = False
                 self.initial_kickstart_done = False
-
-                self.expected_target_loc = start_loc
-                self.expected_target_time = target_time_ms
                 
                 getattr(self, 'save_data', []).append({
                     "loc": start_loc,

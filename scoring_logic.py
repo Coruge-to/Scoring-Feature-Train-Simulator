@@ -97,6 +97,19 @@ def reset_roll_state(self):
     self.roll_event_id += 1
 
 
+def begin_official_jump(self, target_loc, target_time):
+    """
+    採点開始またはリトライによる公式ジャンプの保護を開始する。
+
+    ジャンプ先の位置・時刻を記録し、
+    BVEからジャンプ通知を受信するまで不正ジャンプ判定を抑止する。
+    """
+    self.is_official_jumping = True
+    self.jump_start_real_time = time.time()
+    self.expected_target_loc = target_loc
+    self.expected_target_time = target_time
+
+
 def execute_retry(self, index, is_bve_advancing):
     if index < 0 or index >= len(self.save_data): return
 
@@ -132,9 +145,6 @@ def execute_retry(self, index, is_bve_advancing):
     self.rollback_msg_timer = self.bve_time_ms / 1000.0 + 5.0
     
     self.toggle_menu(is_bve_advancing)
-    
-    self.is_official_jumping = True
-    self.jump_start_real_time = time.time()
 
     target_bve_sta_idx = 0
     ideal_loc = cp['loc']
@@ -167,8 +177,7 @@ def execute_retry(self, index, is_bve_advancing):
     else:
         cmd = f"JUMP_STA_TIME:{target_bve_sta_idx}:{cp['time_ms']}"
         
-    self.expected_target_loc = ideal_loc
-    self.expected_target_time = cp['time_ms']
+    begin_official_jump(self, ideal_loc, cp['time_ms'])
     self.udp_socket.writeDatagram(cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)
 
 def add_score_popup(self, points, text, color, ptype, category, current_time, force=False):
