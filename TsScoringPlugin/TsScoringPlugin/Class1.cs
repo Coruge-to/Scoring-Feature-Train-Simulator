@@ -74,6 +74,12 @@ namespace TsScoringPlugin
         private string metaAuthor = "";
         private string metaComment = "";
         private string lastMetaPacket = "";
+        // BVE5/6ではdepartureTime="t"の内部表現が1ms異なる
+        private const long TerminalDepartureTimeBve6Ms =
+            int.MaxValue;
+
+        private const long TerminalDepartureTimeBve5Ms =
+            (long)int.MaxValue + 1L;
 
         private List<StationData> stationList = new List<StationData>();
 
@@ -492,13 +498,80 @@ namespace TsScoringPlugin
                             try { sd.RawArrTime = (int)((TimeSpan)st.ArrivalTime).TotalMilliseconds; }
                             catch { try { sd.RawArrTime = (int)(Convert.ToDouble(st.ArrivalTime) * 1000.0); } catch { } }
 
-                            try { sd.RawDepTime = (int)((TimeSpan)st.DepartureTime).TotalMilliseconds; }
-                            catch { try { sd.RawDepTime = (int)(Convert.ToDouble(st.DepartureTime) * 1000.0); } catch { } }
+                            sd.IsTerminal = false;
+
+                            try
+                            {
+                                TimeSpan departureTime =
+                                    (TimeSpan)st.DepartureTime;
+
+                                long departureTimeMs =
+                                    departureTime.Ticks
+                                    / TimeSpan.TicksPerMillisecond;
+
+                                bool isTerminalTime =
+                                    departureTimeMs == TerminalDepartureTimeBve5Ms
+                                    || departureTimeMs == TerminalDepartureTimeBve6Ms;
+
+                                if (isTerminalTime)
+                                {
+                                    // BVE5/6のdepartureTime="t"
+                                    sd.IsTerminal = true;
+                                    sd.RawDepTime = -1;
+                                }
+                                else if (
+                                    departureTimeMs >= -1L
+                                    && departureTimeMs < TerminalDepartureTimeBve6Ms
+                                )
+                                {
+                                    // -1は未定義、0以上は通常時刻
+                                    sd.RawDepTime = (int)departureTimeMs;
+                                }
+                                else
+                                {
+                                    // 既知の終着センチネル以外の範囲外値
+                                    sd.RawDepTime = -1;
+                                }
+                            }
+
+                            catch
+                            {
+                                try
+                                {
+                                    double departureTimeMs =
+                                        Convert.ToDouble(st.DepartureTime)
+                                        * 1000.0;
+
+                                    bool isTerminalTime =
+                                        departureTimeMs == TerminalDepartureTimeBve5Ms
+                                        || departureTimeMs == TerminalDepartureTimeBve6Ms;
+
+                                    if (isTerminalTime)
+                                    {
+                                        // BVE5/6のdepartureTime="t"
+                                        sd.IsTerminal = true;
+                                        sd.RawDepTime = -1;
+                                    }
+                                    else if (
+                                        departureTimeMs >= -1.0
+                                        && departureTimeMs < TerminalDepartureTimeBve6Ms
+                                    )
+                                    {
+                                        sd.RawDepTime = (int)departureTimeMs;
+                                    }
+                                    else
+                                    {
+                                        sd.RawDepTime = -1;
+                                    }
+                                }
+                                catch
+                                {
+                                }
+                            }
 
                             try { sd.DefaultTime = (int)((TimeSpan)st.DefaultTime).TotalMilliseconds; }
                             catch { try { sd.DefaultTime = (int)(Convert.ToDouble(st.DefaultTime) * 1000.0); } catch { } }
 
-                            sd.IsTerminal = (sd.RawDepTime == int.MinValue);
                             if (sd.RawArrTime <= -2000000000) sd.RawArrTime = -1;
                             if (sd.RawDepTime <= -2000000000) sd.RawDepTime = -1;
                             if (sd.DefaultTime <= -2000000000) sd.DefaultTime = -1;
@@ -695,6 +768,7 @@ namespace TsScoringPlugin
                         {
                             string sName = string.IsNullOrEmpty(st.Name) ? "不明な駅" : st.Name.Replace(",", "").Replace("=", "");
                             int sTiming = st.IsScoring ? 1 : 0;
+
                             staInfoList.Add(
                                 $"{sName}={sTiming}={st.Location}="
                                 + $"{st.ArrTime}={st.DepTime}="
@@ -703,6 +777,7 @@ namespace TsScoringPlugin
                                 + $"{(st.IsTerminal ? 1 : 0)}"
                             );
                         }
+
                         if (staInfoList.Count > 0)
                         {
                             lastStaListPacket = "STALIST:" + string.Join(",", staInfoList);
