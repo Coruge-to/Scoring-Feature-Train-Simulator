@@ -111,11 +111,9 @@ def begin_official_jump(self, target_loc, target_time):
     BVEからジャンプ通知を受信するまで不正ジャンプ判定を抑止する。
     """
     self.is_official_jumping = True
-    self.jump_start_real_time = time.time()
     self.expected_target_loc = target_loc
     self.expected_target_time = target_time
-    self.official_jump_event_seen = False
-    self.official_jump_complete_received = False
+    self.pending_jump_complete = None
 
 
 def execute_retry(self, index, is_bve_advancing):
@@ -627,53 +625,6 @@ def update_physics_and_scoring(self, current_time, dt):
     cutoff_time = current_time - 10.0
     self.g_history = [h for h in self.g_history if h[0] > cutoff_time]
 
-    # =============================================================
-    # 一時調査: 位置変化とJUMP通知の到着順を確認
-    # =============================================================
-    probe_prev_loc = getattr(
-        self,
-        '_location_probe_prev',
-        None
-    )
-
-    if probe_prev_loc is not None:
-        location_delta = (
-            self.bve_location
-            - probe_prev_loc
-        )
-
-        if abs(location_delta) >= 10.0:
-            write_desktop_log(
-                "[LARGE LOCATION CHANGE]\n"
-                f"  - previous_location: {probe_prev_loc}\n"
-                f"  - current_location: {self.bve_location}\n"
-                f"  - delta: {location_delta}\n"
-                f"  - jump_count: {self.bve_jump_count}\n"
-                f"  - last_jump_count: "
-                f"{getattr(self, 'last_jump_count', 0)}\n"
-                f"  - official_jumping: "
-                f"{getattr(self, 'is_official_jumping', False)}\n"
-                f"  - jump_lock: "
-                f"{getattr(self, 'jump_lock', False)}\n"
-                f"  - door: "
-                f"{getattr(self, 'bve_door', 0)}\n"
-                f"  - prev_door: "
-                f"{getattr(self, 'prev_door', 0)}\n"
-                f"  - door_open_loc: "
-                f"{getattr(self, 'door_open_loc', None)}\n"
-                f"  - roll_penalty_count: "
-                f"{getattr(self, 'roll_penalty_count', None)}\n"
-                f"  - roll_event_id: "
-                f"{getattr(self, 'roll_event_id', None)}\n"
-                f"  - next_loc: "
-                f"{getattr(self, 'bve_next_loc', -1.0)}\n"
-                f"  - prev_next_loc: "
-                f"{getattr(self, 'prev_next_loc', -1.0)}\n"
-            )
-
-    self._location_probe_prev = self.bve_location
-    # =============================================================
-
     if self.bve_jump_count != getattr(self, 'last_jump_count', 0):
         write_desktop_log(f"[JUMP DETECT] BVEジャンプ検知！ カウント: {getattr(self, 'last_jump_count', 0)} -> {self.bve_jump_count}")
 
@@ -685,15 +636,6 @@ def update_physics_and_scoring(self, current_time, dt):
             if popup.get("category") != "警告"
         ]
 
-        write_desktop_log(
-        "[JUMP POPUP STATE AT ENTRY]\n"
-            f"  - jump_count: {self.bve_jump_count}\n"
-            f"  - last_jump_count: {getattr(self, 'last_jump_count', 0)}\n"
-            f"  - is_scoring_mode: {getattr(self, 'is_scoring_mode', False)}\n"
-            f"  - is_official_jumping: {getattr(self, 'is_official_jumping', False)}\n"
-            f"  - popup_count: {len(getattr(self, 'popups', []))}\n"
-            f"  - popups: {[p.get('text', '') for p in getattr(self, 'popups', [])]}\n"
-        )
         is_valid_jump = False
         was_official_jumping = getattr(
             self,
@@ -702,63 +644,16 @@ def update_physics_and_scoring(self, current_time, dt):
         )
 
         if was_official_jumping:
-            self.official_jump_event_seen = True
-
             # 公式ジャンプ中のJUMP通知は、C#の完了通知が届くまで保留する。
             # この通知だけでは公式ジャンプの成否を確定しない。
             is_valid_jump = True
 
-        write_desktop_log(
-            "[JUMP STATE BEFORE RESET]\n"
-            f"  - location: {self.bve_location}\n"
-            f"  - door: {getattr(self, 'bve_door', 0)}\n"
-            f"  - prev_door: {getattr(self, 'prev_door', 0)}\n"
-            f"  - door_open_loc: {getattr(self, 'door_open_loc', None)}\n"
-            f"  - next_loc: {getattr(self, 'bve_next_loc', -1.0)}\n"
-            f"  - prev_next_loc: {getattr(self, 'prev_next_loc', -1.0)}\n"
-            f"  - roll_penalty_count: {getattr(self, 'roll_penalty_count', None)}\n"
-            f"  - roll_was_moving: {getattr(self, 'roll_was_moving', None)}\n"
-            f"  - roll_event_id: {getattr(self, 'roll_event_id', None)}\n"
-        )
-
         # ジャンプ前の物理・ブレーキ判定状態を破棄
         reset_transient_scoring_state(self)
-
-        write_desktop_log(
-            "[JUMP STATE AFTER RESET]\n"
-            f"  - location: {self.bve_location}\n"
-            f"  - door: {getattr(self, 'bve_door', 0)}\n"
-            f"  - prev_door: {getattr(self, 'prev_door', 0)}\n"
-            f"  - door_open_loc: {getattr(self, 'door_open_loc', None)}\n"
-            f"  - roll_penalty_count: {getattr(self, 'roll_penalty_count', None)}\n"
-            f"  - roll_was_moving: {getattr(self, 'roll_was_moving', None)}\n"
-            f"  - roll_event_id: {getattr(self, 'roll_event_id', None)}\n"
-        )
 
         # ジャンプ検出時だけ初期化する状態
         self.has_evaluated_initial_brake = False
         self.idle_entered_while_stopped = False
-
-        write_desktop_log(
-            "[JUMP VALIDATION]\n"
-            f"  - was_official_jumping: {was_official_jumping}\n"
-            f"  - official_jump_event_seen: "
-            f"{getattr(self, 'official_jump_event_seen', False)}\n"
-            f"  - is_valid_jump: {is_valid_jump}\n"
-            f"  - is_official_jumping: "
-            f"{getattr(self, 'is_official_jumping', False)}\n"
-            f"  - is_scoring_mode: "
-            f"{getattr(self, 'is_scoring_mode', False)}\n"
-            f"  - is_scoring_finished: "
-            f"{getattr(self, 'is_scoring_finished', False)}\n"
-            f"  - jump_count: {self.bve_jump_count}\n"
-            f"  - last_jump_count: "
-            f"{getattr(self, 'last_jump_count', 0)}\n"
-            f"  - location: {self.bve_location}\n"
-            f"  - expected_target_loc: "
-            f"{getattr(self, 'expected_target_loc', -1.0)}\n"
-        )
-
                 
         if not is_valid_jump and getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False):
             self.is_scoring_mode = False

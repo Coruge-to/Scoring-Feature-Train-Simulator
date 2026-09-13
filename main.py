@@ -120,11 +120,8 @@ class Overlay(QWidget):
         # 公式ジャンプの保護・同期状態
         self.is_official_jumping = False
         self.is_official_retry = False
-        self.jump_start_real_time = 0.0
         self.expected_target_loc = -1.0
         self.expected_target_time = -1
-        self.official_jump_event_seen = False
-        self.official_jump_complete_received = False
         self.pending_jump_complete = None
 
         self.save_data = []
@@ -381,26 +378,6 @@ class Overlay(QWidget):
                     if new_list:
                         self.station_list = new_list
 
-                        ####
-                        if not getattr(self, '_station_time_probe_logged', False):
-                            print("\n===== STATION TIME PROBE =====")
-
-                            for i, station in enumerate(self.station_list):
-                                print(
-                                    f"[{i}] "
-                                    f"name={station.get('name')}, "
-                                    f"arr={station.get('raw_arr')}, "
-                                    f"dep={station.get('raw_dep')}, "
-                                    f"default={station.get('def_time')}, "
-                                    f"stop={station.get('stop_time')}, "
-                                    f"pass={station.get('is_pass')}, "
-                                    f"timing={station.get('is_timing')}, "
-                                    f"terminal={station.get('is_terminal')}"
-                                )
-
-                            self._station_time_probe_logged = True
-                        ####
-
                 elif text.startswith("META:"):
                     parts = text.split(':')
                     if len(parts) >= 6:
@@ -624,28 +601,10 @@ class Overlay(QWidget):
                 ) < 0.01
             )
 
-            write_desktop_log(
-                "[JUMP COMPLETE RECEIVED]\n"
-                f"  - type: {complete['type']}\n"
-                f"  - station_index: {complete['station_index']}\n"
-                f"  - completed_location: {completed_location}\n"
-                f"  - completed_time: {completed_time}\n"
-                f"  - completed_jump_count: {completed_jump_count}\n"
-                f"  - expected_location: {expected_location}\n"
-                f"  - expected_time: "
-                f"{getattr(self, 'expected_target_time', -1)}\n"
-                f"  - telemetry_location: {self.bve_location}\n"
-                f"  - telemetry_time: {self.bve_time_ms}\n"
-                f"  - location_matches: {location_matches}\n"
-                f"  - official_jumping_before: "
-                f"{getattr(self, 'is_official_jumping', False)}\n"
-            )
-
             if (
                 getattr(self, 'is_official_jumping', False)
                 and location_matches
             ):
-                self.official_jump_complete_received = True
                 self.is_official_jumping = False
 
                 # 完了通知に含まれる公式ジャンプカウントを吸収
@@ -664,15 +623,17 @@ class Overlay(QWidget):
                 self.roll_penalty_count = 0
                 self.roll_was_moving = False
 
-                write_desktop_log(
-                    "[JUMP COMPLETE ACCEPTED]\n"
-                    f"  - location: {completed_location}\n"
-                    f"  - telemetry_location: {self.bve_location}\n"
-                    f"  - jump_count: {completed_jump_count}\n"
-                )
             else:
                 write_desktop_log(
                     "[JUMP COMPLETE REJECTED]\n"
+                    f"  - type: {complete['type']}\n"
+                    f"  - completed_location: {completed_location}\n"
+                    f"  - expected_location: {expected_location}\n"
+                    f"  - completed_time: {completed_time}\n"
+                    f"  - expected_time: "
+                    f"{getattr(self, 'expected_target_time', -1)}\n"
+                    f"  - telemetry_location: {self.bve_location}\n"
+                    f"  - telemetry_time: {self.bve_time_ms}\n"
                     f"  - location_matches: {location_matches}\n"
                     f"  - is_official_jumping: "
                     f"{getattr(self, 'is_official_jumping', False)}\n"
