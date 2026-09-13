@@ -22,6 +22,7 @@ namespace TsScoringPlugin
         public int DefaultTime;
         public int DoorDir;
         public bool IsPass;
+        public bool IsTerminal;
         public bool HasTimeDef;
         public bool IsScoring;
         public int InterpolatedTime;
@@ -145,7 +146,7 @@ namespace TsScoringPlugin
                 return;
             }
 
-            
+
 
             if (udpClient != null)
             {
@@ -497,6 +498,7 @@ namespace TsScoringPlugin
                             try { sd.DefaultTime = (int)((TimeSpan)st.DefaultTime).TotalMilliseconds; }
                             catch { try { sd.DefaultTime = (int)(Convert.ToDouble(st.DefaultTime) * 1000.0); } catch { } }
 
+                            sd.IsTerminal = (sd.RawDepTime == int.MinValue);
                             if (sd.RawArrTime <= -2000000000) sd.RawArrTime = -1;
                             if (sd.RawDepTime <= -2000000000) sd.RawDepTime = -1;
                             if (sd.DefaultTime <= -2000000000) sd.DefaultTime = -1;
@@ -515,17 +517,64 @@ namespace TsScoringPlugin
                             stationList.Add(sd);
                         }
 
-                        if (stationList.Count > 0) stationList[0].IsScoring = false;
+                        // departureTime="t"が複数存在する場合は、最初の駅だけを終着とする
+                        bool explicitTerminalFound = false;
+
+                        for (int i = 0; i < stationList.Count; i++)
+                        {
+                            if (stationList[i].IsTerminal)
+                            {
+                                if (!explicitTerminalFound)
+                                {
+                                    explicitTerminalFound = true;
+                                }
+                                else
+                                {
+                                    stationList[i].IsTerminal = false;
+                                }
+                            }
+                        }
+
+                        // departureTime="t"が存在しない場合は、駅リストの最終駅を終着とする
+                        if (!explicitTerminalFound && stationList.Count > 0)
+                        {
+                            stationList[stationList.Count - 1].IsTerminal = true;
+                        }
+
+                        // 駅リスト先頭駅は、従来どおり初期採時対象から外す
+                        if (stationList.Count > 0)
+                        {
+                            stationList[0].IsScoring = false;
+                        }
 
                         for (int i = 0; i < stationList.Count; i++)
                         {
                             if (stationList[i].HasTimeDef)
                             {
-                                if (stationList[i].ArrTime > 0 && stationList[i].DepTime <= 0) stationList[i].DepTime = stationList[i].ArrTime + stationList[i].StoppageTime;
-                                else if (stationList[i].DepTime > 0 && stationList[i].ArrTime <= 0)
+                                if (
+                                    !stationList[i].IsTerminal
+                                    && stationList[i].ArrTime > 0
+                                    && stationList[i].DepTime <= 0
+                                )
                                 {
-                                    stationList[i].ArrTime = stationList[i].DepTime - stationList[i].StoppageTime;
-                                    if (stationList[i].ArrTime < 0) stationList[i].ArrTime = 0;
+                                    stationList[i].DepTime =
+                                        stationList[i].ArrTime
+                                        + stationList[i].StoppageTime;
+                                }
+                                else if (
+                                    !stationList[i].IsTerminal
+                                    && stationList[i].DepTime > 0
+                                    && stationList[i].ArrTime <= 0
+                                )
+                                {
+                                    stationList[i].ArrTime =
+                                        stationList[i].DepTime
+                                        - stationList[i].StoppageTime;
+
+                                    if (stationList[i].ArrTime < 0)
+                                    {
+                                        stationList[i].ArrTime = 0;
+                                    }
                                 }
                             }
                         }
@@ -541,11 +590,28 @@ namespace TsScoringPlugin
 
                                 if (!hasPrevAnchor || !hasNextAnchor)
                                 {
-                                    stationList[i].ArrTime = stationList[i].DefaultTime;
-                                    stationList[i].DepTime = stationList[i].DefaultTime + stationList[i].StoppageTime;
+                                    stationList[i].ArrTime =
+                                        stationList[i].DefaultTime;
+
+                                    if (stationList[i].IsTerminal)
+                                    {
+                                        // 終着駅では発車時刻を生成しない
+                                        stationList[i].DepTime = -1;
+                                        stationList[i].InterpolatedTime =
+                                            stationList[i].ArrTime;
+                                    }
+                                    else
+                                    {
+                                        stationList[i].DepTime =
+                                            stationList[i].DefaultTime
+                                            + stationList[i].StoppageTime;
+
+                                        stationList[i].InterpolatedTime =
+                                            stationList[i].DepTime;
+                                    }
+
                                     stationList[i].HasTimeDef = true;
                                     stationList[i].IsScoring = true;
-                                    stationList[i].InterpolatedTime = stationList[i].DepTime;
                                 }
                             }
                         }
@@ -584,9 +650,28 @@ namespace TsScoringPlugin
 
                                     int estArrTime = time0 + (int)(runTime * ratio) + accStopTime;
                                     stationList[i].ArrTime = estArrTime;
-                                    if (stationList[i].IsPass) stationList[i].DepTime = estArrTime;
-                                    else stationList[i].DepTime = estArrTime + stationList[i].StoppageTime;
-                                    stationList[i].InterpolatedTime = stationList[i].DepTime;
+
+                                    if (stationList[i].IsTerminal)
+                                    {
+                                        stationList[i].DepTime = -1;
+                                        stationList[i].InterpolatedTime =
+                                            stationList[i].ArrTime;
+                                    }
+                                    else if (stationList[i].IsPass)
+                                    {
+                                        stationList[i].DepTime = estArrTime;
+                                        stationList[i].InterpolatedTime =
+                                            stationList[i].DepTime;
+                                    }
+                                    else
+                                    {
+                                        stationList[i].DepTime =
+                                            estArrTime
+                                            + stationList[i].StoppageTime;
+
+                                        stationList[i].InterpolatedTime =
+                                            stationList[i].DepTime;
+                                    }
                                 }
                             }
                         }
@@ -610,7 +695,13 @@ namespace TsScoringPlugin
                         {
                             string sName = string.IsNullOrEmpty(st.Name) ? "不明な駅" : st.Name.Replace(",", "").Replace("=", "");
                             int sTiming = st.IsScoring ? 1 : 0;
-                            staInfoList.Add($"{sName}={sTiming}={st.Location}={st.ArrTime}={st.DepTime}={st.DefaultTime}={st.StoppageTime}={(st.IsPass ? 1 : 0)}");
+                            staInfoList.Add(
+                                $"{sName}={sTiming}={st.Location}="
+                                + $"{st.ArrTime}={st.DepTime}="
+                                + $"{st.DefaultTime}={st.StoppageTime}="
+                                + $"{(st.IsPass ? 1 : 0)}="
+                                + $"{(st.IsTerminal ? 1 : 0)}"
+                            );
                         }
                         if (staInfoList.Count > 0)
                         {
@@ -632,7 +723,7 @@ namespace TsScoringPlugin
                         isTiming = targetSt.IsScoring ? 1 : 0;
                         marginBack = targetSt.MarginMin;
                         marginFront = targetSt.MarginMax;
-                        bool isTerminal = (targetStationIndex == stationList.Count - 1);
+                        bool isTerminal = targetSt.IsTerminal;
 
                         if (targetSt.IsPass)
                         {
@@ -1002,7 +1093,19 @@ namespace TsScoringPlugin
                     }
 
                     int holds = hasHoldingBrake ? 1 : 0;
-                    string data = $"SCENARIO_ID:{scenarioId},SPEED:{speed},TIME:{timeMs},LOCATION:{location},GRADIENT:{finalGradient},NEXTLOC:{nextStationLoc},NEXTTIME:{nextStationTime},ISPASS:{isPass},ISTIMING:{isTiming},MARGINB:{marginBack},MARGINF:{marginFront},REV:{revText}:{revPos},POW:{powText}:{powNotch},BRK:{brkText}:{brkNotch}:{brkMax},HTYPE:{handleType},ALLTXT:{allRevTexts}:{allPowTexts}:{allBrkTexts}:{allHldTexts},SIGLIMIT:{signalLimit},TRAINLEN:{trainLength},MAPLIMITS:{mapLimitsStr},FWDSIGLIMIT:{fwdSigLimit},FWDSIGLOC:{nextSigLoc},DOOR:{(areDoorsClosed ? 0 : 1)},DOORDIR:{currentDoorDir},TERM:{(targetStationIndex == stationList.Count - 1 ? 1 : 0)},MAPHEAD:{manualMapHead},MAPTAIL:{manualMapTail},CLEARDIST:{distToClear},CALCG:{currentG:F5},BTYPE:{bType},JUMP:{jumpCounter},CAB:{cabBrakeNotches}:{holds},BCP:{bcPressure:F1},PRATES:{pRatesStr}:{maxPressure:F1},BPP:{bpPressure:F1}:{bpInitialPressure:F1},STATNAME:{currentStationName},DOORTIME:{doorCloseTimeMs}"; 
+
+                    int terminalFlag = 0;
+
+                    if (
+                        targetStationIndex >= 0
+                        && targetStationIndex < stationList.Count
+                        && stationList[targetStationIndex].IsTerminal
+                    )
+                    {
+                        terminalFlag = 1;
+                    }
+
+                    string data = $"SCENARIO_ID:{scenarioId},SPEED:{speed},TIME:{timeMs},LOCATION:{location},GRADIENT:{finalGradient},NEXTLOC:{nextStationLoc},NEXTTIME:{nextStationTime},ISPASS:{isPass},ISTIMING:{isTiming},MARGINB:{marginBack},MARGINF:{marginFront},REV:{revText}:{revPos},POW:{powText}:{powNotch},BRK:{brkText}:{brkNotch}:{brkMax},HTYPE:{handleType},ALLTXT:{allRevTexts}:{allPowTexts}:{allBrkTexts}:{allHldTexts},SIGLIMIT:{signalLimit},TRAINLEN:{trainLength},MAPLIMITS:{mapLimitsStr},FWDSIGLIMIT:{fwdSigLimit},FWDSIGLOC:{nextSigLoc},DOOR:{(areDoorsClosed ? 0 : 1)},DOORDIR:{currentDoorDir},TERM:{terminalFlag},MAPHEAD:{manualMapHead},MAPTAIL:{manualMapTail},CLEARDIST:{distToClear},CALCG:{currentG:F5},BTYPE:{bType},JUMP:{jumpCounter},CAB:{cabBrakeNotches}:{holds},BCP:{bcPressure:F1},PRATES:{pRatesStr}:{maxPressure:F1},BPP:{bpPressure:F1}:{bpInitialPressure:F1},STATNAME:{currentStationName},DOORTIME:{doorCloseTimeMs}";
                     lastUdpData = data;
                 }
                 catch { }

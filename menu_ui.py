@@ -105,14 +105,16 @@ def draw_menu(self, painter, logical_width):
         draw_text_with_outline(painter, title_text, self.font_big, MENU_TEXT, MENU_OUTLINE, center_x, title_y, "center", passes=8)
 
     def get_sta_name(idx):
-        if not getattr(self, 'station_list', []): return "データ未受信"
+        if not getattr(self, 'station_list', []):
+            return "データ未受信"
+
         if idx == -1:
-            for i in range(len(self.station_list)-1, -1, -1):
-                if self.station_list[i].get("is_timing", False):
-                    return self.station_list[i]["name"]
-            return "不明"
+            if hasattr(self, 'get_actual_terminal_idx'):
+                idx = self.get_actual_terminal_idx()
+
         if 0 <= idx < len(self.station_list):
             return self.station_list[idx]["name"]
+
         return "不明"
 
     if self.menu_state == 1:
@@ -474,7 +476,11 @@ def draw_menu(self, painter, logical_width):
                 r_y = list_y_start + row_h * (4 + i) 
                 rule = getattr(self, 'brake_rules', [])[r_idx]
                 r_start = get_sta_name(getattr(self, 'setting_start_idx', 0)) if r_idx == 0 else get_sta_name(getattr(self, 'brake_rules', [])[r_idx-1]["end_idx"])
-                r_end = get_sta_name(getattr(self, 'setting_end_idx', -1)) if rule.get("end_idx", -1) == -1 else get_sta_name(rule["end_idx"])
+                r_end = (
+                    get_sta_name(getattr(self, 'setting_end_idx', -1))
+                    if rule.get("end_idx", -1) == -1
+                    else get_sta_name(rule["end_idx"])
+                )
                 
                 cx = val_x_start
                 
@@ -610,7 +616,11 @@ def draw_menu(self, painter, logical_width):
                 if r_idx >= len(getattr(self, 'brake_rules', [])): break
                 rule = getattr(self, 'brake_rules', [])[r_idx]
                 r_start = get_sta_name(getattr(self, 'setting_start_idx', 0)) if r_idx == 0 else get_sta_name(getattr(self, 'brake_rules', [])[r_idx-1]["end_idx"])
-                r_end = get_sta_name(getattr(self, 'setting_end_idx', -1)) if rule.get("end_idx", -1) == -1 else get_sta_name(rule["end_idx"])
+                r_end = (
+                    get_sta_name(getattr(self, 'setting_end_idx', -1))
+                    if rule.get("end_idx", -1) == -1
+                    else get_sta_name(rule["end_idx"])
+                )
                 is_last = (r_idx == len(getattr(self, 'brake_rules', [])) - 1)
                 r_y = sub_list_y_start + (i * 70) 
                 

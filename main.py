@@ -358,18 +358,23 @@ class Overlay(QWidget):
                                 s_rdep = int(parts[4]) if len(parts) >= 5 else -1
                                 s_def = int(parts[5]) if len(parts) >= 6 else -1
                                 s_stop = int(parts[6]) if len(parts) >= 7 else 15000
-                                # ★ 追加：受信パケットから is_pass フラグを読み取って保存
+
+                                # 受信パケットから通過駅・終着駅フラグを読み取る
                                 s_is_pass = (parts[7] == '1') if len(parts) >= 8 else False
+                                s_is_terminal = (parts[8] == '1') if len(parts) >= 9 else False
+
                                 new_list.append({
-                                    "name": s_name, 
-                                    "is_timing": (s_timing == '1'), 
+                                    "name": s_name,
+                                    "is_timing": (s_timing == '1'),
                                     "location": s_loc,
                                     "raw_arr": s_rarr,
                                     "raw_dep": s_rdep,
                                     "def_time": s_def,
                                     "stop_time": s_stop,
-                                    "is_pass": s_is_pass
+                                    "is_pass": s_is_pass,
+                                    "is_terminal": s_is_terminal
                                 })
+
                     if new_list:
                         self.station_list = new_list
                 elif text.startswith("META:"):
@@ -578,9 +583,18 @@ class Overlay(QWidget):
         return [i for i in range(len(self.station_list)) if self.setting_start_idx <= i <= end_idx]
 
     def get_actual_terminal_idx(self):
-        if not self.station_list: return -1
-        timing_stas = [i for i, s in enumerate(self.station_list) if s.get("is_timing", False)]
-        return timing_stas[-1] if timing_stas else -1
+        if not self.station_list:
+            return -1
+
+        # C#側で判定した終着駅を優先する。
+        # departureTime="t"があればその駅、
+        # tがなければ駅リストの最終駅に終着フラグが設定される。
+        for i, station in enumerate(self.station_list):
+            if station.get("is_terminal", False):
+                return i
+
+        # 古いC#プラグインや、終着フラグのないSTALISTとの互換性用
+        return len(self.station_list) - 1
 
     def get_current_brake_rule(self):
         if not self.is_scoring_mode or not self.station_list:
@@ -998,7 +1012,7 @@ class Overlay(QWidget):
                     opts = [s for s in valid_stas if s["idx"] < e_idx]
                 else:
                     s_idx = getattr(self, 'setting_start_idx', 0)
-                    opts = [s for s in valid_stas if s["idx"] > s_idx]
+                    opts = [s for s in valid_stas if s["idx"] > s_idx and s["idx"] <= actual_terminal_idx]
                 self.dropdown_options = opts if opts else [{"idx": -1, "name": "選択可能駅なし"}]
                 
             elif self.menu_cursor == 1 and getattr(self, 'menu_cursor_x', 0) == 0:
