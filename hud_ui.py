@@ -1,8 +1,7 @@
-import time
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFontMetrics, QPainterPath, QPen, QLinearGradient, QFont
 from config import *
-from utils import draw_text_with_outline, draw_text_with_stroke, get_outline_color
+from utils import draw_text_with_stroke, get_outline_color
 
 def draw_hud(self, painter, logical_width):
     from main import KERNING_OFFSETS
@@ -37,9 +36,21 @@ def draw_hud(self, painter, logical_width):
         if self.cushion_min > 1: dummy_text = self.all_brk_texts[1] if len(self.all_brk_texts) > 1 else "B1"
         cushion_str = f"[CUSHION] 無効段: {dummy_text} | 有効常用: {self.svc_brk_count}段 | 帯域: {c_min_text}" if c_min_text == c_max_text else f"[CUSHION] 無効段: {dummy_text} | 有効常用: {self.svc_brk_count}段 | 帯域: {c_min_text} - {c_max_text}"
 
-    eb_freeze_status = "ON (Wait Drop/Stable)" if self.smee_eb_frozen else "OFF"
-    ecb_debug_str = f" | Ecb_EB: {self.ecb_eb_accum_time:.2f}/{ECB_EB_ACCUM_THRESHOLD}s (Cool: {self.ecb_eb_cooling_time:.2f}/{ECB_EB_COOLING_THRESHOLD}s)" if self.bve_btype == "Ecb" else ""
-
+    eb_freeze_status = (
+        "ON (Wait BP Recovery)"
+        if self.smee_eb_frozen
+        else "OFF"
+    )
+    ecb_debug_str = (
+        f" | Manual_EB: "
+        f"{self.ecb_eb_accum_time:.2f}/"
+        f"{ECB_EB_ACCUM_THRESHOLD}s "
+        f"(Cool: "
+        f"{self.ecb_eb_cooling_time:.2f}/"
+        f"{ECB_EB_COOLING_THRESHOLD}s)"
+        if self.bve_btype in ("Ecb", "Smee")
+        else ""
+    )
     dbg_texts = []
     if (self.bve_time_ms / 1000.0) < self.rollback_msg_timer and self.rollback_msg:
         dbg_texts.append(f"★ {self.rollback_msg}")
@@ -85,7 +96,10 @@ def draw_hud(self, painter, logical_width):
         f"BrakeType: {self.bve_btype} | InitExempt: {IGNORE_INITIAL_BRAKE} | RelExempt: {IGNORE_RELEASE_BRAKE}",
         cushion_str,
         bb_debug_text,
-        f"BCP: {self.bcPressure:.1f} kPa | BPP: {self.bpPressure:.1f} / {self.bve_bp_initial * 0.9:.1f} kPa | EB_Freeze: {eb_freeze_status} | Thresh: {self.eb_freeze_threshold:.1f} kPa",
+        f"BCP: {self.bcPressure:.1f} kPa | "
+        f"BPP: {self.bpPressure:.1f} / "
+        f"{self.bve_bp_initial * 0.95:.1f} kPa | "
+        f"EB_Freeze: {eb_freeze_status}",
         f"Target_Cap_Val: {round(self.dbg_target_cap, 1)} | ActiveBlue: {round(float(self.dbg_blue), 1) if self.dbg_blue != 'None' else 'None'}  |  ActiveRed: {round(float(self.dbg_red), 1) if self.dbg_red != 'None' else 'None'}",
         f"CalcG: {self.bve_calc_g:.4f} G | MaxG: {self.max_stop_g:.4f} G | LastStop: {self.last_stop_g:.4f} G"
     ])

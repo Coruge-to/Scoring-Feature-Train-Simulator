@@ -1,5 +1,4 @@
 from config import *
-import builtins
 
 def write_debug_log(text):
     try:
@@ -12,7 +11,9 @@ def write_debug_log(text):
 
 def process_udp_data(self):
     while self.udp_socket.hasPendingDatagrams():
-        datagram, host, port = self.udp_socket.readDatagram(self.udp_socket.pendingDatagramSize())
+        datagram, _host, _port = self.udp_socket.readDatagram(
+            self.udp_socket.pendingDatagramSize()
+        )
         try:
             text = datagram.decode('utf-8')
 
@@ -199,8 +200,5 @@ def process_udp_data(self):
                             if self.svc_brk_count <= 3: self.cushion_count = 1
                             else: self.cushion_count = (self.svc_brk_count - 2) // 2
                             self.cushion_max = self.cushion_min + self.cushion_count - 1
-                            if min_valid < len(rates): self.eb_freeze_threshold = (self.bve_max_pressure * rates[min_valid]) - 5.0
-                            else: self.eb_freeze_threshold = 20.0
-                            if self.eb_freeze_threshold < 5.0: self.eb_freeze_threshold = 5.0
                 except Exception: continue 
         except Exception: pass

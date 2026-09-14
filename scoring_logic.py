@@ -18,7 +18,6 @@ def reset_transient_scoring_state(self):
     駅単位の採点済み状態は変更しない。
     """
     self.g_history.clear()
-    self.bcp_history.clear()
 
     # 不正ジャンプなどの警告は、後続の時刻巻き戻りリセットでも保持する
     self.popups = [
@@ -30,8 +29,10 @@ def reset_transient_scoring_state(self):
     # 非常ブレーキ判定
     self.ecb_eb_accum_time = 0.0
     self.ecb_eb_cooling_time = 0.0
-    self.smee_eb_frozen = False
-    self.eb_applied = False
+
+    # eb_appliedは維持する。
+    # 公式ジャンプ直前に成立していたEBを、
+    # ジャンプ直後の新規EBとして再採点させない。
 
     # 基本制動判定
     self.bb_state = "IDLE"
@@ -293,18 +294,16 @@ def detect_physical_emergency_brake(self, dt):
         or "非常" in self.bve_brk_text
         or "EB" in self.bve_brk_text.upper()
     )
-    physical_eb_tripped = False
 
-    if self.bve_btype == "Smee":
-        physical_eb_tripped = (
-            self.bpPressure <= self.bve_bp_initial - 5.0
-        )
-    elif self.bve_btype == "Cl":
+    if self.bve_btype == "Cl":
+        # 自動空気ブレーキ車は、EBハンドル位置を直接使用する。
         physical_eb_tripped = is_eb_handle
 
     else:
+        # Ecb・Smee共通の手動EB累積判定。
         if is_eb_handle:
             self.ecb_eb_accum_time += dt
+
             if (
                 self.ecb_eb_accum_time
                 >= ECB_EB_ACCUM_THRESHOLD
@@ -312,10 +311,13 @@ def detect_physical_emergency_brake(self, dt):
                 self.ecb_eb_accum_time = (
                     ECB_EB_ACCUM_THRESHOLD
                 )
+
             self.ecb_eb_cooling_time = 0.0
+
         else:
             if self.ecb_eb_accum_time > 0.0:
                 self.ecb_eb_cooling_time += dt
+
                 if (
                     self.ecb_eb_cooling_time
                     >= ECB_EB_COOLING_THRESHOLD
@@ -360,24 +362,10 @@ def update_stop_jerk_penalty(self, current_time, decel_g):
 def update_emergency_brake_penalty(
     self,
     current_time,
-    is_eb_handle,
     physical_eb_tripped,
     in_station_zone,
 ):
-    if self.bve_btype == "Smee":
-        # Smee車では、EBハンドルを一度解除した時点で
-        # 次回の手動EB操作を受け付けられる状態へ戻す。
-        if not is_eb_handle:
-            self.eb_applied = False
-
-        # BPが回復途中でも、ハンドルがEB位置でなければ
-        # 新たな手動EB操作としては扱わない。
-        eb_event_active = (
-            is_eb_handle
-            and physical_eb_tripped
-        )
-    else:
-        eb_event_active = physical_eb_tripped
+    eb_event_active = physical_eb_tripped
 
     # 基本制動評価中に物理EBが成立した場合は、
     # 手動操作かどうかにかかわらず加点資格を失わせる。
@@ -435,7 +423,7 @@ def update_emergency_brake_penalty(
 
             self.eb_applied = True
 
-    elif self.bve_btype != "Smee":
+    else:
         self.eb_applied = False
 
 def update_smee_emergency_brake_freeze(
@@ -445,7 +433,6 @@ def update_smee_emergency_brake_freeze(
 ):
     if self.bve_btype != "Smee":
         self.smee_eb_frozen = False
-        self.bcp_history.clear()
         return
 
     was_frozen = getattr(
@@ -454,25 +441,40 @@ def update_smee_emergency_brake_freeze(
         False,
     )
 
-    virtual_eb_active = (
-        self.bpPressure
-        < self.bve_bp_initial * 0.95
+    bp_threshold = (
+        self.bve_bp_initial * 0.95
     )
 
-    if virtual_eb_active:
-        # BPが非常制動相当まで低下している間は、
-        # 実ハンドル位置にかかわらず採点上EBとして扱う。
-        self.smee_eb_frozen = True
-        self.bcp_history.clear()
-        return
+    bp_is_low = (
+        self.bpPressure < bp_threshold
+    )
 
-    # BPが十分に回復したため、採点上の仮想EBを解除する。
-    self.smee_eb_frozen = False
-    self.bcp_history.clear()
+    eb_time_qualified = (
+        self.ecb_eb_accum_time
+        >= ECB_EB_ACCUM_THRESHOLD
+    )
 
-    # 仮想EBでなかった場合は、解除時判定を行わない。
     if not was_frozen:
+        # 仮想EBの開始条件:
+        # BPが規定値未満、かつ冷却時間を含む
+        # EB累積判定が0.3秒以上。
+        if (
+            bp_is_low
+            and eb_time_qualified
+        ):
+            self.smee_eb_frozen = True
+
         return
+
+    # 一度仮想EBへ入った後は、
+    # EB累積時間がリセットされてもBP回復まで維持する。
+    if bp_is_low:
+        self.smee_eb_frozen = True
+        return
+
+    # BPが規定値以上へ回復したため、
+    # 採点上の仮想EBを解除する。
+    self.smee_eb_frozen = False
 
     curr_state_unfrozen = get_notch_state(
         self,
@@ -661,22 +663,57 @@ def execute_retry(self, index, is_bve_advancing):
     begin_official_jump(self, ideal_loc, cp['time_ms'])
     self.udp_socket.writeDatagram(cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)
 
-def add_score_popup(self, points, text, color, ptype, category, current_time, force=False):
-    if not getattr(self, 'is_scoring_mode', False) and not force: return
+def add_score_popup(
+    self,
+    points,
+    text,
+    color,
+    ptype,
+    category,
+    current_time,
+    force=False,
+):
+    if (
+        not getattr(self, 'is_scoring_mode', False)
+        and not force
+    ):
+        return
+
     # 採点終了後は、強制表示を除く新たな加点・減点を受け付けない
-    if getattr(self, 'is_scoring_finished', False) and not force: return
+    if (
+        getattr(self, 'is_scoring_finished', False)
+        and not force
+    ):
+        return
+
     self.score += points
+
     # 得点をカテゴリ別の内訳へ反映する
     cat_map = {
-        "運転時分": "time", "停止位置": "stop", "基本制動": "base_brake",
-        "ボーナス": "bonus", "転動": "roll", "停車時衝動": "jerk",
-        "初動ブレーキ": "init_brake", "緩和ブレーキ": "rel_brake",
-        "非常ブレーキ": "eb", "速度制限超過": "limit", "ATS信号無視": "ats"
+        "運転時分": "time",
+        "停止位置": "stop",
+        "基本制動": "base_brake",
+        "ボーナス": "bonus",
+        "転動": "roll",
+        "停車時衝動": "jerk",
+        "初動ブレーキ": "init_brake",
+        "緩和ブレーキ": "rel_brake",
+        "非常ブレーキ": "eb",
+        "速度制限超過": "limit",
+        "ATS信号無視": "ats",
     }
+
     if category in cat_map:
         key = cat_map[category]
         self.score_details[key] += points
-    self.popups.append({"text": text, "color": color, "expire_time": current_time + 5.0, "type": ptype, "category": category})
+
+    self.popups.append({
+        "text": text,
+        "color": color,
+        "expire_time": current_time + 5.0,
+        "type": ptype,
+        "category": category,
+    })
 
 def apply_time_score(self, diff_s, current_time):
     if not getattr(self, 'is_scoring_mode', False) or getattr(self, 'is_scoring_finished', False): return
@@ -1113,7 +1150,6 @@ def update_physics_and_scoring(self, current_time, dt):
     update_emergency_brake_penalty(
         self,
         current_time,
-        is_eb_handle,
         physical_eb_tripped,
         in_station_zone,
     )

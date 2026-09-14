@@ -87,10 +87,8 @@ class Overlay(QWidget):
         self.bcPressure = 0.0
         self.bpPressure = 0.0  
         self.bve_bp_initial = 490.0
-        self.bcp_history = []
         self.bve_pressure_rates = []
         self.bve_max_pressure = 440.0
-        self.eb_freeze_threshold = 20.0
 
         self.ecb_eb_accum_time = 0.0
         self.ecb_eb_cooling_time = 0.0
@@ -558,9 +556,6 @@ class Overlay(QWidget):
                             if self.svc_brk_count <= 3: self.cushion_count = 1
                             else: self.cushion_count = (self.svc_brk_count - 2) // 2
                             self.cushion_max = self.cushion_min + self.cushion_count - 1
-                            if min_valid < len(rates): self.eb_freeze_threshold = (self.bve_max_pressure * rates[min_valid]) - 5.0
-                            else: self.eb_freeze_threshold = 20.0
-                            if self.eb_freeze_threshold < 5.0: self.eb_freeze_threshold = 5.0
                     # C#プラグインからドアのCloseTimeを受信する
                     elif part.startswith("DOORTIME:"):
                         val = int(part.split(':')[1])
