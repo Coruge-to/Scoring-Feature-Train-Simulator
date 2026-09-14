@@ -60,9 +60,6 @@ namespace TsScoringPlugin
         private bool pendingJumpComplete = false;
         private string pendingJumpType = "";
         private int pendingJumpStationIndex = -1;
-        private double pendingJumpTargetLocation = -1.0;
-        private int pendingJumpTargetTime = -1;
-
         private int opStopDelayStartMs = -1;
         private bool initialStaListSent = false;
         private DateTime lastStaListSendTime = DateTime.MinValue;
@@ -243,99 +240,16 @@ namespace TsScoringPlugin
                                                     )
                                                     .ToList();
 
-                                                // 候補一覧をログへ記録
-                                                string candidateLog = string.Join(
-                                                    "\r\n",
-                                                    jumpStaCandidates.Select(
-                                                        m =>
-                                                            $"{m.DeclaringType?.FullName}.{m.Name}"
-                                                            + $"("
-                                                            + string.Join(
-                                                                ", ",
-                                                                m.GetParameters()
-                                                                    .Select(p => p.ParameterType.FullName)
-                                                            )
-                                                            + $")"
-                                                    )
-                                                );
-
-                                                string desktopPath = Environment.GetFolderPath(
-                                                    Environment.SpecialFolder.Desktop
-                                                );
-
                                                 // 現行処理と同じく、候補の先頭を選択
                                                 var jumpStaMethod =
                                                     jumpStaCandidates.FirstOrDefault();
 
                                                 if (jumpStaMethod != null)
                                                 {
-                                                    string parameterTypes = string.Join(
-                                                        ", ",
-                                                        jumpStaMethod
-                                                            .GetParameters()
-                                                            .Select(p => p.ParameterType.FullName)
-                                                    );
-
-                                                    double locationBeforeInvoke = -1.0;
-                                                    double locationAfterInvoke = -1.0;
-                                                    int timeBeforeInvoke = -1;
-                                                    int timeAfterInvoke = -1;
-
-                                                    try
-                                                    {
-                                                        locationBeforeInvoke =
-                                                            BveHacker.Scenario.VehicleLocation.Location;
-                                                    }
-                                                    catch
-                                                    {
-                                                    }
-
-                                                    try
-                                                    {
-                                                        timeBeforeInvoke =
-                                                            (int)BveHacker.Scenario
-                                                                .TimeManager
-                                                                .Time
-                                                                .TotalMilliseconds;
-                                                    }
-                                                    catch
-                                                    {
-                                                    }
-
                                                     jumpStaMethod.Invoke(
                                                         rawScenario,
                                                         new object[] { sIdx }
                                                     );
-
-                                                    try
-                                                    {
-                                                        locationAfterInvoke =
-                                                            BveHacker.Scenario.VehicleLocation.Location;
-                                                    }
-                                                    catch
-                                                    {
-                                                    }
-
-                                                    try
-                                                    {
-                                                        timeAfterInvoke =
-                                                            (int)BveHacker.Scenario
-                                                                .TimeManager
-                                                                .Time
-                                                                .TotalMilliseconds;
-                                                    }
-                                                    catch
-                                                    {
-                                                    }
-
-                                                    string targetStationName = "(out of range)";
-                                                    double targetStationLocation = -1.0;
-
-                                                    if (sIdx >= 0 && sIdx < stationList.Count)
-                                                    {
-                                                        targetStationName = stationList[sIdx].Name;
-                                                        targetStationLocation = stationList[sIdx].Location;
-                                                    }
                                                 }
 
                                                 // 2. 時計の針（TimeManager）だけを強引に過去(セーブデータ)に合わせる
@@ -380,11 +294,6 @@ namespace TsScoringPlugin
                                                 pendingJumpComplete = true;
                                                 pendingJumpType = "STA";
                                                 pendingJumpStationIndex = sIdx;
-                                                pendingJumpTargetLocation =
-                                                    sIdx >= 0 && sIdx < stationList.Count
-                                                        ? stationList[sIdx].Location
-                                                        : -1.0;
-                                                pendingJumpTargetTime = rTimeMs;
                                             }
                                         }
                                     }
@@ -436,9 +345,6 @@ namespace TsScoringPlugin
                                                 pendingJumpComplete = true;
                                                 pendingJumpType = "LOC";
                                                 pendingJumpStationIndex = -1;
-                                                pendingJumpTargetLocation = rLoc;
-                                                pendingJumpTargetTime = rTimeMs;
-
                                             }
                                         }
                                     }
@@ -1342,8 +1248,6 @@ namespace TsScoringPlugin
                         pendingJumpComplete = false;
                         pendingJumpType = "";
                         pendingJumpStationIndex = -1;
-                        pendingJumpTargetLocation = -1.0;
-                        pendingJumpTargetTime = -1;
                     }
                 }
                 catch { }
