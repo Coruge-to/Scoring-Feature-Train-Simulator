@@ -325,6 +325,30 @@ def update_stop_jerk_penalty(self, current_time, decel_g):
     elif 0.0 < abs(self.bve_speed): #<= 1.5
         self.is_stopping_zone = True
 
+def update_emergency_brake_penalty(
+    self,
+    current_time,
+    physical_eb_tripped,
+    in_station_zone,
+):
+    if physical_eb_tripped:
+        if self.bb_is_in_zone: self.bb_state = "FAILED"
+        if not self.eb_applied:
+            if abs(self.bve_speed) > 0.0:
+                if getattr(self, 'pen_eb', True):
+                    add_score_popup(self, -500, "非常ブレーキ使用 -500", COLOR_B_EMG, "neg", "非常ブレーキ", current_time)
+
+                rule = getattr(self, 'active_rule_init_apply', 'ON①')
+                is_initial_exempt = (rule == "OFF") or (rule == "ON②" and in_station_zone)
+
+                if not is_initial_exempt and not getattr(self, 'has_evaluated_initial_brake', False):
+                    add_score_popup(self, -100, "初動ブレーキ -100", COLOR_B_EMG, "neg", "初動ブレーキ", current_time)
+                    self.has_evaluated_initial_brake = True
+
+            self.eb_applied = True
+    else:
+        self.eb_applied = False
+
 def begin_official_jump(self, target_loc, target_time):
     """
     採点開始またはリトライによる公式ジャンプの保護を開始する。
@@ -859,22 +883,12 @@ def update_physics_and_scoring(self, current_time, dt):
         detect_physical_emergency_brake(self, dt)
     )
 
-    if physical_eb_tripped:
-        if self.bb_is_in_zone: self.bb_state = "FAILED"
-        if not self.eb_applied:
-            if abs(self.bve_speed) > 0.0:
-                if getattr(self, 'pen_eb', True):
-                    add_score_popup(self, -500, "非常ブレーキ使用 -500", COLOR_B_EMG, "neg", "非常ブレーキ", current_time)
-
-                rule = getattr(self, 'active_rule_init_apply', 'ON①')
-                is_initial_exempt = (rule == "OFF") or (rule == "ON②" and in_station_zone)
-
-                if not is_initial_exempt and not getattr(self, 'has_evaluated_initial_brake', False):
-                    add_score_popup(self, -100, "初動ブレーキ -100", COLOR_B_EMG, "neg", "初動ブレーキ", current_time)
-                    self.has_evaluated_initial_brake = True
-
-            self.eb_applied = True
-    else: self.eb_applied = False
+    update_emergency_brake_penalty(
+        self,
+        current_time,
+        physical_eb_tripped,
+        in_station_zone,
+    )
 
     if self.bve_btype == "Smee":
         if self.bpPressure < self.bve_bp_initial * 0.9:
