@@ -434,7 +434,7 @@ def update_smee_virtual_emergency_brake(
         self.smee_virtual_eb_active = False
         return
 
-    was_frozen = getattr(
+    was_virtual_eb_active = getattr(
         self,
         'smee_virtual_eb_active',
         False,
@@ -453,7 +453,7 @@ def update_smee_virtual_emergency_brake(
         >= MANUAL_EB_ACCUM_THRESHOLD
     )
 
-    if not was_frozen:
+    if not was_virtual_eb_active:
         # 仮想EBの開始条件:
         # BPが規定値未満、かつ冷却時間を含む
         # EB累積判定が0.3秒以上。
@@ -475,7 +475,7 @@ def update_smee_virtual_emergency_brake(
     # 採点上の仮想EBを解除する。
     self.smee_virtual_eb_active = False
 
-    curr_state_unfrozen = get_notch_state(
+    state_after_virtual_eb = get_notch_state(
         self,
         self.bve_brk_notch,
     )
@@ -497,7 +497,7 @@ def update_smee_virtual_emergency_brake(
     # 仮想EBから直接IDLEへ復帰した場合は、
     # EcB車でEBから一気に緩解した場合と同等に扱う。
     if (
-        curr_state_unfrozen == "IDLE"
+        state_after_virtual_eb == "IDLE"
         and abs(self.bve_speed) > 0.0
         and not getattr(
             self,
