@@ -45,6 +45,13 @@ def reset_transient_scoring_state(self):
     self.hb_cushion_entry_time = 0.0
     self.hb_cushion_max_g = 0.0
 
+    # 停止イベント検出
+    self.prev_stop_detection_speed = getattr(
+        self,
+        'bve_speed',
+        0.0,
+    )
+
 def reset_station_evaluation_state(self):
     """
     現在の対象駅に対する接近・範囲外停車・採点済み状態を初期化する。
@@ -1197,6 +1204,7 @@ def update_physics_and_scoring(self, current_time, dt):
         self.is_first_station = False
 
         reset_station_evaluation_state(self)
+        reset_station_evaluation_state(self)
 
         self.bb_evaluated = False
         self.bb_is_in_zone = False
@@ -1206,10 +1214,42 @@ def update_physics_and_scoring(self, current_time, dt):
         if abs(self.bve_next_loc - self.bve_location) < actual_margin:
             self.is_approaching = True
 
-    if getattr(self, 'is_approaching', False) and self.bve_speed == 0.0 and not getattr(self, 'has_scored_stop_this_station', False):
+    prev_stop_speed = getattr(
+        self,
+        'prev_stop_detection_speed',
+        self.bve_speed,
+    )
+
+    is_exact_stop = self.bve_speed == 0.0
+
+    crossed_zero = (
+        prev_stop_speed != 0.0
+        and self.bve_speed != 0.0
+        and (prev_stop_speed > 0.0)
+        != (self.bve_speed > 0.0)
+    )
+
+    stop_detected = is_exact_stop or crossed_zero
+
+    if (
+        getattr(self, 'is_approaching', False)
+        and stop_detected
+        and not getattr(
+            self,
+            'has_scored_stop_this_station',
+            False,
+        )
+    ):
         d = self.bve_next_loc - self.bve_location
-        if not (-self.bve_margin_f <= d <= self.bve_margin_b):
+
+        if not (
+            -self.bve_margin_f
+            <= d
+            <= self.bve_margin_b
+        ):
             self.is_stopped_out_of_range = True
+
+    self.prev_stop_detection_speed = self.bve_speed
 
     if is_operational_stop and getattr(self, 'is_approaching', False) and self.bve_speed == 0.0 and not getattr(self, 'has_scored_stop_this_station', False):
         # 作者定義の停止位置許容範囲内（-margin_f～margin_b）で停車した場合にのみ到着処理を行う
