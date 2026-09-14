@@ -441,7 +441,7 @@ def update_smee_virtual_emergency_brake(
     )
 
     bp_threshold = (
-        self.bve_bp_initial * 0.95
+        self.bve_bp_initial * SMEE_VIRTUAL_EB_BP_RATIO
     )
 
     bp_is_low = (

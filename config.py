@@ -1,6 +1,3 @@
-# ==========================================
-# ★ 採点システム カスタマイズ設定 ★
-# ==========================================
 BASIC_BRAKE_APPLY_LIMIT = 0   
 BASIC_BRAKE_RELEASE_LIMIT = 0 
 
@@ -11,7 +8,7 @@ IGNORE_RELEASE_BRAKE = "NONE"
 
 MANUAL_EB_ACCUM_THRESHOLD = 0.3
 MANUAL_EB_COOLING_THRESHOLD = 1.0
-# ==========================================
+SMEE_VIRTUAL_EB_BP_RATIO = 0.95
 
 FONT_PATH = r"C:\WINDOWS\FONTS\UDDIGIKYOKASHON-R.TTC"
 FONT_SIZE_NORMAL = 35  

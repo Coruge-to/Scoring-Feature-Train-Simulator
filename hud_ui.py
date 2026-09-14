@@ -98,7 +98,7 @@ def draw_hud(self, painter, logical_width):
         bb_debug_text,
         f"BCP: {self.bcPressure:.1f} kPa | "
         f"BPP: {self.bpPressure:.1f} / "
-        f"{self.bve_bp_initial * 0.95:.1f} kPa | "
+        f"{self.bve_bp_initial * SMEE_VIRTUAL_EB_BP_RATIO:.1f} kPa | "
         f"Virtual_EB: {virtual_eb_status}",
         f"Target_Cap_Val: {round(self.dbg_target_cap, 1)} | ActiveBlue: {round(float(self.dbg_blue), 1) if self.dbg_blue != 'None' else 'None'}  |  ActiveRed: {round(float(self.dbg_red), 1) if self.dbg_red != 'None' else 'None'}",
         f"CalcG: {self.bve_calc_g:.4f} G | MaxG: {self.max_stop_g:.4f} G | LastStop: {self.last_stop_g:.4f} G"
