@@ -90,8 +90,8 @@ class Overlay(QWidget):
         self.bve_pressure_rates = []
         self.bve_max_pressure = 440.0
 
-        self.ecb_eb_accum_time = 0.0
-        self.ecb_eb_cooling_time = 0.0
+        self.manual_eb_accum_time = 0.0
+        self.manual_eb_cooling_time = 0.0
 
         self.bb_state = "IDLE"
         self.bb_apply_count = 0

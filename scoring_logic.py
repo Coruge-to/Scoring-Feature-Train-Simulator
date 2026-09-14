@@ -27,8 +27,8 @@ def reset_transient_scoring_state(self):
     ]
 
     # 非常ブレーキ判定
-    self.ecb_eb_accum_time = 0.0
-    self.ecb_eb_cooling_time = 0.0
+    self.manual_eb_accum_time = 0.0
+    self.manual_eb_cooling_time = 0.0
 
     # eb_appliedは維持する。
     # 公式ジャンプ直前に成立していたEBを、
@@ -302,33 +302,33 @@ def detect_physical_emergency_brake(self, dt):
     else:
         # Ecb・Smee共通の手動EB累積判定。
         if is_eb_handle:
-            self.ecb_eb_accum_time += dt
+            self.manual_eb_accum_time += dt
 
             if (
-                self.ecb_eb_accum_time
+                self.manual_eb_accum_time
                 >= ECB_EB_ACCUM_THRESHOLD
             ):
-                self.ecb_eb_accum_time = (
+                self.manual_eb_accum_time = (
                     ECB_EB_ACCUM_THRESHOLD
                 )
 
-            self.ecb_eb_cooling_time = 0.0
+            self.manual_eb_cooling_time = 0.0
 
         else:
-            if self.ecb_eb_accum_time > 0.0:
-                self.ecb_eb_cooling_time += dt
+            if self.manual_eb_accum_time > 0.0:
+                self.manual_eb_cooling_time += dt
 
                 if (
-                    self.ecb_eb_cooling_time
+                    self.manual_eb_cooling_time
                     >= ECB_EB_COOLING_THRESHOLD
                 ):
-                    self.ecb_eb_accum_time = 0.0
-                    self.ecb_eb_cooling_time = 0.0
+                    self.manual_eb_accum_time = 0.0
+                    self.manual_eb_cooling_time = 0.0
             else:
-                self.ecb_eb_cooling_time = 0.0
+                self.manual_eb_cooling_time = 0.0
 
         physical_eb_tripped = (
-            self.ecb_eb_accum_time
+            self.manual_eb_accum_time
             >= ECB_EB_ACCUM_THRESHOLD
         )
 
@@ -450,7 +450,7 @@ def update_smee_emergency_brake_freeze(
     )
 
     eb_time_qualified = (
-        self.ecb_eb_accum_time
+        self.manual_eb_accum_time
         >= ECB_EB_ACCUM_THRESHOLD
     )
 

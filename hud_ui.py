@@ -41,12 +41,12 @@ def draw_hud(self, painter, logical_width):
         if self.smee_eb_frozen
         else "OFF"
     )
-    ecb_debug_str = (
+    manual_eb_debug_str = (
         f" | Manual_EB: "
-        f"{self.ecb_eb_accum_time:.2f}/"
+        f"{self.manual_eb_accum_time:.2f}/"
         f"{ECB_EB_ACCUM_THRESHOLD}s "
         f"(Cool: "
-        f"{self.ecb_eb_cooling_time:.2f}/"
+        f"{self.manual_eb_cooling_time:.2f}/"
         f"{ECB_EB_COOLING_THRESHOLD}s)"
         if self.bve_btype in ("Ecb", "Smee")
         else ""
@@ -91,7 +91,7 @@ def draw_hud(self, painter, logical_width):
         save_debug_str, 
         f"[TIMING] Mode: {mode_str} | Target is_timing: {self.bve_is_timing} | Prev is_timing: {self.prev_is_timing}",
         f"[STATE] 1st_Sta: {self.is_first_station} | Appr: {self.is_approaching} | StopScored: {self.has_scored_stop_this_station} | TimeScored: {self.has_scored_time_this_station}",
-        f"[DEBUG X-RAY]{jump_warn}{ecb_debug_str}",
+        f"[DEBUG X-RAY]{jump_warn}{manual_eb_debug_str}",
         f8_dbg_str,  # ← ここに追加
         f"BrakeType: {self.bve_btype} | InitExempt: {IGNORE_INITIAL_BRAKE} | RelExempt: {IGNORE_RELEASE_BRAKE}",
         cushion_str,
