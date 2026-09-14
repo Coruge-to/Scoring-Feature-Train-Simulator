@@ -1,10 +1,13 @@
-from config import *
-from utils import calculate_warning_distance, calculate_apex_speed
-from PyQt6.QtNetwork import QHostAddress
-from utils import calculate_warning_distance, calculate_apex_speed, write_desktop_log
 import os
-from datetime import datetime
-import time
+
+from PyQt6.QtNetwork import QHostAddress
+
+from config import *
+from utils import (
+    calculate_apex_speed,
+    calculate_warning_distance,
+    write_desktop_log,
+)
 
 def reset_transient_scoring_state(self):
     """
