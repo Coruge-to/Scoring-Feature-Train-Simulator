@@ -322,9 +322,6 @@ def update_stop_jerk_penalty(self, current_time, decel_g):
                     add_score_popup(self, -100, "停車時衝動 -100", COLOR_B_EMG, "neg", "停車時衝動", current_time)
             self.is_stopping_zone = False
 
-        curr_n = self.bve_brk_notch
-        self.hb_prev_notch = curr_n
-
     elif 0.0 < abs(self.bve_speed): #<= 1.5
         self.is_stopping_zone = True
 
