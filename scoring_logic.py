@@ -359,7 +359,7 @@ def update_stop_jerk_penalty(self, current_time, decel_g):
     elif 0.0 < abs(self.bve_speed): #<= 1.5
         self.is_stopping_zone = True
 
-def update_emergency_brake_penalty(
+def update_manual_emergency_brake_penalty(
     self,
     current_time,
     manual_eb_qualified,
@@ -1146,7 +1146,7 @@ def update_physics_and_scoring(self, current_time, dt):
         update_manual_emergency_brake_state(self, dt)
     )
 
-    update_emergency_brake_penalty(
+    update_manual_emergency_brake_penalty(
         self,
         current_time,
         manual_eb_qualified,
