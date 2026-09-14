@@ -360,25 +360,82 @@ def update_stop_jerk_penalty(self, current_time, decel_g):
 def update_emergency_brake_penalty(
     self,
     current_time,
+    is_eb_handle,
     physical_eb_tripped,
     in_station_zone,
 ):
-    if physical_eb_tripped:
-        if self.bb_is_in_zone: self.bb_state = "FAILED"
+    if self.bve_btype == "Smee":
+        # Smee車では、EBハンドルを一度解除した時点で
+        # 次回の手動EB操作を受け付けられる状態へ戻す。
+        if not is_eb_handle:
+            self.eb_applied = False
+
+        # BPが回復途中でも、ハンドルがEB位置でなければ
+        # 新たな手動EB操作としては扱わない。
+        eb_event_active = (
+            is_eb_handle
+            and physical_eb_tripped
+        )
+    else:
+        eb_event_active = physical_eb_tripped
+
+    # 基本制動評価中に物理EBが成立した場合は、
+    # 手動操作かどうかにかかわらず加点資格を失わせる。
+    if (
+        physical_eb_tripped
+        and self.bb_is_in_zone
+    ):
+        self.bb_state = "FAILED"
+
+    if eb_event_active:
         if not self.eb_applied:
             if abs(self.bve_speed) > 0.0:
                 if getattr(self, 'pen_eb', True):
-                    add_score_popup(self, -500, "非常ブレーキ使用 -500", COLOR_B_EMG, "neg", "非常ブレーキ", current_time)
+                    add_score_popup(
+                        self,
+                        -500,
+                        "非常ブレーキ使用 -500",
+                        COLOR_B_EMG,
+                        "neg",
+                        "非常ブレーキ",
+                        current_time,
+                    )
 
-                rule = getattr(self, 'active_rule_init_apply', 'ON①')
-                is_initial_exempt = (rule == "OFF") or (rule == "ON②" and in_station_zone)
+                rule = getattr(
+                    self,
+                    'active_rule_init_apply',
+                    'ON①',
+                )
+                is_initial_exempt = (
+                    rule == "OFF"
+                    or (
+                        rule == "ON②"
+                        and in_station_zone
+                    )
+                )
 
-                if not is_initial_exempt and not getattr(self, 'has_evaluated_initial_brake', False):
-                    add_score_popup(self, -100, "初動ブレーキ -100", COLOR_B_EMG, "neg", "初動ブレーキ", current_time)
+                if (
+                    not is_initial_exempt
+                    and not getattr(
+                        self,
+                        'has_evaluated_initial_brake',
+                        False,
+                    )
+                ):
+                    add_score_popup(
+                        self,
+                        -100,
+                        "初動ブレーキ -100",
+                        COLOR_B_EMG,
+                        "neg",
+                        "初動ブレーキ",
+                        current_time,
+                    )
                     self.has_evaluated_initial_brake = True
 
             self.eb_applied = True
-    else:
+
+    elif self.bve_btype != "Smee":
         self.eb_applied = False
 
 def update_smee_emergency_brake_freeze(
@@ -386,34 +443,77 @@ def update_smee_emergency_brake_freeze(
     current_time,
     in_station_zone,
 ):
-    if self.bve_btype == "Smee":
-        if self.bpPressure < self.bve_bp_initial * 0.9:
-            self.smee_eb_frozen = True
-            self.bcp_history.clear()
-        elif self.smee_eb_frozen:
-            self.bcp_history.append((current_time, self.bcPressure))
-            HISTORY_SEC, STABLE_SEC = 0.6, 0.5
-            self.bcp_history = [h for h in self.bcp_history if current_time - h[0] <= HISTORY_SEC]
-            is_stabilized = False
-            if len(self.bcp_history) >= 5 and (current_time - self.bcp_history[0][0]) >= STABLE_SEC:
-                max_p, min_p = max(h[1] for h in self.bcp_history), min(h[1] for h in self.bcp_history)
-                if (max_p - min_p) < 2.0: is_stabilized = True
-            curr_state_unfrozen = get_notch_state(self, self.bve_brk_notch)
+    if self.bve_btype != "Smee":
+        self.smee_eb_frozen = False
+        self.bcp_history.clear()
+        return
 
-            # Smeeの凍結解除時も、現在の緩和ルールに基づいて免除を判定する
-            rel_rule = getattr(self, 'active_rule_init_release', 'ON①')
-            is_rel_exempt = (rel_rule == "OFF") or (rel_rule == "ON②" and in_station_zone)
+    was_frozen = getattr(
+        self,
+        'smee_eb_frozen',
+        False,
+    )
 
-            if self.bcPressure <= self.eb_freeze_threshold and curr_state_unfrozen == "IDLE":
-                self.smee_eb_frozen = False
-                if abs(self.bve_speed) > 0.0 and not getattr(self, 'idle_entered_while_stopped', False) and not is_rel_exempt:
-                    add_score_popup(self, -100, "緩和ブレーキ -100", COLOR_B_EMG, "neg", "緩和ブレーキ", current_time)
-            elif is_stabilized:
-                self.smee_eb_frozen = False
-                if curr_state_unfrozen == "IDLE":
-                    if abs(self.bve_speed) > 0.0 and not getattr(self, 'idle_entered_while_stopped', False) and not is_rel_exempt:
-                        add_score_popup(self, -100, "緩和ブレーキ -100", COLOR_B_EMG, "neg", "緩和ブレーキ", current_time)
-        else: self.bcp_history.clear()
+    virtual_eb_active = (
+        self.bpPressure
+        < self.bve_bp_initial * 0.95
+    )
+
+    if virtual_eb_active:
+        # BPが非常制動相当まで低下している間は、
+        # 実ハンドル位置にかかわらず採点上EBとして扱う。
+        self.smee_eb_frozen = True
+        self.bcp_history.clear()
+        return
+
+    # BPが十分に回復したため、採点上の仮想EBを解除する。
+    self.smee_eb_frozen = False
+    self.bcp_history.clear()
+
+    # 仮想EBでなかった場合は、解除時判定を行わない。
+    if not was_frozen:
+        return
+
+    curr_state_unfrozen = get_notch_state(
+        self,
+        self.bve_brk_notch,
+    )
+
+    # 仮想EB解除時も、現在の緩和ルールに基づいて免除を判定する。
+    rel_rule = getattr(
+        self,
+        'active_rule_init_release',
+        'ON①',
+    )
+    is_rel_exempt = (
+        rel_rule == "OFF"
+        or (
+            rel_rule == "ON②"
+            and in_station_zone
+        )
+    )
+
+    # 仮想EBから直接IDLEへ復帰した場合は、
+    # EcB車でEBから一気に緩解した場合と同等に扱う。
+    if (
+        curr_state_unfrozen == "IDLE"
+        and abs(self.bve_speed) > 0.0
+        and not getattr(
+            self,
+            'idle_entered_while_stopped',
+            False,
+        )
+        and not is_rel_exempt
+    ):
+        add_score_popup(
+            self,
+            -100,
+            "緩和ブレーキ -100",
+            COLOR_B_EMG,
+            "neg",
+            "緩和ブレーキ",
+            current_time,
+        )
 
 def update_initial_and_release_brake_penalty(
     self,
@@ -1013,6 +1113,7 @@ def update_physics_and_scoring(self, current_time, dt):
     update_emergency_brake_penalty(
         self,
         current_time,
+        is_eb_handle,
         physical_eb_tripped,
         in_station_zone,
     )
