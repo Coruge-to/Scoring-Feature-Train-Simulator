@@ -277,6 +277,27 @@ def update_speed_limit_penalty(self, current_time):
             if not any(p.get("category") == "速度制限超過" for p in getattr(self, 'popups', [])):
                 self.accumulated_speed_penalty = 0
 
+def detect_physical_emergency_brake(self, dt):
+    is_eb_handle = (self.bve_brk_notch >= self.bve_brk_max or "非常" in self.bve_brk_text or "EB" in self.bve_brk_text.upper())
+    physical_eb_tripped = False
+
+    if self.bve_btype == "Smee": physical_eb_tripped = (self.bpPressure <= self.bve_bp_initial - 5.0)
+    elif self.bve_btype == "Cl": physical_eb_tripped = is_eb_handle
+    else:
+        if is_eb_handle:
+            self.ecb_eb_accum_time += dt
+            if self.ecb_eb_accum_time >= ECB_EB_ACCUM_THRESHOLD: self.ecb_eb_accum_time = ECB_EB_ACCUM_THRESHOLD
+            self.ecb_eb_cooling_time = 0.0
+        else:
+            if self.ecb_eb_accum_time > 0.0:
+                self.ecb_eb_cooling_time += dt
+                if self.ecb_eb_cooling_time >= ECB_EB_COOLING_THRESHOLD:
+                    self.ecb_eb_accum_time = 0.0
+                    self.ecb_eb_cooling_time = 0.0
+            else: self.ecb_eb_cooling_time = 0.0
+        physical_eb_tripped = (self.ecb_eb_accum_time >= ECB_EB_ACCUM_THRESHOLD)
+    return is_eb_handle, physical_eb_tripped
+
 def begin_official_jump(self, target_loc, target_time):
     """
     採点開始またはリトライによる公式ジャンプの保護を開始する。
@@ -827,24 +848,9 @@ def update_physics_and_scoring(self, current_time, dt):
     elif 0.0 < abs(self.bve_speed): #<= 1.5
         self.is_stopping_zone = True
 
-    is_eb_handle = (self.bve_brk_notch >= self.bve_brk_max or "非常" in self.bve_brk_text or "EB" in self.bve_brk_text.upper())
-    physical_eb_tripped = False
-
-    if self.bve_btype == "Smee": physical_eb_tripped = (self.bpPressure <= self.bve_bp_initial - 5.0)
-    elif self.bve_btype == "Cl": physical_eb_tripped = is_eb_handle
-    else:
-        if is_eb_handle:
-            self.ecb_eb_accum_time += dt
-            if self.ecb_eb_accum_time >= ECB_EB_ACCUM_THRESHOLD: self.ecb_eb_accum_time = ECB_EB_ACCUM_THRESHOLD
-            self.ecb_eb_cooling_time = 0.0
-        else:
-            if self.ecb_eb_accum_time > 0.0:
-                self.ecb_eb_cooling_time += dt
-                if self.ecb_eb_cooling_time >= ECB_EB_COOLING_THRESHOLD:
-                    self.ecb_eb_accum_time = 0.0
-                    self.ecb_eb_cooling_time = 0.0
-            else: self.ecb_eb_cooling_time = 0.0
-        physical_eb_tripped = (self.ecb_eb_accum_time >= ECB_EB_ACCUM_THRESHOLD)
+    is_eb_handle, physical_eb_tripped = (
+        detect_physical_emergency_brake(self, dt)
+    )
 
     if physical_eb_tripped:
         if self.bb_is_in_zone: self.bb_state = "FAILED"
