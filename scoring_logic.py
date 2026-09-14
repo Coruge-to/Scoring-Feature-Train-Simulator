@@ -425,7 +425,7 @@ def update_emergency_brake_penalty(
     else:
         self.eb_applied = False
 
-def update_smee_emergency_brake_freeze(
+def update_smee_virtual_emergency_brake(
     self,
     current_time,
     in_station_zone,
@@ -1153,7 +1153,7 @@ def update_physics_and_scoring(self, current_time, dt):
         in_station_zone,
     )
 
-    update_smee_emergency_brake_freeze(
+    update_smee_virtual_emergency_brake(
         self,
         current_time,
         in_station_zone,
