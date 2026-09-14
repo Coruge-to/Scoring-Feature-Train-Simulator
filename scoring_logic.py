@@ -352,6 +352,69 @@ def update_emergency_brake_penalty(
     else:
         self.eb_applied = False
 
+def update_initial_and_release_brake_penalty(
+    self,
+    current_time,
+    decel_g,
+    in_station_zone,
+    is_eb_handle,
+):
+
+    curr_n = self.bve_brk_notch
+    curr_state = get_notch_state(self, curr_n)
+    prev_state = get_notch_state(self, self.hb_prev_notch)
+
+    if curr_state == "IDLE":
+        if self.bve_speed == 0.0:
+            self.idle_entered_while_stopped = True
+    else:
+        self.idle_entered_while_stopped = False
+
+    if curr_state == "CUSHION":
+        if prev_state != "CUSHION":
+            self.hb_cushion_entry_time = current_time
+            self.hb_cushion_max_g = 0.0
+        if decel_g > self.hb_cushion_max_g: self.hb_cushion_max_g = decel_g
+
+    if curr_state == "STRONG":
+        self.hb_strong_entered = True
+        if prev_state != "STRONG":
+            rule = getattr(self, 'active_rule_init_apply', 'ON①')
+            is_initial_exempt = (rule == "OFF") or (rule == "ON②" and in_station_zone)
+
+            if not is_initial_exempt and abs(self.bve_speed) > 0.0:
+                if not getattr(self, 'has_evaluated_initial_brake', False):
+                    if self.bve_btype == "Cl":
+                        if is_eb_handle: add_score_popup(self, -100, "初動ブレーキ -100", COLOR_B_EMG, "neg", "初動ブレーキ", current_time)
+                    elif self.bve_btype == "Smee" and self.smee_eb_frozen: pass
+                    else:
+                        if prev_state == "CUSHION":
+                            stay_time = current_time - self.hb_cushion_entry_time
+                            if stay_time < 0.5: add_score_popup(self, -100, "初動ブレーキ -100", COLOR_B_EMG, "neg", "初動ブレーキ", current_time)
+                        else: add_score_popup(self, -100, "初動ブレーキ -100", COLOR_B_EMG, "neg", "初動ブレーキ", current_time)
+
+                    self.has_evaluated_initial_brake = True
+
+    if curr_state == "IDLE" and prev_state != "IDLE":
+        rule = getattr(self, 'active_rule_init_release', 'ON①')
+        is_release_exempt = (rule == "OFF") or (rule == "ON②" and in_station_zone)
+        if not is_release_exempt and abs(self.bve_speed) > 0.0:
+            if not getattr(self, 'idle_entered_while_stopped', False):
+                if getattr(self, 'hb_strong_entered', False):
+                    if self.bve_btype == "Cl": pass
+                    elif self.bve_btype == "Smee" and self.smee_eb_frozen: pass
+                    else:
+                        if prev_state == "CUSHION":
+                            stay_time = current_time - self.hb_cushion_entry_time
+                            if stay_time < 0.5: add_score_popup(self, -100, "緩和ブレーキ -100", COLOR_B_EMG, "neg", "緩和ブレーキ", current_time)
+                        else: add_score_popup(self, -100, "緩和ブレーキ -100", COLOR_B_EMG, "neg", "緩和ブレーキ", current_time)
+
+        self.hb_strong_entered = False
+        self.has_evaluated_initial_brake = False
+
+    self.hb_prev_notch = curr_n
+
+
 def begin_official_jump(self, target_loc, target_time):
     """
     採点開始またはリトライによる公式ジャンプの保護を開始する。
@@ -920,59 +983,13 @@ def update_physics_and_scoring(self, current_time, dt):
                         add_score_popup(self, -100, "緩和ブレーキ -100", COLOR_B_EMG, "neg", "緩和ブレーキ", current_time)
         else: self.bcp_history.clear()
 
-    curr_n = self.bve_brk_notch
-    curr_state = get_notch_state(self, curr_n)
-    prev_state = get_notch_state(self, self.hb_prev_notch)
-
-    if curr_state == "IDLE":
-        if self.bve_speed == 0.0:
-            self.idle_entered_while_stopped = True
-    else:
-        self.idle_entered_while_stopped = False
-
-    if curr_state == "CUSHION":
-        if prev_state != "CUSHION":
-            self.hb_cushion_entry_time = current_time
-            self.hb_cushion_max_g = 0.0
-        if decel_g > self.hb_cushion_max_g: self.hb_cushion_max_g = decel_g
-
-    if curr_state == "STRONG":
-        self.hb_strong_entered = True
-        if prev_state != "STRONG":
-            rule = getattr(self, 'active_rule_init_apply', 'ON①')
-            is_initial_exempt = (rule == "OFF") or (rule == "ON②" and in_station_zone)
-
-            if not is_initial_exempt and abs(self.bve_speed) > 0.0:
-                if not getattr(self, 'has_evaluated_initial_brake', False):
-                    if self.bve_btype == "Cl":
-                        if is_eb_handle: add_score_popup(self, -100, "初動ブレーキ -100", COLOR_B_EMG, "neg", "初動ブレーキ", current_time)
-                    elif self.bve_btype == "Smee" and self.smee_eb_frozen: pass
-                    else:
-                        if prev_state == "CUSHION":
-                            stay_time = current_time - self.hb_cushion_entry_time
-                            if stay_time < 0.5: add_score_popup(self, -100, "初動ブレーキ -100", COLOR_B_EMG, "neg", "初動ブレーキ", current_time)
-                        else: add_score_popup(self, -100, "初動ブレーキ -100", COLOR_B_EMG, "neg", "初動ブレーキ", current_time)
-
-                    self.has_evaluated_initial_brake = True
-
-    if curr_state == "IDLE" and prev_state != "IDLE":
-        rule = getattr(self, 'active_rule_init_release', 'ON①')
-        is_release_exempt = (rule == "OFF") or (rule == "ON②" and in_station_zone)
-        if not is_release_exempt and abs(self.bve_speed) > 0.0:
-            if not getattr(self, 'idle_entered_while_stopped', False):
-                if getattr(self, 'hb_strong_entered', False):
-                    if self.bve_btype == "Cl": pass
-                    elif self.bve_btype == "Smee" and self.smee_eb_frozen: pass
-                    else:
-                        if prev_state == "CUSHION":
-                            stay_time = current_time - self.hb_cushion_entry_time
-                            if stay_time < 0.5: add_score_popup(self, -100, "緩和ブレーキ -100", COLOR_B_EMG, "neg", "緩和ブレーキ", current_time)
-                        else: add_score_popup(self, -100, "緩和ブレーキ -100", COLOR_B_EMG, "neg", "緩和ブレーキ", current_time)
-
-        self.hb_strong_entered = False
-        self.has_evaluated_initial_brake = False
-
-    self.hb_prev_notch = curr_n
+    update_initial_and_release_brake_penalty(
+        self,
+        current_time,
+        decel_g,
+        in_station_zone,
+        is_eb_handle,
+    )
 
     if getattr(self, 'is_official_jumping', False):
         # 公式ジャンプによる位置変化を転動として扱わない
