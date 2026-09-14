@@ -298,6 +298,33 @@ def detect_physical_emergency_brake(self, dt):
         physical_eb_tripped = (self.ecb_eb_accum_time >= ECB_EB_ACCUM_THRESHOLD)
     return is_eb_handle, physical_eb_tripped
 
+def update_stop_jerk_penalty(self, current_time, decel_g):
+    if self.bve_speed == 0.0:
+        if self.is_stopping_zone:
+            self.stop_notch_state = get_notch_state(self, self.bve_brk_notch)
+
+            recent_g = [h[1] for h in self.g_history if current_time - h[0] <= 0.5]
+            if recent_g:
+                self.last_stop_g = sum(recent_g) / len(recent_g)
+            else:
+                self.last_stop_g = decel_g
+
+            # 前進・後退のどちらでも加速度の絶対値で停車時衝動を判定する
+            abs_stop_g = abs(self.last_stop_g)
+
+            if getattr(self, 'pen_jerk', True):
+                if abs_stop_g >= 0.10:
+                    add_score_popup(self, -200, "停車時衝動 -200", COLOR_B_EMG, "neg", "停車時衝動", current_time)
+                elif abs_stop_g >= 0.065:
+                    add_score_popup(self, -100, "停車時衝動 -100", COLOR_B_EMG, "neg", "停車時衝動", current_time)
+            self.is_stopping_zone = False
+
+        curr_n = self.bve_brk_notch
+        self.hb_prev_notch = curr_n
+
+    elif 0.0 < abs(self.bve_speed): #<= 1.5
+        self.is_stopping_zone = True
+
 def begin_official_jump(self, target_loc, target_time):
     """
     採点開始またはリトライによる公式ジャンプの保護を開始する。
@@ -822,31 +849,11 @@ def update_physics_and_scoring(self, current_time, dt):
         if abs(dist_to_stop) <= actual_margin:
             in_station_zone = True
 
-    if self.bve_speed == 0.0:
-        if self.is_stopping_zone:
-            self.stop_notch_state = get_notch_state(self, self.bve_brk_notch)
-
-            recent_g = [h[1] for h in self.g_history if current_time - h[0] <= 0.5]
-            if recent_g:
-                self.last_stop_g = sum(recent_g) / len(recent_g)
-            else:
-                self.last_stop_g = decel_g
-
-            # 前進・後退のどちらでも加速度の絶対値で停車時衝動を判定する
-            abs_stop_g = abs(self.last_stop_g)
-
-            if getattr(self, 'pen_jerk', True):
-                if abs_stop_g >= 0.10:
-                    add_score_popup(self, -200, "停車時衝動 -200", COLOR_B_EMG, "neg", "停車時衝動", current_time)
-                elif abs_stop_g >= 0.065:
-                    add_score_popup(self, -100, "停車時衝動 -100", COLOR_B_EMG, "neg", "停車時衝動", current_time)
-            self.is_stopping_zone = False
-
-        curr_n = self.bve_brk_notch
-        self.hb_prev_notch = curr_n
-
-    elif 0.0 < abs(self.bve_speed): #<= 1.5
-        self.is_stopping_zone = True
+    update_stop_jerk_penalty(
+        self,
+        current_time,
+        decel_g,
+    )
 
     is_eb_handle, physical_eb_tripped = (
         detect_physical_emergency_brake(self, dt)
