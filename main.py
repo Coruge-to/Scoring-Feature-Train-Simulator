@@ -166,7 +166,8 @@ class Overlay(QWidget):
         self.keys_blocked = False
         self.hook_dict = {}
 
-        
+        # 制限速度・保安装置関連の診断ログ
+        self.enable_limit_debug_log = False
         
         self.debug_all_penalties = False
         

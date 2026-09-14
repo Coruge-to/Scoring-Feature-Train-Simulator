@@ -1419,52 +1419,50 @@ def update_physics_and_scoring(self, current_time, dt):
         
     self.prev_frame_loc = self.bve_location
 
-    #"""
     # =================================================================
-    # ★ 原因究明用：デスクトップに Debug.log を出力するトラップ (賢い版 - 距離変動無視)
-    # =================================================================
-    import os
-    debug_file = os.path.join(os.path.expanduser("~"), "Desktop", "Debug.log")
-    
-    future_str = str(future_targets[:2])
-    
-    # ★ 修正: Redsの距離変動でログが埋まらないよう、キーには「速度」だけを含める！
-    # (例: "90.0, 70.0" のように速度だけを抽出)
-    active_reds_key = ",".join([str(r['val']) for r in active_reds]) if active_reds else "None"
-    
-    # 状態を一意に特定するための「キー」を作成（Loc、時刻、そして「変動する距離」を排除）
-    current_state_key = f"{self.map_head_limit}_{self.map_tail_limit}_{self.effective_limit}_{is_waiting_tail}_{target_val}_{self.dbg_target_cap}_{self.dbg_blue}_{self.dbg_red}_{active_reds_key}_{future_str}"
-    
-    # 2. ログに出力するテキスト本体 (出力する時はしっかり距離も出す)
-    log_text = (f"[{current_time:.1f}s] Loc:{self.bve_location:.1f}m | HeadLmt:{self.map_head_limit} TailLmt:{self.map_tail_limit} Eff:{self.effective_limit}\n"
-                f"    wait_tail:{is_waiting_tail} | tgt_val:{target_val} | clear_dist:{self.bve_clear_dist:.1f}\n"
-                f"    future:{future_str}... \n"
-                f"    RESULT -> TC:{self.dbg_target_cap} AB:{self.dbg_blue} AR:{self.dbg_red} | Reds:[{self.dbg_active_reds}]\n\n")
+    # 制限速度計算の状態変化を診断ログへ記録する
+    if getattr(self, 'enable_limit_debug_log', False):
+        import os
+        debug_file = os.path.join(os.path.expanduser("~"), "Desktop", "Debug.log")
 
-    try:
-        # 初回起動時：とりあえず最初の1回目を書き込む
-        if not hasattr(self, 'last_debug_state_key'):
-            self.last_debug_state_key = current_state_key
-            self.last_pending_log = log_text
-            with open(debug_file, "a", encoding="utf-8") as f:
-                f.write("====== DEBUG LOG START ======\n\n")
-                f.write(log_text)
+        future_str = str(future_targets[:2])
+    
+        # ★ 修正: Redsの距離変動でログが埋まらないよう、キーには「速度」だけを含める！
+        # (例: "90.0, 70.0" のように速度だけを抽出)
+        active_reds_key = ",".join([str(r['val']) for r in active_reds]) if active_reds else "None"
+
+        # 状態を一意に特定するための「キー」を作成（Loc、時刻、そして「変動する距離」を排除）
+        current_state_key = f"{self.map_head_limit}_{self.map_tail_limit}_{self.effective_limit}_{is_waiting_tail}_{target_val}_{self.dbg_target_cap}_{self.dbg_blue}_{self.dbg_red}_{active_reds_key}_{future_str}"
+
+        # 2. ログに出力するテキスト本体 (出力する時はしっかり距離も出す)
+        log_text = (f"[{current_time:.1f}s] Loc:{self.bve_location:.1f}m | HeadLmt:{self.map_head_limit} TailLmt:{self.map_tail_limit} Eff:{self.effective_limit}\n"
+                    f"    wait_tail:{is_waiting_tail} | tgt_val:{target_val} | clear_dist:{self.bve_clear_dist:.1f}\n"
+                    f"    future:{future_str}... \n"
+                    f"    RESULT -> TC:{self.dbg_target_cap} AB:{self.dbg_blue} AR:{self.dbg_red} | Reds:[{self.dbg_active_reds}]\n\n")
+
+        try:
+            # 初回起動時：とりあえず最初の1回目を書き込む
+            if not hasattr(self, 'last_debug_state_key'):
+                self.last_debug_state_key = current_state_key
+                self.last_pending_log = log_text
+                with open(debug_file, "a", encoding="utf-8") as f:
+                    f.write("====== DEBUG LOG START ======\n\n")
+                    f.write(log_text)
+
+            # 状態が変化した瞬間！
+            elif current_state_key != self.last_debug_state_key:
+                with open(debug_file, "a", encoding="utf-8") as f:
+                    f.write(self.last_pending_log)
+                    f.write("--- 状態変化 ---\n")
+                    f.write(log_text)
+
+                self.last_debug_state_key = current_state_key
+                self.last_pending_log = log_text
                 
-        # 状態が変化した瞬間！
-        elif current_state_key != self.last_debug_state_key:
-            with open(debug_file, "a", encoding="utf-8") as f:
-                f.write(self.last_pending_log)
-                f.write("--- 状態変化 ---\n")
-                f.write(log_text)
+            # 状態が全く同じ時（普段走っている間）
+            else:
+                self.last_pending_log = log_text
                 
-            self.last_debug_state_key = current_state_key
-            self.last_pending_log = log_text
-            
-        # 状態が全く同じ時（普段走っている間）
-        else:
-            self.last_pending_log = log_text
-            
-    except Exception:
-        pass
-    # =================================================================
-    #"""
+        except Exception:
+            pass
+        # =================================================================
