@@ -70,7 +70,7 @@ class Overlay(QWidget):
         keys_to_track = ['0','1','2','3','4','5','6','7','8','9','a','f1','f2','f5','f8','f11','f12','p','up','down','left','right','enter','backspace', 'h']
         self.key_states = {k: False for k in keys_to_track}
         self.key_press_timers = {k: 0.0 for k in keys_to_track}
-        self.show_help = False # ★ ヘルプ表示フラグ
+        self.show_help = False # ヘルプ画面の表示状態
 
         self.active_panel_rect = None
         self.active_dropdown_rect = None
@@ -181,20 +181,15 @@ class Overlay(QWidget):
         self.init_sub_cursor = 0
         self.init_sub_cursor_x = 0
 
-        # =================================================================
-        # ★ 新規追加: F8キー（早送り）禁止機能のデバッグ用フラグと検知用変数
-        # =================================================================
-        self.F8_disable = False  # True: 走行中のF8を無効化＆強制解除 / False: デバッグ用(制限なし)
+        # 走行中の早送り検出とF8入力抑止に使用する状態
+        self.F8_disable = False  # True: 走行中のF8を無効化＆強制解除 / False: デバッグ用(制限
         self.ff_check_real_time = 0.0
         self.ff_check_bve_time = 0
         self.is_fast_forwarding = False
-        # =================================================================
 
-        # =================================================================
-        # ★ 新規追加: 評価点(Rank)設定用の変数
-        # =================================================================
+        # 評価ランクの閾値とSランク判定に使用する状態
         self.rank_a_ratio = 0.7  # Aランクの閾値 (0.60 ～ 1.00)
-        self.rank_multi = 0.70    # ★追加: Rank B, Cの減衰倍率 (難易度調整用)
+        self.rank_multi = 0.7    # Rank B・Cの減衰倍率
         self.theoretical_score = 0 # 理論値
         self.total_retry_count = 0 # Sランク判定用のやり直し回数
         
@@ -243,8 +238,7 @@ class Overlay(QWidget):
 
         self.station_list = []
 
-        # =========================================================
-        # ★ 新規追加: シナリオメタ情報と、採点内訳の貯金箱
+        # シナリオ情報とカテゴリ別の得点内訳
         self.meta_title = ""
         self.meta_route = ""
         self.meta_vehicle = ""
@@ -255,7 +249,6 @@ class Overlay(QWidget):
             "time": 0, "stop": 0, "base_brake": 0, "roll": 0, "jerk": 0,
             "init_brake": 0, "rel_brake": 0, "eb": 0, "limit": 0, "ats": 0, "bonus": 0
         }
-        # =========================================================
         
         self.user_timing_overrides = {} 
         self.timing_cursor = 0
@@ -566,15 +559,12 @@ class Overlay(QWidget):
                             if min_valid < len(rates): self.eb_freeze_threshold = (self.bve_max_pressure * rates[min_valid]) - 5.0
                             else: self.eb_freeze_threshold = 20.0
                             if self.eb_freeze_threshold < 5.0: self.eb_freeze_threshold = 5.0
-                    # =================================================================
-                    # ★ 追加：C#から送られてきたドア時間をキャッチ！
-                    # (PRATESの処理が終わった直後、exceptの「上」にelifを書きます)
-                    # =================================================================
+                    # C#プラグインからドアのCloseTimeを受信する
                     elif part.startswith("DOORTIME:"):
                         val = int(part.split(':')[1])
                         self.bve_door_close_time_ms = val
                     
-                    # ログがスパムにならないよう、値が初めて取得・変化した時だけコンソールに出力
+                    # 初回受信時または値が変化した場合に限り記録する
                         if getattr(self, '_debug_door_time_printed', -1) != val:
                             write_desktop_log(f"[UDP] ドア時間(CloseTime)を受信: {val} ms")
                             self._debug_door_time_printed = val
@@ -739,9 +729,7 @@ class Overlay(QWidget):
                 pass
             self.input_mode_active = False
 
-    # =================================================================
-    # ★ 修正: 運転時分の一括トグル切り替え（初期設定との完全比較）
-    # =================================================================
+    # 運転時分の設定を初期状態との比較に基づいて一括切り替えする
     def toggle_all_timing(self):
         targets = self.get_timing_target_stas() if hasattr(self, 'get_timing_target_stas') else []
         if not targets: return
@@ -811,7 +799,7 @@ class Overlay(QWidget):
             
             old_sub_c = sub_c
             
-            # ★ 修正: ループせず、0でストップする
+            # カーソル値を0未満に移動させない
             if sub_c > 0:
                 sub_c -= 1
                 if sub_c == row_undo and row_undo != -1: 
@@ -906,7 +894,7 @@ class Overlay(QWidget):
             
             old_sub_c = sub_c
             
-            # ★ 修正: ループせず、最下段(row_done)でストップする
+            # カーソル値を最下段より先へ移動させない
             if sub_c < row_done:
                 sub_c += 1
                 if row_undo != -1 and sub_c == row_undo: 
@@ -1032,10 +1020,10 @@ class Overlay(QWidget):
                 save_len = len(getattr(self, 'save_data', []))
                 if save_len > 0:
                     self.menu_state = 2
-                    # ★ 変更: 一番最後（最新）のインデックスにカーソルを合わせる
+                    # 最新のセーブデータを初期選択する
                     self.menu_cursor = save_len - 1
                     
-                    # ★ 追加: カーソルが画面内に収まるようにスクロール位置を自動計算
+                    # 選択項目が表示範囲へ収まるようにスクロール位置を調整する
                     VISIBLE_COUNT = 7 # menu_ui.py の SAVE_VISIBLE_COUNT と同じ値
                     if save_len > VISIBLE_COUNT:
                         self.menu_scroll = save_len - VISIBLE_COUNT
@@ -1054,7 +1042,7 @@ class Overlay(QWidget):
                 self.was_advancing_before_menu = True
                 execute_retry(self, getattr(self, 'target_retry_idx', -1), is_bve_advancing)
                 
-                # ★ 修正: 無駄な変数をやめ、self.target_retry_idx を直接判定！
+                # 始発駅以外へのリトライをSランク判定用の回数へ加算する
                 if getattr(self, 'target_retry_idx', -1) > 0:
                     self.total_retry_count += 1 
                 
@@ -1143,9 +1131,7 @@ class Overlay(QWidget):
                 self.init_sub_cursor_x = 0
                 self.init_sub_scroll = max(0, len(getattr(self, 'penalty_init_rules', [])) - 5)
             elif self.menu_cursor == 6:
-                # =================================================================
-                # ★ 変更: 採点を開始せず、理論値を計算して画面 10 (評価点設定) へ飛ぶ
-                # =================================================================
+                # 理論値を計算し、評価点設定画面へ移動する
                 n1, n2, n3 = 0, 0, 0
                 s_idx = getattr(self, 'setting_start_idx', 0)
                 e_idx = getattr(self, 'setting_end_idx', -1)
@@ -1281,7 +1267,7 @@ class Overlay(QWidget):
                 reset_speed_penalty_state(self)
                 reset_roll_state(self)
 
-                self.total_retry_count = 0 # ★Sランク判定用に初期化
+                self.total_retry_count = 0 # Sランク判定用のリトライ回数を初期化
                 self.limit_flash_counts = {}
 
                 getattr(self, 'save_data', []).clear()
@@ -1311,7 +1297,7 @@ class Overlay(QWidget):
                     calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1
                     
                     if self.setting_start_idx == 0:
-                        # 始発駅：作者の設定した def_t を絶対的に優先する！
+                        # 始発駅では作者定義時刻を優先する
                         if def_t >= 0: target_time_ms = def_t
                         elif calc_t >= 0: target_time_ms = calc_t
                         else: target_time_ms = raw_arr if raw_arr >= 0 else -1
@@ -1323,7 +1309,7 @@ class Overlay(QWidget):
 
                     if target_time_ms < 0: target_time_ms = max(0, getattr(self, 'bve_time_ms', 0))
 
-                    # 途中駅で、BVEネイティブのジャンプ時刻(def_t)が計算時刻より遅い場合、理不尽ドア待ちが発生するため「従来ワープ(LOC)」に切り替える
+                    # 途中駅で作者定義時刻が計算時刻より遅い場合は、不要な開扉待ちを避けるためLOC方式へ切り替える
                     use_legacy_jump = False
                     if self.setting_start_idx > 0 and def_t >= 0 and def_t > target_time_ms:
                         use_legacy_jump = True
@@ -1420,7 +1406,7 @@ class Overlay(QWidget):
             old_val = getattr(self, 'brake_rules', [])[idx].get("apply", "")
             getattr(self, 'brake_rules', [])[idx]["apply"] = val_name
             
-            # ★ 1段制動と連動して初動の値を自動変更＆復元する処理
+            # 1段制動の設定に応じて初動ブレーキ設定を切り替える
             if len(getattr(self, 'penalty_init_rules', [])) > idx:
                 if val_name == "1段":
                     if getattr(self, 'penalty_init_rules', [])[idx].get("apply") == "ON①":
@@ -1442,7 +1428,7 @@ class Overlay(QWidget):
         self.dropdown_active = False
 
     def handle_menu_backspace(self, is_bve_advancing):
-        # ★ 新規追加: ヘルプ画面が開いている場合は、ヘルプを閉じるだけで戻らない
+        # ヘルプ画面の表示中は、前画面へ戻らずヘルプのみ閉じる
         if getattr(self, 'show_help', False):
             self.show_help = False
             return
@@ -1515,9 +1501,7 @@ class Overlay(QWidget):
         win32gui.EnumWindows(callback, None)
         return found_hwnd
 
-    # =================================================================
-    # ★ 完璧版: 0秒ディレイ(非同期実行) ＋ 復元時のチラつき防止
-    # =================================================================
+    # 非同期処理によりボーダーレス全画面表示を切り替える
     def toggle_borderless_fullscreen(self):
         if not self.bve_hwnd or not win32gui.IsWindow(self.bve_hwnd): 
             return
@@ -1562,25 +1546,20 @@ class Overlay(QWidget):
 
         else:
             try:
-                # 1. スタイル(枠)を復元
+                # スタイル(枠)を復元
                 if self.bve_original_style is not None:
                     win32gui.SetWindowLong(self.bve_hwnd, win32con.GWL_STYLE, self.bve_original_style)
                     win32gui.SetWindowPos(self.bve_hwnd, 0, 0, 0, 0, 0, win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOZORDER | win32con.SWP_FRAMECHANGED)
                 
-                # ★ 修正: チラつきの原因だった余計な「SC_RESTORE」を削除！
-                
-                # 2. Placementだけで一発で元の配置・状態を完全復元する
+                # 保存済みのPlacementからウィンドウの配置と状態を復元する
                 if self.bve_original_placement is not None:
                     win32gui.SetWindowPlacement(self.bve_hwnd, self.bve_original_placement)
                 
                 self.is_borderless_fullscreen = False
             except Exception as e:
                 write_desktop_log(f"[WINDOW] 復元エラー: {e}")
-    # =================================================================
 
-    # =================================================================
-    # ★ 修正: 透明レイヤー合成方式による「絶対に失敗しない座標ずらし」
-    # =================================================================
+    # 透明レイヤーを合成して結果画面のスクリーンショットを作成する
     def take_result_screenshot(self):
         self.is_capturing_screenshot = True
         self.repaint() 
@@ -1621,9 +1600,7 @@ class Overlay(QWidget):
             
             final_painter = QPainter(fhd_pixmap)
             
-            # ===================================================
-            y_offset = 38  # ★ ここでずらすピクセル数を指定！ (プラスで下へ)
-            # ===================================================
+            y_offset = 38  # 合成位置を下へ移動するピクセル数
             
             # 透明レイヤーを指定ピクセルだけ下にずらしてスタンプする
             final_painter.drawPixmap(0, y_offset, layer_pixmap)
@@ -1671,7 +1648,7 @@ class Overlay(QWidget):
             self.bve_hwnd = self.find_bve_window()
             self.is_linked = False
             
-            # ★ 修正: BVEを見失ったらフラグを全てリセット
+            # BVEウィンドウを取得できない場合は関連状態を初期化する
             self.is_bve_loaded = False
             self.initial_kickstart_done = False
             
@@ -1728,14 +1705,12 @@ class Overlay(QWidget):
 
         current_time = self.bve_time_ms / 1000.0
 
-        # =================================================================
-        # ★ 新機能: BVE内時間と現実時間の比較による「早送り(F8)」検知と強制解除
-        # =================================================================
+        # BVE内時間と実時間の進行差から早送りを検知する
         real_now = time.time()
         if self.ff_check_real_time == 0.0:
             self.ff_check_real_time = real_now
             self.ff_check_bve_time = self.bve_time_ms
-        elif real_now - self.ff_check_real_time >= 0.05: # ★ 0.5秒 -> 0.1秒へ短縮し俊敏に！
+        elif real_now - self.ff_check_real_time >= 0.05: # 50ms間隔で進行速度を確認する
             real_dt = real_now - self.ff_check_real_time
             bve_dt = (self.bve_time_ms - self.ff_check_bve_time) / 1000.0
             
@@ -1751,16 +1726,14 @@ class Overlay(QWidget):
         # フラグON かつ 採点中 かつ 走行中(0.1km/h以上) に早送りを検知したら強制解除
         if self.F8_disable and getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False):
             if abs(self.bve_speed) >= 0.1 and self.is_fast_forwarding:
-                # ★ 追加: ジャンプ中(is_official_jumping)の誤検知でF8を誤爆送信しないための安全装置！
+                # 公式ジャンプによる時間変化を早送りとして扱わない
                 if not getattr(self, 'is_official_jumping', False):
                     if self.bve_hwnd:
                         write_desktop_log("[MAIN] 走行中の早送りを検知しました。強制解除(等倍速戻し)を実行します。")
                         win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x77, 0) # F8
                         win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x77, 0)
                         self.is_fast_forwarding = False
-        # =================================================================
 
-        # =================================================================
         if getattr(self, 'bve_actual_state', '') != '':
             is_bve_advancing = ('RUNNING' in self.bve_actual_state)
         else:
@@ -1768,26 +1741,20 @@ class Overlay(QWidget):
             if self.bve_time_ms != self.last_bve_time_ms:
                 self.last_time_change_real = time.time()
             is_bve_advancing = (time.time() - getattr(self, 'last_time_change_real', 0)) < 0.8
-        # =================================================================
 
-        # =================================================================
-        # ★ 究極のストッパー: BVEの内部時間が「1ミリ秒」でも進んだ瞬間（＝1フレーム経過）に即停止
+        # BVE内部時間が進み始めた直後に自動停止する
         if getattr(self, 'auto_pause_pending', False) and getattr(self, 'station_list', []):
             if self.bve_time_ms > getattr(self, 'kick_bve_time', self.bve_time_ms):
                 if self.bve_hwnd and is_bve_advancing:
                     win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
                     win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
                 self.auto_pause_pending = False
-        # =================================================================
 
-        # =================================================================
-        # ★ 追加：F7キー（時刻表ジャンプ）の物理的ブロック
-        # 採点モード中かつBVEアクティブ時なら、常にF7を無効化する
-        # =================================================================
+        # メニュー表示中または採点中は、BVE側のシステムキー入力を抑止する
         should_block_sys = (self.menu_state != 0 or (getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False))) and is_bve_active
         
         if should_block_sys and not getattr(self, 'sys_keys_blocked', False):
-            sys_block_keys = ['f7', 'p'] # ★ ここに 'a' などを足すだけで追加ブロック可能！
+            sys_block_keys = ['f7', 'p'] # BVE側へ渡さないシステムキー
             if not hasattr(self, 'sys_hook_dict'):
                 self.sys_hook_dict = {}
             for k in sys_block_keys:
@@ -1803,10 +1770,7 @@ class Overlay(QWidget):
                 self.sys_hook_dict.clear()
             self.sys_keys_blocked = False
 
-        # =================================================================
-        # ★ 新機能: 走行中のF8キー（早送り）の物理的ブロック
-        # =================================================================
-        # メニューが閉じている、かつ走行中（0.1km/h以上）の時のみF8入力を完全に握り潰す
+        # 採点中かつ走行中はF8入力を抑止する
         should_block_f8 = self.F8_disable and getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False) and self.bve_speed >= 0.1 and is_bve_active and self.menu_state == 0
         
         if should_block_f8 and not getattr(self, 'f8_physically_blocked', False):
@@ -1822,12 +1786,8 @@ class Overlay(QWidget):
                     except Exception: pass
             self.f8_hook_dict.clear()
             self.f8_physically_blocked = False
-        # =================================================================
-      
-        # =================================================================
-        # ★ 課題2解決：「時刻と位置」ウィンドウの無力化（グレーアウト）
-        # F1メニューを開いている時、または「採点中かつ終了前」の時に操作不能にする
-        # =================================================================
+
+        # メニュー表示中または採点中は「時刻と位置」ウィンドウを操作不能にする
         try:
             # BVEのダイヤグラムウィンドウをタイトルで検索
             diag_hwnd = win32gui.FindWindow(None, "時刻と位置")
@@ -1856,9 +1816,8 @@ class Overlay(QWidget):
             self.keys_blocked = False
 
         is_left_clicked = (win32api.GetAsyncKeyState(win32con.VK_LBUTTON) & 0x8000) != 0
-        # =================================================================
-        # ★ 新規追加: スライダーのマウスドラッグ＆クリック対応
-        # =================================================================
+
+        # 評価点スライダーのクリックとドラッグを処理する
         is_mouse_down = (win32api.GetAsyncKeyState(win32con.VK_LBUTTON) & 0x8000) != 0
         if self.menu_state == 10 and is_mouse_down and is_bve_active:
             cursor_pos = win32gui.GetCursorPos()
@@ -1960,9 +1919,7 @@ class Overlay(QWidget):
                                 self.menu_cursor_x = action_x
                         break
                         
-                # =========================================================
-                # ★ 修正: 完璧な「枠外クリック」の判定ロジック
-                # =========================================================
+                # クリック位置が操作対象の範囲外か判定する
                 if not clicked_zone:
                     # 1. ヘルプ画面外クリック
                     if getattr(self, 'show_help', False):
@@ -1996,7 +1953,7 @@ class Overlay(QWidget):
                     # 押しっぱなしの場合（上下左右キーのみ連射を許可）
                     if key in ['up', 'down', 'left', 'right']:
                         held_duration = time.time() - self.key_press_timers[key]
-                        if held_duration > 0.4: # ★ 0.4秒長押しで連射開始
+                        if held_duration > 0.4: # 400ms以上の長押しでキーリピートを開始する
                             trigger_key = True
                             # 次の連射間隔を0.05秒にするための時間調整
                             self.key_press_timers[key] = time.time() - 0.4 + 0.05
@@ -2020,7 +1977,7 @@ class Overlay(QWidget):
                     else:
                         self.toggle_menu(is_bve_advancing)
                 elif key == 'f2':
-                    # X線ゴーグル（全隠しペナルティ表示）
+                    # 非表示設定の減点項目を含むデバッグ表示を切り替える
                     self.debug_all_penalties = not getattr(self, 'debug_all_penalties', False)
                     # Gのグラフ表示
                     self.show_graph = not getattr(self, 'show_graph', False)
@@ -2028,8 +1985,7 @@ class Overlay(QWidget):
                     self.toggle_borderless_fullscreen()
 
                 elif key == 'f12':
-                    # ★ 【究極のパニックリセットボタン】
-                    # ボタン消失やフリーズ等、異常が起きたBVEを「標準のウィンドウモード」へ強制送還する
+                    # BVEとオーバーレイを標準のウィンドウ状態へ復元する
                     if self.bve_hwnd:
                         # WS_OVERLAPPEDWINDOW はタイトルバー、枠、システムメニュー、最小化・最大化ボタンのセット
                         standard_style = win32con.WS_OVERLAPPEDWINDOW | win32con.WS_VISIBLE
@@ -2043,11 +1999,11 @@ class Overlay(QWidget):
                                               win32con.SWP_NOZORDER | win32con.SWP_FRAMECHANGED | win32con.SWP_SHOWWINDOW)
                         
                         self.is_borderless_fullscreen = False
-                        write_desktop_log("[DEBUG] F12: 標準ウィンドウ状態へ強制復元しました")
+                        write_desktop_log("[WINDOW] F12操作により標準ウィンドウ状態へ復元しました")
                     
-                elif key == 'h' and self.menu_state != 0: # ★ Hキーが押された場合
+                elif key == 'h' and self.menu_state != 0: # ヘルプ表示を切り替える
                     self.show_help = not getattr(self, 'show_help', False)
-                elif key == 'a' and self.menu_state == 8: # ★ 追加: Aキー (一括採時)
+                elif key == 'a' and self.menu_state == 8: # 運転時分設定を一括切り替えする
                     self.toggle_all_timing()
                 elif self.menu_state != 0:
                     if self.dropdown_active:
