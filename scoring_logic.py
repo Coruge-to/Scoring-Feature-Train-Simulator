@@ -431,12 +431,12 @@ def update_smee_emergency_brake_freeze(
     in_station_zone,
 ):
     if self.bve_btype != "Smee":
-        self.smee_eb_frozen = False
+        self.smee_virtual_eb_active = False
         return
 
     was_frozen = getattr(
         self,
-        'smee_eb_frozen',
+        'smee_virtual_eb_active',
         False,
     )
 
@@ -461,19 +461,19 @@ def update_smee_emergency_brake_freeze(
             bp_is_low
             and eb_time_qualified
         ):
-            self.smee_eb_frozen = True
+            self.smee_virtual_eb_active = True
 
         return
 
     # 一度仮想EBへ入った後は、
     # EB累積時間がリセットされてもBP回復まで維持する。
     if bp_is_low:
-        self.smee_eb_frozen = True
+        self.smee_virtual_eb_active = True
         return
 
     # BPが規定値以上へ回復したため、
     # 採点上の仮想EBを解除する。
-    self.smee_eb_frozen = False
+    self.smee_virtual_eb_active = False
 
     curr_state_unfrozen = get_notch_state(
         self,
@@ -550,7 +550,7 @@ def update_initial_and_release_brake_penalty(
                 if not getattr(self, 'has_evaluated_initial_brake', False):
                     if self.bve_btype == "Cl":
                         if is_eb_handle: add_score_popup(self, -100, "初動ブレーキ -100", COLOR_B_EMG, "neg", "初動ブレーキ", current_time)
-                    elif self.bve_btype == "Smee" and self.smee_eb_frozen: pass
+                    elif self.bve_btype == "Smee" and self.smee_virtual_eb_active: pass
                     else:
                         if prev_state == "CUSHION":
                             stay_time = current_time - self.hb_cushion_entry_time
@@ -566,7 +566,7 @@ def update_initial_and_release_brake_penalty(
             if not getattr(self, 'idle_entered_while_stopped', False):
                 if getattr(self, 'hb_strong_entered', False):
                     if self.bve_btype == "Cl": pass
-                    elif self.bve_btype == "Smee" and self.smee_eb_frozen: pass
+                    elif self.bve_btype == "Smee" and self.smee_virtual_eb_active: pass
                     else:
                         if prev_state == "CUSHION":
                             stay_time = current_time - self.hb_cushion_entry_time

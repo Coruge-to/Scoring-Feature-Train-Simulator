@@ -81,7 +81,7 @@ class Overlay(QWidget):
         self.bve_original_style = None
         
         self.eb_applied = False
-        self.smee_eb_frozen = False
+        self.smee_virtual_eb_active = False
 
         self.bve_btype = "Ecb"
         self.bcPressure = 0.0

@@ -38,7 +38,7 @@ def draw_hud(self, painter, logical_width):
 
     eb_freeze_status = (
         "ON (Wait BP Recovery)"
-        if self.smee_eb_frozen
+        if self.smee_virtual_eb_active
         else "OFF"
     )
     manual_eb_debug_str = (
