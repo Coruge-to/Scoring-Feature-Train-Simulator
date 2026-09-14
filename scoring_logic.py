@@ -306,10 +306,10 @@ def detect_physical_emergency_brake(self, dt):
 
             if (
                 self.manual_eb_accum_time
-                >= ECB_EB_ACCUM_THRESHOLD
+                >= MANUAL_EB_ACCUM_THRESHOLD
             ):
                 self.manual_eb_accum_time = (
-                    ECB_EB_ACCUM_THRESHOLD
+                    MANUAL_EB_ACCUM_THRESHOLD
                 )
 
             self.manual_eb_cooling_time = 0.0
@@ -320,7 +320,7 @@ def detect_physical_emergency_brake(self, dt):
 
                 if (
                     self.manual_eb_cooling_time
-                    >= ECB_EB_COOLING_THRESHOLD
+                    >= MANUAL_EB_COOLING_THRESHOLD
                 ):
                     self.manual_eb_accum_time = 0.0
                     self.manual_eb_cooling_time = 0.0
@@ -329,7 +329,7 @@ def detect_physical_emergency_brake(self, dt):
 
         manual_eb_qualified = (
             self.manual_eb_accum_time
-            >= ECB_EB_ACCUM_THRESHOLD
+            >= MANUAL_EB_ACCUM_THRESHOLD
         )
 
     return is_eb_handle, manual_eb_qualified
@@ -450,7 +450,7 @@ def update_smee_virtual_emergency_brake(
 
     eb_time_qualified = (
         self.manual_eb_accum_time
-        >= ECB_EB_ACCUM_THRESHOLD
+        >= MANUAL_EB_ACCUM_THRESHOLD
     )
 
     if not was_frozen:

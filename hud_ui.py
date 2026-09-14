@@ -44,10 +44,10 @@ def draw_hud(self, painter, logical_width):
     manual_eb_debug_str = (
         f" | Manual_EB: "
         f"{self.manual_eb_accum_time:.2f}/"
-        f"{ECB_EB_ACCUM_THRESHOLD}s "
+        f"{MANUAL_EB_ACCUM_THRESHOLD}s "
         f"(Cool: "
         f"{self.manual_eb_cooling_time:.2f}/"
-        f"{ECB_EB_COOLING_THRESHOLD}s)"
+        f"{MANUAL_EB_COOLING_THRESHOLD}s)"
         if self.bve_btype in ("Ecb", "Smee")
         else ""
     )
