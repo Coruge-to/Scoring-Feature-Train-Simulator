@@ -281,25 +281,50 @@ def update_speed_limit_penalty(self, current_time):
                 self.accumulated_speed_penalty = 0
 
 def detect_physical_emergency_brake(self, dt):
-    is_eb_handle = (self.bve_brk_notch >= self.bve_brk_max or "非常" in self.bve_brk_text or "EB" in self.bve_brk_text.upper())
+    is_eb_handle = (
+        self.bve_brk_notch >= self.bve_brk_max
+        or "非常" in self.bve_brk_text
+        or "EB" in self.bve_brk_text.upper()
+    )
     physical_eb_tripped = False
 
-    if self.bve_btype == "Smee": physical_eb_tripped = (self.bpPressure <= self.bve_bp_initial - 5.0)
-    elif self.bve_btype == "Cl": physical_eb_tripped = is_eb_handle
+    if self.bve_btype == "Smee":
+        physical_eb_tripped = (
+            self.bpPressure <= self.bve_bp_initial - 5.0
+        )
+    elif self.bve_btype == "Cl":
+        physical_eb_tripped = is_eb_handle
+
     else:
         if is_eb_handle:
             self.ecb_eb_accum_time += dt
-            if self.ecb_eb_accum_time >= ECB_EB_ACCUM_THRESHOLD: self.ecb_eb_accum_time = ECB_EB_ACCUM_THRESHOLD
+            if (
+                self.ecb_eb_accum_time
+                >= ECB_EB_ACCUM_THRESHOLD
+            ):
+                self.ecb_eb_accum_time = (
+                    ECB_EB_ACCUM_THRESHOLD
+                )
             self.ecb_eb_cooling_time = 0.0
         else:
             if self.ecb_eb_accum_time > 0.0:
                 self.ecb_eb_cooling_time += dt
-                if self.ecb_eb_cooling_time >= ECB_EB_COOLING_THRESHOLD:
+                if (
+                    self.ecb_eb_cooling_time
+                    >= ECB_EB_COOLING_THRESHOLD
+                ):
                     self.ecb_eb_accum_time = 0.0
                     self.ecb_eb_cooling_time = 0.0
-            else: self.ecb_eb_cooling_time = 0.0
-        physical_eb_tripped = (self.ecb_eb_accum_time >= ECB_EB_ACCUM_THRESHOLD)
+            else:
+                self.ecb_eb_cooling_time = 0.0
+
+        physical_eb_tripped = (
+            self.ecb_eb_accum_time
+            >= ECB_EB_ACCUM_THRESHOLD
+        )
+
     return is_eb_handle, physical_eb_tripped
+
 
 def update_stop_jerk_penalty(self, current_time, decel_g):
     if self.bve_speed == 0.0:
@@ -348,6 +373,40 @@ def update_emergency_brake_penalty(
             self.eb_applied = True
     else:
         self.eb_applied = False
+
+def update_smee_emergency_brake_freeze(
+    self,
+    current_time,
+    in_station_zone,
+):
+    if self.bve_btype == "Smee":
+        if self.bpPressure < self.bve_bp_initial * 0.9:
+            self.smee_eb_frozen = True
+            self.bcp_history.clear()
+        elif self.smee_eb_frozen:
+            self.bcp_history.append((current_time, self.bcPressure))
+            HISTORY_SEC, STABLE_SEC = 0.6, 0.5
+            self.bcp_history = [h for h in self.bcp_history if current_time - h[0] <= HISTORY_SEC]
+            is_stabilized = False
+            if len(self.bcp_history) >= 5 and (current_time - self.bcp_history[0][0]) >= STABLE_SEC:
+                max_p, min_p = max(h[1] for h in self.bcp_history), min(h[1] for h in self.bcp_history)
+                if (max_p - min_p) < 2.0: is_stabilized = True
+            curr_state_unfrozen = get_notch_state(self, self.bve_brk_notch)
+
+            # Smeeの凍結解除時も、現在の緩和ルールに基づいて免除を判定する
+            rel_rule = getattr(self, 'active_rule_init_release', 'ON①')
+            is_rel_exempt = (rel_rule == "OFF") or (rel_rule == "ON②" and in_station_zone)
+
+            if self.bcPressure <= self.eb_freeze_threshold and curr_state_unfrozen == "IDLE":
+                self.smee_eb_frozen = False
+                if abs(self.bve_speed) > 0.0 and not getattr(self, 'idle_entered_while_stopped', False) and not is_rel_exempt:
+                    add_score_popup(self, -100, "緩和ブレーキ -100", COLOR_B_EMG, "neg", "緩和ブレーキ", current_time)
+            elif is_stabilized:
+                self.smee_eb_frozen = False
+                if curr_state_unfrozen == "IDLE":
+                    if abs(self.bve_speed) > 0.0 and not getattr(self, 'idle_entered_while_stopped', False) and not is_rel_exempt:
+                        add_score_popup(self, -100, "緩和ブレーキ -100", COLOR_B_EMG, "neg", "緩和ブレーキ", current_time)
+        else: self.bcp_history.clear()
 
 def update_initial_and_release_brake_penalty(
     self,
@@ -951,34 +1010,11 @@ def update_physics_and_scoring(self, current_time, dt):
         in_station_zone,
     )
 
-    if self.bve_btype == "Smee":
-        if self.bpPressure < self.bve_bp_initial * 0.9:
-            self.smee_eb_frozen = True
-            self.bcp_history.clear()
-        elif self.smee_eb_frozen:
-            self.bcp_history.append((current_time, self.bcPressure))
-            HISTORY_SEC, STABLE_SEC = 0.6, 0.5
-            self.bcp_history = [h for h in self.bcp_history if current_time - h[0] <= HISTORY_SEC]
-            is_stabilized = False
-            if len(self.bcp_history) >= 5 and (current_time - self.bcp_history[0][0]) >= STABLE_SEC:
-                max_p, min_p = max(h[1] for h in self.bcp_history), min(h[1] for h in self.bcp_history)
-                if (max_p - min_p) < 2.0: is_stabilized = True
-            curr_state_unfrozen = get_notch_state(self, self.bve_brk_notch)
-
-            # Smeeの凍結解除時も、現在の緩和ルールに基づいて免除を判定する
-            rel_rule = getattr(self, 'active_rule_init_release', 'ON①')
-            is_rel_exempt = (rel_rule == "OFF") or (rel_rule == "ON②" and in_station_zone)
-
-            if self.bcPressure <= self.eb_freeze_threshold and curr_state_unfrozen == "IDLE":
-                self.smee_eb_frozen = False
-                if abs(self.bve_speed) > 0.0 and not getattr(self, 'idle_entered_while_stopped', False) and not is_rel_exempt:
-                    add_score_popup(self, -100, "緩和ブレーキ -100", COLOR_B_EMG, "neg", "緩和ブレーキ", current_time)
-            elif is_stabilized:
-                self.smee_eb_frozen = False
-                if curr_state_unfrozen == "IDLE":
-                    if abs(self.bve_speed) > 0.0 and not getattr(self, 'idle_entered_while_stopped', False) and not is_rel_exempt:
-                        add_score_popup(self, -100, "緩和ブレーキ -100", COLOR_B_EMG, "neg", "緩和ブレーキ", current_time)
-        else: self.bcp_history.clear()
+    update_smee_emergency_brake_freeze(
+        self,
+        current_time,
+        in_station_zone,
+    )
 
     update_initial_and_release_brake_penalty(
         self,
