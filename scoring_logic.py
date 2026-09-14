@@ -185,6 +185,46 @@ def write_limit_debug_log(
     except Exception:
         pass
 
+def update_result_display(self, current_time):
+    # 表示期限を過ぎたポップアップを削除する
+    self.popups = [
+        popup
+        for popup in getattr(self, 'popups', [])
+        if popup["expire_time"] > current_time
+    ]
+
+    # 採点終了から5秒後に終了メッセージを表示する
+    if (
+        getattr(self, 'end_message_time', 0.0) > 0
+        and current_time >= self.end_message_time
+    ):
+        if getattr(self, 'is_scoring_finished', False):
+            add_score_popup(
+                self,
+                0,
+                "運転お疲れ様でした。",
+                COLOR_WHITE,
+                "big",
+                "終了",
+                current_time,
+                force=True,
+            )
+
+        self.end_message_time = 0.0
+
+    # 採点終了から10秒後にリザルト画面を開く
+    if (
+        getattr(self, 'result_screen_time', 0.0) > 0
+        and current_time >= self.result_screen_time
+    ):
+        if getattr(self, 'is_scoring_finished', False):
+            self.toggle_menu(True)
+            self.menu_state = 11
+            self.menu_cursor = 0
+            getattr(self, 'popups', []).clear()
+
+        self.result_screen_time = 0.0
+
 def begin_official_jump(self, target_loc, target_time):
     """
     採点開始またはリトライによる公式ジャンプの保護を開始する。
@@ -648,26 +688,7 @@ def update_physics_and_scoring(self, current_time, dt):
         if getattr(self, 'pen_ats', True): f_list.append("[ATS]")
         self.active_features_str = " ".join(f_list) if f_list else "すべてOFF"
 
-    # 表示期限を過ぎたポップアップを削除する
-    self.popups = [p for p in getattr(self, 'popups', []) if p["expire_time"] > current_time]
-    
-    # 採点終了から5秒後に終了メッセージを表示する
-    if getattr(self, 'end_message_time', 0.0) > 0 and current_time >= self.end_message_time:
-        # 正常終了した場合に限り、終了メッセージを表示する
-        if getattr(self, 'is_scoring_finished', False):
-            add_score_popup(self, 0, "運転お疲れ様でした。", COLOR_WHITE, "big", "終了", current_time, force=True)
-        self.end_message_time = 0.0
-    
-    # 採点終了から10秒後にリザルト画面を開く
-    if getattr(self, 'result_screen_time', 0.0) > 0 and current_time >= self.result_screen_time:
-        # 採点中断時はリザルト画面へ遷移しない
-        if getattr(self, 'is_scoring_finished', False):
-            # BVEを一時停止してリザルト画面を表示する
-            self.toggle_menu(True) 
-            self.menu_state = 11       
-            self.menu_cursor = 0
-            getattr(self, 'popups', []).clear()
-        self.result_screen_time = 0.0
+    update_result_display(self, current_time)
 
     decel_g = -self.bve_calc_g
     self.g_history.append((current_time, decel_g, self.bve_brk_notch, self.bve_brk_max))
