@@ -30,7 +30,7 @@ def reset_transient_scoring_state(self):
     self.manual_eb_accum_time = 0.0
     self.manual_eb_cooling_time = 0.0
 
-    # eb_appliedは維持する。
+    # 手動EB減点済み状態は維持する。
     # 公式ジャンプ直前に成立していたEBを、
     # ジャンプ直後の新規EBとして再採点させない。
 
@@ -375,7 +375,7 @@ def update_emergency_brake_penalty(
         self.bb_state = "FAILED"
 
     if eb_event_active:
-        if not self.eb_applied:
+        if not self.manual_eb_penalty_applied:
             if abs(self.bve_speed) > 0.0:
                 if getattr(self, 'pen_eb', True):
                     add_score_popup(
@@ -420,10 +420,10 @@ def update_emergency_brake_penalty(
                     )
                     self.has_evaluated_initial_brake = True
 
-            self.eb_applied = True
+            self.manual_eb_penalty_applied = True
 
     else:
-        self.eb_applied = False
+        self.manual_eb_penalty_applied = False
 
 def update_smee_virtual_emergency_brake(
     self,

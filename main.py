@@ -80,7 +80,7 @@ class Overlay(QWidget):
         self.bve_original_placement = None  # RectではなくPlacementを使う
         self.bve_original_style = None
         
-        self.eb_applied = False
+        self.manual_eb_penalty_applied = False
         self.smee_virtual_eb_active = False
 
         self.bve_btype = "Ecb"
