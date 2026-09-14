@@ -155,7 +155,7 @@ def execute_retry(self, index, is_bve_advancing):
     target_bve_sta_idx = 0
     ideal_loc = cp['loc']
     def_t = -1
-    calc_t = -1  # ★ 追加
+    calc_t = -1  # 比較用の計算時刻
     
     if getattr(self, 'station_list', []):
         for i, st in enumerate(self.station_list):
@@ -164,18 +164,16 @@ def execute_retry(self, index, is_bve_advancing):
                 ideal_loc = st["location"]
                 def_t = st.get("def_time", -1)
                 
-                # ★ 追加：calc_t を計算して理不尽判定の材料にする
+                # 駅データから比較用の計算時刻を求める
                 raw_dep = st.get("raw_dep", -1)
                 stop_t = st.get("stop_time", 15000)
                 calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1
                 break
     
-    # =================================================================
-    # ★ 修正：旧方式(LOC)に逃げる「完全な悪条件」の厳密化
-    # 1. 途中駅である
-    # 2. 作者が意図的に遅延設定(def_t > calc_t)にしている
-    # 3. かつ、自分のセーブ時刻がその def_t より早い
-    # =================================================================
+    # LOC方式を使用する条件
+    # 1. 開始駅以外の途中駅である
+    # 2. 作者定義時刻が計算時刻より遅い
+    # 3. チェックポイント時刻が作者定義時刻より早い
     use_legacy = (target_bve_sta_idx > 0 and def_t >= 0 and calc_t >= 0 and def_t > calc_t and cp['time_ms'] < def_t)
     
     if use_legacy:
@@ -235,9 +233,7 @@ def create_save_data(self):
         # 基本は現在の時刻をそのまま保存する
         save_time_ms = self.bve_time_ms
         
-        # =================================================================
-        # ★ 追加：ドア開時間の加算（ズル防止ペナルティ）
-        # =================================================================
+        # 実際の開扉時間を基準停車時間へ加算する
         # 条件1: 始発駅（最初のセーブデータ）ではないこと
         if len(getattr(self, 'save_data', [])) > 0:
             # 条件2: 扉が開く駅であること（通過駅や運転停車は除外）
@@ -272,15 +268,17 @@ def create_save_data(self):
                         save_time_ms += door_time
                         
                         # （確認用：後で消してもOKです）
-                        write_desktop_log(f"[SAVE] ズル防止発動: {st.get('name', '駅')}にて {door_time}ms をセーブデータ時刻に加算")
+                        write_desktop_log(
+                            f"[SAVE] 開扉時間を反映: "
+                            f"{st.get('name', '駅')}にて "
+                            f"{door_time}ms をセーブデータ時刻に加算"
+                        )
 
-        # =================================================================
-        
         self.save_data.append({
             "loc": self.bve_location,
-            "time_ms": save_time_ms,  # ズル防止計算済みの時間を保存する！
+            "time_ms": save_time_ms,  # 開扉時間を反映した時刻を保存する
             "score": self.score,
-            # ★ 追加：現在の内訳貯金箱の状態をコピーして保存（未来で加算されても影響を受けないように .copy() する）
+            # 後続の得点変更から独立させるため、現在の得点内訳をコピーして保存する
             "score_details": self.score_details.copy(),
             "target_loc": self.bve_next_loc,
             "station_name": getattr(self, 'bve_current_station_name', '不明な駅'),
@@ -320,7 +318,7 @@ def evaluate_arrival(self, current_time, arrival_target_loc=None):
 
     apply_ok = False
     release_ok = False
-    is_rescue = False # ★ 追加: 救済フラグ
+    is_rescue = False # 2段制動の救済適用状態
 
     # 現在の基本制動ルールを取得し、OFFの場合は判定を省略する
     b_rule_app = getattr(self, 'active_rule_basic_apply', '階段')
@@ -398,9 +396,9 @@ def evaluate_arrival(self, current_time, arrival_target_loc=None):
             write_desktop_log(f"  内訳の合計: {total_details} 点")
             write_desktop_log(f"  実際の総合得点(self.score): {self.score} 点")
             if total_details == self.score:
-                write_desktop_log("  => 判定: 【完全一致！！完璧です！】")
+                write_desktop_log("  => 判定: 【得点内訳と総合得点が一致】")
             else:
-                write_desktop_log("  => 判定: 【不一致... どこかで加算漏れがあります】")
+                write_desktop_log("  => 判定: 【得点内訳と総合得点が不一致】")
             write_desktop_log("==============================================\n")
         except Exception as e:
             write_desktop_log(f"[エラー] 答え合わせ出力失敗: {e}")
@@ -422,7 +420,7 @@ def evaluate_departure(self, current_time):
                 p_idx = i
                 break
     
-    # ★ 厳密化：駅が特定できない、もしくはユーザー設定で非採時なら False
+    # 駅を特定できない場合、または採時対象外の場合は時分採点を行わない
     is_timing_active = False
     if p_idx >= 0:
         # F6メニューの設定(override)も含めて判定する関数を呼ぶ
@@ -658,9 +656,7 @@ def update_physics_and_scoring(self, current_time, dt):
             else:
                 self.last_stop_g = decel_g
 
-            # =================================================================
-            # ★ 修正：後退からの停車も考慮し、絶対値でGを判定する
-            # =================================================================
+            # 前進・後退のどちらでも加速度の絶対値で停車時衝動を判定する
             abs_stop_g = abs(self.last_stop_g)
 
             if getattr(self, 'pen_jerk', True):
@@ -726,11 +722,9 @@ def update_physics_and_scoring(self, current_time, dt):
                 if (max_p - min_p) < 2.0: is_stabilized = True
             curr_state_unfrozen = get_notch_state(self, self.bve_brk_notch)
             
-            # =========================================================
-            # ★ 修正: Smee凍結解除時も、現在の緩和ルールの免除(OFF/ON②)をチェックする
+            # Smeeの凍結解除時も、現在の緩和ルールに基づいて免除を判定する
             rel_rule = getattr(self, 'active_rule_init_release', 'ON①')
             is_rel_exempt = (rel_rule == "OFF") or (rel_rule == "ON②" and in_station_zone)
-            # =========================================================
             
             if self.bcPressure <= self.eb_freeze_threshold and curr_state_unfrozen == "IDLE":
                 self.smee_eb_frozen = False
@@ -963,9 +957,8 @@ def update_physics_and_scoring(self, current_time, dt):
                     for p in getattr(self, 'popups', []):
                         if p.get("category") == "速度制限超過":
                             p["text"] = f"速度制限超過 -{self.accumulated_speed_penalty}"
-                            # 超過中はポップアップの表示期限を延長する
-                            # 超過している間は毎秒「寿命を5秒後に延長」し続ける。
-                            # 速度を下回ると延長が止まり、最後の減点からぴったり5秒後に自然消滅する！
+                            # 超過中は表示期限を更新し続ける
+                            # 超過解消後は、最後の減点から5秒後にポップアップを終了する
                             p["expire_time"] = current_time + 5.0
                             popup_found = True
                             break
@@ -1035,9 +1028,7 @@ def update_physics_and_scoring(self, current_time, dt):
             self.is_stopped_out_of_range = True 
 
     if is_operational_stop and getattr(self, 'is_approaching', False) and self.bve_speed == 0.0 and not getattr(self, 'has_scored_stop_this_station', False):
-        # =================================================================
-        # ★ 修正②: 作者定義の停止位置許容範囲内(-margin_f ~ margin_b)で停車した時だけ発動させる！
-        # =================================================================
+        # 作者定義の停止位置許容範囲内（-margin_f～margin_b）で停車した場合にのみ到着処理を行う
         dist_to_stop = self.bve_next_loc - self.bve_location
         if (-self.bve_margin_f <= dist_to_stop <= self.bve_margin_b):
             if not getattr(self, 'jump_lock', False) and not getattr(self, 'is_first_station', False):
@@ -1053,9 +1044,7 @@ def update_physics_and_scoring(self, current_time, dt):
                 is_timing_active_op = self.is_station_timing(curr_sta_idx) if curr_sta_idx >= 0 else False
                 
                 if is_scoring_end_station_op and is_timing_active_op and not getattr(self, 'has_scored_time_this_station', False):
-                    # =================================================================
-                    # ★ 修正④: 終了駅の到着時はC#の計算を無視して、着時刻(raw_arr)から正確に算出する
-                    # =================================================================
+                    # 終了駅では駅データの着時刻を優先して運転時分を算出する
                     arr_target_s = self.bve_next_time // 1000
                     if curr_sta_idx >= 0 and getattr(self, 'station_list', [])[curr_sta_idx].get("raw_arr", -1) >= 0:
                         arr_target_s = getattr(self, 'station_list', [])[curr_sta_idx]["raw_arr"] // 1000
@@ -1201,8 +1190,7 @@ def update_physics_and_scoring(self, current_time, dt):
 
     active_red = None # ←この1行と、下の for loc, val, l_type in future_targets: の中身を丸ごと書き換えます。
 
-    # =================================================================
-    # ★ 新ロジック1：全ての制限の警告状態を一旦ストックする
+    # 各制限候補の予告判定結果を収集する
     future_evals = []
     active_zone_end_dist = -1.0
     running_base_speed = base_limit
@@ -1242,10 +1230,7 @@ def update_physics_and_scoring(self, current_time, dt):
                     target_type = l_type
                     target_loc = loc
                             
-            # =========================================================
-            # ★ 修正1: calc_v の階段崩壊バグを修正！
-            # 全てを現在速度から計算せず、ちゃんと階段状(v_assumed)に計算する
-            # =========================================================
+            # 直前の仮定速度を引き継ぎ、段階的な速度低下を前提に予告速度を計算する
             if val < peak_speed and val < self.effective_limit:
                 if running_base_speed >= 999.0:
                     calc_v = max(self.bve_speed, val + 1.0)
@@ -1271,17 +1256,14 @@ def update_physics_and_scoring(self, current_time, dt):
             if val < running_base_speed:
                 running_base_speed = val
 
-    # =================================================================
-    # ★ 新ロジック2：巻き込み発動（ブラックホール）
+    # 同じ制動対象区間に含まれる制限候補を統合する
     active_reds = []
     if active_zone_end_dist > 0:
         for ev in future_evals:
             if ev['dist'] <= active_zone_end_dist:
                 active_reds.append(ev)
 
-    # =================================================================
-    # ★ 新ロジック3：勝ち抜き戦と「絶対防壁ラチェット（ハイジャック防止）」
-    # =================================================================
+    # 最も厳しい制限候補を選択し、緩い候補による警告の上書きを防ぐ
     if not hasattr(self, 'strictest_flashed_val'):
         self.strictest_flashed_val = 999.0
         self.strictest_flashed_key = None
@@ -1302,14 +1284,14 @@ def update_physics_and_scoring(self, current_time, dt):
             
         active_red = None
         for i, r in enumerate(active_reds):
-            # ハイジャック防止：既に点滅した厳しい制限より緩いものは横入りさせない
+            # 表示済みの厳しい制限を、後続の緩い候補で上書きしない
             if r['val'] > self.strictest_flashed_val:
                 continue
                 
             key = f"{r['loc']}_{r['val']}"
             count = self.limit_flash_counts.get(key, 0)
             
-            # 「最後の1つ(本命)」 または 「まだ2回点滅していない」ならこれを表示！
+            # 最終候補、または点滅回数が2回未満の候補を表示する
             if i == len(active_reds) - 1 or count < 2:
                 active_red = r
                 self.current_flashing_key = key
@@ -1330,7 +1312,6 @@ def update_physics_and_scoring(self, current_time, dt):
     if is_passed:
         self.strictest_flashed_val = 999.0
         self.strictest_flashed_key = None
-    # =================================================================
 
     active_blue = None
     if target_val > self.effective_limit: 
@@ -1338,13 +1319,11 @@ def update_physics_and_scoring(self, current_time, dt):
         dist_for_blue = (target_loc - self.bve_location) if is_capped else max(1.0, self.bve_clear_dist)
         active_blue = {'val': target_val, 'dist': max(1.0, dist_for_blue), 'type': target_type}
 
-    # =================================================================
-    # ★ 修正: デバッグ変数の代入と、配列(active_reds)の文字列化
+    # 制限速度診断に使用する現在の判定状態を保存する
     self.dbg_target_cap = target_val
     self.dbg_red = str(active_red['val']) if active_red else "None"
     self.dbg_blue = str(active_blue['val']) if active_blue else "None"
     self.dbg_active_reds = ", ".join([f"{r['val']}km/h({r['dist']:.0f}m)" for r in active_reds]) if active_reds else "None"
-    # =================================================================
 
     self.blink_active = False
     self.target_type = self.base_limit_type
@@ -1395,8 +1374,7 @@ def update_physics_and_scoring(self, current_time, dt):
 
         future_str = str(future_targets[:2])
     
-        # ★ 修正: Redsの距離変動でログが埋まらないよう、キーには「速度」だけを含める！
-        # (例: "90.0, 70.0" のように速度だけを抽出)
+        # 距離変動による過剰なログ出力を避けるため、制限値だけを状態キーに含める
         active_reds_key = ",".join([str(r['val']) for r in active_reds]) if active_reds else "None"
 
         # 状態を一意に特定するための「キー」を作成（Loc、時刻、そして「変動する距離」を排除）
