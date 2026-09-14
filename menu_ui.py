@@ -6,14 +6,11 @@ import math
 import time
 
 def draw_menu(self, painter, logical_width):
-    # ==========================================================
-    # ★★★ UI青枠 微調整用パラメータ (メインメニュー全般) ★★★
-    # ==========================================================
+    # メインメニューの枠位置を調整するパラメータ
     GLOBAL_BOX_X_OFFSET = -3
     MENU_BOX_Y_OFFSET = 1
     SCORING_BOX_Y_OFFSET = -4
     MAIN_ROW0_STA_MAX_W = 400
-    # ==========================================================
 
     painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(QColor(0, 0, 0, 220))
@@ -232,7 +229,7 @@ def draw_menu(self, painter, logical_width):
                 self.menu_click_zones.append((center_x - 20, SAVE_LIST_Y + SAVE_VISIBLE_COUNT * SAVE_ROW_H - 35, center_x + 20, SAVE_LIST_Y + SAVE_VISIBLE_COUNT * SAVE_ROW_H + 10, 995))
 
     elif self.menu_state == 3:
-        CONFIRM_SHIFT_Y = 50 # ★ ここの数字で上下にエレベーター移動します
+        CONFIRM_SHIFT_Y = 50 # 確認画面を下へ移動するピクセル数
 
         cp = self.save_data[self.target_retry_idx]
         msg = f"【 {cp.get('station_name', '駅')} 】からやり直しますか？"
@@ -240,14 +237,13 @@ def draw_menu(self, painter, logical_width):
         max_msg_w = 1700
         actual_w = fm_big.horizontalAdvance(msg)
         
-        # ★ ここで基準となるY座標を定義し、SHIFT分を足し込む
+        # 基準位置へ確認画面全体のオフセットを加える
         msg_y = 350 + CONFIRM_SHIFT_Y
         warn_y = 450 + CONFIRM_SHIFT_Y
         btn_start_y = 600 + CONFIRM_SHIFT_Y
         
         if actual_w > max_msg_w:
             sr = max_msg_w / actual_w
-            # ★ 350 だった部分を msg_y に変更
             cy = msg_y - fm_big.ascent() + fm_big.height() / 2.0
             painter.save()
             painter.translate(center_x, cy)
@@ -256,10 +252,8 @@ def draw_menu(self, painter, logical_width):
             draw_text_with_outline(painter, msg, self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, msg_y, "center", passes=8)
             painter.restore()
         else:
-            # ★ 350 だった部分を msg_y に変更
             draw_text_with_outline(painter, msg, self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, msg_y, "center", passes=8)
-            
-        # ★ 450 だった部分を warn_y に変更
+
         draw_text_with_outline(painter, "※これ以降のセーブデータは破棄されます", self.font_normal, COLOR_B_EMG, COLOR_WHITE, center_x, warn_y, "center", passes=8)
         
         self.menu_click_zones.clear()
@@ -272,15 +266,13 @@ def draw_menu(self, painter, logical_width):
         for i, text in enumerate(["はい", "いいえ"]):
             draw_x = center_x
             box_x = center_x - (fixed_box_w / 2) + box_offset_x
-            # ★ 600 だった部分を btn_start_y に変更
             box_y = btn_start_y + i * 80 - fm_normal.ascent() - 6 - (fm_normal.descent() // 2) + 1
             
             if i == self.menu_cursor:
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(QColor(30, 80, 150, 200))
                 painter.drawRoundedRect(int(box_x), int(box_y), int(fixed_box_w), int(fixed_box_h), 8, 8)
-                
-            # ★ 600 だった部分を btn_start_y に変更
+
             draw_text_with_outline(painter, text, self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, draw_x, btn_start_y + i * 80, "center", passes=8)
             self.menu_click_zones.append((box_x, box_y, box_x + fixed_box_w, box_y + fixed_box_h, i))
 
@@ -307,11 +299,8 @@ def draw_menu(self, painter, logical_width):
         def draw_label(row_idx, text, y, text_color, outline_color):
             box_y = y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET
             label_w = fm.horizontalAdvance(text)
-            
-            # =========================================================
-            # ★ 追加: ラベル文字の上をクリックしたら、その行(x=-1)にフォーカスする
+
             self.menu_click_zones.append((label_x - 15 + GLOBAL_BOX_X_OFFSET, box_y, label_x - 15 + GLOBAL_BOX_X_OFFSET + label_w + 30, box_y + fm.height() + 12, row_idx, -1))
-            # =========================================================
             
             if self.menu_state == 5 and self.menu_cursor == row_idx:
                 if getattr(self, 'menu_cursor_x', 0) == -1:
@@ -348,8 +337,8 @@ def draw_menu(self, painter, logical_width):
                         is_focused = (self.menu_state == 5 and self.menu_cursor == row_idx and getattr(self, 'menu_cursor_x', 0) == interactive_idx and not getattr(self, 'dropdown_active', False))
                     else:
                         is_focused = (self.menu_state == 7 and getattr(self, 'sub_cursor', 0) == row_idx and getattr(self, 'sub_cursor_x', 0) == interactive_idx and not getattr(self, 'dropdown_active', False))
-                        
-                    # 案B対応: インタラクティブな要素のクリックエリア
+
+                    # 値を変更できる要素のクリック領域
                     self.menu_click_zones.append((cx - 10 + GLOBAL_BOX_X_OFFSET, box_y, cx + actual_box_w + 10 + GLOBAL_BOX_X_OFFSET, box_y + fm.height() + 12, row_idx, interactive_idx))
                     
                     if is_focused:
@@ -361,10 +350,8 @@ def draw_menu(self, painter, logical_width):
                         painter.drawRoundedRect(int(cx - 10 + GLOBAL_BOX_X_OFFSET), int(box_y), int(actual_box_w + 20), int(fm.height() + 12), 6, 6)
                     interactive_idx += 1
                 else:
-                    # =========================================================
-                    # ★ 追加: 動かせない文字(ONやmなど)をクリックしてもその行を選択できるようにする
+                    # 固定表示の文字をクリックした場合も行全体を選択する
                     self.menu_click_zones.append((cx - 10 + GLOBAL_BOX_X_OFFSET, box_y, cx + actual_box_w + 10 + GLOBAL_BOX_X_OFFSET, box_y + fm.height() + 12, row_idx, -1))
-                    # =========================================================
 
                 if is_scaled:
                     cy = y - fm.ascent() + fm.height() / 2.0
@@ -400,7 +387,7 @@ def draw_menu(self, painter, logical_width):
             change_x_time = label_x + fm.horizontalAdvance("運転時分　")
             is_focused_time = (self.menu_cursor == 2 and getattr(self, 'menu_cursor_x', 0) == 0 and not getattr(self, 'dropdown_active', False))
             
-            # ★ 案B対応: 運転時分の「変更」ボタンのクリックエリア
+            # 運転時分の「変更」ボタンのクリック領域
             chg_box_y = list_y_start + row_h*2 - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET
             chg_box_w = fm.horizontalAdvance("変更") + 20
             self.menu_click_zones.append((change_x_time - 10 + GLOBAL_BOX_X_OFFSET, chg_box_y, change_x_time - 10 + GLOBAL_BOX_X_OFFSET + chg_box_w, chg_box_y + fm.height() + 12, 2, 0))
@@ -435,7 +422,7 @@ def draw_menu(self, painter, logical_width):
             text_w = fm.horizontalAdvance(change_text)
             is_focused = (self.menu_cursor == 4 and getattr(self, 'menu_cursor_x', 0) == 0 and not getattr(self, 'dropdown_active', False))
             
-            # ★ 案B対応: 基本制動の「変更」ボタンのクリックエリア
+            # 基本制動の「変更」ボタンのクリック領域
             chg2_box_y = list_y_start + row_h*4 - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET
             self.menu_click_zones.append((change_x - 10 + GLOBAL_BOX_X_OFFSET, chg2_box_y, change_x - 10 + GLOBAL_BOX_X_OFFSET + text_w + 20, chg2_box_y + fm.height() + 12, 4, 0))
 
@@ -452,7 +439,7 @@ def draw_menu(self, painter, logical_width):
             box_width = 1210
             box_height = row_h * vis_rules + 5
             
-            # ★ 案B対応: サマリー枠全体のクリックエリア
+            # 基本制動サマリー全体のクリック領域
             sum_box_x = val_x_start - 20 + GLOBAL_BOX_X_OFFSET
             sum_box_y = list_y_start + row_h*4 - fm.ascent() - box_y_offset
             self.menu_click_zones.append((sum_box_x, sum_box_y, sum_box_x + box_width, sum_box_y + box_height, 4, 1))
@@ -646,7 +633,7 @@ def draw_menu(self, painter, logical_width):
                 w_end = fm.horizontalAdvance(r_end)
                 is_focused = (getattr(self, 'sub_cursor', 0) == r_idx and getattr(self, 'sub_cursor_x', 0) == 0 and not getattr(self, 'dropdown_active', False))
                 
-                # ★ 案B対応: 駅名(終了)のクリックエリア
+                # 終了駅名のクリック領域
                 sta_box_y = r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET
                 self.menu_click_zones.append((cx - 10 + GLOBAL_BOX_X_OFFSET, sta_box_y, cx - 10 + GLOBAL_BOX_X_OFFSET + min(w_end, SUB_FIXED_STA_W) + 20, sta_box_y + fm.height() + 12, r_idx, 0))
 
@@ -680,7 +667,7 @@ def draw_menu(self, painter, logical_width):
 
                 if rule.get("apply", "OFF") == "OFF":
                     actual_w = fm.horizontalAdvance("OFF")
-                    # ★ 案B対応: OFF文字のクリックエリア
+                    # OFF表示のクリック領域
                     self.menu_click_zones.append((cx - 10 + GLOBAL_BOX_X_OFFSET, sta_box_y, cx - 10 + GLOBAL_BOX_X_OFFSET + actual_w + 20, sta_box_y + fm.height() + 12, r_idx, idx_apply))
                     
                     if getattr(self, 'sub_cursor', 0) == r_idx and getattr(self, 'sub_cursor_x', 0) == idx_apply and not getattr(self, 'dropdown_active', False):
@@ -693,7 +680,7 @@ def draw_menu(self, painter, logical_width):
                     actual_w = fm.horizontalAdvance(apply_val)
                     offset_x = fixed_apply_w - actual_w 
                     
-                    # ★ 案B対応: 初動文字のクリックエリア
+                    # 初動ブレーキ設定のクリック領域
                     self.menu_click_zones.append((cx + offset_x - 10 + GLOBAL_BOX_X_OFFSET, sta_box_y, cx + offset_x - 10 + GLOBAL_BOX_X_OFFSET + actual_w + 20, sta_box_y + fm.height() + 12, r_idx, idx_apply))
                     
                     if getattr(self, 'sub_cursor', 0) == r_idx and getattr(self, 'sub_cursor_x', 0) == idx_apply and not getattr(self, 'dropdown_active', False):
@@ -710,7 +697,7 @@ def draw_menu(self, painter, logical_width):
                     actual_rel_w = fm.horizontalAdvance(rel_val)
                     offset_rel_x = fixed_apply_w - actual_rel_w 
                     
-                    # ★ 案B対応: 緩和文字のクリックエリア
+                    # 緩和ブレーキ設定のクリック領域
                     self.menu_click_zones.append((cx + offset_rel_x - 10 + GLOBAL_BOX_X_OFFSET, sta_box_y, cx + offset_rel_x - 10 + GLOBAL_BOX_X_OFFSET + actual_rel_w + 20, sta_box_y + fm.height() + 12, r_idx, idx_release))
                     
                     if getattr(self, 'sub_cursor', 0) == r_idx and getattr(self, 'sub_cursor_x', 0) == idx_release and not getattr(self, 'dropdown_active', False):
@@ -818,9 +805,8 @@ def draw_menu(self, painter, logical_width):
                 
                 if not is_start:
                     self.menu_click_zones.append((box_x_base, box_y, box_x_base + TIMING_BOX_W, box_y + box_h, list_idx, -1))
-                # =========================================================
                 
-                # ★ 案B対応: 駅名テキストの幅に合わせたクリックエリア
+                # 駅名の表示幅に合わせてクリック領域を設定する
                 cx_sta = SUB_X + TIMING_INNER_MARGIN_X
                 actual_w = fm.horizontalAdvance(sta_name)
                 self.menu_click_zones.append((cx_sta - 10, box_y, cx_sta + min(actual_w, TIMING_STA_MAX_W) + 10, box_y + box_h, list_idx, -1))
@@ -906,9 +892,7 @@ def draw_menu(self, painter, logical_width):
             draw_text_with_outline(painter, btn_a_text, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, btn_a_x + 15, btn_a_y + fm_btn.ascent() + 7, "left", passes=8)
             self.menu_click_zones.append((btn_a_x, btn_a_y, btn_a_x + btn_a_w, btn_a_y + btn_a_h, 998))
 
-    # ==========================================================
-    # ★ 新規追加: 採点設定 (2/2) 減点項目のメイン描画 (menu_state == 6)
-    # ==========================================================
+    # 採点設定2ページ目の減点項目を描画する
     elif self.menu_state == 6:
         MAIN_X_OFFSET = 50   
         list_y_start  = 212 + MAIN_SHIFT_Y
@@ -923,7 +907,7 @@ def draw_menu(self, painter, logical_width):
         def draw_toggle_row(cursor_idx, label_text, is_on, base_y):
             box_y = base_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET
             label_w = fm.horizontalAdvance(label_text)
-            # ★ 案B対応: ラベルテキストのクリックエリア
+            # 項目ラベルのクリック領域
             self.menu_click_zones.append((label_x - 15 + GLOBAL_BOX_X_OFFSET, box_y, label_x - 15 + GLOBAL_BOX_X_OFFSET + label_w + 30, box_y + fm.height() + 12, cursor_idx, -1))
             
             if self.menu_cursor == cursor_idx and getattr(self, 'menu_cursor_x', 0) == -1:
@@ -936,7 +920,7 @@ def draw_menu(self, painter, logical_width):
             val_col = COLOR_P if is_on else COLOR_B_EMG
             
             val_w = fm.horizontalAdvance(val_text)
-            # ★ 案B対応: ON/OFF値のクリックエリア
+            # ON/OFF値のクリック領域
             self.menu_click_zones.append((val_x_start - 10 + GLOBAL_BOX_X_OFFSET, box_y, val_x_start - 10 + GLOBAL_BOX_X_OFFSET + val_w + 20, box_y + fm.height() + 12, cursor_idx, 0))
 
             is_val_focused = (self.menu_cursor == cursor_idx and getattr(self, 'menu_cursor_x', 0) == 0)
@@ -958,10 +942,8 @@ def draw_menu(self, painter, logical_width):
         label_w = fm.horizontalAdvance("初動ブレーキ")
         init_box_y = y_init - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET
         
-        # =========================================================
-        # ★ 追加: 初動・緩和ラベルのクリックエリア (2行分の高さをカバー)
+        # 初動・緩和ラベルの2行分をクリック領域とする
         self.menu_click_zones.append((label_x - 15 + GLOBAL_BOX_X_OFFSET, init_box_y, label_x - 15 + GLOBAL_BOX_X_OFFSET + label_w + 30, init_box_y + row_h + fm.height() + 12, 5, -1))
-        # =========================================================
 
         if self.menu_cursor == 5 and getattr(self, 'menu_cursor_x', 0) == -1:
             painter.setPen(Qt.PenStyle.NoPen)
@@ -976,7 +958,7 @@ def draw_menu(self, painter, logical_width):
         text_w = fm.horizontalAdvance(change_text)
         is_focused = (self.menu_cursor == 5 and getattr(self, 'menu_cursor_x', 0) == 0 and not getattr(self, 'dropdown_active', False))
         
-        # ★ 案B対応: 初動・緩和「変更」ボタンのクリックエリア
+        # 初動・緩和設定の「変更」ボタンのクリック領域
         chg_init_y = y_init - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET
         self.menu_click_zones.append((change_x - 10 + GLOBAL_BOX_X_OFFSET, chg_init_y, change_x - 10 + GLOBAL_BOX_X_OFFSET + text_w + 20, chg_init_y + fm.height() + 12, 5, 0))
 
@@ -1002,7 +984,7 @@ def draw_menu(self, painter, logical_width):
             painter.setBrush(QColor(30, 80, 150, 150))
             painter.drawRoundedRect(int(list_cx_start - 20 + GLOBAL_BOX_X_OFFSET), int(y_init - fm.ascent() - box_y_offset), box_width, int(box_height), 6, 6)
             
-        # ★ 案B対応: 初動・緩和サマリー枠のクリックエリア
+        # 初動・緩和設定のサマリー全体をクリック領域とする
         self.menu_click_zones.append((list_cx_start - 20 + GLOBAL_BOX_X_OFFSET, y_init - fm.ascent() - box_y_offset, list_cx_start - 20 + GLOBAL_BOX_X_OFFSET + box_width, y_init - fm.ascent() - box_y_offset + box_height, 5, 1))
             
         col_summary_x = list_cx_start + FIXED_STA_W + 15 + fm.horizontalAdvance("～") + 15 + FIXED_STA_W + 15 + (fm.horizontalAdvance(":") // 2)
@@ -1211,7 +1193,7 @@ def draw_menu(self, painter, logical_width):
             apply_val = p_rule.get("apply", "ON①")
             actual_w = fm.horizontalAdvance(apply_val)
             
-            # ★ 案B対応: 初動文字のクリックエリア
+            # 初動ブレーキ設定のクリック領域
             box_y = r_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET
             self.menu_click_zones.append((cx - 10 + GLOBAL_BOX_X_OFFSET, box_y, cx - 10 + GLOBAL_BOX_X_OFFSET + actual_w + 20, box_y + fm.height() + 12, r_idx, idx_apply))
             
@@ -1233,7 +1215,7 @@ def draw_menu(self, painter, logical_width):
             rel_val = p_rule.get("release", "ON①")
             actual_rel_w = fm.horizontalAdvance(rel_val)
             
-            # ★ 案B対応: 緩和文字のクリックエリア
+            # 緩和ブレーキ設定のクリック領域
             self.menu_click_zones.append((cx - 10 + GLOBAL_BOX_X_OFFSET, box_y, cx - 10 + GLOBAL_BOX_X_OFFSET + actual_rel_w + 20, box_y + fm.height() + 12, r_idx, idx_release))
             
             if sub_cursor == r_idx and sub_cursor_x == idx_release and not getattr(self, 'dropdown_active', False):
@@ -1260,9 +1242,7 @@ def draw_menu(self, painter, logical_width):
         for j, line in enumerate(desc_text.split('\n')):
             draw_text_with_outline(painter, line, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, 180, desc_y + 40 + (j * 40), "left", passes=8)
 
-    # ==========================================================
-    # ★ 新規追加: 評価点の設定 (3/3) メイン描画 (menu_state == 10)
-    # ==========================================================
+    # 採点設定3ページ目の評価ランク設定を描画する
     elif self.menu_state == 10:
         MAIN_SHIFT_Y = 25
         title_text = "=== 採点設定 (3/3) ==="
@@ -1271,7 +1251,7 @@ def draw_menu(self, painter, logical_width):
 
         # 数値の計算
         rank_a_pct = int(round(getattr(self, 'rank_a_ratio', 0.70) * 100))
-        rank_multi = getattr(self, 'rank_multi', 0.70) # ★変数を取得
+        rank_multi = getattr(self, 'rank_multi', 0.70)
 
         rank_b_pct = int(round(rank_a_pct * rank_multi))
         rank_c_pct = int(round(rank_b_pct * rank_multi))
@@ -1304,17 +1284,14 @@ def draw_menu(self, painter, logical_width):
         c_green = get_qc(COLOR_N)
         c_red = get_qc(COLOR_B_EMG)
 
-        # ==========================================================
-        # ① 鶴さん考案の下地ハック：両端の丸み（RoundCap）を色付きで補完する
-        # 左半分をグレー、右半分を赤で RoundCap として引いておく
+        # 両端の丸みを表現するため、左右のRoundCapを下地として描画する
         painter.setPen(QPen(c_gray, 16, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         painter.drawLine(int(slider_x), int(slider_y), int(center_x), int(slider_y))
         
         painter.setPen(QPen(c_red, 16, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         painter.drawLine(int(center_x), int(slider_y), int(x_end), int(slider_y))
-        # ==========================================================
 
-        # ② FlatCap(平らな端)で各ランクのセグメントを正確に上塗りする
+        # FlatCapの線分を重ねて各ランクの範囲を描画する
         painter.setPen(QPen(c_gray, 16, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
         painter.drawLine(int(x_d), int(slider_y), int(x_c), int(slider_y))
 
@@ -1327,8 +1304,7 @@ def draw_menu(self, painter, logical_width):
         painter.setPen(QPen(c_red, 16, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
         painter.drawLine(int(x_a), int(slider_y), int(x_end), int(slider_y))
 
-        # ==========================================================
-        # ③ 各バーの中央に「白縁取り ＋ バーと同色」の文字を描画する
+        # 各ランク範囲の中央に白縁取り付きのラベルを描画する
         mid_d = (x_d + x_c) / 2
         mid_c = (x_c + x_b) / 2
         mid_b = (x_b + x_a) / 2
@@ -1342,7 +1318,6 @@ def draw_menu(self, painter, logical_width):
         draw_text_with_outline(painter, "C", font_rank_label, c_blue, COLOR_WHITE, mid_c, text_y, "center", passes=8)
         draw_text_with_outline(painter, "B", font_rank_label, c_green, COLOR_WHITE, mid_b, text_y, "center", passes=8)
         draw_text_with_outline(painter, "A", font_rank_label, c_red, COLOR_WHITE, mid_a, text_y, "center", passes=8)
-        # ==========================================================
 
         # 両端のテキスト
         draw_text_with_outline(painter, "0%", self.font_ui, COLOR_WHITE, COLOR_OUTLINE_BLACK, slider_x - 30, slider_y + 20, "right", passes=8)
@@ -1385,7 +1360,7 @@ def draw_menu(self, painter, logical_width):
             box_h = 45
             box_y = slider_y - 85
             painter.setPen(QPen(qc, 3))
-            painter.setBrush(QColor(*COLOR_WHITE)) # ★ 修正
+            painter.setBrush(QColor(*COLOR_WHITE))
             painter.drawRoundedRect(int(nx - box_w/2), int(box_y), box_w, box_h, 5, 5)
             
             # 吹き出しの尻尾
@@ -1449,7 +1424,7 @@ def draw_menu(self, painter, logical_width):
             "運転時分の採点対象となる駅の総数n₃ : 採時駅の数",
             "",
             "Rank A は理論値の 50～90％ の間で調整が可能です。",
-            f"Rank B = Rank A × {rank_multi}、Rank C = Rank B × {rank_multi}（整数値に四捨五入）で自動的に計算されます。", # ★f文字列で変数を埋め込み
+            f"Rank B = Rank A × {rank_multi}、Rank C = Rank B × {rank_multi}（整数値に四捨五入）で自動的に計算されます。",
             "やり直しをせずに試験を終え、かつ Rank A 以上の点数の場合には Rank S が与えられます。"
         ]
         for j, line in enumerate(desc_lines):
@@ -1469,7 +1444,7 @@ def draw_menu(self, painter, logical_width):
         start_y = (BASE_SCREEN_H / 2) - (box_h / 2)
         
         self.active_dropdown_rect = (start_x, start_y, start_x + box_w, start_y + box_h)
-        # ★ 超重要: ドロップダウンが開いている間は、背後のクリック判定をすべて消去し、ドロップダウン専用にする！
+        # ドロップダウン表示中は背後のクリック領域を無効化する
         self.menu_click_zones.clear()
         
         painter.setPen(QPen(QColor(100, 100, 100), 4))
@@ -1484,7 +1459,7 @@ def draw_menu(self, painter, logical_width):
             actual_idx = getattr(self, 'dropdown_scroll', 0) + i
             item_y = start_y + 10 + (i * row_h)
             
-            # ★ 追加: ドロップダウン項目のクリックエリア (action_idx=997, action_x=実際のインデックス)
+            # action_idx=997で評価点ドロップダウンの項目を識別する
             self.menu_click_zones.append((start_x, item_y, start_x + box_w, item_y + row_h, 997, actual_idx))
             
             if actual_idx == getattr(self, 'dropdown_cursor', 0):
@@ -1504,15 +1479,13 @@ def draw_menu(self, painter, logical_width):
             actual_idx = getattr(self, 'dropdown_scroll', 0) + i
             item_y = start_y + 10 + (i * row_h)
             
-            # ★ 追加: ドロップダウンの各項目のクリックエリア (action_x = -2 として区別)
+            # action_x=-2でルール選択用ドロップダウンの項目を識別する
             self.menu_click_zones.append((start_x + 5, item_y, start_x + box_w - 5, item_y + row_h, actual_idx, -2))
     
-    # ==========================================================
-    # ★ 新規追加: 採点結果画面 (menu_state == 11)
-    # ==========================================================
+    # 採点結果画面を描画する
     elif self.menu_state == 11:
         painter.setPen(Qt.PenStyle.NoPen)
-        # 背景を極大化して塗りつぶす（解像度変更時の黒切れ防止）
+        # 解像度変更時にも背景が途切れないよう、描画範囲を広く確保する
         painter.setBrush(QColor(15, 15, 15, 245))
         painter.drawRect(-5000, -5000, 10000, 10000)
 
@@ -1525,12 +1498,11 @@ def draw_menu(self, painter, logical_width):
         draw_text_with_outline(painter, "=== 採点結果 ===", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, header_y, "center", passes=8)
         
         font_meta = self.font_normal
-        
-        # ★ 修正: 変数の定義を描画より前に移動（エラー防止）
+
         sta_start = get_sta_name(getattr(self, 'setting_start_idx', 0))
         sta_end = get_sta_name(getattr(self, 'setting_end_idx', -1))
         
-        # ★ 修正: 横幅が1300pxを超える場合、縦横比を維持して全体を縮小するヘルパー関数
+        # 横幅が1300pxを超える文字列を縦横比を維持して縮小描画する
         def draw_scaled_meta_text(text, y_pos):
             fm = QFontMetrics(font_meta)
             text_w = fm.horizontalAdvance(text)
@@ -1543,7 +1515,7 @@ def draw_menu(self, painter, logical_width):
                 y_offset = (fm.ascent() * (1.0 - ratio)) / 2.0
                 
                 painter.save()
-                # ★ 修正: 床(Y座標)を、計算した y_offset の分だけ上に持ち上げる！
+                # 縮小後の表示位置をy_offset分だけ上へ補正する
                 painter.translate(center_x, y_pos - y_offset)
                 painter.scale(ratio, ratio)
                 
@@ -1578,8 +1550,7 @@ def draw_menu(self, painter, logical_width):
 
         sd = getattr(self, 'score_details', {})
         
-        # ==========================================================
-        # ★ 冗長なgetattrをやめ、直接変数を参照してOFF判定！
+        # 各減点項目の有効設定からOFF状態を判定する
         is_ats_off   = not self.pen_ats
         is_limit_off = not self.pen_limit
         is_jerk_off  = not self.pen_jerk
@@ -1603,7 +1574,6 @@ def draw_menu(self, painter, logical_width):
 
             # --- 左列 ---
             val1 = sd.get(key1, 0)
-            # ★修正: 確実に get_qc() を通す
             lbl_c1 = get_qc(COLOR_WHITE)
             v1_out = get_qc(COLOR_WHITE if val1 != 0 and not is_off1 else COLOR_OUTLINE_BLACK)
 
@@ -1617,7 +1587,6 @@ def draw_menu(self, painter, logical_width):
             
             # --- 右列 ---
             val2 = sd.get(key2, 0)
-            # ★修正: 確実に get_qc() を通す
             lbl_c2 = get_qc(COLOR_WHITE)
             v2_out = get_qc(COLOR_WHITE if val2 != 0 and not is_off2 else COLOR_OUTLINE_BLACK)
 
@@ -1634,7 +1603,6 @@ def draw_menu(self, painter, logical_width):
         draw_score_row("基本制動", "base_brake", "初動ブレーキ", "init_brake", table_y + row_h * 2, is_base_off, is_init_off)
         draw_score_row("転動", "roll", "緩和ブレーキ", "rel_brake", table_y + row_h * 3, False, is_rel_off)
         draw_score_row("停車時衝動", "jerk", "非常ブレーキ", "eb", table_y + row_h * 4, is_jerk_off, is_eb_off)
-        # ==========================================================
 
         bonus_val = sd.get("bonus", 0)
         b_color = COLOR_N if bonus_val > 0 else COLOR_WHITE
@@ -1652,7 +1620,7 @@ def draw_menu(self, painter, logical_width):
         retries = getattr(self, 'total_retry_count', 0)
         
         rank_a_pct = int(round(getattr(self, 'rank_a_ratio', 0.70) * 100))
-        rank_multi = getattr(self, 'rank_multi', 0.70) # ★変数を取得
+        rank_multi = getattr(self, 'rank_multi', 0.70)
 
         rank_b_pct = int(round(rank_a_pct * rank_multi))
         rank_c_pct = int(round(rank_b_pct * rank_multi))
@@ -1691,9 +1659,7 @@ def draw_menu(self, painter, logical_width):
         elif f_rank.pixelSize() > 0:
             f_rank.setPixelSize(int(f_rank.pixelSize()*1.2))
             
-        # ==========================================================
-        # ★ 修正: A～Dは従来通り描画、Sランクのみ金属光沢(グラデーション)を描画
-        # ==========================================================
+        # Sランクのみ金属光沢を表すグラデーションで描画する
         if eval_rank == "S":
             painter.save()
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -1731,12 +1697,10 @@ def draw_menu(self, painter, logical_width):
             # A, B, C, D ランクは従来通りの描画
             draw_text_with_outline(painter, eval_rank, f_rank, eval_color, COLOR_WHITE, center_x + 577, bottom_y + 5, "center", passes=8)
 
-        # ==========================================================
-        # 4. 操作ボタンと [H] ボタンの描画 (スクショ中は隠す！)
-        # ==========================================================
+        # スクリーンショット作成中を除き、操作ボタンとヘルプボタンを描画する
         if not getattr(self, 'is_capturing_screenshot', False):
             
-            # ★ 追加: 保存されたファイルが削除・移動されたか監視し、無い場合はフラグを戻す
+            # 保存先ファイルが存在しない場合は保存済み状態を解除する
             if getattr(self, 'is_result_saved', False) and hasattr(self, 'saved_file_path'):
                 import os
                 if not os.path.exists(self.saved_file_path):
@@ -1746,9 +1710,7 @@ def draw_menu(self, painter, logical_width):
             btn_text = "閉じる" if getattr(self, 'is_result_saved', False) else "結果を保存する"
             draw_menu_item(btn_text, bottom_y + 110, (self.menu_cursor == 0), 0, "center")
 
-    # ==========================================================
-    # ★ 追加: 採点中断の確認画面 (menu_state == 12)
-    # ==========================================================
+    # 採点中断の確認画面を描画する
     elif self.menu_state == 12:
         CONFIRM_SHIFT_Y = 50 
 
@@ -1783,9 +1745,7 @@ def draw_menu(self, painter, logical_width):
             self.menu_click_zones.append((box_x, box_y, box_x + fixed_box_w, box_y + fixed_box_h, i))
 
 
-    # ==========================================================
-    # ★ 新規追加: 操作説明（ヘルプ）ボタンと小ウィンドウの描画
-    # ==========================================================
+    # 操作説明を開くヘルプボタンを描画する
     if self.menu_state != 0 and not getattr(self, 'is_capturing_screenshot', False):
         # 画面右下にヘルプボタンを描画
         help_text = "操作説明 : H"
@@ -1804,23 +1764,21 @@ def draw_menu(self, painter, logical_width):
         draw_text_with_outline(painter, help_text, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, hx + 15, hy + fm_help.ascent() + 7, "left", passes=8)
         self.menu_click_zones.append((hx, hy, hx + hw, hy + hh, 999))
 
-    # ==========================================================
-    # ★ 修正: 操作説明 [H] オーバーレイ (リストの行数で高さが自動可変)
-    # ==========================================================
+    # 項目数に応じて高さを調整した操作説明オーバーレイを描画する
     if getattr(self, 'show_help', False):
         # 画面全体を暗転
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(0, 0, 0, 180))
         painter.drawRect(-2000, -2000, 6000, 6000)
 
-        # 1. 状態に応じたリストを先に作る
+        # 状態に応じたリストを先に作る
         help_items = []
         if self.menu_state in [1, 2, 3, 4, 8, 12]:
             help_items.append(("↑↓", "移動"))
         elif self.menu_state != 11:
             help_items.append(("↑↓←→", "移動"))
         
-        # 保存前のリザルト画面は Enter のみ。それ以外は戻る・閉じるを追加。
+        # 未保存の結果画面では決定操作のみ、それ以外では戻る操作も表示する
         if self.menu_state == 11 and not getattr(self, 'is_result_saved', False):
             help_items.append(("Enter", "決定"))
         else:
