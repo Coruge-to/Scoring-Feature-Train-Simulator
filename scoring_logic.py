@@ -297,7 +297,7 @@ def detect_physical_emergency_brake(self, dt):
 
     if self.bve_btype == "Cl":
         # 自動空気ブレーキ車は、EBハンドル位置を直接使用する。
-        physical_eb_tripped = is_eb_handle
+        manual_eb_qualified = is_eb_handle
 
     else:
         # Ecb・Smee共通の手動EB累積判定。
@@ -327,12 +327,12 @@ def detect_physical_emergency_brake(self, dt):
             else:
                 self.manual_eb_cooling_time = 0.0
 
-        physical_eb_tripped = (
+        manual_eb_qualified = (
             self.manual_eb_accum_time
             >= ECB_EB_ACCUM_THRESHOLD
         )
 
-    return is_eb_handle, physical_eb_tripped
+    return is_eb_handle, manual_eb_qualified
 
 
 def update_stop_jerk_penalty(self, current_time, decel_g):
@@ -362,15 +362,14 @@ def update_stop_jerk_penalty(self, current_time, decel_g):
 def update_emergency_brake_penalty(
     self,
     current_time,
-    physical_eb_tripped,
+    manual_eb_qualified,
     in_station_zone,
 ):
-    eb_event_active = physical_eb_tripped
+    eb_event_active = manual_eb_qualified
 
-    # 基本制動評価中に物理EBが成立した場合は、
-    # 手動操作かどうかにかかわらず加点資格を失わせる。
+    # 基本制動評価中に物理EBが成立した場合は、加点資格を失わせる。
     if (
-        physical_eb_tripped
+        manual_eb_qualified
         and self.bb_is_in_zone
     ):
         self.bb_state = "FAILED"
@@ -1143,14 +1142,14 @@ def update_physics_and_scoring(self, current_time, dt):
         decel_g,
     )
 
-    is_eb_handle, physical_eb_tripped = (
+    is_eb_handle, manual_eb_qualified = (
         detect_physical_emergency_brake(self, dt)
     )
 
     update_emergency_brake_penalty(
         self,
         current_time,
-        physical_eb_tripped,
+        manual_eb_qualified,
         in_station_zone,
     )
 
