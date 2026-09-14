@@ -108,7 +108,7 @@ def begin_official_jump(self, target_loc, target_time):
     採点開始またはリトライによる公式ジャンプの保護を開始する。
 
     ジャンプ先の位置・時刻を記録し、
-    BVEからジャンプ通知を受信するまで不正ジャンプ判定を抑止する。
+    C#からJUMP_COMPLETEを受信するまで公式ジャンプ状態を維持する。
     """
     self.is_official_jumping = True
     self.expected_target_loc = target_loc
@@ -388,7 +388,7 @@ def evaluate_arrival(self, current_time, arrival_target_loc=None):
 
     if is_scoring_end_station:
         self.is_scoring_finished = True
-        # ★ 謎4解決：5秒後にメッセージを出すためのタイマーをセット
+        # 採点終了から5秒後に終了メッセージを表示する
         self.end_message_time = current_time + 5.0
         self.result_screen_time = current_time + 10.0
 
@@ -582,13 +582,10 @@ def update_physics_and_scoring(self, current_time, dt):
         if getattr(self, 'pen_ats', True): f_list.append("[ATS]")
         self.active_features_str = " ".join(f_list) if f_list else "すべてOFF"
 
-    # =================================================================
-    # ★ 謎4解決：お掃除係を最上部へ配置し、永遠に残るバグを消滅
-    # =================================================================
+    # 表示期限を過ぎたポップアップを削除する
     self.popups = [p for p in getattr(self, 'popups', []) if p["expire_time"] > current_time]
     
-    # ★ 謎4解決：5秒遅延させた「お疲れ様」メッセージの発火
-    # ★ 謎4解決：5秒遅延させた「お疲れ様」メッセージの発火
+    # 採点終了から5秒後に終了メッセージを表示する
     if getattr(self, 'end_message_time', 0.0) > 0 and current_time >= self.end_message_time:
         # ★ 修正: 採点が正しく終了(is_scoring_finished)している場合のみ表示。中断されていたら弾く！
         if getattr(self, 'is_scoring_finished', False):
@@ -1166,20 +1163,6 @@ def update_physics_and_scoring(self, current_time, dt):
             )
             self.has_scored_stop_this_station = True
 
-    allow_score = not getattr(self, 'jump_lock', False) or getattr(self, 'is_official_retry', False)
-    
-    '''
-    if not is_operational_stop and getattr(self, 'prev_door', 0) == 1 and getattr(self, 'bve_door', 0) == 0:
-        # =========================================================
-        # ★ 修正：ワープ待機中の「幻のドア開閉」をシャットアウト
-        if not getattr(self, 'is_official_jumping', False):
-            if getattr(self, 'prev_term', 0) == 0 and is_timing_active and not getattr(self, 'has_scored_time_this_station', False):
-                if allow_score and not getattr(self, 'is_first_station', False):
-                    apply_time_score(self, getattr(self, 'prev_diff_s', 0), current_time)
-                    self.is_official_retry = False 
-                self.has_scored_time_this_station = True
-        # =========================================================
-    '''
     self.prev_next_loc = self.bve_next_loc
     self.prev_door = getattr(self, 'bve_door', 0)
     self.prev_doordir = getattr(self, 'bve_doordir', 1)
@@ -1188,7 +1171,6 @@ def update_physics_and_scoring(self, current_time, dt):
     self.prev_term = self.bve_term
     self.prev_diff_s = diff_s
 
-# ------------------ ここから下を上書き ------------------
     rnd_tail_limit = round(self.map_tail_limit, 1)
     rnd_head_limit = round(self.map_head_limit, 1)
     rnd_sig_limit  = round(self.bve_signal_limit, 1)

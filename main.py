@@ -1275,7 +1275,6 @@ class Overlay(QWidget):
                     self.input_mode_active = False
                     
             elif self.menu_cursor == 1: # 「採点を開始する」
-                # ここに、以前 menu_state == 6 にあった以下の長い処理を丸ごと置きます。
                 self.is_scoring_mode = True
                 reset_result_display_state(self)
                 reset_score_accumulation(self)
@@ -1656,7 +1655,6 @@ class Overlay(QWidget):
             
             if save_path:
                 fhd_pixmap.save(save_path, "JPG", 100) # 完成した合成画像を保存
-                #self.popups.append({"text": "採点結果を保存しました", "color": COLOR_N, "expire_time": (self.bve_time_ms/1000.0) + 3.0, "type": "pos", "category": "システム"})
                 self.is_result_saved = True
                 self.saved_file_path = save_path
         except Exception as e:
