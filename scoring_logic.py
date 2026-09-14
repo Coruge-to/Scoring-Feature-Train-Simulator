@@ -188,14 +188,10 @@ def execute_retry(self, index, is_bve_advancing):
 
 def add_score_popup(self, points, text, color, ptype, category, current_time, force=False):
     if not getattr(self, 'is_scoring_mode', False) and not force: return
-    # =================================================================
-    # ★ 追加：採点終了後は、強制表示（終了メッセージ）以外の加点・減点をすべて弾く！
-    # =================================================================
+    # 採点終了後は、強制表示を除く新たな加点・減点を受け付けない
     if getattr(self, 'is_scoring_finished', False) and not force: return
     self.score += points
-    # =================================================================
-    # ★ 新規追加：カテゴリに応じた内訳貯金箱への自動振り分け
-    # =================================================================
+    # 得点をカテゴリ別の内訳へ反映する
     cat_map = {
         "運転時分": "time", "停止位置": "stop", "基本制動": "base_brake",
         "ボーナス": "bonus", "転動": "roll", "停車時衝動": "jerk",
@@ -205,7 +201,6 @@ def add_score_popup(self, points, text, color, ptype, category, current_time, fo
     if category in cat_map:
         key = cat_map[category]
         self.score_details[key] += points
-    # =================================================================
     self.popups.append({"text": text, "color": color, "expire_time": current_time + 5.0, "type": ptype, "category": category})
 
 def apply_time_score(self, diff_s, current_time):
@@ -216,7 +211,7 @@ def apply_time_score(self, diff_s, current_time):
     elif abs_diff <= 29: add = 100
     else: add = 0
     if add > 0:
-        # ★ 変更: force=True を削除！（通常のスコアとして扱う）
+        # 運転時分は通常の加点として処理する
         add_score_popup(self, add, f"運転時分 +{add}", COLOR_N, "pos", "運転時分", current_time)
 
 def apply_stop_score(self, d_m, current_time):
@@ -327,9 +322,7 @@ def evaluate_arrival(self, current_time, arrival_target_loc=None):
     release_ok = False
     is_rescue = False # ★ 追加: 救済フラグ
 
-    # =================================================================
-    # ★ 追加：現在の基本制動ルールを取得し、"OFF"なら判定自体をスキップ
-    # =================================================================
+    # 現在の基本制動ルールを取得し、OFFの場合は判定を省略する
     b_rule_app = getattr(self, 'active_rule_basic_apply', '階段')
     b_rule_rel = getattr(self, 'active_rule_basic_release', '階段')
 
@@ -355,24 +348,20 @@ def evaluate_arrival(self, current_time, arrival_target_loc=None):
         if abs(dist_to_stop) <= actual_margin:
             if getattr(self, 'bb_state', "IDLE") != "FAILED" and not getattr(self, 'is_stopped_out_of_range', False) and getattr(self, 'stop_notch_state', "IDLE") != "STRONG":
                 if (getattr(self, 'bb_apply_count', 0) > 0 or getattr(self, 'bb_release_count', 0) > 0):
-                    # ★ 変更：固定値ではなく、ルール上限値(app_limit)と比較
+                    # 制動・緩和回数を現在のルール上限と比較する
                     apply_ok = (app_limit == 0) or (getattr(self, 'bb_apply_count', 0) <= app_limit)
                     release_ok = (rel_limit == 0) or (getattr(self, 'bb_release_count', 0) <= rel_limit)
-                    # =============================================================
-                    # ★ 追加：1段制動設定時の救済措置（2段まで許容）
-                    # =============================================================
+                    # 1段制動設定では、2段制動を減点付きで救済する
                     if not apply_ok and b_rule_app == "1段" and getattr(self, 'bb_apply_count', 0) == 2 and release_ok:
                         is_rescue = True
                         apply_ok = True # 表示ブロックへ進めるために合格扱いにする
-                    # =============================================================
                     
 
     if is_zero_stop and getattr(self, 'is_scoring_mode', False):
         add_score_popup(self, 0, "0cm停車成功!!!", COLOR_N, "big", "ボーナス", current_time)
         
     if apply_ok and release_ok and getattr(self, 'is_scoring_mode', False):
-        # =============================================================
-        # ★ 修正：救済フラグの有無で表示メッセージと点数を分岐
+        # 救済適用の有無に応じて表示内容と加点を切り替える
         if is_rescue:
             # 救済：メッセージを「2段制動〜」に変更し、点数を +300 にする
             add_score_popup(self, 0, f"2段制動{b_rule_rel}緩め成功!!!", COLOR_N, "big", "基本制動", current_time)
@@ -381,7 +370,6 @@ def evaluate_arrival(self, current_time, arrival_target_loc=None):
             # 通常成功：設定通りのルール名を表示し、点数を +500 にする
             add_score_popup(self, 0, f"{b_rule_app}制動{b_rule_rel}緩め成功!!!", COLOR_N, "big", "基本制動", current_time)
             add_score_popup(self, 500, "基本制動 +500", COLOR_N, "pos", "基本制動", current_time)
-        # =============================================================
 
     if is_zero_stop and apply_ok and release_ok and getattr(self, 'is_scoring_mode', False):
         add_score_popup(self, 500, "ボーナス +500", COLOR_N, "pos", "ボーナス", current_time)
@@ -526,9 +514,7 @@ def get_notch_state(self, notch):
         else: return "STRONG"
 
 def update_physics_and_scoring(self, current_time, dt):
-    # =================================================================
-    # ★ 新設：現在の座標から「今適用されるルール」をリアルタイム抽出！
-    # =================================================================
+    # 現在の対象区間に適用される基本制動ルールを取得する
     if getattr(self, 'is_scoring_mode', False) and getattr(self, 'station_list', []):
         
         # 1. 先に「次駅ターゲット」を特定する（ドアが閉まると切り替わる）
@@ -563,7 +549,7 @@ def update_physics_and_scoring(self, current_time, dt):
                 active_p_rule = p_rules[i] if i < len(p_rules) else p_rules[-1]
                 break
             
-            # ★ 変更：列車の現在地ではなく、「次に向かっている駅」が区間内かで判定
+            # 次の対象駅を基準に適用区間を判定する
             if compare_idx <= e_idx:
                 active_b_rule = r
                 active_p_rule = p_rules[i] if i < len(p_rules) else p_rules[-1]
@@ -587,16 +573,16 @@ def update_physics_and_scoring(self, current_time, dt):
     
     # 採点終了から5秒後に終了メッセージを表示する
     if getattr(self, 'end_message_time', 0.0) > 0 and current_time >= self.end_message_time:
-        # ★ 修正: 採点が正しく終了(is_scoring_finished)している場合のみ表示。中断されていたら弾く！
+        # 正常終了した場合に限り、終了メッセージを表示する
         if getattr(self, 'is_scoring_finished', False):
             add_score_popup(self, 0, "運転お疲れ様でした。", COLOR_WHITE, "big", "終了", current_time, force=True)
         self.end_message_time = 0.0
     
-    # ★ 新規追加: 10秒経過で自動的にリザルト画面(11)を開く
+    # 採点終了から10秒後にリザルト画面を開く
     if getattr(self, 'result_screen_time', 0.0) > 0 and current_time >= self.result_screen_time:
-        # ★ 修正: 採点が正しく終了している場合のみリザルト画面を開く！
+        # 採点中断時はリザルト画面へ遷移しない
         if getattr(self, 'is_scoring_finished', False):
-            # ★ 修正: 直接 True を渡して確実に一時停止(Pキー送信)させる！
+            # BVEを一時停止してリザルト画面を表示する
             self.toggle_menu(True) 
             self.menu_state = 11       
             self.menu_cursor = 0
@@ -955,7 +941,7 @@ def update_physics_and_scoring(self, current_time, dt):
     ):
         current_limit = getattr(self, 'effective_limit', 1000.0)
         
-        # ★ 修正1：後退時（マイナス）の速度超過も絶対値で検知する
+        # 前進・後退のどちらでも速度の絶対値で超過を判定する
         abs_speed = abs(self.bve_speed)
         
         # 制限速度 + 1.0 km/h 以上で減点開始
@@ -977,7 +963,7 @@ def update_physics_and_scoring(self, current_time, dt):
                     for p in getattr(self, 'popups', []):
                         if p.get("category") == "速度制限超過":
                             p["text"] = f"速度制限超過 -{self.accumulated_speed_penalty}"
-                            # ★ 修正2：「勝手に5秒後に消えるルール」の活用
+                            # 超過中はポップアップの表示期限を延長する
                             # 超過している間は毎秒「寿命を5秒後に延長」し続ける。
                             # 速度を下回ると延長が止まり、最後の減点からぴったり5秒後に自然消滅する！
                             p["expire_time"] = current_time + 5.0
@@ -988,7 +974,7 @@ def update_physics_and_scoring(self, current_time, dt):
                         add_score_popup(self, -deduction, f"速度制限超過 -{self.accumulated_speed_penalty}", COLOR_B_EMG, "neg", "速度制限超過", current_time)
                     else:
                         self.score -= deduction
-                        # ★ 追加：内訳貯金箱からも直接引く
+                        # 速度超過減点を得点内訳にも反映する
                         self.score_details["limit"] -= deduction
                         
                     self.last_speed_limit_penalty_time = current_time
