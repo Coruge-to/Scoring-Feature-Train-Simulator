@@ -288,7 +288,7 @@ def update_speed_limit_penalty(self, current_time):
             if not any(p.get("category") == "速度制限超過" for p in getattr(self, 'popups', [])):
                 self.accumulated_speed_penalty = 0
 
-def detect_physical_emergency_brake(self, dt):
+def update_manual_emergency_brake_state(self, dt):
     is_eb_handle = (
         self.bve_brk_notch >= self.bve_brk_max
         or "非常" in self.bve_brk_text
@@ -1143,7 +1143,7 @@ def update_physics_and_scoring(self, current_time, dt):
     )
 
     is_eb_handle, manual_eb_qualified = (
-        detect_physical_emergency_brake(self, dt)
+        update_manual_emergency_brake_state(self, dt)
     )
 
     update_emergency_brake_penalty(
