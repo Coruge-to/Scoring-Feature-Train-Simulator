@@ -229,20 +229,15 @@ namespace TsScoringPlugin
                                             if (rawScenario != null)
                                             {
                                                 // 1. 駅ジャンプ候補となるメソッドをすべて取得
-                                                var jumpStaCandidates = rawScenario
+                                                var jumpStaMethod = rawScenario
                                                     .GetType()
                                                     .GetMethods(bindFlagsAll)
-                                                    .Where(
+                                                    .FirstOrDefault(
                                                         m =>
                                                             m.GetParameters().Length == 1
                                                             && m.GetParameters()[0].ParameterType == typeof(int)
                                                             && m.ReturnType == typeof(void)
-                                                    )
-                                                    .ToList();
-
-                                                // 現行処理と同じく、候補の先頭を選択
-                                                var jumpStaMethod =
-                                                    jumpStaCandidates.FirstOrDefault();
+                                                    );
 
                                                 if (jumpStaMethod != null)
                                                 {
