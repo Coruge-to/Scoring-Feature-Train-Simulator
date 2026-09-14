@@ -612,6 +612,9 @@ class Overlay(QWidget):
                 self.prev_is_timing = getattr(self, 'bve_is_timing', 0)
                 self.prev_term = getattr(self, 'bve_term', 0)
 
+                # ブレーキ遷移判定もジャンプ後の実ノッチへ同期する
+                self.hb_prev_notch = self.bve_brk_notch
+
                 self.door_open_loc = completed_location
                 self.roll_penalty_count = 0
                 self.roll_was_moving = False

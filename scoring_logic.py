@@ -40,7 +40,10 @@ def reset_transient_scoring_state(self):
 
     # 初動・緩和ブレーキ判定
     self.hb_strong_entered = False
-
+    self.has_evaluated_initial_brake = False
+    self.idle_entered_while_stopped = False
+    self.hb_cushion_entry_time = 0.0
+    self.hb_cushion_max_g = 0.0
 
 def reset_station_evaluation_state(self):
     """
@@ -356,6 +359,8 @@ def begin_official_jump(self, target_loc, target_time):
     ジャンプ先の位置・時刻を記録し、
     C#からJUMP_COMPLETEを受信するまで公式ジャンプ状態を維持する。
     """
+    reset_transient_scoring_state(self)
+
     self.is_official_jumping = True
     self.expected_target_loc = target_loc
     self.expected_target_time = target_time
@@ -844,10 +849,6 @@ def update_physics_and_scoring(self, current_time, dt):
 
         # ジャンプ前の物理・ブレーキ判定状態を破棄
         reset_transient_scoring_state(self)
-
-        # ジャンプ検出時だけ初期化する状態
-        self.has_evaluated_initial_brake = False
-        self.idle_entered_while_stopped = False
 
         if not is_valid_jump and getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False):
             self.is_scoring_mode = False
