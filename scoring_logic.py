@@ -439,20 +439,6 @@ def evaluate_departure(self, current_time):
     if p_idx >= 0:
         # F6メニューの設定(override)も含めて判定する関数を呼ぶ
         is_timing_active = self.is_station_timing(p_idx)
-    
-    # =================================================================
-    # ★ デバッグ用トラップ：出発判定が呼ばれた瞬間の全フラグを出力！
-    debug_msg = f"[DEPARTURE ENTRY] p_loc={p_loc:.1f}, p_idx={p_idx}\n"
-    debug_msg += f"  - allow_score: {allow_score} (jump_lock: {getattr(self, 'jump_lock', False)})\n"
-    debug_msg += f"  - ignore_next: {getattr(self, 'ignore_next_pass_score', False)}\n"
-    debug_msg += f"  - is_first_station: {getattr(self, 'is_first_station', False)}\n"
-    debug_msg += f"  - is_timing_active: {is_timing_active}\n"
-    debug_msg += f"  - prev_is_pass: {getattr(self, 'prev_is_pass', 0)}, prev_doordir: {getattr(self, 'prev_doordir', 1)}\n"
-    debug_msg += f"  - has_scored_time: {getattr(self, 'has_scored_time_this_station', False)}\n"
-    
-    write_desktop_log(debug_msg)
-    # =================================================================
-
     if not getattr(self, 'ignore_next_pass_score', False) and allow_score and not getattr(self, 'is_first_station', False):
         if getattr(self, 'prev_is_pass', 0) == 1 and is_timing_active:
             if not getattr(self, 'has_scored_time_this_station', False):

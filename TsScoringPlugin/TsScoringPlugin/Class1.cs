@@ -121,9 +121,6 @@ namespace TsScoringPlugin
                     string statusSuffix = isPaused ? "PAUSED" : "RUNNING";
                     byte[] hbBytes = Encoding.UTF8.GetBytes($"STATUS:LOADED:{statusSuffix}");
                     if (udpClient != null) udpClient.Send(hbBytes, hbBytes.Length, endPoint);
-
-                    // (必要なら確認用のログ)
-                    // System.IO.File.AppendAllText(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "bve_debug.log"), $"[{DateTime.Now:HH:mm:ss.fff}] [Timer] STATUS:LOADED 送信\n");
                 }
             }
             catch { }
@@ -216,8 +213,6 @@ namespace TsScoringPlugin
                                 string[] parts = msg.Split(':');
                                 if (parts.Length >= 3 && int.TryParse(parts[1], out int sIdx) && int.TryParse(parts[2], out int rTimeMs))
                                 {
-                                    System.IO.File.AppendAllText(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "debug.log"),
-                                        $"[{DateTime.Now:HH:mm:ss.fff}] [C#] コマンド受信: STA={sIdx}, TIME={rTimeMs}\n");
                                     try
                                     {
                                         var scenario = BveHacker.Scenario;
