@@ -36,7 +36,7 @@ def draw_hud(self, painter, logical_width):
         if self.cushion_min > 1: dummy_text = self.all_brk_texts[1] if len(self.all_brk_texts) > 1 else "B1"
         cushion_str = f"[CUSHION] 無効段: {dummy_text} | 有効常用: {self.svc_brk_count}段 | 帯域: {c_min_text}" if c_min_text == c_max_text else f"[CUSHION] 無効段: {dummy_text} | 有効常用: {self.svc_brk_count}段 | 帯域: {c_min_text} - {c_max_text}"
 
-    eb_freeze_status = (
+    virtual_eb_status = (
         "ON (Wait BP Recovery)"
         if self.smee_virtual_eb_active
         else "OFF"
@@ -99,7 +99,7 @@ def draw_hud(self, painter, logical_width):
         f"BCP: {self.bcPressure:.1f} kPa | "
         f"BPP: {self.bpPressure:.1f} / "
         f"{self.bve_bp_initial * 0.95:.1f} kPa | "
-        f"EB_Freeze: {eb_freeze_status}",
+        f"Virtual_EB: {virtual_eb_status}",
         f"Target_Cap_Val: {round(self.dbg_target_cap, 1)} | ActiveBlue: {round(float(self.dbg_blue), 1) if self.dbg_blue != 'None' else 'None'}  |  ActiveRed: {round(float(self.dbg_red), 1) if self.dbg_red != 'None' else 'None'}",
         f"CalcG: {self.bve_calc_g:.4f} G | MaxG: {self.max_stop_g:.4f} G | LastStop: {self.last_stop_g:.4f} G"
     ])
