@@ -71,7 +71,7 @@ namespace TsScoringPlugin
         private string allBrkTexts = "EB";
         private string allHldTexts = "";
 
-        // ★ 新規追加: シナリオ情報(META)用の変数
+        // Pythonへ送信するシナリオ情報
         private string metaTitle = "";
         private string metaRoute = "";
         private string metaVehicle = "";
@@ -171,9 +171,7 @@ namespace TsScoringPlugin
                     lastStaListSendTime = DateTime.MinValue;
                 }
 
-                // =================================================================
-                // ★ 修正: ダンプコードを削除し、ScenarioInfoから実データを抽出して変数に格納
-                // =================================================================
+                // シナリオ情報を取得して送信用変数へ格納する
                 try
                 {
                     var bindFlagsAllDump = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
@@ -204,10 +202,7 @@ namespace TsScoringPlugin
                             byte[] rData = udpReceiver.Receive(ref ep);
                             string msg = Encoding.UTF8.GetString(rData);
 
-                            // =================================================================
-                            // ★ 究極の解決策：「駅ジャンプ」＋「時間ハック」の融合コマンド
-                            // 座標ジャンプ(早送り)をしないため、マップ音声が絶対に暴発しない！
-                            // =================================================================
+                            // 駅番号によるジャンプを実行し、指定されたBVE時刻へ同期する
                             if (msg.StartsWith("JUMP_STA_TIME:"))
                             {
                                 string[] parts = msg.Split(':');
@@ -223,7 +218,7 @@ namespace TsScoringPlugin
                                             object rawScenario = srcProp.GetValue(scenario);
                                             if (rawScenario != null)
                                             {
-                                                // 1. 駅ジャンプ候補となるメソッドをすべて取得
+                                                // 駅番号を引数に取るジャンプメソッドを取得する
                                                 var jumpStaMethod = rawScenario
                                                     .GetType()
                                                     .GetMethods(bindFlagsAll)
@@ -242,7 +237,7 @@ namespace TsScoringPlugin
                                                     );
                                                 }
 
-                                                // 2. 時計の針（TimeManager）だけを強引に過去(セーブデータ)に合わせる
+                                                // BVE時刻を指定された時刻へ同期する
                                                 var timeMgr = scenario.GetType().GetProperty("TimeManager", bindFlagsAll)?.GetValue(scenario);
                                                 if (timeMgr != null)
                                                 {
@@ -274,13 +269,13 @@ namespace TsScoringPlugin
                                                     }
                                                 }
 
-                                                // 駅ジャンプ前の対象駅状態を破棄し、現在位置から再初期化させる
+                                                // ジャンプ後の現在位置を基準に対象駅状態を再初期化する
                                                 isInitialized = false;
                                                 hasDoorOpenedAtTarget = false;
                                                 opStopDelayStartMs = -1;
                                                 terminalFrozenDiffSeconds = -999;
                                                 wasTerminalDoorOpened = false;
-                                                // このTick後半の駅状態再初期化が完了した後にPythonへ通知する
+                                                // 駅状態の再初期化後にPythonへ完了通知を送る
                                                 pendingJumpComplete = true;
                                                 pendingJumpType = "STA";
                                                 pendingJumpStationIndex = sIdx;
@@ -291,9 +286,7 @@ namespace TsScoringPlugin
                                 }
                             }
 
-                            // =================================================================
-                            // ★ 追加：理不尽ドア待ち回避用ハイブリッド（従来の座標ワープ復活）
-                            // =================================================================
+                            // 駅ジャンプを利用できない場合は、座標と時刻を直接指定して移動する
                             else if (msg.StartsWith("JUMP_LOC_TIME:"))
                             {
                                 string[] parts = msg.Split(':');
@@ -309,7 +302,7 @@ namespace TsScoringPlugin
                                             object rawScenario = srcProp.GetValue(scenario);
                                             if (rawScenario != null)
                                             {
-                                                // 1. 従来の「座標ジャンプ（早送り）」を実行
+                                                // 指定座標へのジャンプを実行する
                                                 var jumpMethod = rawScenario.GetType().GetMethods(bindFlagsAll)
                                                     .FirstOrDefault(m => m.GetParameters().Length == 2 &&
                                                                          m.GetParameters()[0].ParameterType == typeof(double) &&
@@ -320,7 +313,7 @@ namespace TsScoringPlugin
                                                     jumpMethod.Invoke(rawScenario, new object[] { rLoc, 0 });
                                                 }
 
-                                                // 2. 時計の針を合わせる
+                                                // BVE時刻を指定された時刻へ同期する
                                                 var timeMgr = scenario.GetType().GetProperty("TimeManager", bindFlagsAll)?.GetValue(scenario);
                                                 if (timeMgr != null)
                                                 {
@@ -331,7 +324,7 @@ namespace TsScoringPlugin
                                                         if (timeField != null && rTimeMs >= 0) timeField.SetValue(rawTimeMgr, rTimeMs);
                                                     }
                                                 }
-                                                // 座標ジャンプについても、Tick後半の状態反映後に完了通知を返す
+                                                // 駅状態の反映後にPythonへ完了通知を送る
                                                 pendingJumpComplete = true;
                                                 pendingJumpType = "LOC";
                                                 pendingJumpStationIndex = -1;
@@ -850,7 +843,7 @@ namespace TsScoringPlugin
                             }
                             else
                             {
-                                // ★ 修正2: 運転停車駅も到着判定(hasDoorOpenedAtTarget)を基準に発車時刻へ切り替える
+                                // 運転停車駅では、到着判定後に発車時刻を採点対象とする
                                 bool isReadyToDepart = false;
                                 if (targetSt.DoorDir == 0)
                                 {
@@ -1108,9 +1101,7 @@ namespace TsScoringPlugin
                 }
                 catch { }
 
-                // =================================================================
-                // ★ 追加：ドアの動作時間（CloseTime）を暗号化階層から取得する
-                // =================================================================
+                // BVE内部オブジェクトからドアのCloseTimeを取得する
                 try
                 {
                     if (vehicle != null)
@@ -1127,7 +1118,7 @@ namespace TsScoringPlugin
                                     object firstDoor = arr.GetValue(0); // 1つ目のドア(cf)
                                     if (firstDoor != null)
                                     {
-                                        // ダンプで突き止めた「b」フィールドを取得
+                                        // ドア要素の「b」フィールドからCloseTimeを取得する
                                         object bVal = firstDoor.GetType().GetField("b", bindFlagsAll)?.GetValue(firstDoor);
                                         if (bVal != null)
                                         {
