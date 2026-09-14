@@ -1,8 +1,16 @@
+import math
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QPainter, QFontDatabase, QColor, QFontMetrics, QPixmap, QPainterPath, QLinearGradient, QPen
+from PyQt6.QtGui import (
+    QColor,
+    QFont,
+    QFontMetrics,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPen,
+)
 from config import *
 from utils import draw_text_with_outline
-import math
 import time
 
 def draw_menu(self, painter, logical_width):
@@ -1377,7 +1385,12 @@ def draw_menu(self, painter, logical_width):
         
         # Aノード（アクティブ判定）
         is_a_focused = (self.menu_cursor == 0)
-        nx_a = draw_node(rank_a_pct, COLOR_B_EMG, "A", is_a_focused) # 赤系 (COLOR_B_EMG)
+        draw_node(
+            rank_a_pct,
+            COLOR_B_EMG,
+            "A",
+            is_a_focused
+        )
 
         # ---------------------------------------------
         # 2. 理論値・各ランク点数の描画

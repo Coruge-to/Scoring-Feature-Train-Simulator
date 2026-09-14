@@ -334,7 +334,9 @@ class Overlay(QWidget):
         latest_telemetry = None
 
         while self.udp_socket.hasPendingDatagrams():
-            datagram, host, port = self.udp_socket.readDatagram(self.udp_socket.pendingDatagramSize())
+            datagram, _host, _port = self.udp_socket.readDatagram(
+                self.udp_socket.pendingDatagramSize()
+            )
             try:
                 text = datagram.decode('utf-8')
                 
@@ -1478,18 +1480,7 @@ class Overlay(QWidget):
                 self.menu_cursor = self.current_menu_items.index("採点を中断する")
             else:
                 self.menu_cursor = 1
-        
-    def find_bve_window(self):
-        found_hwnd = None
-        def callback(hwnd, _):
-            nonlocal found_hwnd
-            if win32gui.IsWindowVisible(hwnd):
-                title = win32gui.GetWindowText(hwnd)
-                if "bve trainsim" in title.lower():
-                    found_hwnd = hwnd
-        win32gui.EnumWindows(callback, None)
-        return found_hwnd
-    
+
     def find_bve_window(self):
         found_hwnd = None
         def callback(hwnd, _):
