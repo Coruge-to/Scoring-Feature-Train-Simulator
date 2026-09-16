@@ -1021,6 +1021,36 @@ namespace TsScoringPlugin
                         matchedProfile.EmergencyRequestFlag2Rva = 0x3D300;
                         matchedProfile.EmergencyRequestFlag3Rva = 0x3D2DF;
                     }
+                    // 更新版OdakyuAts.dllで静的確認した配置。
+                    // 旧版と同じ制御構造だが、各RVAが異なる。
+                    //
+                    // 要求フラグの意味は更新版で動的検証中のため、
+                    // 現段階では診断ログだけに使用し、採点には接続しない。
+                    if (
+                        matchedProfile.Sha256
+                            == "803D3FFDB1297C8B6ED6259C6AF760778FEC74AAAB2F64F28C7D79BA2E4FAFFB"
+                    )
+                    {
+                        matchedProfile.DirectPhysicalBrakeRva = 0x2294C;
+                        matchedProfile.DirectServiceMaximumRva = 0x228EC;
+                        matchedProfile.DirectEmergencyRva = 0x228E8;
+                        matchedProfile.DirectOutputBrakeRva = 0x21A3C;
+
+                        // モード制御および可変要求段の候補。
+                        matchedProfile.RequestModeCandidateRva = 0x21B08;
+                        matchedProfile.Mode1RequestBrakeCandidateRva = 0x21984;
+                        matchedProfile.SecondaryRequestEnabledCandidateRva = 0x21BD9;
+                        matchedProfile.SecondaryRequestBrakeCandidateRva = 0x21BDC;
+
+                        // 常用最大要求フラグ候補。
+                        matchedProfile.ServiceMaximumRequestFlag1Rva = 0x21BC1;
+                        matchedProfile.ServiceMaximumRequestFlag2Rva = 0x21B9E;
+
+                        // 非常要求フラグ候補。
+                        matchedProfile.EmergencyRequestFlag1Rva = 0x22619;
+                        matchedProfile.EmergencyRequestFlag2Rva = 0x21BC0;
+                        matchedProfile.EmergencyRequestFlag3Rva = 0x21B9F;
+                    }
 
                     // MATCHログは同じSHA-256につき1回だけ記録する。
                     if (
@@ -1560,39 +1590,73 @@ namespace TsScoringPlugin
         }
 
         // =========================================================
-        // OdakyuAts.dllの保安装置要求状態を読み取る。
+        // 旧版・更新版のOdakyuAts.dllを、
+        // 同じ要求フラグ診断処理へ接続する。
         //
-        // 小田急線内モードについて、次を動的確認済み。
-        // ServiceFlag2  : 常用最大要求
-        // EmergencyFlag1: 非常要求
-        //
-        // その他の値は別モード用の候補として記録を継続する。
-        // 介入状態ログは生成するが、減点には接続しない。
+        // 更新版は静的構造のみ確認済みであり、
+        // 要求フラグの意味は実走で検証する。
         // =========================================================
         private void DiagnoseOdakyuRequestCandidates(
             StringBuilder rtLog,
             ref bool hasChanges
         )
         {
-            const string odakyuAtsSha256 =
-                "B89A6459F35617ED96039139F1D3115C0F04DB69A3BDC02016E4DA3D92E669FF";
+            DiagnoseOdakyuRequestCandidatesForHash(
+                "B89A6459F35617ED96039139F1D3115C0F04DB69A3BDC02016E4DA3D92E669FF",
+                rtLog,
+                ref hasChanges
+            );
 
-            RuntimeProfileIdentity profile;
+            DiagnoseOdakyuRequestCandidatesForHash(
+                "803D3FFDB1297C8B6ED6259C6AF760778FEC74AAAB2F64F28C7D79BA2E4FAFFB",
+                rtLog,
+                ref hasChanges
+            );
+        }
+        /// =========================================================
+        // 指定されたOdakyuAts.dllの保安装置要求状態を読み取る。
+        //
+        // 旧版の小田急線内モードでは、次を動的確認済み。
+        // ServiceFlag2  : 常用最大要求
+        // EmergencyFlag1: 非常要求
+        //
+        // 更新版では同じ静的構造を確認済みだが、
+        // フラグの意味は実走による動的検証を行う。
+        //
+        // その他の値は別モード用の候補として記録を継続する。
+        // 介入状態ログは生成するが、減点には接続しない。
+        // =========================================================
+        private void DiagnoseOdakyuRequestCandidatesForHash(
+                string odakyuAtsSha256,
+        StringBuilder rtLog,
+        ref bool hasChanges
+    )
+            {
+                RuntimeProfileIdentity profile;
 
             if (
-                !runtimeProfilesByHash.TryGetValue(
-                    odakyuAtsSha256,
-                    out profile
-                )
-                || profile.ModuleBaseAddress == IntPtr.Zero
-                || profile.RequestModeCandidateRva == 0
-                || profile.Mode1RequestBrakeCandidateRva == 0
-                || profile.SecondaryRequestEnabledCandidateRva == 0
-                || profile.SecondaryRequestBrakeCandidateRva == 0
+            !runtimeProfilesByHash.TryGetValue(
+                odakyuAtsSha256,
+                out profile
             )
-            {
-                return;
-            }
+            || profile.ModuleBaseAddress == IntPtr.Zero
+            || profile.DirectPhysicalBrakeRva == 0
+            || profile.DirectServiceMaximumRva == 0
+            || profile.DirectEmergencyRva == 0
+            || profile.DirectOutputBrakeRva == 0
+            || profile.RequestModeCandidateRva == 0
+            || profile.Mode1RequestBrakeCandidateRva == 0
+            || profile.SecondaryRequestEnabledCandidateRva == 0
+            || profile.SecondaryRequestBrakeCandidateRva == 0
+            || profile.ServiceMaximumRequestFlag1Rva == 0
+            || profile.ServiceMaximumRequestFlag2Rva == 0
+            || profile.EmergencyRequestFlag1Rva == 0
+            || profile.EmergencyRequestFlag2Rva == 0
+            || profile.EmergencyRequestFlag3Rva == 0
+            )
+                        {
+                            return;
+                        }
 
             int requestModeCandidate;
             int mode1RequestBrakeCandidate;
@@ -1781,8 +1845,9 @@ namespace TsScoringPlugin
             }
 
             // =========================================================
-            // 旧版OdakyuAts.dllの小田急線内モードで
-            // 動的確認できた要求フラグ
+            // 旧版で動的確認し、更新版で静的対応を確認した要求フラグ。
+            // 更新版については、この診断ログで意味を検証する。
+
             //
             // ServiceFlag2:
             // 常用最大要求
@@ -1897,6 +1962,7 @@ namespace TsScoringPlugin
                     + "[RUNTIME_INTERVENTION] "
                     + $"Event:{transitionType}, "
                     + $"File:{profile.FileName}, "
+                    + $"SHA256:{profile.Sha256}, "
                     + $"Pattern:{profile.Pattern}, "
                     + "PreviousKind:"
                     + $"{profile.PreviousInterventionKind}, "
@@ -1920,6 +1986,7 @@ namespace TsScoringPlugin
                 $"[{DateTime.Now:HH:mm:ss.fff}] "
                 + "[RUNTIME_REQUEST_CANDIDATE] "
                 + $"File:{profile.FileName}, "
+                + $"SHA256:{profile.Sha256}, "
                 + $"Pattern:{profile.Pattern}, "
                 + $"ModeCandidate:{requestModeCandidate}, "
                 + $"ModeMeaning:{requestModeInterpretation}, "
@@ -1993,10 +2060,6 @@ namespace TsScoringPlugin
 
             profile.PreviousEmergencyRequestFlag3 =
                 emergencyRequestFlag3;
-
-            profile.PreviousCandidatePhysicalBrake =
-                physicalBrake;
-
             hasChanges = true;
         }
         public override void Tick(TimeSpan elapsed)
