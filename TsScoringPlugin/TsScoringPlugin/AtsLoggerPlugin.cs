@@ -42,6 +42,26 @@ namespace TsScoringPlugin
         private List<dynamic> beaconList = new List<dynamic>();
         private bool isBeaconsLoaded = false;
 
+        // =========================================================
+        // 共通ランタイムプロファイルの診断状態
+        // =========================================================
+        private bool hasScannedRuntimeProfiles = false;
+        private bool hasLoggedRuntimeProfileError = false;
+        private string runtimeProfilePath = null;
+
+        private Dictionary<string, RuntimeProfileIdentity>
+            runtimeProfilesByHash =
+                new Dictionary<string, RuntimeProfileIdentity>(
+                    StringComparer.OrdinalIgnoreCase
+                );
+
+        private sealed class RuntimeProfileIdentity
+        {
+            public string Sha256;
+            public string Pattern;
+            public string VerificationStatus;
+        }
+
         public AtsLoggerPlugin(PluginBuilder builder) : base(builder) { }
 
         public override void Dispose() { }
@@ -556,6 +576,209 @@ namespace TsScoringPlugin
             }
         }
 
+        // =========================================================
+        // ファイルのSHA-256を大文字16進文字列として取得する
+        // =========================================================
+        private string ComputeFileSha256(string filePath)
+        {
+            using (
+                System.Security.Cryptography.SHA256 sha256 =
+                    System.Security.Cryptography.SHA256.Create()
+            )
+            using (
+                System.IO.FileStream stream =
+                    System.IO.File.OpenRead(filePath)
+            )
+            {
+                byte[] hash = sha256.ComputeHash(stream);
+                StringBuilder result =
+                    new StringBuilder(hash.Length * 2);
+
+                foreach (byte value in hash)
+                {
+                    result.Append(value.ToString("X2"));
+                }
+
+                return result.ToString();
+            }
+        }
+
+        // =========================================================
+        // 共通ランタイムプロファイルを読み込み、
+        // ロード済みDLLとSHA-256で照合する
+        //
+        // 現段階では診断ログだけを出力し、減点には接続しない。
+        // =========================================================
+        private void DiagnoseRuntimeProfiles(
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            if (hasScannedRuntimeProfiles)
+            {
+                return;
+            }
+
+            hasScannedRuntimeProfiles = true;
+
+            try
+            {
+                runtimeProfilePath = System.IO.Path.Combine(
+                    Environment.GetFolderPath(
+                        Environment.SpecialFolder.MyDocuments
+                    ),
+                    "BveDllInventory",
+                    "reports",
+                    "runtime-profile-candidates.json"
+                );
+
+                if (!System.IO.File.Exists(runtimeProfilePath))
+                {
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[RUNTIME_PROFILE] FILE NOT FOUND "
+                        + $"Path:{runtimeProfilePath}, "
+                        + "ScoringEnabled:False"
+                    );
+
+                    hasChanges = true;
+                    return;
+                }
+
+                string json =
+                    System.IO.File.ReadAllText(runtimeProfilePath);
+
+                string profilePattern =
+                    "\"sha256\"\\s*:\\s*\"(?<sha>[0-9A-Fa-f]{64})\""
+                    + ".*?"
+                    + "\"pattern\"\\s*:\\s*\"(?<pattern>[^\"]+)\""
+                    + ".*?"
+                    + "\"verificationStatus\"\\s*:\\s*"
+                    + "\"(?<verification>[^\"]+)\"";
+
+                System.Text.RegularExpressions.MatchCollection
+                    profileMatches =
+                        System.Text.RegularExpressions.Regex.Matches(
+                            json,
+                            profilePattern,
+                            System.Text.RegularExpressions
+                                .RegexOptions.Singleline
+                        );
+
+                runtimeProfilesByHash.Clear();
+
+                foreach (
+                    System.Text.RegularExpressions.Match profileMatch
+                    in profileMatches
+                )
+                {
+                    RuntimeProfileIdentity profile =
+                        new RuntimeProfileIdentity();
+
+                    profile.Sha256 =
+                        profileMatch.Groups["sha"]
+                            .Value
+                            .ToUpperInvariant();
+
+                    profile.Pattern =
+                        profileMatch.Groups["pattern"].Value;
+
+                    profile.VerificationStatus =
+                        profileMatch.Groups["verification"].Value;
+
+                    runtimeProfilesByHash[profile.Sha256] =
+                        profile;
+                }
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[RUNTIME_PROFILE] CATALOG LOADED "
+                    + $"Count:{runtimeProfilesByHash.Count}, "
+                    + $"Path:{runtimeProfilePath}, "
+                    + "ScoringEnabled:False"
+                );
+
+                hasChanges = true;
+
+                System.Diagnostics.Process currentProcess =
+                    System.Diagnostics.Process.GetCurrentProcess();
+
+                foreach (
+                    System.Diagnostics.ProcessModule module
+                    in currentProcess.Modules
+                )
+                {
+                    string modulePath = module.FileName;
+
+                    if (
+                        !string.Equals(
+                            System.IO.Path.GetExtension(modulePath),
+                            ".dll",
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                    {
+                        continue;
+                    }
+
+                    string moduleHash;
+
+                    try
+                    {
+                        moduleHash =
+                            ComputeFileSha256(modulePath);
+                    }
+                    catch
+                    {
+                        // 読み取れないDLLは対象外として継続する。
+                        continue;
+                    }
+
+                    RuntimeProfileIdentity matchedProfile;
+
+                    if (
+                        !runtimeProfilesByHash.TryGetValue(
+                            moduleHash,
+                            out matchedProfile
+                        )
+                    )
+                    {
+                        continue;
+                    }
+
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[RUNTIME_PROFILE] MATCH "
+                        + $"File:{System.IO.Path.GetFileName(modulePath)}, "
+                        + $"SHA256:{moduleHash}, "
+                        + $"Pattern:{matchedProfile.Pattern}, "
+                        + "Verification:"
+                        + $"{matchedProfile.VerificationStatus}, "
+                        + $"Base:0x{module.BaseAddress.ToInt64():X}, "
+                        + "ScoringEnabled:False"
+                    );
+
+                    hasChanges = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                if (!hasLoggedRuntimeProfileError)
+                {
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[RUNTIME_PROFILE] ERROR "
+                        + $"Type:{ex.GetType().Name}, "
+                        + $"Message:{ex.Message}, "
+                        + "ScoringEnabled:False"
+                    );
+
+                    hasLoggedRuntimeProfileError = true;
+                    hasChanges = true;
+                }
+            }
+        }
+
         public override void Tick(TimeSpan elapsed)
         {
             if (!BveHacker.IsScenarioCreated)
@@ -575,6 +798,11 @@ namespace TsScoringPlugin
                 prevRawHandleCBrake = int.MinValue;
                 prevRawHandleLBrake = int.MinValue;
                 prevVehicleStateHandleBrake = int.MinValue;
+
+                hasScannedRuntimeProfiles = false;
+                hasLoggedRuntimeProfileError = false;
+                runtimeProfilePath = null;
+                runtimeProfilesByHash.Clear();
 
                 beaconList.Clear();
                 lastLocation = -1.0;
@@ -613,6 +841,13 @@ namespace TsScoringPlugin
 
                 StringBuilder rtLog = new StringBuilder();
                 bool hasChanges = false;
+
+                // 共通ランタイムプロファイルを診断する。
+                // 現段階では一致結果をログへ出すだけで減点しない。
+                DiagnoseRuntimeProfiles(
+                rtLog,
+                ref hasChanges
+                );
 
                 // =========================================================
                 // ① ログセッションと車両ブレーキ段の初期化
