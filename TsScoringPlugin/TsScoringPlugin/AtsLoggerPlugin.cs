@@ -93,6 +93,44 @@ namespace TsScoringPlugin
             public int NoneModeValue;
             public int ServiceMaximumModeValue;
             public int EmergencyModeValue;
+            // PhysicalServiceEmergencyOutputComparison用の静的配置
+            public int DirectPhysicalBrakeRva;
+            public int DirectServiceMaximumRva;
+            public int DirectEmergencyRva;
+            public int DirectOutputBrakeRva;
+
+            // OdakyuAts.dllの保安装置要求候補
+            public int RequestModeCandidateRva;
+            public int Mode1RequestBrakeCandidateRva;
+            public int SecondaryRequestEnabledCandidateRva;
+            public int SecondaryRequestBrakeCandidateRva;
+
+            // 小田急線内の常用最大要求フラグ候補
+            public int ServiceMaximumRequestFlag1Rva;
+            public int ServiceMaximumRequestFlag2Rva;
+
+            // 小田急線内の非常要求フラグ候補
+            public int EmergencyRequestFlag1Rva;
+            public int EmergencyRequestFlag2Rva;
+            public int EmergencyRequestFlag3Rva;
+
+            // 要求候補値の前回状態
+            public bool HasPreviousRequestCandidateState;
+            public int PreviousRequestModeCandidate;
+            public int PreviousMode1RequestBrakeCandidate;
+            public byte PreviousSecondaryRequestEnabledCandidate;
+            public int PreviousSecondaryRequestBrakeCandidate;
+
+            public byte PreviousServiceMaximumRequestFlag1;
+            public byte PreviousServiceMaximumRequestFlag2;
+            public byte PreviousEmergencyRequestFlag1;
+            public byte PreviousEmergencyRequestFlag2;
+            public byte PreviousEmergencyRequestFlag3;
+            // 要求候補ログとの時系列比較に使うブレーキ前回値
+            public int PreviousCandidatePhysicalBrake;
+            public int PreviousCandidateServiceMaximum;
+            public int PreviousCandidateEmergency;
+            public int PreviousCandidateOutputBrake;
 
             // 前回のモード値
             public bool HasPreviousModeValue;
@@ -683,6 +721,36 @@ namespace TsScoringPlugin
         }
 
         // =========================================================
+        // 現在のプロセス内にある1バイト値を安全に読み取る
+        // =========================================================
+        private bool TryReadRuntimeByte(
+            IntPtr address,
+            out byte value
+        )
+        {
+            value = 0;
+
+            if (address == IntPtr.Zero)
+            {
+                return false;
+            }
+
+            try
+            {
+                value =
+                    System.Runtime.InteropServices.Marshal.ReadByte(
+                        address
+                    );
+
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        // =========================================================
         // 現在のプロセス内にある32ビットポインターを安全に読み取る
         // =========================================================
         private bool TryReadRuntimePointer32(
@@ -927,6 +995,33 @@ namespace TsScoringPlugin
                         matchedProfile.EmergencyModeValue = 2;
                     }
 
+                    // OdakyuAts.dllで確認する
+                    // PhysicalServiceEmergencyOutputComparisonの静的配置。
+                    if (
+                        matchedProfile.Sha256
+                            == "B89A6459F35617ED96039139F1D3115C0F04DB69A3BDC02016E4DA3D92E669FF"
+                    )
+                    {
+                        matchedProfile.DirectPhysicalBrakeRva = 0x3E0B4;
+                        matchedProfile.DirectServiceMaximumRva = 0x3E054;
+                        matchedProfile.DirectEmergencyRva = 0x3E050;
+                        matchedProfile.DirectOutputBrakeRva = 0x3D038;
+                        // 保安装置側の要求状態と要求段の候補。
+                        // 動的検証が完了するまでは採点へ使用しない。
+                        matchedProfile.RequestModeCandidateRva = 0x3D248;
+                        matchedProfile.Mode1RequestBrakeCandidateRva = 0x3CF7C;
+                        matchedProfile.SecondaryRequestEnabledCandidateRva = 0x3D319;
+                        matchedProfile.SecondaryRequestBrakeCandidateRva = 0x3D31C;
+                        // 小田急線内の常用最大要求フラグ候補。
+                        matchedProfile.ServiceMaximumRequestFlag1Rva = 0x3D301;
+                        matchedProfile.ServiceMaximumRequestFlag2Rva = 0x3D2DE;
+
+                        // 小田急線内の非常要求フラグ候補。
+                        matchedProfile.EmergencyRequestFlag1Rva = 0x3DD65;
+                        matchedProfile.EmergencyRequestFlag2Rva = 0x3D300;
+                        matchedProfile.EmergencyRequestFlag3Rva = 0x3D2DF;
+                    }
+
                     // MATCHログは同じSHA-256につき1回だけ記録する。
                     if (
                         matchedRuntimeProfileHashes.Add(
@@ -1095,86 +1190,30 @@ namespace TsScoringPlugin
                     continue;
                 }
 
-                bool overrideActive =
-                    outputBrake > physicalBrake;
+                // この方式では、物理入力と最終出力の差だけでは
+                // 保安装置側の要求段を確定できない。
+                //
+                // ここでは出力差を診断情報として記録するだけとし、
+                // RUNTIME_INTERVENTIONは要求フラグ側から生成する。
+                bool outputDiffersFromPhysical =
+                    outputBrake != physicalBrake;
 
-                string interventionKind = "None";
+                string outputStateKind = "Physical";
 
-                if (overrideActive)
+                if (outputDiffersFromPhysical)
                 {
                     if (outputBrake == emergency)
                     {
-                        interventionKind = "Emergency";
+                        outputStateKind = "EmergencyOutput";
                     }
                     else if (outputBrake == serviceMaximum)
                     {
-                        interventionKind = "ServiceMaximum";
+                        outputStateKind = "ServiceMaximumOutput";
                     }
                     else
                     {
-                        interventionKind = "Intermediate";
+                        outputStateKind = "IntermediateOutput";
                     }
-                }
-
-                // =========================================================
-                // 介入状態の遷移をイベントとして記録する
-                //
-                // 初回読取りでは現在状態を基準値として保存するだけで、
-                // STARTイベントは生成しない。シナリオ読込み時点ですでに
-                // 非常段だった場合の誤検出を防ぐため。
-                // =========================================================
-                if (!profile.HasPreviousInterventionState)
-                {
-                    profile.HasPreviousInterventionState = true;
-                    profile.PreviousInterventionKind =
-                        interventionKind;
-                }
-                else if (
-                    profile.PreviousInterventionKind
-                        != interventionKind
-                )
-                {
-                    string transitionType;
-
-                    if (
-                        profile.PreviousInterventionKind == "None"
-                        && interventionKind != "None"
-                    )
-                    {
-                        transitionType = "START";
-                    }
-                    else if (
-                        profile.PreviousInterventionKind != "None"
-                        && interventionKind == "None"
-                    )
-                    {
-                        transitionType = "END";
-                    }
-                    else
-                    {
-                        transitionType = "CHANGE";
-                    }
-
-                    rtLog.AppendLine(
-                        $"[{DateTime.Now:HH:mm:ss.fff}] "
-                        + "[RUNTIME_INTERVENTION] "
-                        + $"Event:{transitionType}, "
-                        + $"File:{profile.FileName}, "
-                        + $"Pattern:{profile.Pattern}, "
-                        + "PreviousKind:"
-                        + $"{profile.PreviousInterventionKind}, "
-                        + $"CurrentKind:{interventionKind}, "
-                        + $"Physical:{physicalBrake}, "
-                        + $"ServiceMax:{serviceMaximum}, "
-                        + $"Emergency:{emergency}, "
-                        + $"Output:{outputBrake}, "
-                        + "ScoringEnabled:False"
-                    );
-
-                    profile.PreviousInterventionKind =
-                        interventionKind;
-
-                    hasChanges = true;
                 }
 
                 rtLog.AppendLine(
@@ -1182,13 +1221,13 @@ namespace TsScoringPlugin
                     + "[RUNTIME_PROFILE_STATE] "
                     + $"File:{profile.FileName}, "
                     + $"Pattern:{profile.Pattern}, "
-                    + $"Object:0x{objectAddress.ToInt64():X}, "
                     + $"Physical:{physicalBrake}, "
                     + $"ServiceMax:{serviceMaximum}, "
                     + $"Emergency:{emergency}, "
                     + $"Output:{outputBrake}, "
-                    + $"Override:{overrideActive}, "
-                    + $"Kind:{interventionKind}, "
+                    + "OutputDiffersFromPhysical:"
+                    + $"{outputDiffersFromPhysical}, "
+                    + $"OutputState:{outputStateKind}, "
                     + "ScoringEnabled:False"
                 );
 
@@ -1354,6 +1393,612 @@ namespace TsScoringPlugin
             }
         }
 
+        // =========================================================
+        // MATCH済みのPhysicalServiceEmergencyOutputComparisonについて、
+        // 固定RVAのブレーキ状態を読み取り、変化時だけ記録する。
+        //
+        // 現段階ではOdakyuAts.dllのみを対象とし、減点には接続しない。
+        // =========================================================
+        private void DiagnoseDirectBrakeOutputComparison(
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            foreach (
+                RuntimeProfileIdentity profile
+                in runtimeProfilesByHash.Values
+            )
+            {
+                if (
+                    profile.Pattern
+                        != "PhysicalServiceEmergencyOutputComparison"
+                    || profile.ModuleBaseAddress == IntPtr.Zero
+                    || profile.DirectPhysicalBrakeRva == 0
+                    || profile.DirectServiceMaximumRva == 0
+                    || profile.DirectEmergencyRva == 0
+                    || profile.DirectOutputBrakeRva == 0
+                )
+                {
+                    continue;
+                }
+
+                int physicalBrake;
+                int serviceMaximum;
+                int emergency;
+                int outputBrake;
+
+                bool physicalRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.DirectPhysicalBrakeRva
+                        ),
+                        out physicalBrake
+                    );
+
+                bool serviceRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.DirectServiceMaximumRva
+                        ),
+                        out serviceMaximum
+                    );
+
+                bool emergencyRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.DirectEmergencyRva
+                        ),
+                        out emergency
+                    );
+
+                bool outputRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.DirectOutputBrakeRva
+                        ),
+                        out outputBrake
+                    );
+
+                if (
+                    !physicalRead
+                    || !serviceRead
+                    || !emergencyRead
+                    || !outputRead
+                )
+                {
+                    continue;
+                }
+
+                // ブレーキ段として明らかに不自然な値は記録しない。
+                if (
+                    physicalBrake < -1
+                    || serviceMaximum < 0
+                    || emergency < 0
+                    || outputBrake < -1
+                    || physicalBrake > 100
+                    || serviceMaximum > 100
+                    || emergency > 100
+                    || outputBrake > 100
+                )
+                {
+                    continue;
+                }
+
+                bool stateChanged =
+                    !profile.HasPreviousState
+                    || physicalBrake
+                        != profile.PreviousPhysicalBrake
+                    || serviceMaximum
+                        != profile.PreviousServiceMaximum
+                    || emergency
+                        != profile.PreviousEmergency
+                    || outputBrake
+                        != profile.PreviousOutputBrake;
+
+                if (!stateChanged)
+                {
+                    continue;
+                }
+
+                // 物理入力と最終出力の差は診断情報としてのみ記録する。
+                // 保安装置介入の状態遷移は、このメソッドでは生成しない。
+                //
+                // 小田急の介入状態は、動的確認済みの要求フラグを使用する
+                // DiagnoseOdakyuRequestCandidatesだけが生成する。
+                bool outputDiffersFromPhysical =
+                    outputBrake != physicalBrake;
+
+                string outputStateKind = "MatchesPhysical";
+
+                if (outputDiffersFromPhysical)
+                {
+                    if (outputBrake == emergency)
+                    {
+                        outputStateKind = "EmergencyOutput";
+                    }
+                    else if (outputBrake == serviceMaximum)
+                    {
+                        outputStateKind = "ServiceMaximumOutput";
+                    }
+                    else
+                    {
+                        outputStateKind = "IntermediateOutput";
+                    }
+                }
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[RUNTIME_PROFILE_STATE] "
+                    + $"File:{profile.FileName}, "
+                    + $"Pattern:{profile.Pattern}, "
+                    + $"Physical:{physicalBrake}, "
+                    + $"ServiceMax:{serviceMaximum}, "
+                    + $"Emergency:{emergency}, "
+                    + $"Output:{outputBrake}, "
+                    + "OutputDiffersFromPhysical:"
+                    + $"{outputDiffersFromPhysical}, "
+                    + $"OutputState:{outputStateKind}, "
+                    + "ScoringEnabled:False"
+                );
+
+                profile.HasPreviousState = true;
+                profile.PreviousPhysicalBrake =
+                    physicalBrake;
+                profile.PreviousServiceMaximum =
+                    serviceMaximum;
+                profile.PreviousEmergency =
+                    emergency;
+                profile.PreviousOutputBrake =
+                    outputBrake;
+
+                hasChanges = true;
+            }
+        }
+
+        // =========================================================
+        // OdakyuAts.dllの保安装置要求状態を読み取る。
+        //
+        // 小田急線内モードについて、次を動的確認済み。
+        // ServiceFlag2  : 常用最大要求
+        // EmergencyFlag1: 非常要求
+        //
+        // その他の値は別モード用の候補として記録を継続する。
+        // 介入状態ログは生成するが、減点には接続しない。
+        // =========================================================
+        private void DiagnoseOdakyuRequestCandidates(
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            const string odakyuAtsSha256 =
+                "B89A6459F35617ED96039139F1D3115C0F04DB69A3BDC02016E4DA3D92E669FF";
+
+            RuntimeProfileIdentity profile;
+
+            if (
+                !runtimeProfilesByHash.TryGetValue(
+                    odakyuAtsSha256,
+                    out profile
+                )
+                || profile.ModuleBaseAddress == IntPtr.Zero
+                || profile.RequestModeCandidateRva == 0
+                || profile.Mode1RequestBrakeCandidateRva == 0
+                || profile.SecondaryRequestEnabledCandidateRva == 0
+                || profile.SecondaryRequestBrakeCandidateRva == 0
+            )
+            {
+                return;
+            }
+
+            int requestModeCandidate;
+            int mode1RequestBrakeCandidate;
+            byte secondaryRequestEnabledCandidate;
+            int secondaryRequestBrakeCandidate;
+
+            byte serviceMaximumRequestFlag1;
+            byte serviceMaximumRequestFlag2;
+
+            byte emergencyRequestFlag1;
+            byte emergencyRequestFlag2;
+            byte emergencyRequestFlag3;
+
+            int physicalBrake;
+            int serviceMaximum;
+            int emergency;
+            int outputBrake;
+
+            bool requestModeRead =
+                TryReadRuntimeInt32(
+                    IntPtr.Add(
+                        profile.ModuleBaseAddress,
+                        profile.RequestModeCandidateRva
+                    ),
+                    out requestModeCandidate
+                );
+
+            bool mode1RequestBrakeRead =
+                TryReadRuntimeInt32(
+                    IntPtr.Add(
+                        profile.ModuleBaseAddress,
+                        profile.Mode1RequestBrakeCandidateRva
+                    ),
+                    out mode1RequestBrakeCandidate
+                );
+
+            bool secondaryRequestEnabledRead =
+                TryReadRuntimeByte(
+                    IntPtr.Add(
+                        profile.ModuleBaseAddress,
+                        profile.SecondaryRequestEnabledCandidateRva
+                    ),
+                    out secondaryRequestEnabledCandidate
+                );
+
+            bool secondaryRequestBrakeRead =
+                TryReadRuntimeInt32(
+                    IntPtr.Add(
+                        profile.ModuleBaseAddress,
+                        profile.SecondaryRequestBrakeCandidateRva
+                    ),
+                    out secondaryRequestBrakeCandidate
+                );
+
+            bool serviceMaximumRequestFlag1Read =
+    TryReadRuntimeByte(
+        IntPtr.Add(
+            profile.ModuleBaseAddress,
+            profile.ServiceMaximumRequestFlag1Rva
+        ),
+        out serviceMaximumRequestFlag1
+    );
+
+            bool serviceMaximumRequestFlag2Read =
+                TryReadRuntimeByte(
+                    IntPtr.Add(
+                        profile.ModuleBaseAddress,
+                        profile.ServiceMaximumRequestFlag2Rva
+                    ),
+                    out serviceMaximumRequestFlag2
+                );
+
+            bool emergencyRequestFlag1Read =
+                TryReadRuntimeByte(
+                    IntPtr.Add(
+                        profile.ModuleBaseAddress,
+                        profile.EmergencyRequestFlag1Rva
+                    ),
+                    out emergencyRequestFlag1
+                );
+
+            bool emergencyRequestFlag2Read =
+                TryReadRuntimeByte(
+                    IntPtr.Add(
+                        profile.ModuleBaseAddress,
+                        profile.EmergencyRequestFlag2Rva
+                    ),
+                    out emergencyRequestFlag2
+                );
+
+            bool emergencyRequestFlag3Read =
+                TryReadRuntimeByte(
+                    IntPtr.Add(
+                        profile.ModuleBaseAddress,
+                        profile.EmergencyRequestFlag3Rva
+                    ),
+                    out emergencyRequestFlag3
+                );
+
+            bool physicalRead =
+                TryReadRuntimeInt32(
+                    IntPtr.Add(
+                        profile.ModuleBaseAddress,
+                        profile.DirectPhysicalBrakeRva
+                    ),
+                    out physicalBrake
+                );
+
+            bool serviceRead =
+                TryReadRuntimeInt32(
+                    IntPtr.Add(
+                        profile.ModuleBaseAddress,
+                        profile.DirectServiceMaximumRva
+                    ),
+                    out serviceMaximum
+                );
+
+            bool emergencyRead =
+                TryReadRuntimeInt32(
+                    IntPtr.Add(
+                        profile.ModuleBaseAddress,
+                        profile.DirectEmergencyRva
+                    ),
+                    out emergency
+                );
+
+            bool outputRead =
+                TryReadRuntimeInt32(
+                    IntPtr.Add(
+                        profile.ModuleBaseAddress,
+                        profile.DirectOutputBrakeRva
+                    ),
+                    out outputBrake
+                );
+
+            if (
+                !requestModeRead
+                || !mode1RequestBrakeRead
+                || !secondaryRequestEnabledRead
+                || !secondaryRequestBrakeRead
+                || !serviceMaximumRequestFlag1Read
+                || !serviceMaximumRequestFlag2Read
+                || !emergencyRequestFlag1Read
+                || !emergencyRequestFlag2Read
+                || !emergencyRequestFlag3Read
+                || !physicalRead
+                || !serviceRead
+                || !emergencyRead
+                || !outputRead
+            )
+            {
+                return;
+            }
+
+            bool candidateStateChanged =
+                !profile.HasPreviousRequestCandidateState
+                || requestModeCandidate
+                    != profile.PreviousRequestModeCandidate
+                || mode1RequestBrakeCandidate
+                    != profile.PreviousMode1RequestBrakeCandidate
+                || secondaryRequestEnabledCandidate
+                    != profile.PreviousSecondaryRequestEnabledCandidate
+                || secondaryRequestBrakeCandidate
+                    != profile.PreviousSecondaryRequestBrakeCandidate
+                || serviceMaximumRequestFlag1
+                    != profile.PreviousServiceMaximumRequestFlag1
+                || serviceMaximumRequestFlag2
+                    != profile.PreviousServiceMaximumRequestFlag2
+                || emergencyRequestFlag1
+                    != profile.PreviousEmergencyRequestFlag1
+                || emergencyRequestFlag2
+                    != profile.PreviousEmergencyRequestFlag2
+                || emergencyRequestFlag3
+                    != profile.PreviousEmergencyRequestFlag3
+                || physicalBrake
+                    != profile.PreviousCandidatePhysicalBrake
+                || serviceMaximum
+                    != profile.PreviousCandidateServiceMaximum
+                || emergency
+                    != profile.PreviousCandidateEmergency
+                || outputBrake
+                    != profile.PreviousCandidateOutputBrake;
+            if (!candidateStateChanged)
+            {
+                return;
+            }
+
+            // =========================================================
+            // 旧版OdakyuAts.dllの小田急線内モードで
+            // 動的確認できた要求フラグ
+            //
+            // ServiceFlag2:
+            // 常用最大要求
+            //
+            // EmergencyFlag1:
+            // 非常要求
+            //
+            // 非常要求を常用最大要求より優先する。
+            // =========================================================
+            bool verifiedServiceMaximumRequested =
+                serviceMaximumRequestFlag2 != 0;
+
+            bool verifiedEmergencyRequested =
+                emergencyRequestFlag1 != 0;
+
+            int safetyRequestBrake = 0;
+            string safetyRequestKind = "None";
+            string safetyRequestSource = "None";
+
+            if (verifiedEmergencyRequested)
+            {
+                safetyRequestBrake = emergency;
+                safetyRequestKind = "Emergency";
+                safetyRequestSource = "EmergencyFlag1";
+            }
+            else if (verifiedServiceMaximumRequested)
+            {
+                safetyRequestBrake = serviceMaximum;
+                safetyRequestKind = "ServiceMaximum";
+                safetyRequestSource = "ServiceFlag2";
+            }
+
+            // ほかの候補フラグは、別モードで使用される可能性があるため
+            // 診断ログには残す。
+            bool anyServiceMaximumCandidate =
+                serviceMaximumRequestFlag1 != 0
+                || serviceMaximumRequestFlag2 != 0;
+
+            bool anyEmergencyCandidate =
+                emergencyRequestFlag1 != 0
+                || emergencyRequestFlag2 != 0
+                || emergencyRequestFlag3 != 0;
+
+            string requestModeInterpretation;
+
+            if (requestModeCandidate == 3)
+            {
+                requestModeInterpretation =
+                    "EmergencyCandidate";
+            }
+            else if (requestModeCandidate == 2)
+            {
+                requestModeInterpretation =
+                    "ServiceMaximumCandidate";
+            }
+            else if (requestModeCandidate == 1)
+            {
+                requestModeInterpretation =
+                    "VariableBrakeCandidate";
+            }
+            else if (requestModeCandidate == 0)
+            {
+                requestModeInterpretation =
+                    "NoneCandidate";
+            }
+            else
+            {
+                requestModeInterpretation =
+                    "UnknownCandidate";
+            }
+
+            // =========================================================
+            // 動的確認済みの要求フラグから、介入状態遷移を生成する。
+            //
+            // PhysicalやOutputは介入判定には使用しない。
+            // そのため、物理EB中でも保安装置側の要求を識別できる。
+            // =========================================================
+            if (!profile.HasPreviousInterventionState)
+            {
+                profile.HasPreviousInterventionState = true;
+                profile.PreviousInterventionKind =
+                    safetyRequestKind;
+            }
+            else if (
+                profile.PreviousInterventionKind
+                    != safetyRequestKind
+            )
+            {
+                string transitionType;
+
+                if (
+                    profile.PreviousInterventionKind == "None"
+                    && safetyRequestKind != "None"
+                )
+                {
+                    transitionType = "START";
+                }
+                else if (
+                    profile.PreviousInterventionKind != "None"
+                    && safetyRequestKind == "None"
+                )
+                {
+                    transitionType = "END";
+                }
+                else
+                {
+                    transitionType = "CHANGE";
+                }
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[RUNTIME_INTERVENTION] "
+                    + $"Event:{transitionType}, "
+                    + $"File:{profile.FileName}, "
+                    + $"Pattern:{profile.Pattern}, "
+                    + "PreviousKind:"
+                    + $"{profile.PreviousInterventionKind}, "
+                    + $"CurrentKind:{safetyRequestKind}, "
+                    + $"SafetyRequest:{safetyRequestBrake}, "
+                    + $"RequestSource:{safetyRequestSource}, "
+                    + $"Physical:{physicalBrake}, "
+                    + $"ServiceMax:{serviceMaximum}, "
+                    + $"Emergency:{emergency}, "
+                    + $"Output:{outputBrake}, "
+                    + "ScoringEnabled:False"
+                );
+
+                profile.PreviousInterventionKind =
+                    safetyRequestKind;
+
+                hasChanges = true;
+            }
+
+            rtLog.AppendLine(
+                $"[{DateTime.Now:HH:mm:ss.fff}] "
+                + "[RUNTIME_REQUEST_CANDIDATE] "
+                + $"File:{profile.FileName}, "
+                + $"Pattern:{profile.Pattern}, "
+                + $"ModeCandidate:{requestModeCandidate}, "
+                + $"ModeMeaning:{requestModeInterpretation}, "
+                + "Mode1RequestBrake:"
+                + $"{mode1RequestBrakeCandidate}, "
+                + "SecondaryEnabled:"
+                + $"{secondaryRequestEnabledCandidate}, "
+                + "SecondaryRequestBrake:"
+                + $"{secondaryRequestBrakeCandidate}, "
+                + "ServiceFlag1:"
+                + $"{serviceMaximumRequestFlag1}, "
+                + "ServiceFlag2:"
+                + $"{serviceMaximumRequestFlag2}, "
+                + "AnyServiceCandidate:"
+                + $"{anyServiceMaximumCandidate}, "
+                + "EmergencyFlag1:"
+                + $"{emergencyRequestFlag1}, "
+                + "EmergencyFlag2:"
+                + $"{emergencyRequestFlag2}, "
+                + "EmergencyFlag3:"
+                + $"{emergencyRequestFlag3}, "
+                + "AnyEmergencyCandidate:"
+                + $"{anyEmergencyCandidate}, "
+                + $"SafetyRequest:{safetyRequestBrake}, "
+                + $"RequestKind:{safetyRequestKind}, "
+                + $"RequestSource:{safetyRequestSource}, "
+                + $"Physical:{physicalBrake}, "
+                + $"ServiceMax:{serviceMaximum}, "
+                + $"Emergency:{emergency}, "
+                + $"Output:{outputBrake}, "
+                + "ScoringEnabled:False"
+            );
+
+            profile.HasPreviousRequestCandidateState = true;
+
+            profile.PreviousRequestModeCandidate =
+                requestModeCandidate;
+
+            profile.PreviousMode1RequestBrakeCandidate =
+                mode1RequestBrakeCandidate;
+
+            profile.PreviousSecondaryRequestEnabledCandidate =
+                secondaryRequestEnabledCandidate;
+
+            profile.PreviousCandidatePhysicalBrake =
+                physicalBrake;
+
+            profile.PreviousCandidateServiceMaximum =
+                serviceMaximum;
+
+            profile.PreviousCandidateEmergency =
+                emergency;
+
+            profile.PreviousCandidateOutputBrake =
+                outputBrake;
+
+            profile.PreviousSecondaryRequestBrakeCandidate =
+                secondaryRequestBrakeCandidate;
+
+            profile.PreviousServiceMaximumRequestFlag1 =
+                serviceMaximumRequestFlag1;
+
+            profile.PreviousServiceMaximumRequestFlag2 =
+                serviceMaximumRequestFlag2;
+
+            profile.PreviousEmergencyRequestFlag1 =
+                emergencyRequestFlag1;
+
+            profile.PreviousEmergencyRequestFlag2 =
+                emergencyRequestFlag2;
+
+            profile.PreviousEmergencyRequestFlag3 =
+                emergencyRequestFlag3;
+
+            profile.PreviousCandidatePhysicalBrake =
+                physicalBrake;
+
+            hasChanges = true;
+        }
         public override void Tick(TimeSpan elapsed)
         {
             if (!BveHacker.IsScenarioCreated)
@@ -1539,6 +2184,21 @@ namespace TsScoringPlugin
                     rtLog,
                     ref hasChanges
                 );
+
+                // MATCH済みの固定RVA出力比較型プロファイルについて、
+                // 物理入力と最終出力を変化時だけ記録する。
+                DiagnoseDirectBrakeOutputComparison(
+                    rtLog,
+                    ref hasChanges
+                );
+
+                // OdakyuAts.dllの保安装置要求候補を
+                // 変化時だけ診断ログへ記録する。
+                DiagnoseOdakyuRequestCandidates(
+                    rtLog,
+                    ref hasChanges
+                );
+
 
                 // 後続のATS内部監視で例外が発生しても診断結果が
                 // 消失しないよう、この時点で診断ログを書き出す。
