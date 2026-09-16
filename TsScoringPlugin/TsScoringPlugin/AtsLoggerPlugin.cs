@@ -58,6 +58,12 @@ namespace TsScoringPlugin
             new HashSet<string>(
                 StringComparer.OrdinalIgnoreCase
             );
+        // SHA-256の計算が完了したDLLパス。
+        // 同じDLLファイルを1秒ごとに再ハッシュしない。
+        private HashSet<string> inspectedRuntimeModulePaths =
+            new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase
+            );
 
         private Dictionary<string, RuntimeProfileIdentity>
             runtimeProfilesByHash =
@@ -81,6 +87,16 @@ namespace TsScoringPlugin
             public int ServiceMaximumOffset;
             public int EmergencyOffset;
             public int OutputBrakeRva;
+
+            // ThreeStateBrakeIntervention用の静的配置
+            public int InterventionModeRva;
+            public int NoneModeValue;
+            public int ServiceMaximumModeValue;
+            public int EmergencyModeValue;
+
+            // 前回のモード値
+            public bool HasPreviousModeValue;
+            public int PreviousModeValue;
 
             // 前回ログ出力値
             public bool HasPreviousState;
@@ -834,16 +850,32 @@ namespace TsScoringPlugin
                         continue;
                     }
 
+                    // 既にSHA-256を確認したパスは再計算しない。
+                    if (
+                        inspectedRuntimeModulePaths.Contains(
+                            modulePath
+                        )
+                    )
+                    {
+                        continue;
+                    }
+
                     string moduleHash;
 
                     try
                     {
                         moduleHash =
                             ComputeFileSha256(modulePath);
+
+                        // ハッシュ計算に成功したパスだけ記録する。
+                        inspectedRuntimeModulePaths.Add(
+                            modulePath
+                        );
                     }
                     catch
                     {
-                        // 読み取れないDLLは対象外として継続する。
+                        // ロード直後などで一時的に読み取れない可能性があるため、
+                        // 失敗したパスは記録せず、次回走査で再試行する。
                         continue;
                     }
 
@@ -880,6 +912,19 @@ namespace TsScoringPlugin
                         matchedProfile.ServiceMaximumOffset = 0x2C;
                         matchedProfile.EmergencyOffset = 0x30;
                         matchedProfile.OutputBrakeRva = 0x17F4C;
+                    }
+
+                    // C_ATS.dllで確認する
+                    // ThreeStateBrakeInterventionの静的配置。
+                    if (
+                        matchedProfile.Pattern
+                            == "ThreeStateBrakeIntervention"
+                    )
+                    {
+                        matchedProfile.InterventionModeRva = 0x9140;
+                        matchedProfile.NoneModeValue = 0;
+                        matchedProfile.ServiceMaximumModeValue = 1;
+                        matchedProfile.EmergencyModeValue = 2;
                     }
 
                     // MATCHログは同じSHA-256につき1回だけ記録する。
@@ -1162,7 +1207,152 @@ namespace TsScoringPlugin
                 hasChanges = true;
             }
         }
+        // =========================================================
+        // MATCH済みのThreeStateBrakeInterventionについて、
+        // 3状態の介入モードを読み取り、変化時だけ記録する。
+        //
+        // この処理は減点には接続しない。
+        // =========================================================
+        private void DiagnoseThreeStateBrakeIntervention(
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            foreach (
+                RuntimeProfileIdentity profile
+                in runtimeProfilesByHash.Values
+            )
+            {
+                if (
+                    profile.Pattern
+                        != "ThreeStateBrakeIntervention"
+                    || profile.ModuleBaseAddress == IntPtr.Zero
+                    || profile.InterventionModeRva == 0
+                )
+                {
+                    continue;
+                }
 
+                int modeValue;
+
+                bool modeRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.InterventionModeRva
+                        ),
+                        out modeValue
+                    );
+
+                if (!modeRead)
+                {
+                    continue;
+                }
+
+                string interventionKind;
+
+                if (modeValue == profile.NoneModeValue)
+                {
+                    interventionKind = "None";
+                }
+                else if (
+                    modeValue
+                        == profile.ServiceMaximumModeValue
+                )
+                {
+                    interventionKind = "ServiceMaximum";
+                }
+                else if (
+                    modeValue
+                        == profile.EmergencyModeValue
+                )
+                {
+                    interventionKind = "Emergency";
+                }
+                else
+                {
+                    interventionKind = "Unknown";
+                }
+
+                bool modeChanged =
+                    !profile.HasPreviousModeValue
+                    || modeValue != profile.PreviousModeValue;
+
+                if (!modeChanged)
+                {
+                    continue;
+                }
+
+                // 初回読取りは現在状態を基準値として保存する。
+                // シナリオ開始時点の状態を新規介入と誤認しない。
+                if (!profile.HasPreviousInterventionState)
+                {
+                    profile.HasPreviousInterventionState = true;
+                    profile.PreviousInterventionKind =
+                        interventionKind;
+                }
+                else if (
+                    profile.PreviousInterventionKind
+                        != interventionKind
+                )
+                {
+                    string transitionType;
+
+                    if (
+                        profile.PreviousInterventionKind == "None"
+                        && interventionKind != "None"
+                    )
+                    {
+                        transitionType = "START";
+                    }
+                    else if (
+                        profile.PreviousInterventionKind != "None"
+                        && interventionKind == "None"
+                    )
+                    {
+                        transitionType = "END";
+                    }
+                    else
+                    {
+                        transitionType = "CHANGE";
+                    }
+
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[RUNTIME_INTERVENTION] "
+                        + $"Event:{transitionType}, "
+                        + $"File:{profile.FileName}, "
+                        + $"Pattern:{profile.Pattern}, "
+                        + "PreviousKind:"
+                        + $"{profile.PreviousInterventionKind}, "
+                        + $"CurrentKind:{interventionKind}, "
+                        + $"Mode:{modeValue}, "
+                        + "ScoringEnabled:False"
+                    );
+
+                    profile.PreviousInterventionKind =
+                        interventionKind;
+
+                    hasChanges = true;
+                }
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[RUNTIME_PROFILE_MODE] "
+                    + $"File:{profile.FileName}, "
+                    + $"Pattern:{profile.Pattern}, "
+                    + $"ModeRva:0x{profile.InterventionModeRva:X}, "
+                    + $"Mode:{modeValue}, "
+                    + $"Kind:{interventionKind}, "
+                    + "ScoringEnabled:False"
+                );
+
+                profile.HasPreviousModeValue = true;
+                profile.PreviousModeValue = modeValue;
+
+                hasChanges = true;
+            }
+        }
 
         public override void Tick(TimeSpan elapsed)
         {
@@ -1191,6 +1381,7 @@ namespace TsScoringPlugin
 
                 runtimeProfilesByHash.Clear();
                 matchedRuntimeProfileHashes.Clear();
+                inspectedRuntimeModulePaths.Clear();
 
                 beaconList.Clear();
                 lastLocation = -1.0;
@@ -1326,19 +1517,25 @@ namespace TsScoringPlugin
                 }
 
                 // =========================================================
-                // 2 地上子(Beacon)の取得と通過判定
+                // 共通ランタイムプロファイルの診断
                 // =========================================================
-                if (!isBeaconsLoaded)
 
-                    // 共通ランタイムプロファイルを診断する。
-                    // カタログは1回だけ読み込み、DLLは1秒間隔で再走査する。
-                    DiagnoseRuntimeProfiles(
-                        rtLog,
-                        ref hasChanges
-                    );
+                // カタログは1回だけ読み込み、DLLは1秒間隔で再走査する。
+                DiagnoseRuntimeProfiles(
+                    rtLog,
+                    ref hasChanges
+                );
+
                 // MATCH済みのオブジェクト保持型プロファイルについて、
                 // 実メモリ値を変化時だけ記録する。
                 DiagnoseObjectBackedBrakeState(
+                    rtLog,
+                    ref hasChanges
+                );
+
+                // MATCH済みの3状態介入型プロファイルについて、
+                // モード値を変化時だけ記録する。
+                DiagnoseThreeStateBrakeIntervention(
                     rtLog,
                     ref hasChanges
                 );
@@ -1356,6 +1553,10 @@ namespace TsScoringPlugin
                     hasChanges = false;
                 }
 
+                // =========================================================
+                // 2 地上子(Beacon)の取得と通過判定
+                // =========================================================
+                if (!isBeaconsLoaded)
                 {
                     try
                     {
