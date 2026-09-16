@@ -70,6 +70,25 @@ namespace TsScoringPlugin
             public string Sha256;
             public string Pattern;
             public string VerificationStatus;
+
+            // 一致したモジュールの実行時情報
+            public string FileName;
+            public IntPtr ModuleBaseAddress;
+
+            // ObjectBackedBrakeOutputSelector用の静的配置
+            public int ObjectPointerRva;
+            public int PhysicalBrakeOffset;
+            public int ServiceMaximumOffset;
+            public int EmergencyOffset;
+            public int OutputBrakeRva;
+
+            // 前回ログ出力値
+            public bool HasPreviousState;
+            public int PreviousPhysicalBrake;
+            public int PreviousServiceMaximum;
+            public int PreviousEmergency;
+            public int PreviousOutputBrake;
+            public IntPtr PreviousObjectAddress;
         }
 
         public AtsLoggerPlugin(PluginBuilder builder) : base(builder) { }
@@ -614,6 +633,70 @@ namespace TsScoringPlugin
         }
 
         // =========================================================
+        // 現在のプロセス内にある32ビット整数を安全に読み取る
+        // =========================================================
+        private bool TryReadRuntimeInt32(
+            IntPtr address,
+            out int value
+        )
+        {
+            value = 0;
+
+            if (address == IntPtr.Zero)
+            {
+                return false;
+            }
+
+            try
+            {
+                value =
+                    System.Runtime.InteropServices.Marshal.ReadInt32(
+                        address
+                    );
+
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        // =========================================================
+        // 現在のプロセス内にある32ビットポインターを安全に読み取る
+        // =========================================================
+        private bool TryReadRuntimePointer32(
+            IntPtr address,
+            out IntPtr value
+        )
+        {
+            value = IntPtr.Zero;
+
+            int rawPointer;
+
+            if (
+                !TryReadRuntimeInt32(
+                    address,
+                    out rawPointer
+                )
+            )
+            {
+                return false;
+            }
+
+            if (rawPointer == 0)
+            {
+                return false;
+            }
+
+            value = new IntPtr(
+                unchecked((long)(uint)rawPointer)
+            );
+
+            return true;
+        }
+
+        // =========================================================
         // 共通ランタイムプロファイルを読み込み、
         // ロード済みDLLとSHA-256で照合する
         //
@@ -774,28 +857,48 @@ namespace TsScoringPlugin
 
                     // 既に同じSHA-256のMATCHを記録済みなら、
                     // 1秒ごとの再走査では重複記録しない。
+                    // モジュールの実行時情報は、再走査のたびに更新する。
+                    matchedProfile.FileName =
+                        System.IO.Path.GetFileName(modulePath);
+
+                    matchedProfile.ModuleBaseAddress =
+                        module.BaseAddress;
+
+                    // ATSKeihan800.dllで確認した
+                    // ObjectBackedBrakeOutputSelectorの静的配置。
                     if (
-                        !matchedRuntimeProfileHashes.Add(
+                        matchedProfile.Pattern
+                            == "ObjectBackedBrakeOutputSelector"
+                    )
+                    {
+                        matchedProfile.ObjectPointerRva = 0x17F44;
+                        matchedProfile.PhysicalBrakeOffset = 0x3C;
+                        matchedProfile.ServiceMaximumOffset = 0x2C;
+                        matchedProfile.EmergencyOffset = 0x30;
+                        matchedProfile.OutputBrakeRva = 0x17F4C;
+                    }
+
+                    // MATCHログは同じSHA-256につき1回だけ記録する。
+                    if (
+                        matchedRuntimeProfileHashes.Add(
                             moduleHash
                         )
                     )
                     {
-                        continue;
+                        rtLog.AppendLine(
+                            $"[{DateTime.Now:HH:mm:ss.fff}] "
+                            + "[RUNTIME_PROFILE] MATCH "
+                            + $"File:{matchedProfile.FileName}, "
+                            + $"SHA256:{moduleHash}, "
+                            + $"Pattern:{matchedProfile.Pattern}, "
+                            + "Verification:"
+                            + $"{matchedProfile.VerificationStatus}, "
+                            + $"Base:0x{module.BaseAddress.ToInt64():X}, "
+                            + "ScoringEnabled:False"
+                        );
+
+                        hasChanges = true;
                     }
-
-                    rtLog.AppendLine(
-                        $"[{DateTime.Now:HH:mm:ss.fff}] "
-                        + "[RUNTIME_PROFILE] MATCH "
-                        + $"File:{System.IO.Path.GetFileName(modulePath)}, "
-                        + $"SHA256:{moduleHash}, "
-                        + $"Pattern:{matchedProfile.Pattern}, "
-                        + "Verification:"
-                        + $"{matchedProfile.VerificationStatus}, "
-                        + $"Base:0x{module.BaseAddress.ToInt64():X}, "
-                        + "ScoringEnabled:False"
-                    );
-
-                    hasChanges = true;
                 }
             }
             catch (Exception ex)
@@ -815,6 +918,186 @@ namespace TsScoringPlugin
                 }
             }
         }
+
+        // =========================================================
+        // MATCH済みのObjectBackedBrakeOutputSelectorについて、
+        // 実メモリ値を読み取り、変化時だけ診断ログへ記録する。
+        //
+        // この処理は減点には接続しない。
+        // =========================================================
+        private void DiagnoseObjectBackedBrakeState(
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            foreach (
+                RuntimeProfileIdentity profile
+                in runtimeProfilesByHash.Values
+            )
+            {
+                if (
+                    profile.Pattern
+                        != "ObjectBackedBrakeOutputSelector"
+                    || profile.ModuleBaseAddress == IntPtr.Zero
+                )
+                {
+                    continue;
+                }
+
+                IntPtr objectPointerAddress =
+                    IntPtr.Add(
+                        profile.ModuleBaseAddress,
+                        profile.ObjectPointerRva
+                    );
+
+                IntPtr objectAddress;
+
+                if (
+                    !TryReadRuntimePointer32(
+                        objectPointerAddress,
+                        out objectAddress
+                    )
+                )
+                {
+                    continue;
+                }
+
+                int physicalBrake;
+                int serviceMaximum;
+                int emergency;
+                int outputBrake;
+
+                bool physicalRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            objectAddress,
+                            profile.PhysicalBrakeOffset
+                        ),
+                        out physicalBrake
+                    );
+
+                bool serviceRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            objectAddress,
+                            profile.ServiceMaximumOffset
+                        ),
+                        out serviceMaximum
+                    );
+
+                bool emergencyRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            objectAddress,
+                            profile.EmergencyOffset
+                        ),
+                        out emergency
+                    );
+
+                bool outputRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.OutputBrakeRva
+                        ),
+                        out outputBrake
+                    );
+
+                if (
+                    !physicalRead
+                    || !serviceRead
+                    || !emergencyRead
+                    || !outputRead
+                )
+                {
+                    continue;
+                }
+
+                // 明らかに不自然な値はログへ流さない。
+                if (
+                    physicalBrake < -1
+                    || serviceMaximum < 0
+                    || emergency < 0
+                    || outputBrake < -1
+                    || serviceMaximum > 100
+                    || emergency > 100
+                    || physicalBrake > 100
+                    || outputBrake > 100
+                )
+                {
+                    continue;
+                }
+
+                bool stateChanged =
+                    !profile.HasPreviousState
+                    || physicalBrake
+                        != profile.PreviousPhysicalBrake
+                    || serviceMaximum
+                        != profile.PreviousServiceMaximum
+                    || emergency
+                        != profile.PreviousEmergency
+                    || outputBrake
+                        != profile.PreviousOutputBrake
+                    || objectAddress
+                        != profile.PreviousObjectAddress;
+
+                if (!stateChanged)
+                {
+                    continue;
+                }
+
+                bool overrideActive =
+                    outputBrake > physicalBrake;
+
+                string interventionKind = "None";
+
+                if (overrideActive)
+                {
+                    if (outputBrake == emergency)
+                    {
+                        interventionKind = "Emergency";
+                    }
+                    else if (outputBrake == serviceMaximum)
+                    {
+                        interventionKind = "ServiceMaximum";
+                    }
+                    else
+                    {
+                        interventionKind = "Intermediate";
+                    }
+                }
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[RUNTIME_PROFILE_STATE] "
+                    + $"File:{profile.FileName}, "
+                    + $"Pattern:{profile.Pattern}, "
+                    + $"Object:0x{objectAddress.ToInt64():X}, "
+                    + $"Physical:{physicalBrake}, "
+                    + $"ServiceMax:{serviceMaximum}, "
+                    + $"Emergency:{emergency}, "
+                    + $"Output:{outputBrake}, "
+                    + $"Override:{overrideActive}, "
+                    + $"Kind:{interventionKind}, "
+                    + "ScoringEnabled:False"
+                );
+
+                profile.HasPreviousState = true;
+                profile.PreviousPhysicalBrake =
+                    physicalBrake;
+                profile.PreviousServiceMaximum =
+                    serviceMaximum;
+                profile.PreviousEmergency =
+                    emergency;
+                profile.PreviousOutputBrake =
+                    outputBrake;
+                profile.PreviousObjectAddress =
+                    objectAddress;
+
+                hasChanges = true;
+            }
+        }
+
 
         public override void Tick(TimeSpan elapsed)
         {
@@ -988,6 +1271,12 @@ namespace TsScoringPlugin
                         rtLog,
                         ref hasChanges
                     );
+                // MATCH済みのオブジェクト保持型プロファイルについて、
+                // 実メモリ値を変化時だけ記録する。
+                DiagnoseObjectBackedBrakeState(
+                    rtLog,
+                    ref hasChanges
+                );
 
                 // 後続のATS内部監視で例外が発生しても診断結果が
                 // 消失しないよう、この時点で診断ログを書き出す。
