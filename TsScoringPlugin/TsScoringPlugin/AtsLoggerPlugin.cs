@@ -89,6 +89,10 @@ namespace TsScoringPlugin
             public int PreviousEmergency;
             public int PreviousOutputBrake;
             public IntPtr PreviousObjectAddress;
+            // 前回の介入状態。
+            // 現在はログ生成専用で、減点処理には接続しない。
+            public bool HasPreviousInterventionState;
+            public string PreviousInterventionKind = "None";
         }
 
         public AtsLoggerPlugin(PluginBuilder builder) : base(builder) { }
@@ -1065,6 +1069,67 @@ namespace TsScoringPlugin
                     {
                         interventionKind = "Intermediate";
                     }
+                }
+
+                // =========================================================
+                // 介入状態の遷移をイベントとして記録する
+                //
+                // 初回読取りでは現在状態を基準値として保存するだけで、
+                // STARTイベントは生成しない。シナリオ読込み時点ですでに
+                // 非常段だった場合の誤検出を防ぐため。
+                // =========================================================
+                if (!profile.HasPreviousInterventionState)
+                {
+                    profile.HasPreviousInterventionState = true;
+                    profile.PreviousInterventionKind =
+                        interventionKind;
+                }
+                else if (
+                    profile.PreviousInterventionKind
+                        != interventionKind
+                )
+                {
+                    string transitionType;
+
+                    if (
+                        profile.PreviousInterventionKind == "None"
+                        && interventionKind != "None"
+                    )
+                    {
+                        transitionType = "START";
+                    }
+                    else if (
+                        profile.PreviousInterventionKind != "None"
+                        && interventionKind == "None"
+                    )
+                    {
+                        transitionType = "END";
+                    }
+                    else
+                    {
+                        transitionType = "CHANGE";
+                    }
+
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[RUNTIME_INTERVENTION] "
+                        + $"Event:{transitionType}, "
+                        + $"File:{profile.FileName}, "
+                        + $"Pattern:{profile.Pattern}, "
+                        + "PreviousKind:"
+                        + $"{profile.PreviousInterventionKind}, "
+                        + $"CurrentKind:{interventionKind}, "
+                        + $"Physical:{physicalBrake}, "
+                        + $"ServiceMax:{serviceMaximum}, "
+                        + $"Emergency:{emergency}, "
+                        + $"Output:{outputBrake}, "
+                        + "ScoringEnabled:False"
+                    );
+
+                    profile.PreviousInterventionKind =
+                        interventionKind;
+
+                    hasChanges = true;
                 }
 
                 rtLog.AppendLine(
