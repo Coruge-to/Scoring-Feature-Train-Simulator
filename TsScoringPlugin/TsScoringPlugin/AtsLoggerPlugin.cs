@@ -1,9 +1,11 @@
-﻿using BveEx.PluginHost;
+using BveEx.PluginHost;
 using BveEx.PluginHost.Plugins;
 using BveEx.PluginHost.Plugins.Extensions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
 using System.Text;
 
 namespace TsScoringPlugin
@@ -38,6 +40,47 @@ namespace TsScoringPlugin
         // ATSプラグインの内部構造を出力済みか
         private bool isAtsStructureDumped = false;
 
+        // BveEx VehiclePluginsの構造診断
+        private bool hasDumpedVehiclePlugins = false;
+        private bool hasLoggedVehiclePluginsError = false;
+
+        // AppDomain内のAtsPT5アセンブリ診断
+        private bool hasDumpedAtsPtAppDomain = false;
+        private bool hasLoggedAtsPtAppDomainError = false;
+
+        // BveExホスト参照の診断
+        private bool hasDumpedBveExHostReferences = false;
+        private bool hasLoggedBveExHostReferenceError = false;
+
+        // ExtensionSet内部構造の診断
+        private bool hasDumpedExtensionSet = false;
+        private bool hasLoggedExtensionSetError = false;
+
+        // BveEx側の静的プラグイン管理参照の診断
+        private bool hasDumpedBveExStaticPluginHosts = false;
+        private bool hasLoggedBveExStaticPluginHostError = false;
+
+        // BveEx.PluginHost.App.Instance内部の診断
+        private bool hasDumpedPluginHostApp = false;
+        private bool hasLoggedPluginHostAppError = false;
+
+        // BveHackerイベント購読先の診断
+        private bool hasDumpedBveHackerEventTargets = false;
+        private bool hasLoggedBveHackerEventTargetError = false;
+
+        // AtsPT5最終動的検証
+        private object atsPt5MainObject = null;
+        private object atsPt5PtObject = null;
+        private bool hasLoggedAtsPt5RuntimeError = false;
+        private bool hasPreviousAtsPt5RuntimeState = false;
+        private int previousAtsPt5OutputBrakeHandle = int.MinValue;
+        private int previousAtsPt5PhysicalBrake = int.MinValue;
+        private int previousAtsPt5AtsBrake = int.MinValue;
+        private bool previousAtsPt5IsEmgBrake = false;
+        private bool previousAtsPt5SecurityEmgBrake = false;
+        private bool previousAtsPt5BrakeB6 = false;
+        private bool hasDumpedAtsPt5MemberMap = false;
+
         private double lastLocation = -1.0;
         private List<dynamic> beaconList = new List<dynamic>();
         private bool isBeaconsLoaded = false;
@@ -70,12 +113,171 @@ namespace TsScoringPlugin
                 new Dictionary<string, RuntimeProfileIdentity>(
                     StringComparer.OrdinalIgnoreCase
                 );
+        [DataContract]
+        private sealed class RuntimeProfileCatalog
+        {
+            [DataMember(Name = "schemaVersion")]
+            public int SchemaVersion { get; set; }
 
+
+            [DataMember(Name = "profileCount")]
+            public int ProfileCount { get; set; }
+
+            [DataMember(Name = "profiles")]
+            public List<RuntimeProfileCatalogEntry> Profiles { get; set; }
+        }
+
+        [DataContract]
+        private sealed class RuntimeProfileCatalogEntry
+        {
+            [DataMember(Name = "sha256")]
+            public string Sha256 { get; set; }
+
+            [DataMember(Name = "pattern")]
+            public string Pattern { get; set; }
+
+            [DataMember(Name = "verificationStatus")]
+            public string VerificationStatus { get; set; }
+
+            [DataMember(Name = "addresses")]
+            public RuntimeProfileCatalogAddresses Addresses { get; set; }
+
+            [DataMember(Name = "detection")]
+            public RuntimeProfileCatalogDetection Detection { get; set; }
+        }
+
+        [DataContract]
+        private sealed class RuntimeProfileCatalogAddresses
+        {
+            [DataMember(Name = "physicalBrake")]
+            public RuntimeProfileCatalogAddress PhysicalBrake { get; set; }
+
+            [DataMember(Name = "serviceMaximum")]
+            public RuntimeProfileCatalogAddress ServiceMaximum { get; set; }
+
+            [DataMember(Name = "emergency")]
+            public RuntimeProfileCatalogAddress Emergency { get; set; }
+
+            [DataMember(Name = "outputBrake")]
+            public RuntimeProfileCatalogAddress OutputBrake { get; set; }
+
+            [DataMember(Name = "serviceMaximumRequestFlags")]
+            public List<RuntimeProfileCatalogAddress>
+                ServiceMaximumRequestFlags
+            { get; set; }
+
+            [DataMember(Name = "emergencyRequestFlags")]
+            public List<RuntimeProfileCatalogAddress>
+                EmergencyRequestFlags
+            { get; set; }
+
+            [DataMember(Name = "metroEmergencySelectionFlag")]
+            public RuntimeProfileCatalogAddress
+                MetroEmergencySelectionFlag
+            { get; set; }
+
+            [DataMember(Name = "metroLevel7SelectionFlag")]
+            public RuntimeProfileCatalogAddress
+                MetroLevel7SelectionFlag
+            { get; set; }
+
+            [DataMember(Name = "metroLevel4SelectionFlag")]
+            public RuntimeProfileCatalogAddress
+                MetroLevel4SelectionFlag
+            { get; set; }
+
+            [DataMember(Name = "metroControlMode")]
+            public RuntimeProfileCatalogAddress
+                MetroControlMode
+            { get; set; }
+
+            [DataMember(Name = "metroInternalState")]
+            public RuntimeProfileCatalogAddress
+                MetroInternalState
+            { get; set; }
+            [DataMember(Name = "metroSafetyEmergencySource")]
+            public RuntimeProfileCatalogAddress
+    MetroSafetyEmergencySource
+            { get; set; }
+            [DataMember(Name = "kintetsuAbsoluteStopEmergencyLatch")]
+            public RuntimeProfileCatalogAddress
+    KintetsuAbsoluteStopEmergencyLatch
+            { get; set; }
+
+            [DataMember(Name = "kintetsuSecondaryEmergencySource")]
+            public RuntimeProfileCatalogAddress
+                KintetsuSecondaryEmergencySource
+            { get; set; }
+            [DataMember(Name = "kintetsuEmergencySourceA")]
+            public RuntimeProfileCatalogAddress
+    KintetsuEmergencySourceA
+            { get; set; }
+
+            [DataMember(Name = "kintetsuEmergencySourceB")]
+            public RuntimeProfileCatalogAddress
+                KintetsuEmergencySourceB
+            { get; set; }
+
+            [DataMember(Name = "kintetsuServiceMaximumSourceA")]
+            public RuntimeProfileCatalogAddress
+                KintetsuServiceMaximumSourceA
+            { get; set; }
+
+            [DataMember(Name = "kintetsuServiceMaximumSourceB")]
+            public RuntimeProfileCatalogAddress
+                KintetsuServiceMaximumSourceB
+            { get; set; }
+
+        }
+
+        [DataContract]
+        private sealed class RuntimeProfileCatalogAddress
+        {
+            [DataMember(Name = "kind")]
+            public string Kind { get; set; }
+
+            [DataMember(Name = "rva")]
+            public string Rva { get; set; }
+
+            [DataMember(Name = "valueType")]
+            public string ValueType { get; set; }
+        }
+
+        [DataContract]
+        private sealed class RuntimeProfileCatalogDetection
+        {
+            [DataMember(Name = "strategy")]
+            public string Strategy { get; set; }
+
+            [DataMember(Name = "activeCondition")]
+            public string ActiveCondition { get; set; }
+
+            [DataMember(Name = "priority")]
+            public string Priority { get; set; }
+
+            [DataMember(Name = "completionStatus")]
+            public string CompletionStatus { get; set; }
+
+            [DataMember(Name = "safetyEmergencySourceVerificationStatus")]
+            public string SafetyEmergencySourceVerificationStatus
+            { get; set; }
+        }
         private sealed class RuntimeProfileIdentity
         {
             public string Sha256;
             public string Pattern;
             public string VerificationStatus;
+
+            public string DetectionStrategy;
+            public string DetectionPriority;
+            public string DetectionCompletionStatus;
+            public string SafetyEmergencySourceVerificationStatus;
+
+            public List<int> ServiceMaximumRequestFlagRvas =
+                new List<int>();
+
+            public List<int> EmergencyRequestFlagRvas =
+                new List<int>();
 
             // 一致したモジュールの実行時情報
             public string FileName;
@@ -99,39 +301,65 @@ namespace TsScoringPlugin
             public int DirectEmergencyRva;
             public int DirectOutputBrakeRva;
 
-            // OdakyuAts.dllの保安装置要求候補
-            public int RequestModeCandidateRva;
-            public int Mode1RequestBrakeCandidateRva;
-            public int SecondaryRequestEnabledCandidateRva;
-            public int SecondaryRequestBrakeCandidateRva;
+            // ExplicitMetroBrakeRequestState用の静的配置
+            public int MetroEmergencySelectionFlagRva;
+            public int MetroLevel7SelectionFlagRva;
+            public int MetroLevel4SelectionFlagRva;
+            public int MetroControlModeRva;
+            public int MetroInternalStateRva;
+            public int MetroSafetyEmergencySourceRva;
+            // 近鉄系ATSの非常要求候補
+            public int KintetsuAbsoluteStopEmergencyLatchRva;
+            public int KintetsuSecondaryEmergencySourceRva;
+            // 近鉄大阪線向け旧版の非常・常用最大要求候補
+            public int KintetsuEmergencySourceARva;
+            public int KintetsuEmergencySourceBRva;
+            public int KintetsuServiceMaximumSourceARva;
+            public int KintetsuServiceMaximumSourceBRva;
 
-            // 小田急線内の常用最大要求フラグ候補
-            public int ServiceMaximumRequestFlag1Rva;
-            public int ServiceMaximumRequestFlag2Rva;
+            // 上記4候補の前回診断状態
+            public bool
+                HasPreviousKintetsuServiceAndEmergencyCandidateState;
 
-            // 小田急線内の非常要求フラグ候補
-            public int EmergencyRequestFlag1Rva;
-            public int EmergencyRequestFlag2Rva;
-            public int EmergencyRequestFlag3Rva;
+            public byte PreviousKintetsuEmergencySourceA;
+            public byte PreviousKintetsuEmergencySourceB;
+            public byte PreviousKintetsuServiceMaximumSourceA;
+            public byte PreviousKintetsuServiceMaximumSourceB;
 
-            // 要求候補値の前回状態
-            public bool HasPreviousRequestCandidateState;
-            public int PreviousRequestModeCandidate;
-            public int PreviousMode1RequestBrakeCandidate;
-            public byte PreviousSecondaryRequestEnabledCandidate;
-            public int PreviousSecondaryRequestBrakeCandidate;
+            public int
+                PreviousKintetsuServiceAndEmergencyPhysicalBrake;
 
-            public byte PreviousServiceMaximumRequestFlag1;
-            public byte PreviousServiceMaximumRequestFlag2;
-            public byte PreviousEmergencyRequestFlag1;
-            public byte PreviousEmergencyRequestFlag2;
-            public byte PreviousEmergencyRequestFlag3;
-            // 要求候補ログとの時系列比較に使うブレーキ前回値
-            public int PreviousCandidatePhysicalBrake;
-            public int PreviousCandidateServiceMaximum;
-            public int PreviousCandidateEmergency;
-            public int PreviousCandidateOutputBrake;
+            public int
+                PreviousKintetsuServiceAndEmergencyServiceMaximum;
 
+            public int
+                PreviousKintetsuServiceAndEmergencyEmergency;
+
+            public int
+                PreviousKintetsuServiceAndEmergencyOutputBrake;
+
+            // 近鉄系ATSの前回診断状態
+            public bool HasPreviousKintetsuEmergencyCandidateState;
+            public byte PreviousKintetsuAbsoluteStopEmergencyLatch;
+            public byte PreviousKintetsuSecondaryEmergencySource;
+            public int PreviousKintetsuPhysicalBrake;
+            public int PreviousKintetsuServiceMaximum;
+            public int PreviousKintetsuEmergency;
+            public int PreviousKintetsuOutputBrake;
+
+            // ExplicitBrakeRequestFlags方式の前回診断状態
+            public bool HasPreviousRequestFlagState;
+
+            public List<byte> PreviousServiceMaximumRequestFlags =
+                new List<byte>();
+
+            public List<byte> PreviousEmergencyRequestFlags =
+                new List<byte>();
+
+            public int PreviousRequestPhysicalBrake;
+            public int PreviousRequestServiceMaximum;
+            public int PreviousRequestEmergency;
+            public int PreviousRequestOutputBrake;
             // 前回のモード値
             public bool HasPreviousModeValue;
             public int PreviousModeValue;
@@ -146,6 +374,19 @@ namespace TsScoringPlugin
             // 前回の介入状態。
             // 現在はログ生成専用で、減点処理には接続しない。
             public bool HasPreviousInterventionState;
+            // メトロ総合プラグインの内部指示段候補
+            public bool HasPreviousMetroRequestCandidateState;
+
+            public byte PreviousMetroEmergencyFlag;
+            public byte PreviousMetroLevel7Flag;
+            public byte PreviousMetroServiceMaximumMinus3Flag;
+
+            public int PreviousMetroControlMode;
+            public int PreviousMetroInternalState;
+            public int PreviousMetroSafetyEmergencySource;
+
+            // EmergencyFlagへ集約される非常要因候補の前回値
+
             public string PreviousInterventionKind = "None";
         }
 
@@ -662,6 +903,166 @@ namespace TsScoringPlugin
                 return false;
             }
         }
+        // =========================================================
+        // カタログ内の16進RVA文字列を整数へ変換する。
+        // 不正値、負値、Int32範囲外は失敗として扱う。
+        // =========================================================
+        private bool TryParseRuntimeRva(
+            string text,
+            out int rva
+        )
+        {
+            rva = 0;
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return false;
+            }
+
+            string normalized = text.Trim();
+
+            if (
+                normalized.StartsWith(
+                    "0x",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                normalized = normalized.Substring(2);
+            }
+
+            uint unsignedRva;
+
+            if (
+                !uint.TryParse(
+                    normalized,
+                    System.Globalization.NumberStyles.HexNumber,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out unsignedRva
+                )
+                || unsignedRva == 0
+                || unsignedRva > int.MaxValue
+            )
+            {
+                return false;
+            }
+
+            rva = (int)unsignedRva;
+            return true;
+        }
+
+        // =========================================================
+        // ModuleRva形式のアドレスだけを読み取る。
+        // ポインター参照型など、異なる方式はここでは受け付けない。
+        // =========================================================
+        private bool TryGetDirectRuntimeRva(
+            RuntimeProfileCatalogAddress address,
+            string expectedValueType,
+            out int rva
+        )
+        {
+            rva = 0;
+
+            if (
+                address == null
+                || !string.Equals(
+                    address.Kind,
+                    "ModuleRva",
+                    StringComparison.OrdinalIgnoreCase
+                )
+                || !string.Equals(
+                    address.ValueType,
+                    expectedValueType,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return false;
+            }
+
+            return TryParseRuntimeRva(
+                address.Rva,
+                out rva
+            );
+        }
+
+        // =========================================================
+        // runtime-profile-candidates.jsonを型付きで読み込む。
+        // =========================================================
+        private RuntimeProfileCatalog LoadRuntimeProfileCatalog(
+    string path
+)
+        {
+            string json =
+                System.IO.File.ReadAllText(
+                    path,
+                    Encoding.UTF8
+                );
+
+            if (
+                json.Length > 0
+                && json[0] == '\uFEFF'
+            )
+            {
+                json = json.Substring(1);
+            }
+
+            byte[] jsonBytes =
+                Encoding.UTF8.GetBytes(json);
+
+            DataContractJsonSerializer serializer =
+                new DataContractJsonSerializer(
+                    typeof(RuntimeProfileCatalog)
+                );
+
+            using (
+                System.IO.MemoryStream stream =
+                    new System.IO.MemoryStream(jsonBytes)
+            )
+            {
+                return serializer.ReadObject(stream)
+                    as RuntimeProfileCatalog;
+            }
+        }
+
+        // =========================================================
+        // カタログのModuleRva配列から、指定型のRVAを取得する。
+        // 不正または未対応の要素はスキップする。
+        // =========================================================
+        private List<int> GetDirectRuntimeRvas(
+            List<RuntimeProfileCatalogAddress> addresses,
+            string expectedValueType
+        )
+        {
+            List<int> result = new List<int>();
+
+            if (addresses == null)
+            {
+                return result;
+            }
+
+            foreach (
+                RuntimeProfileCatalogAddress address
+                in addresses
+            )
+            {
+                int rva;
+
+                if (
+                    TryGetDirectRuntimeRva(
+                        address,
+                        expectedValueType,
+                        out rva
+                    )
+                    && !result.Contains(rva)
+                )
+                {
+                    result.Add(rva);
+                }
+            }
+
+            return result;
+        }
 
         // =========================================================
         // ファイルのSHA-256を大文字16進文字列として取得する
@@ -751,6 +1152,136 @@ namespace TsScoringPlugin
         }
 
         // =========================================================
+        // ModuleRvaの配列に対応するByte値をすべて読み取る。
+        // 1個でも読取りに失敗した場合はfalseを返す。
+        // =========================================================
+        private bool TryReadRuntimeBytes(
+            IntPtr moduleBaseAddress,
+            List<int> rvas,
+            out List<byte> values
+        )
+        {
+            values = new List<byte>();
+
+            if (
+                moduleBaseAddress == IntPtr.Zero
+                || rvas == null
+                || rvas.Count == 0
+            )
+            {
+                return false;
+            }
+
+            foreach (int rva in rvas)
+            {
+                byte value;
+
+                if (
+                    rva == 0
+                    || !TryReadRuntimeByte(
+                        IntPtr.Add(
+                            moduleBaseAddress,
+                            rva
+                        ),
+                        out value
+                    )
+                )
+                {
+                    values.Clear();
+                    return false;
+                }
+
+                values.Add(value);
+            }
+
+            return true;
+        }
+
+        // =========================================================
+        // ModuleRvaの配列に対応するInt32値をすべて読み取る。
+        // 1個でも読取りに失敗した場合はfalseを返す。
+        // =========================================================
+
+
+        // =========================================================
+        // 2つのByte配列が同じ内容か確認する。
+        // =========================================================
+        private bool RuntimeByteListsEqual(
+            List<byte> left,
+            List<byte> right
+        )
+        {
+            if (
+                left == null
+                || right == null
+                || left.Count != right.Count
+            )
+            {
+                return false;
+            }
+
+            for (
+                int index = 0;
+                index < left.Count;
+                index++
+            )
+            {
+                if (left[index] != right[index])
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        // =========================================================
+        // 非ゼロになっている要求フラグのRVAをログ用に整形する。
+        // =========================================================
+        private string FormatActiveRequestFlagRvas(
+            List<int> rvas,
+            List<byte> values
+        )
+        {
+            List<string> activeRvas =
+                new List<string>();
+
+            if (
+                rvas == null
+                || values == null
+            )
+            {
+                return "None";
+            }
+
+            int count = Math.Min(
+                rvas.Count,
+                values.Count
+            );
+
+            for (
+                int index = 0;
+                index < count;
+                index++
+            )
+            {
+                if (values[index] != 0)
+                {
+                    activeRvas.Add(
+                        string.Format(
+                            "0x{0:X}",
+                            rvas[index]
+                        )
+                    );
+                }
+            }
+
+            return activeRvas.Count > 0
+                ? string.Join("|", activeRvas)
+                : "None";
+        }
+
+        // =========================================================
         // 現在のプロセス内にある32ビットポインターを安全に読み取る
         // =========================================================
         private bool TryReadRuntimePointer32(
@@ -782,6 +1313,3319 @@ namespace TsScoringPlugin
             );
 
             return true;
+        }
+
+        // =========================================================
+        // BveExのVehiclePluginsを一度だけ列挙し、
+        // ATSプラグイン本体への参照経路を調査する。
+        //
+        // 現段階では診断ログだけを生成し、採点には接続しない。
+        // =========================================================
+        private void DiagnoseVehiclePlugins(
+            System.Reflection.BindingFlags bindFlags,
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            if (hasDumpedVehiclePlugins)
+            {
+                return;
+            }
+
+            try
+            {
+                if (Plugins == null)
+                {
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[VEHICLE_PLUGINS_DIAGNOSTIC] WAIT "
+                        + "Reason:PluginsIsNull, "
+                        + "ScoringEnabled:False"
+                    );
+
+                    hasChanges = true;
+                    return;
+                }
+
+                object vehiclePluginsObject =
+                    Plugins.VehiclePlugins;
+
+                if (vehiclePluginsObject == null)
+                {
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[VEHICLE_PLUGINS_DIAGNOSTIC] WAIT "
+                        + "Reason:VehiclePluginsIsNull, "
+                        + $"PluginsType:{Plugins.GetType().FullName}, "
+                        + "ScoringEnabled:False"
+                    );
+
+                    hasChanges = true;
+                    return;
+                }
+
+                System.Collections.IEnumerable vehiclePlugins =
+                    vehiclePluginsObject
+                        as System.Collections.IEnumerable;
+
+                if (vehiclePlugins == null)
+                {
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[VEHICLE_PLUGINS_DIAGNOSTIC] WAIT "
+                        + "Reason:VehiclePluginsIsNotEnumerable, "
+                        + "VehiclePluginsType:"
+                        + $"{vehiclePluginsObject.GetType().FullName}, "
+                        + "ScoringEnabled:False"
+                    );
+
+                    hasChanges = true;
+                    return;
+                }
+
+                int entryCount = 0;
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[VEHICLE_PLUGINS_DIAGNOSTIC] START "
+                    + "CollectionType:"
+                    + $"{vehiclePluginsObject.GetType().FullName}, "
+                    + "ScoringEnabled:False"
+                );
+
+                foreach (object entryObject in vehiclePlugins)
+                {
+                    if (entryObject == null)
+                    {
+                        continue;
+                    }
+
+                    Type entryType = entryObject.GetType();
+
+                    System.Reflection.PropertyInfo keyProperty =
+                        entryType.GetProperty(
+                            "Key",
+                            bindFlags
+                        );
+
+                    System.Reflection.PropertyInfo valueProperty =
+                        entryType.GetProperty(
+                            "Value",
+                            bindFlags
+                        );
+
+                    object keyObject =
+                        keyProperty != null
+                            ? keyProperty.GetValue(
+                                entryObject,
+                                null
+                            )
+                            : null;
+
+                    object valueObject =
+                        valueProperty != null
+                            ? valueProperty.GetValue(
+                                entryObject,
+                                null
+                            )
+                            : null;
+
+                    string keyText =
+                        keyObject != null
+                            ? keyObject.ToString()
+                            : "<NULL>";
+
+                    if (valueObject == null)
+                    {
+                        rtLog.AppendLine(
+                            "[VEHICLE_PLUGINS_DIAGNOSTIC] ENTRY "
+                            + $"Index:{entryCount}, "
+                            + $"Key:{keyText}, "
+                            + $"EntryType:{entryType.FullName}, "
+                            + "Value:<NULL>"
+                        );
+
+                        entryCount++;
+                        continue;
+                    }
+
+                    Type valueType =
+                        valueObject.GetType();
+
+                    System.Reflection.Assembly valueAssembly =
+                        valueType.Assembly;
+
+                    string assemblyName = "<UNKNOWN>";
+                    string assemblyVersion = "<UNKNOWN>";
+                    string assemblyLocation = "<EMPTY>";
+                    string assemblySha256 = "<UNAVAILABLE>";
+
+                    if (valueAssembly != null)
+                    {
+                        System.Reflection.AssemblyName assemblyIdentity =
+                            valueAssembly.GetName();
+
+                        if (assemblyIdentity != null)
+                        {
+                            if (
+                                !string.IsNullOrWhiteSpace(
+                                    assemblyIdentity.Name
+                                )
+                            )
+                            {
+                                assemblyName =
+                                    assemblyIdentity.Name;
+                            }
+
+                            if (assemblyIdentity.Version != null)
+                            {
+                                assemblyVersion =
+                                    assemblyIdentity.Version
+                                        .ToString();
+                            }
+                        }
+
+                        try
+                        {
+                            assemblyLocation =
+                                valueAssembly.Location;
+
+                            if (
+                                !string.IsNullOrWhiteSpace(
+                                    assemblyLocation
+                                )
+                                && System.IO.File.Exists(
+                                    assemblyLocation
+                                )
+                            )
+                            {
+                                assemblySha256 =
+                                    ComputeFileSha256(
+                                        assemblyLocation
+                                    );
+                            }
+                        }
+                        catch
+                        {
+                            assemblyLocation =
+                                "<UNAVAILABLE>";
+
+                            assemblySha256 =
+                                "<UNAVAILABLE>";
+                        }
+                    }
+
+                    rtLog.AppendLine(
+                        "[VEHICLE_PLUGINS_DIAGNOSTIC] ENTRY "
+                        + $"Index:{entryCount}, "
+                        + $"Key:{keyText}, "
+                        + $"EntryType:{entryType.FullName}, "
+                        + $"ValueType:{valueType.FullName}, "
+                        + $"AssemblyName:{assemblyName}, "
+                        + $"AssemblyVersion:{assemblyVersion}, "
+                        + $"AssemblyLocation:{assemblyLocation}, "
+                        + $"SHA256:{assemblySha256}, "
+                        + $"Identity:{GetObjectIdentity(valueObject)}, "
+                        + "ScoringEnabled:False"
+                    );
+
+                    System.Reflection.PropertyInfo[] properties =
+                        valueType.GetProperties(
+                            bindFlags
+                        );
+
+                    foreach (
+                        System.Reflection.PropertyInfo property
+                        in properties
+                    )
+                    {
+                        rtLog.AppendLine(
+                            "[VEHICLE_PLUGINS_DIAGNOSTIC] PROPERTY "
+                            + $"Index:{entryCount}, "
+                            + $"Name:{property.Name}, "
+                            + "DeclaredType:"
+                            + $"{property.PropertyType.FullName}, "
+                            + $"CanRead:{property.CanRead}"
+                        );
+                    }
+
+                    System.Reflection.FieldInfo[] fields =
+                        valueType.GetFields(
+                            bindFlags
+                        );
+
+                    foreach (
+                        System.Reflection.FieldInfo field
+                        in fields
+                    )
+                    {
+                        string runtimeType = "<NOT_READ>";
+                        string identity = "<NOT_READ>";
+
+                        try
+                        {
+                            object fieldValue =
+                                field.GetValue(
+                                    valueObject
+                                );
+
+                            runtimeType =
+                                fieldValue != null
+                                    ? fieldValue.GetType().FullName
+                                    : "<NULL>";
+
+                            identity =
+                                GetObjectIdentity(
+                                    fieldValue
+                                );
+                        }
+                        catch (Exception ex)
+                        {
+                            runtimeType =
+                                "<ERROR:"
+                                + ex.GetType().Name
+                                + ">";
+
+                            identity = "<ERROR>";
+                        }
+
+                        rtLog.AppendLine(
+                            "[VEHICLE_PLUGINS_DIAGNOSTIC] FIELD "
+                            + $"Index:{entryCount}, "
+                            + $"Name:{field.Name}, "
+                            + $"DeclaredType:{field.FieldType.FullName}, "
+                            + $"IsStatic:{field.IsStatic}, "
+                            + $"RuntimeType:{runtimeType}, "
+                            + $"Identity:{identity}"
+                        );
+                    }
+
+                    entryCount++;
+                }
+
+                // シナリオ生成直後で一覧が空なら、
+                // 次のTickで改めて診断する。
+                if (entryCount == 0)
+                {
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[VEHICLE_PLUGINS_DIAGNOSTIC] WAIT "
+                        + "Reason:VehiclePluginsIsEmpty, "
+                        + "CollectionType:"
+                        + $"{vehiclePluginsObject.GetType().FullName}, "
+                        + "ScoringEnabled:False"
+                    );
+
+                    hasChanges = true;
+                    return;
+                }
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[VEHICLE_PLUGINS_DIAGNOSTIC] END "
+                    + $"EntryCount:{entryCount}, "
+                    + "ScoringEnabled:False"
+                );
+
+                hasDumpedVehiclePlugins = true;
+                hasChanges = true;
+            }
+            catch (Exception ex)
+            {
+                if (!hasLoggedVehiclePluginsError)
+                {
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[VEHICLE_PLUGINS_DIAGNOSTIC] ERROR "
+                        + $"Type:{ex.GetType().FullName}, "
+                        + $"Message:{ex.Message}, "
+                        + "ScoringEnabled:False"
+                    );
+
+                    hasLoggedVehiclePluginsError = true;
+                    hasChanges = true;
+                }
+            }
+        }
+        // =========================================================
+        // 現在のAppDomainへロードされているアセンブリから、
+        // AtsPT5.dllおよびAtsPlugin.AtsMain型を探索する。
+        //
+        // AtsMainまたは関連型の静的フィールドに実行中の
+        // インスタンスが保持されていないかも確認する。
+        //
+        // 現段階では診断ログだけを生成し、採点には接続しない。
+        // =========================================================
+        private void DiagnoseAtsPtAppDomain(
+            System.Reflection.BindingFlags bindFlags,
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            if (hasDumpedAtsPtAppDomain)
+            {
+                return;
+            }
+
+            try
+            {
+                System.Reflection.Assembly[] assemblies =
+                    AppDomain.CurrentDomain.GetAssemblies();
+
+                int candidateAssemblyCount = 0;
+                int atsMainTypeCount = 0;
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[ATSPT_APPDOMAIN] START "
+                    + $"AssemblyCount:{assemblies.Length}, "
+                    + $"AppDomain:{AppDomain.CurrentDomain.FriendlyName}, "
+                    + "ScoringEnabled:False"
+                );
+
+                foreach (
+                    System.Reflection.Assembly assembly
+                    in assemblies
+                )
+                {
+                    if (assembly == null)
+                    {
+                        continue;
+                    }
+
+                    System.Reflection.AssemblyName assemblyName =
+                        assembly.GetName();
+
+                    string simpleName =
+                        assemblyName != null
+                            ? assemblyName.Name
+                            : "<UNKNOWN>";
+
+                    string versionText =
+                        assemblyName != null
+                        && assemblyName.Version != null
+                            ? assemblyName.Version.ToString()
+                            : "<UNKNOWN>";
+
+                    string location = "<EMPTY>";
+                    string sha256 = "<UNAVAILABLE>";
+
+                    try
+                    {
+                        location = assembly.Location;
+
+                        if (
+                            !string.IsNullOrWhiteSpace(location)
+                            && System.IO.File.Exists(location)
+                        )
+                        {
+                            sha256 =
+                                ComputeFileSha256(location);
+                        }
+                    }
+                    catch
+                    {
+                        location = "<UNAVAILABLE>";
+                        sha256 = "<UNAVAILABLE>";
+                    }
+
+                    Type[] assemblyTypes;
+
+                    try
+                    {
+                        assemblyTypes = assembly.GetTypes();
+                    }
+                    catch (
+                        System.Reflection.ReflectionTypeLoadException ex
+                    )
+                    {
+                        assemblyTypes =
+                            ex.Types
+                                .Where(type => type != null)
+                                .ToArray();
+                    }
+                    catch
+                    {
+                        assemblyTypes = new Type[0];
+                    }
+
+                    Type atsMainType =
+                        assemblyTypes.FirstOrDefault(
+                            type =>
+                                type != null
+                                && string.Equals(
+                                    type.FullName,
+                                    "AtsPlugin.AtsMain",
+                                    StringComparison.Ordinal
+                                )
+                        );
+
+                    bool nameLooksLikeAtsPt =
+                        !string.IsNullOrWhiteSpace(simpleName)
+                        && simpleName.IndexOf(
+                            "AtsPT5",
+                            StringComparison.OrdinalIgnoreCase
+                        ) >= 0;
+
+                    bool locationLooksLikeAtsPt =
+                        !string.IsNullOrWhiteSpace(location)
+                        && location.IndexOf(
+                            "AtsPT5",
+                            StringComparison.OrdinalIgnoreCase
+                        ) >= 0;
+
+                    bool hashMatchesKnownAtsPt =
+                        string.Equals(
+                            sha256,
+                            "9A75F078C8CF8198C5E4970052DE7504C010CA28B68D93CFD66FEC6110949FE4",
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                        || string.Equals(
+                            sha256,
+                            "AF9DDE58B4D987F32E77A9C3DA0929A2EB5D244527FD83DBF5AB5A3E434A35B7",
+                            StringComparison.OrdinalIgnoreCase
+                        );
+
+                    bool isCandidate =
+                        nameLooksLikeAtsPt
+                        || locationLooksLikeAtsPt
+                        || hashMatchesKnownAtsPt
+                        || atsMainType != null;
+
+                    if (!isCandidate)
+                    {
+                        continue;
+                    }
+
+                    candidateAssemblyCount++;
+
+                    rtLog.AppendLine(
+                        "[ATSPT_APPDOMAIN] ASSEMBLY "
+                        + $"Name:{simpleName}, "
+                        + $"Version:{versionText}, "
+                        + $"Location:{location}, "
+                        + $"SHA256:{sha256}, "
+                        + $"TypeCount:{assemblyTypes.Length}, "
+                        + $"HasAtsMain:{atsMainType != null}, "
+                        + $"KnownHash:{hashMatchesKnownAtsPt}"
+                    );
+
+                    if (atsMainType == null)
+                    {
+                        foreach (
+                            Type candidateType
+                            in assemblyTypes
+                        )
+                        {
+                            if (
+                                candidateType == null
+                                || string.IsNullOrWhiteSpace(
+                                    candidateType.FullName
+                                )
+                                || !candidateType.FullName.StartsWith(
+                                    "AtsPlugin.",
+                                    StringComparison.Ordinal
+                                )
+                            )
+                            {
+                                continue;
+                            }
+
+                            rtLog.AppendLine(
+                                "[ATSPT_APPDOMAIN] TYPE "
+                                + $"Assembly:{simpleName}, "
+                                + $"Type:{candidateType.FullName}, "
+                                + $"IsClass:{candidateType.IsClass}"
+                            );
+                        }
+
+                        continue;
+                    }
+
+                    atsMainTypeCount++;
+
+                    rtLog.AppendLine(
+                        "[ATSPT_APPDOMAIN] ATSMAIN "
+                        + $"Assembly:{simpleName}, "
+                        + $"Type:{atsMainType.FullName}, "
+                        + $"BaseType:"
+                        + $"{(atsMainType.BaseType != null ? atsMainType.BaseType.FullName : "<NULL>")}"
+                    );
+
+                    System.Reflection.FieldInfo[] fields =
+                        atsMainType.GetFields(
+                            bindFlags
+                            | System.Reflection.BindingFlags.Static
+                        );
+
+                    foreach (
+                        System.Reflection.FieldInfo field
+                        in fields
+                    )
+                    {
+                        object fieldValue = null;
+                        string runtimeType = "<NOT_READ>";
+                        string identity = "<NOT_READ>";
+
+                        try
+                        {
+                            if (field.IsStatic)
+                            {
+                                fieldValue =
+                                    field.GetValue(null);
+
+                                runtimeType =
+                                    fieldValue != null
+                                        ? fieldValue.GetType().FullName
+                                        : "<NULL>";
+
+                                identity =
+                                    GetObjectIdentity(fieldValue);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            runtimeType =
+                                "<ERROR:"
+                                + ex.GetType().Name
+                                + ">";
+
+                            identity = "<ERROR>";
+                        }
+
+                        rtLog.AppendLine(
+                            "[ATSPT_APPDOMAIN] STATIC_FIELD "
+                            + $"DeclaringType:{atsMainType.FullName}, "
+                            + $"Name:{field.Name}, "
+                            + $"DeclaredType:{field.FieldType.FullName}, "
+                            + $"RuntimeType:{runtimeType}, "
+                            + $"Identity:{identity}"
+                        );
+                    }
+
+                    System.Reflection.PropertyInfo[] properties =
+                        atsMainType.GetProperties(
+                            bindFlags
+                            | System.Reflection.BindingFlags.Static
+                        );
+
+                    foreach (
+                        System.Reflection.PropertyInfo property
+                        in properties
+                    )
+                    {
+                        if (
+                            !property.CanRead
+                            || property.GetIndexParameters().Length != 0
+                        )
+                        {
+                            continue;
+                        }
+
+                        System.Reflection.MethodInfo getter =
+                            property.GetGetMethod(true);
+
+                        if (
+                            getter == null
+                            || !getter.IsStatic
+                        )
+                        {
+                            continue;
+                        }
+
+                        string runtimeType = "<NOT_READ>";
+                        string identity = "<NOT_READ>";
+
+                        try
+                        {
+                            object propertyValue =
+                                property.GetValue(
+                                    null,
+                                    null
+                                );
+
+                            runtimeType =
+                                propertyValue != null
+                                    ? propertyValue.GetType().FullName
+                                    : "<NULL>";
+
+                            identity =
+                                GetObjectIdentity(propertyValue);
+                        }
+                        catch (Exception ex)
+                        {
+                            runtimeType =
+                                "<ERROR:"
+                                + ex.GetType().Name
+                                + ">";
+
+                            identity = "<ERROR>";
+                        }
+
+                        rtLog.AppendLine(
+                            "[ATSPT_APPDOMAIN] STATIC_PROPERTY "
+                            + $"DeclaringType:{atsMainType.FullName}, "
+                            + $"Name:{property.Name}, "
+                            + $"DeclaredType:{property.PropertyType.FullName}, "
+                            + $"RuntimeType:{runtimeType}, "
+                            + $"Identity:{identity}"
+                        );
+                    }
+
+                    Type[] atsPluginTypes =
+                        assemblyTypes
+                            .Where(
+                                type =>
+                                    type != null
+                                    && !string.IsNullOrWhiteSpace(
+                                        type.FullName
+                                    )
+                                    && type.FullName.StartsWith(
+                                        "AtsPlugin.",
+                                        StringComparison.Ordinal
+                                    )
+                            )
+                            .ToArray();
+
+                    foreach (
+                        Type candidateType
+                        in atsPluginTypes
+                    )
+                    {
+                        rtLog.AppendLine(
+                            "[ATSPT_APPDOMAIN] TYPE "
+                            + $"Assembly:{simpleName}, "
+                            + $"Type:{candidateType.FullName}, "
+                            + $"IsClass:{candidateType.IsClass}"
+                        );
+
+                        System.Reflection.FieldInfo[] staticFields =
+                            candidateType.GetFields(
+                                bindFlags
+                                | System.Reflection.BindingFlags.Static
+                            );
+
+                        foreach (
+                            System.Reflection.FieldInfo staticField
+                            in staticFields
+                        )
+                        {
+                            if (!staticField.IsStatic)
+                            {
+                                continue;
+                            }
+
+                            bool couldReferenceAtsMain =
+                                staticField.FieldType == atsMainType
+                                || atsMainType.IsAssignableFrom(
+                                    staticField.FieldType
+                                )
+                                || staticField.FieldType == typeof(object);
+
+                            if (!couldReferenceAtsMain)
+                            {
+                                continue;
+                            }
+
+                            string runtimeType = "<NOT_READ>";
+                            string identity = "<NOT_READ>";
+                            bool valueIsAtsMain = false;
+
+                            try
+                            {
+                                object staticValue =
+                                    staticField.GetValue(null);
+
+                                runtimeType =
+                                    staticValue != null
+                                        ? staticValue.GetType().FullName
+                                        : "<NULL>";
+
+                                identity =
+                                    GetObjectIdentity(staticValue);
+
+                                valueIsAtsMain =
+                                    staticValue != null
+                                    && atsMainType.IsInstanceOfType(
+                                        staticValue
+                                    );
+                            }
+                            catch (Exception ex)
+                            {
+                                runtimeType =
+                                    "<ERROR:"
+                                    + ex.GetType().Name
+                                    + ">";
+
+                                identity = "<ERROR>";
+                            }
+
+                            rtLog.AppendLine(
+                                "[ATSPT_APPDOMAIN] INSTANCE_CANDIDATE "
+                                + $"DeclaringType:{candidateType.FullName}, "
+                                + $"Field:{staticField.Name}, "
+                                + $"DeclaredType:{staticField.FieldType.FullName}, "
+                                + $"RuntimeType:{runtimeType}, "
+                                + $"IsAtsMain:{valueIsAtsMain}, "
+                                + $"Identity:{identity}"
+                            );
+                        }
+                    }
+                }
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[ATSPT_APPDOMAIN] END "
+                    + $"CandidateAssemblyCount:{candidateAssemblyCount}, "
+                    + $"AtsMainTypeCount:{atsMainTypeCount}, "
+                    + "ScoringEnabled:False"
+                );
+
+                hasDumpedAtsPtAppDomain = true;
+                hasChanges = true;
+            }
+            catch (Exception ex)
+            {
+                if (!hasLoggedAtsPtAppDomainError)
+                {
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[ATSPT_APPDOMAIN] ERROR "
+                        + $"Type:{ex.GetType().FullName}, "
+                        + $"Message:{ex.Message}, "
+                        + "ScoringEnabled:False"
+                    );
+
+                    hasLoggedAtsPtAppDomainError = true;
+                    hasChanges = true;
+                }
+            }
+        }
+
+        // =========================================================
+        // 現在の拡張プラグインとBveHackerが保持する参照を調べる。
+        //
+        // AtsPT5のAtsMainインスタンスまたはプラグイン管理オブジェクトへ
+        // 到達できる参照を探すための診断専用処理。
+        //
+        // 現段階では診断ログだけを生成し、採点には接続しない。
+        // =========================================================
+        private void DiagnoseBveExHostReferences(
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            if (hasDumpedBveExHostReferences)
+            {
+                return;
+            }
+
+            try
+            {
+                System.Reflection.BindingFlags declaredInstanceFlags =
+                    System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.Public
+                    | System.Reflection.BindingFlags.NonPublic
+                    | System.Reflection.BindingFlags.DeclaredOnly;
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[BVEEX_HOST_REFERENCE] START "
+                    + $"ThisType:{GetType().FullName}, "
+                    + "ScoringEnabled:False"
+                );
+
+                Type currentType = GetType();
+                int hierarchyLevel = 0;
+
+                while (currentType != null)
+                {
+                    rtLog.AppendLine(
+                        "[BVEEX_HOST_REFERENCE] TYPE "
+                        + $"Source:ThisHierarchy, "
+                        + $"Level:{hierarchyLevel}, "
+                        + $"Type:{currentType.FullName}, "
+                        + "Assembly:"
+                        + $"{currentType.Assembly.GetName().Name}"
+                    );
+
+                    System.Reflection.FieldInfo[] instanceFields =
+                        currentType.GetFields(
+                            declaredInstanceFlags
+                        );
+
+                    foreach (
+                        System.Reflection.FieldInfo field
+                        in instanceFields
+                    )
+                    {
+                        string runtimeType = "<NULL>";
+                        string identity = "<NULL>";
+                        string valueText = "<OBJECT>";
+                        bool isAtsMain = false;
+
+                        try
+                        {
+                            object fieldValue =
+                                field.GetValue(this);
+
+                            if (fieldValue != null)
+                            {
+                                runtimeType =
+                                    fieldValue.GetType().FullName;
+
+                                identity =
+                                    GetObjectIdentity(fieldValue);
+
+                                Type fieldRuntimeType =
+                                    fieldValue.GetType();
+
+                                isAtsMain =
+                                    string.Equals(
+                                        fieldRuntimeType.FullName,
+                                        "AtsPlugin.AtsMain",
+                                        StringComparison.Ordinal
+                                    );
+
+                                if (
+                                    fieldRuntimeType.IsPrimitive
+                                    || fieldValue is string
+                                    || fieldValue is decimal
+                                    || fieldValue is Enum
+                                )
+                                {
+                                    valueText =
+                                        fieldValue.ToString();
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            runtimeType =
+                                "<ERROR:"
+                                + ex.GetType().Name
+                                + ">";
+
+                            identity = "<ERROR>";
+                            valueText = "<ERROR>";
+                        }
+
+                        rtLog.AppendLine(
+                            "[BVEEX_HOST_REFERENCE] INSTANCE_FIELD "
+                            + $"Level:{hierarchyLevel}, "
+                            + $"DeclaringType:{currentType.FullName}, "
+                            + $"Name:{field.Name}, "
+                            + $"DeclaredType:{field.FieldType.FullName}, "
+                            + $"RuntimeType:{runtimeType}, "
+                            + $"IsAtsMain:{isAtsMain}, "
+                            + $"Identity:{identity}, "
+                            + $"Value:{valueText}"
+                        );
+                    }
+
+                    System.Reflection.PropertyInfo[] instanceProperties =
+                        currentType.GetProperties(
+                            declaredInstanceFlags
+                        );
+
+                    foreach (
+                        System.Reflection.PropertyInfo property
+                        in instanceProperties
+                    )
+                    {
+                        if (
+                            !property.CanRead
+                            || property.GetIndexParameters().Length != 0
+                        )
+                        {
+                            continue;
+                        }
+
+                        string runtimeType = "<NULL>";
+                        string identity = "<NULL>";
+                        bool isAtsMain = false;
+
+                        try
+                        {
+                            object propertyValue =
+                                property.GetValue(
+                                    this,
+                                    null
+                                );
+
+                            if (propertyValue != null)
+                            {
+                                runtimeType =
+                                    propertyValue
+                                        .GetType()
+                                        .FullName;
+
+                                identity =
+                                    GetObjectIdentity(
+                                        propertyValue
+                                    );
+
+                                isAtsMain =
+                                    string.Equals(
+                                        propertyValue
+                                            .GetType()
+                                            .FullName,
+                                        "AtsPlugin.AtsMain",
+                                        StringComparison.Ordinal
+                                    );
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            runtimeType =
+                                "<ERROR:"
+                                + ex.GetType().Name
+                                + ">";
+
+                            identity = "<ERROR>";
+                        }
+
+                        rtLog.AppendLine(
+                            "[BVEEX_HOST_REFERENCE] INSTANCE_PROPERTY "
+                            + $"Level:{hierarchyLevel}, "
+                            + $"DeclaringType:{currentType.FullName}, "
+                            + $"Name:{property.Name}, "
+                            + $"DeclaredType:{property.PropertyType.FullName}, "
+                            + $"RuntimeType:{runtimeType}, "
+                            + $"IsAtsMain:{isAtsMain}, "
+                            + $"Identity:{identity}"
+                        );
+                    }
+
+                    currentType = currentType.BaseType;
+                    hierarchyLevel++;
+                }
+
+                object bveHackerObject = BveHacker;
+
+                if (bveHackerObject == null)
+                {
+                    rtLog.AppendLine(
+                        "[BVEEX_HOST_REFERENCE] BVEHACKER "
+                        + "RuntimeType:<NULL>"
+                    );
+                }
+                else
+                {
+                    Type bveHackerType = bveHackerObject.GetType();
+
+                    rtLog.AppendLine(
+                        "[BVEEX_HOST_REFERENCE] TYPE "
+                        + "Source:BveHackerRuntime, "
+                        + $"Type:{bveHackerType.FullName}, "
+                        + $"Assembly:{bveHackerType.Assembly.GetName().Name}"
+                    );
+
+                    Type currentBveHackerType = bveHackerType;
+                    int bveHackerLevel = 0;
+
+                    while (currentBveHackerType != null)
+                    {
+                        rtLog.AppendLine(
+                            "[BVEEX_HOST_REFERENCE] TYPE "
+                            + "Source:BveHackerHierarchy, "
+                            + $"Level:{bveHackerLevel}, "
+                            + $"Type:{currentBveHackerType.FullName}, "
+                            + $"Assembly:{currentBveHackerType.Assembly.GetName().Name}"
+                        );
+
+                        System.Reflection.FieldInfo[] bveHackerFields =
+                            currentBveHackerType.GetFields(
+                                declaredInstanceFlags
+                            );
+
+                        foreach (
+                            System.Reflection.FieldInfo field
+                            in bveHackerFields
+                        )
+                        {
+                            string runtimeType = "<NULL>";
+                            string identity = "<NULL>";
+                            bool isAtsMain = false;
+
+                            try
+                            {
+                                object fieldValue =
+                                    field.GetValue(bveHackerObject);
+
+                                if (fieldValue != null)
+                                {
+                                    runtimeType =
+                                        fieldValue.GetType().FullName;
+                                    identity =
+                                        GetObjectIdentity(fieldValue);
+                                    isAtsMain =
+                                        string.Equals(
+                                            fieldValue.GetType().FullName,
+                                            "AtsPlugin.AtsMain",
+                                            StringComparison.Ordinal
+                                        );
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                runtimeType =
+                                    "<ERROR:"
+                                    + ex.GetType().Name
+                                    + ">";
+                                identity = "<ERROR>";
+                            }
+
+                            rtLog.AppendLine(
+                                "[BVEEX_HOST_REFERENCE] BVEHACKER_FIELD "
+                                + $"Level:{bveHackerLevel}, "
+                                + $"DeclaringType:{currentBveHackerType.FullName}, "
+                                + $"Name:{field.Name}, "
+                                + $"DeclaredType:{field.FieldType.FullName}, "
+                                + $"RuntimeType:{runtimeType}, "
+                                + $"IsAtsMain:{isAtsMain}, "
+                                + $"Identity:{identity}"
+                            );
+                        }
+
+                        System.Reflection.PropertyInfo[] bveHackerProperties =
+                            currentBveHackerType.GetProperties(
+                                declaredInstanceFlags
+                            );
+
+                        foreach (
+                            System.Reflection.PropertyInfo property
+                            in bveHackerProperties
+                        )
+                        {
+                            if (
+                                !property.CanRead
+                                || property.GetIndexParameters().Length != 0
+                            )
+                            {
+                                continue;
+                            }
+
+                            string runtimeType = "<NULL>";
+                            string identity = "<NULL>";
+                            bool isAtsMain = false;
+
+                            try
+                            {
+                                object propertyValue =
+                                    property.GetValue(
+                                        bveHackerObject,
+                                        null
+                                    );
+
+                                if (propertyValue != null)
+                                {
+                                    runtimeType =
+                                        propertyValue.GetType().FullName;
+                                    identity =
+                                        GetObjectIdentity(propertyValue);
+                                    isAtsMain =
+                                        string.Equals(
+                                            propertyValue.GetType().FullName,
+                                            "AtsPlugin.AtsMain",
+                                            StringComparison.Ordinal
+                                        );
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                runtimeType =
+                                    "<ERROR:"
+                                    + ex.GetType().Name
+                                    + ">";
+                                identity = "<ERROR>";
+                            }
+
+                            rtLog.AppendLine(
+                                "[BVEEX_HOST_REFERENCE] BVEHACKER_PROPERTY "
+                                + $"Level:{bveHackerLevel}, "
+                                + $"DeclaringType:{currentBveHackerType.FullName}, "
+                                + $"Name:{property.Name}, "
+                                + $"DeclaredType:{property.PropertyType.FullName}, "
+                                + $"RuntimeType:{runtimeType}, "
+                                + $"IsAtsMain:{isAtsMain}, "
+                                + $"Identity:{identity}"
+                            );
+                        }
+
+                        currentBveHackerType =
+                            currentBveHackerType.BaseType;
+                        bveHackerLevel++;
+                    }
+                }
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[BVEEX_HOST_REFERENCE] END "
+                    + "ScoringEnabled:False"
+                );
+
+                hasDumpedBveExHostReferences = true;
+                hasChanges = true;
+            }
+            catch (Exception ex)
+            {
+                if (!hasLoggedBveExHostReferenceError)
+                {
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[BVEEX_HOST_REFERENCE] ERROR "
+                        + $"Type:{ex.GetType().FullName}, "
+                        + $"Message:{ex.Message}, "
+                        + "ScoringEnabled:False"
+                    );
+
+                    hasLoggedBveExHostReferenceError = true;
+                    hasChanges = true;
+                }
+            }
+        }
+
+        // =========================================================
+        // PluginBase.Extensionsが参照するExtensionSetを1階層だけ調べる。
+        // 内部コレクションがあれば、格納要素の型とアセンブリを列挙する。
+        // 現段階では診断ログだけを生成し、採点には接続しない。
+        // =========================================================
+        private void DiagnoseExtensionSet(
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            if (hasDumpedExtensionSet)
+            {
+                return;
+            }
+
+            try
+            {
+                object extensionSetObject = Extensions;
+
+                if (extensionSetObject == null)
+                {
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[EXTENSION_SET_DIAGNOSTIC] WAIT "
+                        + "Reason:ExtensionsIsNull, "
+                        + "ScoringEnabled:False"
+                    );
+                    hasChanges = true;
+                    return;
+                }
+
+                System.Reflection.BindingFlags declaredFlags =
+                    System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.Public
+                    | System.Reflection.BindingFlags.NonPublic
+                    | System.Reflection.BindingFlags.DeclaredOnly;
+
+                Type extensionSetType = extensionSetObject.GetType();
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[EXTENSION_SET_DIAGNOSTIC] START "
+                    + $"Type:{extensionSetType.FullName}, "
+                    + $"Assembly:{extensionSetType.Assembly.GetName().Name}, "
+                    + $"Identity:{GetObjectIdentity(extensionSetObject)}, "
+                    + "ScoringEnabled:False"
+                );
+
+                Type currentType = extensionSetType;
+                int hierarchyLevel = 0;
+
+                while (currentType != null)
+                {
+                    rtLog.AppendLine(
+                        "[EXTENSION_SET_DIAGNOSTIC] TYPE "
+                        + $"Level:{hierarchyLevel}, "
+                        + $"Type:{currentType.FullName}, "
+                        + $"Assembly:{currentType.Assembly.GetName().Name}"
+                    );
+
+                    System.Reflection.FieldInfo[] fields =
+                        currentType.GetFields(declaredFlags);
+
+                    foreach (System.Reflection.FieldInfo field in fields)
+                    {
+                        object value = null;
+                        string runtimeType = "<NULL>";
+                        string identity = "<NULL>";
+                        string collectionKind = "None";
+                        int itemCount = 0;
+
+                        try
+                        {
+                            value = field.GetValue(extensionSetObject);
+
+                            if (value != null)
+                            {
+                                runtimeType = value.GetType().FullName;
+                                identity = GetObjectIdentity(value);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            runtimeType = "<ERROR:" + ex.GetType().Name + ">";
+                            identity = "<ERROR>";
+                        }
+
+                        rtLog.AppendLine(
+                            "[EXTENSION_SET_DIAGNOSTIC] FIELD "
+                            + $"Level:{hierarchyLevel}, "
+                            + $"DeclaringType:{currentType.FullName}, "
+                            + $"Name:{field.Name}, "
+                            + $"DeclaredType:{field.FieldType.FullName}, "
+                            + $"RuntimeType:{runtimeType}, "
+                            + $"Identity:{identity}"
+                        );
+
+                        System.Collections.IEnumerable enumerable =
+                            value as System.Collections.IEnumerable;
+
+                        if (enumerable != null && !(value is string))
+                        {
+                            collectionKind = "Enumerable";
+
+                            foreach (object item in enumerable)
+                            {
+                                LogExtensionSetItem(
+                                    rtLog,
+                                    "Field:" + field.Name,
+                                    itemCount,
+                                    item
+                                );
+                                itemCount++;
+
+                                if (itemCount >= 200)
+                                {
+                                    rtLog.AppendLine(
+                                        "[EXTENSION_SET_DIAGNOSTIC] COLLECTION_LIMIT "
+                                        + $"Source:Field:{field.Name}, "
+                                        + "Limit:200"
+                                    );
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (collectionKind != "None")
+                        {
+                            rtLog.AppendLine(
+                                "[EXTENSION_SET_DIAGNOSTIC] COLLECTION "
+                                + $"Source:Field:{field.Name}, "
+                                + $"Kind:{collectionKind}, "
+                                + $"ItemCount:{itemCount}"
+                            );
+                        }
+                    }
+
+                    System.Reflection.PropertyInfo[] properties =
+                        currentType.GetProperties(declaredFlags);
+
+                    foreach (
+                        System.Reflection.PropertyInfo property
+                        in properties
+                    )
+                    {
+                        if (
+                            !property.CanRead
+                            || property.GetIndexParameters().Length != 0
+                        )
+                        {
+                            continue;
+                        }
+
+                        object value = null;
+                        string runtimeType = "<NULL>";
+                        string identity = "<NULL>";
+
+                        try
+                        {
+                            value = property.GetValue(
+                                extensionSetObject,
+                                null
+                            );
+
+                            if (value != null)
+                            {
+                                runtimeType = value.GetType().FullName;
+                                identity = GetObjectIdentity(value);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            runtimeType = "<ERROR:" + ex.GetType().Name + ">";
+                            identity = "<ERROR>";
+                        }
+
+                        rtLog.AppendLine(
+                            "[EXTENSION_SET_DIAGNOSTIC] PROPERTY "
+                            + $"Level:{hierarchyLevel}, "
+                            + $"DeclaringType:{currentType.FullName}, "
+                            + $"Name:{property.Name}, "
+                            + $"DeclaredType:{property.PropertyType.FullName}, "
+                            + $"RuntimeType:{runtimeType}, "
+                            + $"Identity:{identity}"
+                        );
+                    }
+
+                    currentType = currentType.BaseType;
+                    hierarchyLevel++;
+                }
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[EXTENSION_SET_DIAGNOSTIC] END "
+                    + "ScoringEnabled:False"
+                );
+
+                hasDumpedExtensionSet = true;
+                hasChanges = true;
+            }
+            catch (Exception ex)
+            {
+                if (!hasLoggedExtensionSetError)
+                {
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[EXTENSION_SET_DIAGNOSTIC] ERROR "
+                        + $"Type:{ex.GetType().FullName}, "
+                        + $"Message:{ex.Message}, "
+                        + "ScoringEnabled:False"
+                    );
+
+                    hasLoggedExtensionSetError = true;
+                    hasChanges = true;
+                }
+            }
+        }
+
+        private void LogExtensionSetItem(
+            StringBuilder rtLog,
+            string source,
+            int index,
+            object item
+        )
+        {
+            if (item == null)
+            {
+                rtLog.AppendLine(
+                    "[EXTENSION_SET_DIAGNOSTIC] ITEM "
+                    + $"Source:{source}, "
+                    + $"Index:{index}, "
+                    + "Value:<NULL>"
+                );
+                return;
+            }
+
+            Type itemType = item.GetType();
+
+            rtLog.AppendLine(
+                "[EXTENSION_SET_DIAGNOSTIC] ITEM "
+                + $"Source:{source}, "
+                + $"Index:{index}, "
+                + $"RuntimeType:{itemType.FullName}, "
+                + $"Identity:{GetObjectIdentity(item)}"
+            );
+
+            System.Reflection.BindingFlags memberFlags =
+                System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.Public
+                | System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.DeclaredOnly;
+
+            System.Reflection.PropertyInfo keyProperty =
+                itemType.GetProperty("Key", memberFlags);
+            System.Reflection.PropertyInfo valueProperty =
+                itemType.GetProperty("Value", memberFlags);
+
+            if (keyProperty == null || valueProperty == null)
+            {
+                LogExtensionSetObject(
+                    rtLog,
+                    source + ":Item",
+                    index,
+                    item,
+                    false
+                );
+                return;
+            }
+
+            object keyObject = null;
+            object valueObject = null;
+
+            try
+            {
+                keyObject = keyProperty.GetValue(item, null);
+            }
+            catch (Exception ex)
+            {
+                rtLog.AppendLine(
+                    "[EXTENSION_SET_DIAGNOSTIC] KEY_ERROR "
+                    + $"Source:{source}, "
+                    + $"Index:{index}, "
+                    + $"Type:{ex.GetType().FullName}, "
+                    + $"Message:{ex.Message}"
+                );
+            }
+
+            try
+            {
+                valueObject = valueProperty.GetValue(item, null);
+            }
+            catch (Exception ex)
+            {
+                rtLog.AppendLine(
+                    "[EXTENSION_SET_DIAGNOSTIC] VALUE_ERROR "
+                    + $"Source:{source}, "
+                    + $"Index:{index}, "
+                    + $"Type:{ex.GetType().FullName}, "
+                    + $"Message:{ex.Message}"
+                );
+            }
+
+            string keyTypeName = "<NULL>";
+            string keyAssemblyName = "<NULL>";
+            string keyLocation = "<NULL>";
+            string keySha256 = "<NULL>";
+
+            Type keyTypeValue = keyObject as Type;
+
+            if (keyTypeValue != null)
+            {
+                keyTypeName = keyTypeValue.FullName;
+                keyAssemblyName = keyTypeValue.Assembly.GetName().Name;
+                GetAssemblyIdentity(
+                    keyTypeValue.Assembly,
+                    out keyLocation,
+                    out keySha256
+                );
+            }
+            else if (keyObject != null)
+            {
+                keyTypeName = keyObject.ToString();
+                keyAssemblyName = keyObject.GetType().Assembly.GetName().Name;
+                GetAssemblyIdentity(
+                    keyObject.GetType().Assembly,
+                    out keyLocation,
+                    out keySha256
+                );
+            }
+
+            rtLog.AppendLine(
+                "[EXTENSION_SET_DIAGNOSTIC] ENTRY "
+                + $"Source:{source}, "
+                + $"Index:{index}, "
+                + $"Key:{keyTypeName}, "
+                + $"KeyAssembly:{keyAssemblyName}, "
+                + $"KeyLocation:{keyLocation}, "
+                + $"KeySHA256:{keySha256}, "
+                + $"ValueType:{(valueObject != null ? valueObject.GetType().FullName : "<NULL>")}, "
+                + $"ValueIdentity:{GetObjectIdentity(valueObject)}"
+            );
+
+            LogExtensionSetObject(
+                rtLog,
+                source + ":Value",
+                index,
+                valueObject,
+                true
+            );
+        }
+
+        private void LogExtensionSetObject(
+            StringBuilder rtLog,
+            string source,
+            int index,
+            object target,
+            bool expandMembers
+        )
+        {
+            if (target == null)
+            {
+                rtLog.AppendLine(
+                    "[EXTENSION_SET_DIAGNOSTIC] OBJECT "
+                    + $"Source:{source}, "
+                    + $"Index:{index}, "
+                    + "Value:<NULL>"
+                );
+                return;
+            }
+
+            Type targetType = target.GetType();
+            string location;
+            string sha256;
+
+            GetAssemblyIdentity(
+                targetType.Assembly,
+                out location,
+                out sha256
+            );
+
+            rtLog.AppendLine(
+                "[EXTENSION_SET_DIAGNOSTIC] OBJECT "
+                + $"Source:{source}, "
+                + $"Index:{index}, "
+                + $"RuntimeType:{targetType.FullName}, "
+                + $"Assembly:{targetType.Assembly.GetName().Name}, "
+                + $"Location:{location}, "
+                + $"SHA256:{sha256}, "
+                + $"Identity:{GetObjectIdentity(target)}, "
+                + $"IsAtsMain:{IsKnownAtsMainObject(target)}"
+            );
+
+            if (!expandMembers)
+            {
+                return;
+            }
+
+            System.Reflection.BindingFlags memberFlags =
+                System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.Public
+                | System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.DeclaredOnly;
+
+            Type currentType = targetType;
+            int hierarchyLevel = 0;
+
+            while (currentType != null)
+            {
+                System.Reflection.FieldInfo[] fields =
+                    currentType.GetFields(memberFlags);
+
+                foreach (System.Reflection.FieldInfo field in fields)
+                {
+                    object memberValue = null;
+                    string runtimeType = "<NULL>";
+                    string identity = "<NULL>";
+                    bool isAtsMain = false;
+
+                    try
+                    {
+                        memberValue = field.GetValue(target);
+
+                        if (memberValue != null)
+                        {
+                            runtimeType = memberValue.GetType().FullName;
+                            identity = GetObjectIdentity(memberValue);
+                            isAtsMain = IsKnownAtsMainObject(memberValue);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        runtimeType = "<ERROR:" + ex.GetType().Name + ">";
+                        identity = "<ERROR>";
+                    }
+
+                    rtLog.AppendLine(
+                        "[EXTENSION_SET_DIAGNOSTIC] MEMBER_FIELD "
+                        + $"Source:{source}, "
+                        + $"Index:{index}, "
+                        + $"Level:{hierarchyLevel}, "
+                        + $"DeclaringType:{currentType.FullName}, "
+                        + $"Name:{field.Name}, "
+                        + $"DeclaredType:{field.FieldType.FullName}, "
+                        + $"RuntimeType:{runtimeType}, "
+                        + $"Identity:{identity}, "
+                        + $"IsAtsMain:{isAtsMain}"
+                    );
+
+                    if (isAtsMain)
+                    {
+                        LogAtsPtMainCandidate(
+                            rtLog,
+                            source + ":Field:" + field.Name,
+                            index,
+                            memberValue
+                        );
+                    }
+                }
+
+                System.Reflection.PropertyInfo[] properties =
+                    currentType.GetProperties(memberFlags);
+
+                foreach (
+                    System.Reflection.PropertyInfo property
+                    in properties
+                )
+                {
+                    if (
+                        !property.CanRead
+                        || property.GetIndexParameters().Length != 0
+                    )
+                    {
+                        continue;
+                    }
+
+                    object memberValue = null;
+                    string runtimeType = "<NULL>";
+                    string identity = "<NULL>";
+                    bool isAtsMain = false;
+
+                    try
+                    {
+                        memberValue = property.GetValue(target, null);
+
+                        if (memberValue != null)
+                        {
+                            runtimeType = memberValue.GetType().FullName;
+                            identity = GetObjectIdentity(memberValue);
+                            isAtsMain = IsKnownAtsMainObject(memberValue);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        runtimeType = "<ERROR:" + ex.GetType().Name + ">";
+                        identity = "<ERROR>";
+                    }
+
+                    rtLog.AppendLine(
+                        "[EXTENSION_SET_DIAGNOSTIC] MEMBER_PROPERTY "
+                        + $"Source:{source}, "
+                        + $"Index:{index}, "
+                        + $"Level:{hierarchyLevel}, "
+                        + $"DeclaringType:{currentType.FullName}, "
+                        + $"Name:{property.Name}, "
+                        + $"DeclaredType:{property.PropertyType.FullName}, "
+                        + $"RuntimeType:{runtimeType}, "
+                        + $"Identity:{identity}, "
+                        + $"IsAtsMain:{isAtsMain}"
+                    );
+
+                    if (isAtsMain)
+                    {
+                        LogAtsPtMainCandidate(
+                            rtLog,
+                            source + ":Property:" + property.Name,
+                            index,
+                            memberValue
+                        );
+                    }
+                }
+
+                currentType = currentType.BaseType;
+                hierarchyLevel++;
+            }
+        }
+
+        private bool IsKnownAtsMainObject(object value)
+        {
+            if (value == null)
+            {
+                return false;
+            }
+
+            Type valueType = value.GetType();
+
+            if (
+                !string.Equals(
+                    valueType.FullName,
+                    "AtsPlugin.AtsMain",
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                return false;
+            }
+
+            string location;
+            string sha256;
+
+            GetAssemblyIdentity(
+                valueType.Assembly,
+                out location,
+                out sha256
+            );
+
+            return
+                string.Equals(
+                    sha256,
+                    "9A75F078C8CF8198C5E4970052DE7504C010CA28B68D93CFD66FEC6110949FE4",
+                    StringComparison.OrdinalIgnoreCase
+                )
+                || string.Equals(
+                    sha256,
+                    "AF9DDE58B4D987F32E77A9C3DA0929A2EB5D244527FD83DBF5AB5A3E434A35B7",
+                    StringComparison.OrdinalIgnoreCase
+                );
+        }
+
+        private void GetAssemblyIdentity(
+            System.Reflection.Assembly assembly,
+            out string location,
+            out string sha256
+        )
+        {
+            location = "<UNAVAILABLE>";
+            sha256 = "<UNAVAILABLE>";
+
+            if (assembly == null)
+            {
+                return;
+            }
+
+            try
+            {
+                location = assembly.Location;
+
+                if (
+                    !string.IsNullOrWhiteSpace(location)
+                    && System.IO.File.Exists(location)
+                )
+                {
+                    sha256 = ComputeFileSha256(location);
+                }
+            }
+            catch
+            {
+                location = "<UNAVAILABLE>";
+                sha256 = "<UNAVAILABLE>";
+            }
+        }
+
+        private void LogAtsPtMainCandidate(
+            StringBuilder rtLog,
+            string source,
+            int index,
+            object atsMainObject
+        )
+        {
+            if (atsMainObject == null)
+            {
+                return;
+            }
+
+            Type atsMainType = atsMainObject.GetType();
+            System.Reflection.BindingFlags memberFlags =
+                System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.Public
+                | System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.FlattenHierarchy;
+
+            System.Reflection.FieldInfo atsPtField =
+                atsMainType.GetField("AtsPT", memberFlags);
+            object atsPtObject = null;
+
+            if (atsPtField != null)
+            {
+                try
+                {
+                    atsPtObject = atsPtField.GetValue(atsMainObject);
+                }
+                catch
+                {
+                    atsPtObject = null;
+                }
+            }
+
+            rtLog.AppendLine(
+                "[EXTENSION_SET_DIAGNOSTIC] ATSMAIN_CANDIDATE "
+                + $"Source:{source}, "
+                + $"Index:{index}, "
+                + $"MainIdentity:{GetObjectIdentity(atsMainObject)}, "
+                + $"AtsPtFieldFound:{atsPtField != null}, "
+                + $"AtsPtRuntimeType:{(atsPtObject != null ? atsPtObject.GetType().FullName : "<NULL>")}, "
+                + $"AtsPtIdentity:{GetObjectIdentity(atsPtObject)}"
+            );
+        }
+
+        // =========================================================
+        // BveEx関連アセンブリの型から、静的に保持されている
+        // プラグイン管理オブジェクトとコレクションを探索する。
+        // 対象はBveEx、BveEx.PluginHost、BveEx.CoreExtensionsに限定する。
+        // =========================================================
+        private void DiagnoseBveExStaticPluginHosts(
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            if (hasDumpedBveExStaticPluginHosts)
+            {
+                return;
+            }
+
+            try
+            {
+                string[] targetAssemblyNames =
+                {
+                    "BveEx",
+                    "BveEx.PluginHost",
+                    "BveEx.CoreExtensions"
+                };
+
+                string[] interestingNames =
+                {
+                    "plugin",
+                    "vehicle",
+                    "host",
+                    "builder",
+                    "loaded",
+                    "item"
+                };
+
+                System.Reflection.BindingFlags staticFlags =
+                    System.Reflection.BindingFlags.Static
+                    | System.Reflection.BindingFlags.Public
+                    | System.Reflection.BindingFlags.NonPublic
+                    | System.Reflection.BindingFlags.DeclaredOnly;
+
+                System.Reflection.BindingFlags instanceFlags =
+                    System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.Public
+                    | System.Reflection.BindingFlags.NonPublic
+                    | System.Reflection.BindingFlags.DeclaredOnly;
+
+                int assemblyCount = 0;
+                int candidateMemberCount = 0;
+                int collectionItemCount = 0;
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[BVEEX_STATIC_PLUGIN_HOST] START "
+                    + "ScoringEnabled:False"
+                );
+
+                foreach (
+                    System.Reflection.Assembly assembly
+                    in AppDomain.CurrentDomain.GetAssemblies()
+                )
+                {
+                    if (assembly == null)
+                    {
+                        continue;
+                    }
+
+                    string assemblyName = assembly.GetName().Name;
+
+                    if (!targetAssemblyNames.Contains(assemblyName))
+                    {
+                        continue;
+                    }
+
+                    assemblyCount++;
+                    Type[] types;
+
+                    try
+                    {
+                        types = assembly.GetTypes();
+                    }
+                    catch (
+                        System.Reflection.ReflectionTypeLoadException ex
+                    )
+                    {
+                        types = ex.Types.Where(type => type != null).ToArray();
+                    }
+                    catch
+                    {
+                        types = new Type[0];
+                    }
+
+                    rtLog.AppendLine(
+                        "[BVEEX_STATIC_PLUGIN_HOST] ASSEMBLY "
+                        + $"Name:{assemblyName}, "
+                        + $"TypeCount:{types.Length}"
+                    );
+
+                    foreach (Type type in types)
+                    {
+                        if (type == null)
+                        {
+                            continue;
+                        }
+
+                        System.Reflection.FieldInfo[] fields =
+                            type.GetFields(staticFlags);
+
+                        foreach (System.Reflection.FieldInfo field in fields)
+                        {
+                            if (!IsInterestingPluginHostMember(
+                                field.Name,
+                                field.FieldType,
+                                interestingNames
+                            ))
+                            {
+                                continue;
+                            }
+
+                            candidateMemberCount++;
+                            object value = null;
+                            string runtimeType = "<NULL>";
+                            string identity = "<NULL>";
+
+                            try
+                            {
+                                value = field.GetValue(null);
+
+                                if (value != null)
+                                {
+                                    runtimeType = value.GetType().FullName;
+                                    identity = GetObjectIdentity(value);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                runtimeType = "<ERROR:" + ex.GetType().Name + ">";
+                                identity = "<ERROR>";
+                            }
+
+                            rtLog.AppendLine(
+                                "[BVEEX_STATIC_PLUGIN_HOST] FIELD "
+                                + $"Assembly:{assemblyName}, "
+                                + $"DeclaringType:{type.FullName}, "
+                                + $"Name:{field.Name}, "
+                                + $"DeclaredType:{field.FieldType.FullName}, "
+                                + $"RuntimeType:{runtimeType}, "
+                                + $"Identity:{identity}, "
+                                + $"IsAtsMain:{IsKnownAtsMainObject(value)}"
+                            );
+
+                            collectionItemCount +=
+                                LogStaticPluginHostValue(
+                                    rtLog,
+                                    "Field:" + type.FullName + "." + field.Name,
+                                    value,
+                                    instanceFlags
+                                );
+                        }
+
+                        System.Reflection.PropertyInfo[] properties =
+                            type.GetProperties(staticFlags);
+
+                        foreach (
+                            System.Reflection.PropertyInfo property
+                            in properties
+                        )
+                        {
+                            if (
+                                !property.CanRead
+                                || property.GetIndexParameters().Length != 0
+                                || !IsInterestingPluginHostMember(
+                                    property.Name,
+                                    property.PropertyType,
+                                    interestingNames
+                                )
+                            )
+                            {
+                                continue;
+                            }
+
+                            System.Reflection.MethodInfo getter =
+                                property.GetGetMethod(true);
+
+                            if (getter == null || !getter.IsStatic)
+                            {
+                                continue;
+                            }
+
+                            candidateMemberCount++;
+                            object value = null;
+                            string runtimeType = "<NULL>";
+                            string identity = "<NULL>";
+
+                            try
+                            {
+                                value = property.GetValue(null, null);
+
+                                if (value != null)
+                                {
+                                    runtimeType = value.GetType().FullName;
+                                    identity = GetObjectIdentity(value);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                runtimeType = "<ERROR:" + ex.GetType().Name + ">";
+                                identity = "<ERROR>";
+                            }
+
+                            rtLog.AppendLine(
+                                "[BVEEX_STATIC_PLUGIN_HOST] PROPERTY "
+                                + $"Assembly:{assemblyName}, "
+                                + $"DeclaringType:{type.FullName}, "
+                                + $"Name:{property.Name}, "
+                                + $"DeclaredType:{property.PropertyType.FullName}, "
+                                + $"RuntimeType:{runtimeType}, "
+                                + $"Identity:{identity}, "
+                                + $"IsAtsMain:{IsKnownAtsMainObject(value)}"
+                            );
+
+                            collectionItemCount +=
+                                LogStaticPluginHostValue(
+                                    rtLog,
+                                    "Property:" + type.FullName + "." + property.Name,
+                                    value,
+                                    instanceFlags
+                                );
+                        }
+                    }
+                }
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[BVEEX_STATIC_PLUGIN_HOST] END "
+                    + $"AssemblyCount:{assemblyCount}, "
+                    + $"CandidateMemberCount:{candidateMemberCount}, "
+                    + $"CollectionItemCount:{collectionItemCount}, "
+                    + "ScoringEnabled:False"
+                );
+
+                hasDumpedBveExStaticPluginHosts = true;
+                hasChanges = true;
+            }
+            catch (Exception ex)
+            {
+                if (!hasLoggedBveExStaticPluginHostError)
+                {
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[BVEEX_STATIC_PLUGIN_HOST] ERROR "
+                        + $"Type:{ex.GetType().FullName}, "
+                        + $"Message:{ex.Message}, "
+                        + "ScoringEnabled:False"
+                    );
+
+                    hasLoggedBveExStaticPluginHostError = true;
+                    hasChanges = true;
+                }
+            }
+        }
+
+        private bool IsInterestingPluginHostMember(
+            string memberName,
+            Type memberType,
+            string[] interestingNames
+        )
+        {
+            string normalizedName = memberName ?? "";
+            string normalizedType =
+                memberType != null ? memberType.FullName ?? "" : "";
+
+            foreach (string interestingName in interestingNames)
+            {
+                if (
+                    normalizedName.IndexOf(
+                        interestingName,
+                        StringComparison.OrdinalIgnoreCase
+                    ) >= 0
+                    || normalizedType.IndexOf(
+                        interestingName,
+                        StringComparison.OrdinalIgnoreCase
+                    ) >= 0
+                )
+                {
+                    return true;
+                }
+            }
+
+            if (memberType == null)
+            {
+                return false;
+            }
+
+            return
+                typeof(System.Collections.IEnumerable)
+                    .IsAssignableFrom(memberType)
+                && memberType != typeof(string);
+        }
+
+        private int LogStaticPluginHostValue(
+            StringBuilder rtLog,
+            string source,
+            object value,
+            System.Reflection.BindingFlags instanceFlags
+        )
+        {
+            if (value == null)
+            {
+                return 0;
+            }
+
+            if (IsKnownAtsMainObject(value))
+            {
+                LogAtsPtMainCandidate(rtLog, source, 0, value);
+                return 1;
+            }
+
+            System.Collections.IEnumerable enumerable =
+                value as System.Collections.IEnumerable;
+
+            if (enumerable == null || value is string)
+            {
+                return 0;
+            }
+
+            int index = 0;
+
+            foreach (object item in enumerable)
+            {
+                object keyObject = null;
+                object valueObject = item;
+
+                if (item != null)
+                {
+                    Type itemType = item.GetType();
+                    System.Reflection.PropertyInfo keyProperty =
+                        itemType.GetProperty("Key", instanceFlags);
+                    System.Reflection.PropertyInfo valueProperty =
+                        itemType.GetProperty("Value", instanceFlags);
+
+                    if (keyProperty != null && valueProperty != null)
+                    {
+                        try
+                        {
+                            keyObject = keyProperty.GetValue(item, null);
+                            valueObject = valueProperty.GetValue(item, null);
+                        }
+                        catch
+                        {
+                            keyObject = null;
+                            valueObject = item;
+                        }
+                    }
+                }
+
+                string keyText =
+                    keyObject != null ? keyObject.ToString() : "<NONE>";
+                string itemRuntimeType =
+                    item != null ? item.GetType().FullName : "<NULL>";
+                string valueRuntimeType =
+                    valueObject != null
+                        ? valueObject.GetType().FullName
+                        : "<NULL>";
+                bool valueIsAtsMain = IsKnownAtsMainObject(valueObject);
+
+                rtLog.AppendLine(
+                    "[BVEEX_STATIC_PLUGIN_HOST] ITEM "
+                    + $"Source:{source}, "
+                    + $"Index:{index}, "
+                    + $"Key:{keyText}, "
+                    + $"ItemRuntimeType:{itemRuntimeType}, "
+                    + $"ValueRuntimeType:{valueRuntimeType}, "
+                    + $"ValueIdentity:{GetObjectIdentity(valueObject)}, "
+                    + $"IsAtsMain:{valueIsAtsMain}"
+                );
+
+                if (valueIsAtsMain)
+                {
+                    LogAtsPtMainCandidate(
+                        rtLog,
+                        source + ":Item",
+                        index,
+                        valueObject
+                    );
+                }
+
+                index++;
+
+                if (index >= 500)
+                {
+                    rtLog.AppendLine(
+                        "[BVEEX_STATIC_PLUGIN_HOST] COLLECTION_LIMIT "
+                        + $"Source:{source}, "
+                        + "Limit:500"
+                    );
+                    break;
+                }
+            }
+
+            return index;
+        }
+
+        // =========================================================
+        // BveEx.PluginHost.App.Instanceを取得し、型階層ごとの
+        // インスタンスフィールドとプロパティを1階層だけ調べる。
+        // コレクションがあれば要素も展開する。
+        // =========================================================
+        private void DiagnosePluginHostApp(
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            if (hasDumpedPluginHostApp)
+            {
+                return;
+            }
+
+            try
+            {
+                System.Reflection.Assembly pluginHostAssembly =
+                    AppDomain.CurrentDomain.GetAssemblies()
+                        .FirstOrDefault(
+                            assembly =>
+                                assembly != null
+                                && string.Equals(
+                                    assembly.GetName().Name,
+                                    "BveEx.PluginHost",
+                                    StringComparison.Ordinal
+                                )
+                        );
+
+                if (pluginHostAssembly == null)
+                {
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[PLUGIN_HOST_APP] WAIT "
+                        + "Reason:PluginHostAssemblyNotFound, "
+                        + "ScoringEnabled:False"
+                    );
+                    hasChanges = true;
+                    return;
+                }
+
+                Type appType =
+                    pluginHostAssembly.GetType(
+                        "BveEx.PluginHost.App",
+                        false
+                    );
+
+                if (appType == null)
+                {
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[PLUGIN_HOST_APP] WAIT "
+                        + "Reason:AppTypeNotFound, "
+                        + "ScoringEnabled:False"
+                    );
+                    hasChanges = true;
+                    return;
+                }
+
+                System.Reflection.BindingFlags staticFlags =
+                    System.Reflection.BindingFlags.Static
+                    | System.Reflection.BindingFlags.Public
+                    | System.Reflection.BindingFlags.NonPublic
+                    | System.Reflection.BindingFlags.DeclaredOnly;
+
+                System.Reflection.PropertyInfo instanceProperty =
+                    appType.GetProperty("Instance", staticFlags);
+                object appObject = null;
+
+                if (instanceProperty != null && instanceProperty.CanRead)
+                {
+                    appObject = instanceProperty.GetValue(null, null);
+                }
+
+                if (appObject == null)
+                {
+                    System.Reflection.FieldInfo instanceField =
+                        appType.GetField(
+                            "<Instance>k__BackingField",
+                            staticFlags
+                        );
+
+                    if (instanceField != null)
+                    {
+                        appObject = instanceField.GetValue(null);
+                    }
+                }
+
+                if (appObject == null)
+                {
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[PLUGIN_HOST_APP] WAIT "
+                        + "Reason:AppInstanceIsNull, "
+                        + "ScoringEnabled:False"
+                    );
+                    hasChanges = true;
+                    return;
+                }
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[PLUGIN_HOST_APP] START "
+                    + $"Type:{appObject.GetType().FullName}, "
+                    + $"Identity:{GetObjectIdentity(appObject)}, "
+                    + "ScoringEnabled:False"
+                );
+
+                System.Reflection.BindingFlags instanceFlags =
+                    System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.Public
+                    | System.Reflection.BindingFlags.NonPublic
+                    | System.Reflection.BindingFlags.DeclaredOnly;
+
+                Type currentType = appObject.GetType();
+                int hierarchyLevel = 0;
+                int collectionItemCount = 0;
+
+                while (currentType != null)
+                {
+                    rtLog.AppendLine(
+                        "[PLUGIN_HOST_APP] TYPE "
+                        + $"Level:{hierarchyLevel}, "
+                        + $"Type:{currentType.FullName}, "
+                        + $"Assembly:{currentType.Assembly.GetName().Name}"
+                    );
+
+                    System.Reflection.FieldInfo[] fields =
+                        currentType.GetFields(instanceFlags);
+
+                    foreach (System.Reflection.FieldInfo field in fields)
+                    {
+                        object value = null;
+                        string runtimeType = "<NULL>";
+                        string identity = "<NULL>";
+
+                        try
+                        {
+                            value = field.GetValue(appObject);
+
+                            if (value != null)
+                            {
+                                runtimeType = value.GetType().FullName;
+                                identity = GetObjectIdentity(value);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            runtimeType = "<ERROR:" + ex.GetType().Name + ">";
+                            identity = "<ERROR>";
+                        }
+
+                        rtLog.AppendLine(
+                            "[PLUGIN_HOST_APP] FIELD "
+                            + $"Level:{hierarchyLevel}, "
+                            + $"DeclaringType:{currentType.FullName}, "
+                            + $"Name:{field.Name}, "
+                            + $"DeclaredType:{field.FieldType.FullName}, "
+                            + $"RuntimeType:{runtimeType}, "
+                            + $"Identity:{identity}, "
+                            + $"IsAtsMain:{IsKnownAtsMainObject(value)}"
+                        );
+
+                        collectionItemCount +=
+                            LogPluginHostAppCollection(
+                                rtLog,
+                                "Field:" + currentType.FullName + "." + field.Name,
+                                value,
+                                instanceFlags
+                            );
+                    }
+
+                    System.Reflection.PropertyInfo[] properties =
+                        currentType.GetProperties(instanceFlags);
+
+                    foreach (
+                        System.Reflection.PropertyInfo property
+                        in properties
+                    )
+                    {
+                        if (
+                            !property.CanRead
+                            || property.GetIndexParameters().Length != 0
+                        )
+                        {
+                            continue;
+                        }
+
+                        object value = null;
+                        string runtimeType = "<NULL>";
+                        string identity = "<NULL>";
+
+                        try
+                        {
+                            value = property.GetValue(appObject, null);
+
+                            if (value != null)
+                            {
+                                runtimeType = value.GetType().FullName;
+                                identity = GetObjectIdentity(value);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            runtimeType = "<ERROR:" + ex.GetType().Name + ">";
+                            identity = "<ERROR>";
+                        }
+
+                        rtLog.AppendLine(
+                            "[PLUGIN_HOST_APP] PROPERTY "
+                            + $"Level:{hierarchyLevel}, "
+                            + $"DeclaringType:{currentType.FullName}, "
+                            + $"Name:{property.Name}, "
+                            + $"DeclaredType:{property.PropertyType.FullName}, "
+                            + $"RuntimeType:{runtimeType}, "
+                            + $"Identity:{identity}, "
+                            + $"IsAtsMain:{IsKnownAtsMainObject(value)}"
+                        );
+
+                        collectionItemCount +=
+                            LogPluginHostAppCollection(
+                                rtLog,
+                                "Property:" + currentType.FullName + "." + property.Name,
+                                value,
+                                instanceFlags
+                            );
+                    }
+
+                    currentType = currentType.BaseType;
+                    hierarchyLevel++;
+                }
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[PLUGIN_HOST_APP] END "
+                    + $"CollectionItemCount:{collectionItemCount}, "
+                    + "ScoringEnabled:False"
+                );
+
+                hasDumpedPluginHostApp = true;
+                hasChanges = true;
+            }
+            catch (Exception ex)
+            {
+                if (!hasLoggedPluginHostAppError)
+                {
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[PLUGIN_HOST_APP] ERROR "
+                        + $"Type:{ex.GetType().FullName}, "
+                        + $"Message:{ex.Message}, "
+                        + "ScoringEnabled:False"
+                    );
+
+                    hasLoggedPluginHostAppError = true;
+                    hasChanges = true;
+                }
+            }
+        }
+
+        private int LogPluginHostAppCollection(
+            StringBuilder rtLog,
+            string source,
+            object value,
+            System.Reflection.BindingFlags instanceFlags
+        )
+        {
+            if (value == null)
+            {
+                return 0;
+            }
+
+            if (IsKnownAtsMainObject(value))
+            {
+                LogAtsPtMainCandidate(rtLog, source, 0, value);
+                return 1;
+            }
+
+            System.Collections.IEnumerable enumerable =
+                value as System.Collections.IEnumerable;
+
+            if (enumerable == null || value is string)
+            {
+                return 0;
+            }
+
+            int index = 0;
+
+            foreach (object item in enumerable)
+            {
+                object keyObject = null;
+                object valueObject = item;
+
+                if (item != null)
+                {
+                    Type itemType = item.GetType();
+                    System.Reflection.PropertyInfo keyProperty =
+                        itemType.GetProperty("Key", instanceFlags);
+                    System.Reflection.PropertyInfo valueProperty =
+                        itemType.GetProperty("Value", instanceFlags);
+
+                    if (keyProperty != null && valueProperty != null)
+                    {
+                        try
+                        {
+                            keyObject = keyProperty.GetValue(item, null);
+                            valueObject = valueProperty.GetValue(item, null);
+                        }
+                        catch
+                        {
+                            keyObject = null;
+                            valueObject = item;
+                        }
+                    }
+                }
+
+                bool valueIsAtsMain = IsKnownAtsMainObject(valueObject);
+
+                rtLog.AppendLine(
+                    "[PLUGIN_HOST_APP] ITEM "
+                    + $"Source:{source}, "
+                    + $"Index:{index}, "
+                    + $"Key:{(keyObject != null ? keyObject.ToString() : "<NONE>")}, "
+                    + $"ItemRuntimeType:{(item != null ? item.GetType().FullName : "<NULL>")}, "
+                    + $"ValueRuntimeType:{(valueObject != null ? valueObject.GetType().FullName : "<NULL>")}, "
+                    + $"ValueIdentity:{GetObjectIdentity(valueObject)}, "
+                    + $"IsAtsMain:{valueIsAtsMain}"
+                );
+
+                if (valueIsAtsMain)
+                {
+                    LogAtsPtMainCandidate(
+                        rtLog,
+                        source + ":Item",
+                        index,
+                        valueObject
+                    );
+                }
+
+                index++;
+
+                if (index >= 500)
+                {
+                    rtLog.AppendLine(
+                        "[PLUGIN_HOST_APP] COLLECTION_LIMIT "
+                        + $"Source:{source}, "
+                        + "Limit:500"
+                    );
+                    break;
+                }
+            }
+
+            return index;
+        }
+
+        // =========================================================
+        // BveHackerが保持するイベントデリゲートのInvocationListを展開し、
+        // コールバックのTargetから実行中プラグインを逆引きする。
+        // 既知AtsPT5のAtsMainを発見した場合はAtsPTまで確認する。
+        // =========================================================
+        private void DiagnoseBveHackerEventTargets(
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            if (hasDumpedBveHackerEventTargets)
+            {
+                return;
+            }
+
+            try
+            {
+                object bveHackerObject = BveHacker;
+
+                if (bveHackerObject == null)
+                {
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[BVEHACKER_EVENT_TARGET] WAIT "
+                        + "Reason:BveHackerIsNull, "
+                        + "ScoringEnabled:False"
+                    );
+                    hasChanges = true;
+                    return;
+                }
+
+                System.Reflection.BindingFlags declaredInstanceFlags =
+                    System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.Public
+                    | System.Reflection.BindingFlags.NonPublic
+                    | System.Reflection.BindingFlags.DeclaredOnly;
+
+                int eventFieldCount = 0;
+                int invocationCount = 0;
+                int atsMainCount = 0;
+                Type currentType = bveHackerObject.GetType();
+                int hierarchyLevel = 0;
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[BVEHACKER_EVENT_TARGET] START "
+                    + $"BveHackerType:{currentType.FullName}, "
+                    + $"Identity:{GetObjectIdentity(bveHackerObject)}, "
+                    + "ScoringEnabled:False"
+                );
+
+                while (currentType != null)
+                {
+                    System.Reflection.FieldInfo[] fields =
+                        currentType.GetFields(declaredInstanceFlags);
+
+                    foreach (System.Reflection.FieldInfo field in fields)
+                    {
+                        if (!typeof(Delegate).IsAssignableFrom(field.FieldType))
+                        {
+                            continue;
+                        }
+
+                        eventFieldCount++;
+                        Delegate eventDelegate = null;
+
+                        try
+                        {
+                            eventDelegate = field.GetValue(bveHackerObject) as Delegate;
+                        }
+                        catch (Exception ex)
+                        {
+                            rtLog.AppendLine(
+                                "[BVEHACKER_EVENT_TARGET] FIELD_ERROR "
+                                + $"Level:{hierarchyLevel}, "
+                                + $"DeclaringType:{currentType.FullName}, "
+                                + $"Field:{field.Name}, "
+                                + $"Type:{ex.GetType().FullName}, "
+                                + $"Message:{ex.Message}"
+                            );
+                            continue;
+                        }
+
+                        if (eventDelegate == null)
+                        {
+                            rtLog.AppendLine(
+                                "[BVEHACKER_EVENT_TARGET] EVENT "
+                                + $"Level:{hierarchyLevel}, "
+                                + $"DeclaringType:{currentType.FullName}, "
+                                + $"Field:{field.Name}, "
+                                + $"DelegateType:{field.FieldType.FullName}, "
+                                + "InvocationCount:0"
+                            );
+                            continue;
+                        }
+
+                        Delegate[] invocationList =
+                            eventDelegate.GetInvocationList();
+
+                        rtLog.AppendLine(
+                            "[BVEHACKER_EVENT_TARGET] EVENT "
+                            + $"Level:{hierarchyLevel}, "
+                            + $"DeclaringType:{currentType.FullName}, "
+                            + $"Field:{field.Name}, "
+                            + $"DelegateType:{field.FieldType.FullName}, "
+                            + $"InvocationCount:{invocationList.Length}"
+                        );
+
+                        for (int index = 0; index < invocationList.Length; index++)
+                        {
+                            Delegate invocation = invocationList[index];
+                            object target = invocation.Target;
+                            System.Reflection.MethodInfo methodInfo = invocation.Method;
+                            Type targetType = target != null ? target.GetType() : null;
+                            string targetAssembly =
+                                targetType != null
+                                    ? targetType.Assembly.GetName().Name
+                                    : "<NULL>";
+                            string targetLocation = "<NULL>";
+                            string targetSha256 = "<NULL>";
+
+                            if (targetType != null)
+                            {
+                                GetAssemblyIdentity(
+                                    targetType.Assembly,
+                                    out targetLocation,
+                                    out targetSha256
+                                );
+                            }
+
+                            bool isAtsMain = IsKnownAtsMainObject(target);
+
+                            if (isAtsMain)
+                            {
+                                atsMainCount++;
+                            }
+
+                            invocationCount++;
+
+                            rtLog.AppendLine(
+                                "[BVEHACKER_EVENT_TARGET] INVOCATION "
+                                + $"EventField:{field.Name}, "
+                                + $"Index:{index}, "
+                                + $"Method:{(methodInfo != null ? methodInfo.Name : "<NULL>")}, "
+                                + $"MethodDeclaringType:{(methodInfo != null && methodInfo.DeclaringType != null ? methodInfo.DeclaringType.FullName : "<NULL>")}, "
+                                + $"MethodIsStatic:{(methodInfo != null && methodInfo.IsStatic)}, "
+                                + $"TargetRuntimeType:{(targetType != null ? targetType.FullName : "<NULL>")}, "
+                                + $"TargetAssembly:{targetAssembly}, "
+                                + $"TargetLocation:{targetLocation}, "
+                                + $"TargetSHA256:{targetSha256}, "
+                                + $"TargetIdentity:{GetObjectIdentity(target)}, "
+                                + $"IsAtsMain:{isAtsMain}"
+                            );
+
+                            if (isAtsMain)
+                            {
+                                LogAtsPtMainCandidate(
+                                    rtLog,
+                                    "BveHackerEvent:" + field.Name,
+                                    index,
+                                    target
+                                );
+                            }
+                        }
+                    }
+
+                    currentType = currentType.BaseType;
+                    hierarchyLevel++;
+                }
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[BVEHACKER_EVENT_TARGET] END "
+                    + $"EventFieldCount:{eventFieldCount}, "
+                    + $"InvocationCount:{invocationCount}, "
+                    + $"AtsMainCount:{atsMainCount}, "
+                    + "ScoringEnabled:False"
+                );
+
+                hasDumpedBveHackerEventTargets = true;
+                hasChanges = true;
+            }
+            catch (Exception ex)
+            {
+                if (!hasLoggedBveHackerEventTargetError)
+                {
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[BVEHACKER_EVENT_TARGET] ERROR "
+                        + $"Type:{ex.GetType().FullName}, "
+                        + $"Message:{ex.Message}, "
+                        + "ScoringEnabled:False"
+                    );
+
+                    hasLoggedBveHackerEventTargetError = true;
+                    hasChanges = true;
+                }
+            }
+        }
+
+        // =========================================================
+        // BveHacker.ScenarioCreatedの購読先から既知AtsPT5のAtsMainを取得し、
+        // AtsPT.OutputBrakeHandleとUseServiceBrakeを毎Tick読み取る。
+        // 値が変化した場合だけログへ記録し、採点には接続しない。
+        // =========================================================
+        private void DiagnoseAtsPt5RuntimeState(
+            int physicalBrake,
+            int atsBrake,
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            try
+            {
+                if (atsPt5MainObject == null || atsPt5PtObject == null)
+                {
+                    TryResolveAtsPt5RuntimeObjects(rtLog, ref hasChanges);
+                }
+
+                if (atsPt5MainObject == null || atsPt5PtObject == null)
+                {
+                    return;
+                }
+
+                object outputBrakeValue;
+                string outputBrakeMemberKind;
+                bool hasOutputBrakeHandle = TryReadNamedField(
+                    atsPt5PtObject,
+                    "pOutputBrakeHandle",
+                    out outputBrakeValue,
+                    out outputBrakeMemberKind
+                );
+
+                object isEmgBrakeValue;
+                string isEmgBrakeMemberKind;
+                bool hasIsEmgBrake = TryReadNamedField(
+                    atsPt5PtObject,
+                    "pIsEmgBrake",
+                    out isEmgBrakeValue,
+                    out isEmgBrakeMemberKind
+                );
+
+                object securityEmgBrakeValue;
+                string securityEmgBrakeMemberKind;
+                bool hasSecurityEmgBrake = TryReadNamedField(
+                    atsPt5MainObject,
+                    "pSecurityEmgBrake",
+                    out securityEmgBrakeValue,
+                    out securityEmgBrakeMemberKind
+                );
+
+                object brakeB6Value;
+                string brakeB6MemberKind;
+                bool hasBrakeB6 = TryReadNamedField(
+                    atsPt5MainObject,
+                    "pBrakeB6",
+                    out brakeB6Value,
+                    out brakeB6MemberKind
+                );
+
+                if (!hasDumpedAtsPt5MemberMap)
+                {
+                    DumpAtsPt5MemberMap(atsPt5PtObject, "AtsPT", rtLog);
+                    DumpAtsPt5MemberMap(atsPt5MainObject, "AtsMain", rtLog);
+                    hasDumpedAtsPt5MemberMap = true;
+                    hasChanges = true;
+                }
+
+                if (!hasOutputBrakeHandle || !hasIsEmgBrake || !hasSecurityEmgBrake || !hasBrakeB6)
+                {
+                    if (!hasLoggedAtsPt5RuntimeError)
+                    {
+                        rtLog.AppendLine(
+                            $"[{DateTime.Now:HH:mm:ss.fff}] "
+                            + "[ATSPT5_RUNTIME] ERROR "
+                            + "Reason:CandidateFieldNotFound, "
+                            + $"OutputBrakeHandleFound:{hasOutputBrakeHandle}, "
+                            + $"IsEmgBrakeFound:{hasIsEmgBrake}, "
+                            + $"SecurityEmgBrakeFound:{hasSecurityEmgBrake}, "
+                            + $"BrakeB6Found:{hasBrakeB6}, "
+                            + "ScoringEnabled:False"
+                        );
+                        hasLoggedAtsPt5RuntimeError = true;
+                        hasChanges = true;
+                    }
+                    return;
+                }
+
+                int outputBrakeHandle = Convert.ToInt32(outputBrakeValue);
+                bool isEmgBrake = Convert.ToBoolean(isEmgBrakeValue);
+                bool securityEmgBrake = Convert.ToBoolean(securityEmgBrakeValue);
+                bool brakeB6 = Convert.ToBoolean(brakeB6Value);
+
+                bool stateChanged =
+                    !hasPreviousAtsPt5RuntimeState
+                    || outputBrakeHandle != previousAtsPt5OutputBrakeHandle
+                    || isEmgBrake != previousAtsPt5IsEmgBrake
+                    || securityEmgBrake != previousAtsPt5SecurityEmgBrake
+                    || brakeB6 != previousAtsPt5BrakeB6
+                    || physicalBrake != previousAtsPt5PhysicalBrake
+                    || atsBrake != previousAtsPt5AtsBrake;
+
+                if (!stateChanged)
+                {
+                    return;
+                }
+
+                bool emergencyCandidate = isEmgBrake || securityEmgBrake;
+                bool serviceMaximumCandidate = !emergencyCandidate && brakeB6;
+                string requestKindCandidate = "None";
+                int requestBrakeCandidate = 0;
+
+                if (emergencyCandidate)
+                {
+                    requestKindCandidate = "EmergencyCandidate";
+                    requestBrakeCandidate = emergencyBrakeNotch;
+                }
+                else if (serviceMaximumCandidate)
+                {
+                    requestKindCandidate = "ServiceMaximumCandidate";
+                    requestBrakeCandidate = serviceMaxBrakeNotch;
+                }
+                else if (outputBrakeHandle > 0)
+                {
+                    requestKindCandidate = "UnclassifiedOutput";
+                    requestBrakeCandidate = outputBrakeHandle;
+                }
+
+                bool hiddenByPhysicalCandidate =
+                    requestBrakeCandidate > 0
+                    && physicalBrake >= requestBrakeCandidate;
+                bool atsOutputMatchesCandidate =
+                    requestBrakeCandidate > 0
+                    && atsBrake == requestBrakeCandidate;
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[ATSPT5_RUNTIME] STATE "
+                    + $"OutputBrakeHandle:{outputBrakeHandle}, "
+                    + $"OutputBrakeMember:{outputBrakeMemberKind}, "
+                    + $"IsEmgBrake:{isEmgBrake}, "
+                    + $"IsEmgBrakeMember:{isEmgBrakeMemberKind}, "
+                    + $"SecurityEmgBrake:{securityEmgBrake}, "
+                    + $"SecurityEmgBrakeMember:{securityEmgBrakeMemberKind}, "
+                    + $"BrakeB6:{brakeB6}, "
+                    + $"BrakeB6Member:{brakeB6MemberKind}, "
+                    + $"EmergencyCandidate:{emergencyCandidate}, "
+                    + $"ServiceMaximumCandidate:{serviceMaximumCandidate}, "
+                    + $"RequestKindCandidate:{requestKindCandidate}, "
+                    + $"RequestBrakeCandidate:{requestBrakeCandidate}, "
+                    + $"Physical:{physicalBrake}, "
+                    + $"AtsOutput:{atsBrake}, "
+                    + $"AtsOutputMatchesCandidate:{atsOutputMatchesCandidate}, "
+                    + $"HiddenByPhysicalCandidate:{hiddenByPhysicalCandidate}, "
+                    + $"MainIdentity:{GetObjectIdentity(atsPt5MainObject)}, "
+                    + $"PtIdentity:{GetObjectIdentity(atsPt5PtObject)}, "
+                    + "ScoringEnabled:False"
+                );
+
+                hasPreviousAtsPt5RuntimeState = true;
+                previousAtsPt5OutputBrakeHandle = outputBrakeHandle;
+                previousAtsPt5IsEmgBrake = isEmgBrake;
+                previousAtsPt5SecurityEmgBrake = securityEmgBrake;
+                previousAtsPt5BrakeB6 = brakeB6;
+                previousAtsPt5PhysicalBrake = physicalBrake;
+                previousAtsPt5AtsBrake = atsBrake;
+                hasChanges = true;
+            }
+            catch (Exception ex)
+            {
+                if (!hasLoggedAtsPt5RuntimeError)
+                {
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[ATSPT5_RUNTIME] ERROR "
+                        + $"Type:{ex.GetType().FullName}, "
+                        + $"Message:{ex.Message}, "
+                        + "ScoringEnabled:False"
+                    );
+                    hasLoggedAtsPt5RuntimeError = true;
+                    hasChanges = true;
+                }
+            }
+        }
+
+        private void DumpAtsPt5MemberMap(
+            object target,
+            string objectName,
+            StringBuilder rtLog
+        )
+        {
+            if (target == null)
+            {
+                return;
+            }
+
+            System.Reflection.BindingFlags declaredFlags =
+                System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.Public
+                | System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.DeclaredOnly;
+
+            Type currentType = target.GetType();
+            int hierarchyLevel = 0;
+            int fieldCount = 0;
+            int propertyCount = 0;
+            System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+            rtLog.AppendLine(
+                "[ATSPT5_MEMBER_MAP] START "
+                + $"Object:{objectName}, "
+                + $"Type:{currentType.FullName}, "
+                + "PropertyGetterEvaluation:Disabled, "
+                + "FieldValuePolicy:RelevantPrimitiveOnly, "
+                + "FieldLimit:200, PropertyLimit:200"
+            );
+
+            while (currentType != null)
+            {
+                foreach (System.Reflection.FieldInfo field in currentType.GetFields(declaredFlags))
+                {
+                    if (fieldCount >= 200)
+                    {
+                        break;
+                    }
+
+                    bool relevant = IsRelevantAtsPt5MemberName(field.Name);
+                    string valueText = "<NOT_READ>";
+                    string runtimeType = "<NOT_READ>";
+
+                    if (relevant && (field.FieldType.IsPrimitive || field.FieldType.IsEnum || field.FieldType == typeof(string) || field.FieldType == typeof(decimal)))
+                    {
+                        try
+                        {
+                            object value = field.GetValue(target);
+                            runtimeType = value != null ? value.GetType().FullName : "<NULL>";
+                            valueText = FormatAtsPt5MemberValue(value);
+                        }
+                        catch (Exception ex)
+                        {
+                            runtimeType = "<ERROR:" + ex.GetType().Name + ">";
+                            valueText = "<ERROR>";
+                        }
+                    }
+
+                    rtLog.AppendLine(
+                        "[ATSPT5_MEMBER_MAP] FIELD "
+                        + $"Object:{objectName}, Level:{hierarchyLevel}, "
+                        + $"DeclaringType:{currentType.FullName}, Name:{field.Name}, "
+                        + $"DeclaredType:{field.FieldType.FullName}, RuntimeType:{runtimeType}, "
+                        + $"Value:{valueText}, Relevant:{relevant}"
+                    );
+                    fieldCount++;
+                }
+
+                foreach (System.Reflection.PropertyInfo property in currentType.GetProperties(declaredFlags))
+                {
+                    if (propertyCount >= 200)
+                    {
+                        break;
+                    }
+
+                    System.Reflection.MethodInfo getter = property.GetGetMethod(true);
+                    bool relevant = IsRelevantAtsPt5MemberName(property.Name);
+                    rtLog.AppendLine(
+                        "[ATSPT5_MEMBER_MAP] PROPERTY "
+                        + $"Object:{objectName}, Level:{hierarchyLevel}, "
+                        + $"DeclaringType:{currentType.FullName}, Name:{property.Name}, "
+                        + $"DeclaredType:{property.PropertyType.FullName}, CanRead:{property.CanRead}, "
+                        + $"IsIndexer:{property.GetIndexParameters().Length != 0}, "
+                        + $"GetterIsStatic:{(getter != null && getter.IsStatic)}, "
+                        + $"Value:<NOT_EVALUATED>, Relevant:{relevant}"
+                    );
+                    propertyCount++;
+                }
+
+                if (fieldCount >= 200 || propertyCount >= 200)
+                {
+                    break;
+                }
+
+                currentType = currentType.BaseType;
+                hierarchyLevel++;
+            }
+
+            stopwatch.Stop();
+            rtLog.AppendLine(
+                "[ATSPT5_MEMBER_MAP] END "
+                + $"Object:{objectName}, FieldCount:{fieldCount}, "
+                + $"PropertyCount:{propertyCount}, "
+                + $"ElapsedMilliseconds:{stopwatch.ElapsedMilliseconds}, "
+                + "PropertyGetterEvaluation:Disabled"
+            );
+        }
+
+        private bool IsRelevantAtsPt5MemberName(string memberName)
+        {
+            if (string.IsNullOrWhiteSpace(memberName))
+            {
+                return false;
+            }
+
+            string[] keywords =
+            {
+                "service",
+                "brake",
+                "use",
+                "emergency",
+                "output",
+                "handle",
+                "mode",
+                "request"
+            };
+
+            return keywords.Any(
+                keyword =>
+                    memberName.IndexOf(
+                        keyword,
+                        StringComparison.OrdinalIgnoreCase
+                    ) >= 0
+            );
+        }
+
+        private string FormatAtsPt5MemberValue(object value)
+        {
+            if (value == null)
+            {
+                return "<NULL>";
+            }
+
+            Type valueType = value.GetType();
+
+            if (
+                valueType.IsPrimitive
+                || value is string
+                || value is decimal
+                || value is Enum
+            )
+            {
+                return value.ToString();
+            }
+
+            if (value is Array array)
+            {
+                return "<ARRAY Length=" + array.Length + ">";
+            }
+
+            return "<OBJECT " + GetObjectIdentity(value) + ">";
+        }
+
+        private void TryResolveAtsPt5RuntimeObjects(
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            object bveHackerObject = BveHacker;
+
+            if (bveHackerObject == null)
+            {
+                return;
+            }
+
+            System.Reflection.BindingFlags declaredInstanceFlags =
+                System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.Public
+                | System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.DeclaredOnly;
+
+            Type currentType = bveHackerObject.GetType();
+
+            while (currentType != null)
+            {
+                System.Reflection.FieldInfo scenarioCreatedField =
+                    currentType.GetField(
+                        "ScenarioCreated",
+                        declaredInstanceFlags
+                    );
+
+                if (scenarioCreatedField != null)
+                {
+                    Delegate scenarioCreatedDelegate =
+                        scenarioCreatedField.GetValue(bveHackerObject) as Delegate;
+
+                    if (scenarioCreatedDelegate != null)
+                    {
+                        foreach (
+                            Delegate invocation
+                            in scenarioCreatedDelegate.GetInvocationList()
+                        )
+                        {
+                            object target = invocation.Target;
+
+                            if (!IsKnownAtsMainObject(target))
+                            {
+                                continue;
+                            }
+
+                            object atsPtObject;
+                            string atsPtMemberKind;
+
+                            if (
+                                !TryReadNamedMember(
+                                    target,
+                                    "AtsPT",
+                                    out atsPtObject,
+                                    out atsPtMemberKind
+                                )
+                                || atsPtObject == null
+                            )
+                            {
+                                continue;
+                            }
+
+                            atsPt5MainObject = target;
+                            atsPt5PtObject = atsPtObject;
+
+                            rtLog.AppendLine(
+                                $"[{DateTime.Now:HH:mm:ss.fff}] "
+                                + "[ATSPT5_RUNTIME] RESOLVED "
+                                + $"Event:ScenarioCreated, "
+                                + $"Method:{invocation.Method.Name}, "
+                                + $"AtsPtMember:{atsPtMemberKind}, "
+                                + $"MainIdentity:{GetObjectIdentity(atsPt5MainObject)}, "
+                                + $"PtType:{atsPt5PtObject.GetType().FullName}, "
+                                + $"PtIdentity:{GetObjectIdentity(atsPt5PtObject)}, "
+                                + "ScoringEnabled:False"
+                            );
+                            hasChanges = true;
+                            return;
+                        }
+                    }
+                }
+
+                currentType = currentType.BaseType;
+            }
+        }
+
+        private bool TryReadNamedField(
+            object target,
+            string fieldName,
+            out object value,
+            out string memberKind
+        )
+        {
+            value = null;
+            memberKind = "<NOT_FOUND>";
+
+            if (target == null || string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            System.Reflection.BindingFlags declaredInstanceFlags =
+                System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.Public
+                | System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.DeclaredOnly;
+
+            Type currentType = target.GetType();
+
+            while (currentType != null)
+            {
+                System.Reflection.FieldInfo field = currentType.GetField(fieldName, declaredInstanceFlags);
+
+                if (field != null)
+                {
+                    value = field.GetValue(target);
+                    memberKind = "Field:" + currentType.FullName + "." + field.Name;
+                    return true;
+                }
+
+                currentType = currentType.BaseType;
+            }
+
+            return false;
+        }
+
+        private bool TryReadNamedMember(
+            object target,
+            string memberName,
+            out object value,
+            out string memberKind
+        )
+        {
+            value = null;
+            memberKind = "<NOT_FOUND>";
+
+            if (target == null || string.IsNullOrWhiteSpace(memberName))
+            {
+                return false;
+            }
+
+            System.Reflection.BindingFlags declaredInstanceFlags =
+                System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.Public
+                | System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.DeclaredOnly;
+
+            Type currentType = target.GetType();
+
+            while (currentType != null)
+            {
+                System.Reflection.FieldInfo field =
+                    currentType.GetField(
+                        memberName,
+                        declaredInstanceFlags
+                    );
+
+                if (field != null)
+                {
+                    value = field.GetValue(target);
+                    memberKind = "Field:" + currentType.FullName + "." + field.Name;
+                    return true;
+                }
+
+                System.Reflection.PropertyInfo property =
+                    currentType.GetProperty(
+                        memberName,
+                        declaredInstanceFlags
+                    );
+
+                if (
+                    property != null
+                    && property.CanRead
+                    && property.GetIndexParameters().Length == 0
+                )
+                {
+                    value = property.GetValue(target, null);
+                    memberKind = "Property:" + currentType.FullName + "." + property.Name;
+                    return true;
+                }
+
+                currentType = currentType.BaseType;
+            }
+
+            return false;
         }
 
         // =========================================================
@@ -834,59 +4678,291 @@ namespace TsScoringPlugin
                         return;
                     }
 
-                    string json =
-                        System.IO.File.ReadAllText(runtimeProfilePath);
+            RuntimeProfileCatalog catalog =
+LoadRuntimeProfileCatalog(
+runtimeProfilePath
+);
 
-                    string profilePattern =
-                        "\"sha256\"\\s*:\\s*"
-                        + "\"(?<sha>[0-9A-Fa-f]{64})\""
-                        + ".*?"
-                        + "\"pattern\"\\s*:\\s*"
-                        + "\"(?<pattern>[^\"]+)\""
-                        + ".*?"
-                        + "\"verificationStatus\"\\s*:\\s*"
-                        + "\"(?<verification>[^\"]+)\"";
+            if (
+                catalog == null
+                || catalog.Profiles == null
+            )
+            {
+                throw new InvalidOperationException(
+                    "Runtime profile catalog is empty or invalid."
+                );
+            }
 
-                    System.Text.RegularExpressions.MatchCollection
-                        profileMatches =
-                            System.Text.RegularExpressions.Regex.Matches(
-                                json,
-                                profilePattern,
-                                System.Text.RegularExpressions
-                                    .RegexOptions.Singleline
-                            );
+            runtimeProfilesByHash.Clear();
 
-                    runtimeProfilesByHash.Clear();
+            foreach (
+                RuntimeProfileCatalogEntry catalogEntry
+                in catalog.Profiles
+            )
+            {
+                if (
+                    catalogEntry == null
+                    || string.IsNullOrWhiteSpace(
+                        catalogEntry.Sha256
+                    )
+                )
+                {
+                    continue;
+                }
 
-                    foreach (
-                        System.Text.RegularExpressions.Match profileMatch
-                        in profileMatches
+                string normalizedHash =
+                    catalogEntry.Sha256
+                        .Trim()
+                        .ToUpperInvariant();
+
+                if (
+                    normalizedHash.Length != 64
+                    || normalizedHash.Any(
+                        character =>
+                            !Uri.IsHexDigit(character)
+                    )
+                )
+                {
+                    continue;
+                }
+
+                RuntimeProfileIdentity profile =
+                    new RuntimeProfileIdentity();
+
+                profile.Sha256 = normalizedHash;
+                profile.Pattern =
+                    catalogEntry.Pattern ?? "";
+                profile.VerificationStatus =
+                    catalogEntry.VerificationStatus ?? "";
+
+                if (catalogEntry.Detection != null)
+                {
+                    profile.DetectionStrategy =
+                        catalogEntry.Detection.Strategy ?? "";
+
+                    profile.DetectionPriority =
+                        catalogEntry.Detection.Priority ?? "";
+                    profile.DetectionCompletionStatus =
+                         catalogEntry.Detection.CompletionStatus ?? "";
+
+                    profile.SafetyEmergencySourceVerificationStatus =
+                         catalogEntry.Detection
+                            .SafetyEmergencySourceVerificationStatus
+                            ?? "";
+                        }
+
+                RuntimeProfileCatalogAddresses addresses =
+                    catalogEntry.Addresses;
+
+                if (addresses != null)
+                {
+                    int rva;
+
+                    if (
+                        TryGetDirectRuntimeRva(
+                            addresses.PhysicalBrake,
+                            "Int32",
+                            out rva
+                        )
                     )
                     {
-                        RuntimeProfileIdentity profile =
-                            new RuntimeProfileIdentity();
-
-                        profile.Sha256 =
-                            profileMatch.Groups["sha"]
-                                .Value
-                                .ToUpperInvariant();
-
-                        profile.Pattern =
-                            profileMatch.Groups["pattern"].Value;
-
-                        profile.VerificationStatus =
-                            profileMatch.Groups["verification"].Value;
-
-                        runtimeProfilesByHash[profile.Sha256] =
-                            profile;
+                        profile.DirectPhysicalBrakeRva = rva;
                     }
+
+                    if (
+                        TryGetDirectRuntimeRva(
+                            addresses.ServiceMaximum,
+                            "Int32",
+                            out rva
+                        )
+                    )
+                    {
+                        profile.DirectServiceMaximumRva = rva;
+                    }
+
+                    if (
+                        TryGetDirectRuntimeRva(
+                            addresses.Emergency,
+                            "Int32",
+                            out rva
+                        )
+                    )
+                    {
+                        profile.DirectEmergencyRva = rva;
+                    }
+                            if (
+            TryGetDirectRuntimeRva(
+                addresses.OutputBrake,
+                "Int32",
+                out rva
+            )
+        )
+                            {
+                                profile.DirectOutputBrakeRva = rva;
+                            }
+
+                            if (
+            TryGetDirectRuntimeRva(
+                addresses.MetroEmergencySelectionFlag,
+                "Byte",
+                out rva
+            )
+        )
+                            {
+                                profile.MetroEmergencySelectionFlagRva = rva;
+                            }
+
+                            if (
+                                TryGetDirectRuntimeRva(
+                                    addresses.MetroLevel7SelectionFlag,
+                                    "Byte",
+                                    out rva
+                                )
+                            )
+                            {
+                                profile.MetroLevel7SelectionFlagRva = rva;
+                            }
+
+                            if (
+                                TryGetDirectRuntimeRva(
+                                    addresses.MetroLevel4SelectionFlag,
+                                    "Byte",
+                                    out rva
+                                )
+                            )
+                            {
+                                profile.MetroLevel4SelectionFlagRva = rva;
+                            }
+
+                            if (
+                                TryGetDirectRuntimeRva(
+                                    addresses.MetroControlMode,
+                                    "Int32",
+                                    out rva
+                                )
+                            )
+                            {
+                                profile.MetroControlModeRva = rva;
+                            }
+
+                            if (
+                                TryGetDirectRuntimeRva(
+                                    addresses.MetroInternalState,
+                                    "Int32",
+                                    out rva
+                                )
+                            )
+                            {
+                                profile.MetroInternalStateRva = rva;
+                            }
+
+                            if (
+                                TryGetDirectRuntimeRva(
+                                    addresses.MetroSafetyEmergencySource,
+                                    "Int32",
+                                    out rva
+                                )
+                            )
+                            {
+                                profile.MetroSafetyEmergencySourceRva = rva;
+                            }
+                            if (
+    TryGetDirectRuntimeRva(
+        addresses.KintetsuAbsoluteStopEmergencyLatch,
+        "Byte",
+        out rva
+    )
+)
+                            {
+                                profile.KintetsuAbsoluteStopEmergencyLatchRva =
+                                    rva;
+                            }
+
+                            if (
+                                TryGetDirectRuntimeRva(
+                                    addresses.KintetsuSecondaryEmergencySource,
+                                    "Byte",
+                                    out rva
+                                )
+                            )
+                            {
+                                profile.KintetsuSecondaryEmergencySourceRva =
+                                    rva;
+                            }
+                            if (
+    TryGetDirectRuntimeRva(
+        addresses.KintetsuEmergencySourceA,
+        "Byte",
+        out rva
+    )
+)
+                            {
+                                profile.KintetsuEmergencySourceARva =
+                                    rva;
+                            }
+
+                            if (
+                                TryGetDirectRuntimeRva(
+                                    addresses.KintetsuEmergencySourceB,
+                                    "Byte",
+                                    out rva
+                                )
+                            )
+                            {
+                                profile.KintetsuEmergencySourceBRva =
+                                    rva;
+                            }
+
+                            if (
+                                TryGetDirectRuntimeRva(
+                                    addresses.KintetsuServiceMaximumSourceA,
+                                    "Byte",
+                                    out rva
+                                )
+                            )
+                            {
+                                profile.KintetsuServiceMaximumSourceARva =
+                                    rva;
+                            }
+
+                            if (
+                                TryGetDirectRuntimeRva(
+                                    addresses.KintetsuServiceMaximumSourceB,
+                                    "Byte",
+                                    out rva
+                                )
+                            )
+                            {
+                                profile.KintetsuServiceMaximumSourceBRva =
+                                    rva;
+                            }
+
+                            profile.ServiceMaximumRequestFlagRvas =
+                        GetDirectRuntimeRvas(
+                            addresses.ServiceMaximumRequestFlags,
+                            "Byte"
+                        );
+
+                    profile.EmergencyRequestFlagRvas =
+                        GetDirectRuntimeRvas(
+                            addresses.EmergencyRequestFlags,
+                            "Byte"
+                        );
+
+                        }
+
+                runtimeProfilesByHash[profile.Sha256] =
+                    profile;
+            }
 
                     hasScannedRuntimeProfiles = true;
 
                     rtLog.AppendLine(
                         $"[{DateTime.Now:HH:mm:ss.fff}] "
                         + "[RUNTIME_PROFILE] CATALOG LOADED "
-                        + $"Count:{runtimeProfilesByHash.Count}, "
+                        + $"SchemaVersion:{catalog.SchemaVersion}, "
+                        + $"DeclaredCount:{catalog.ProfileCount}, "
+                        + $"LoadedCount:{runtimeProfilesByHash.Count}, "
                         + $"Path:{runtimeProfilePath}, "
                         + "ScoringEnabled:False"
                     );
@@ -995,62 +5071,6 @@ namespace TsScoringPlugin
                         matchedProfile.EmergencyModeValue = 2;
                     }
 
-                    // OdakyuAts.dllで確認する
-                    // PhysicalServiceEmergencyOutputComparisonの静的配置。
-                    if (
-                        matchedProfile.Sha256
-                            == "B89A6459F35617ED96039139F1D3115C0F04DB69A3BDC02016E4DA3D92E669FF"
-                    )
-                    {
-                        matchedProfile.DirectPhysicalBrakeRva = 0x3E0B4;
-                        matchedProfile.DirectServiceMaximumRva = 0x3E054;
-                        matchedProfile.DirectEmergencyRva = 0x3E050;
-                        matchedProfile.DirectOutputBrakeRva = 0x3D038;
-                        // 保安装置側の要求状態と要求段の候補。
-                        // 動的検証が完了するまでは採点へ使用しない。
-                        matchedProfile.RequestModeCandidateRva = 0x3D248;
-                        matchedProfile.Mode1RequestBrakeCandidateRva = 0x3CF7C;
-                        matchedProfile.SecondaryRequestEnabledCandidateRva = 0x3D319;
-                        matchedProfile.SecondaryRequestBrakeCandidateRva = 0x3D31C;
-                        // 小田急線内の常用最大要求フラグ候補。
-                        matchedProfile.ServiceMaximumRequestFlag1Rva = 0x3D301;
-                        matchedProfile.ServiceMaximumRequestFlag2Rva = 0x3D2DE;
-
-                        // 小田急線内の非常要求フラグ候補。
-                        matchedProfile.EmergencyRequestFlag1Rva = 0x3DD65;
-                        matchedProfile.EmergencyRequestFlag2Rva = 0x3D300;
-                        matchedProfile.EmergencyRequestFlag3Rva = 0x3D2DF;
-                    }
-                    // 更新版OdakyuAts.dllで静的確認した配置。
-                    // 旧版と同じ制御構造だが、各RVAが異なる。
-                    //
-                    // 要求フラグの意味は更新版で動的検証中のため、
-                    // 現段階では診断ログだけに使用し、採点には接続しない。
-                    if (
-                        matchedProfile.Sha256
-                            == "803D3FFDB1297C8B6ED6259C6AF760778FEC74AAAB2F64F28C7D79BA2E4FAFFB"
-                    )
-                    {
-                        matchedProfile.DirectPhysicalBrakeRva = 0x2294C;
-                        matchedProfile.DirectServiceMaximumRva = 0x228EC;
-                        matchedProfile.DirectEmergencyRva = 0x228E8;
-                        matchedProfile.DirectOutputBrakeRva = 0x21A3C;
-
-                        // モード制御および可変要求段の候補。
-                        matchedProfile.RequestModeCandidateRva = 0x21B08;
-                        matchedProfile.Mode1RequestBrakeCandidateRva = 0x21984;
-                        matchedProfile.SecondaryRequestEnabledCandidateRva = 0x21BD9;
-                        matchedProfile.SecondaryRequestBrakeCandidateRva = 0x21BDC;
-
-                        // 常用最大要求フラグ候補。
-                        matchedProfile.ServiceMaximumRequestFlag1Rva = 0x21BC1;
-                        matchedProfile.ServiceMaximumRequestFlag2Rva = 0x21B9E;
-
-                        // 非常要求フラグ候補。
-                        matchedProfile.EmergencyRequestFlag1Rva = 0x22619;
-                        matchedProfile.EmergencyRequestFlag2Rva = 0x21BC0;
-                        matchedProfile.EmergencyRequestFlag3Rva = 0x21B9F;
-                    }
 
                     // MATCHログは同じSHA-256につき1回だけ記録する。
                     if (
@@ -1064,7 +5084,13 @@ namespace TsScoringPlugin
                             + "[RUNTIME_PROFILE] MATCH "
                             + $"File:{matchedProfile.FileName}, "
                             + $"SHA256:{moduleHash}, "
-                            + $"Pattern:{matchedProfile.Pattern}, "
+                            +$"Pattern:{matchedProfile.Pattern}, "
+                            + $"Strategy:{matchedProfile.DetectionStrategy}, "
+                            + $"Priority:{matchedProfile.DetectionPriority}, "
+                            + "ServiceRequestFlagCount:"
+                            + $"{matchedProfile.ServiceMaximumRequestFlagRvas.Count}, "
+                            + "EmergencyRequestFlagCount:"
+                            + $"{matchedProfile.EmergencyRequestFlagRvas.Count}, "
                             + "Verification:"
                             + $"{matchedProfile.VerificationStatus}, "
                             + $"Base:0x{module.BaseAddress.ToInt64():X}, "
@@ -1538,7 +5564,7 @@ namespace TsScoringPlugin
                 // 保安装置介入の状態遷移は、このメソッドでは生成しない。
                 //
                 // 小田急の介入状態は、動的確認済みの要求フラグを使用する
-                // DiagnoseOdakyuRequestCandidatesだけが生成する。
+                // DiagnoseExplicitBrakeRequestFlagsだけが生成する。
                 bool outputDiffersFromPhysical =
                     outputBrake != physicalBrake;
 
@@ -1588,387 +5614,1079 @@ namespace TsScoringPlugin
                 hasChanges = true;
             }
         }
-
         // =========================================================
-        // 旧版・更新版のOdakyuAts.dllを、
-        // 同じ要求フラグ診断処理へ接続する。
+        // 近鉄系ATSについて、2つの非常要求候補を個別に読み取る。
         //
-        // 更新版は静的構造のみ確認済みであり、
-        // 要求フラグの意味は実走で検証する。
+        // この処理は動的検証専用であり、採点には接続しない。
+        // 候補の論理和は診断情報としてのみ表示する。
         // =========================================================
-        private void DiagnoseOdakyuRequestCandidates(
+        private void DiagnoseKintetsuEmergencyCandidates(
             StringBuilder rtLog,
             ref bool hasChanges
         )
         {
-            DiagnoseOdakyuRequestCandidatesForHash(
-                "B89A6459F35617ED96039139F1D3115C0F04DB69A3BDC02016E4DA3D92E669FF",
-                rtLog,
-                ref hasChanges
-            );
-
-            DiagnoseOdakyuRequestCandidatesForHash(
-                "803D3FFDB1297C8B6ED6259C6AF760778FEC74AAAB2F64F28C7D79BA2E4FAFFB",
-                rtLog,
-                ref hasChanges
-            );
-        }
-        /// =========================================================
-        // 指定されたOdakyuAts.dllの保安装置要求状態を読み取る。
-        //
-        // 旧版の小田急線内モードでは、次を動的確認済み。
-        // ServiceFlag2  : 常用最大要求
-        // EmergencyFlag1: 非常要求
-        //
-        // 更新版では同じ静的構造を確認済みだが、
-        // フラグの意味は実走による動的検証を行う。
-        //
-        // その他の値は別モード用の候補として記録を継続する。
-        // 介入状態ログは生成するが、減点には接続しない。
-        // =========================================================
-        private void DiagnoseOdakyuRequestCandidatesForHash(
-                string odakyuAtsSha256,
-        StringBuilder rtLog,
-        ref bool hasChanges
-    )
-            {
-                RuntimeProfileIdentity profile;
-
-            if (
-            !runtimeProfilesByHash.TryGetValue(
-                odakyuAtsSha256,
-                out profile
-            )
-            || profile.ModuleBaseAddress == IntPtr.Zero
-            || profile.DirectPhysicalBrakeRva == 0
-            || profile.DirectServiceMaximumRva == 0
-            || profile.DirectEmergencyRva == 0
-            || profile.DirectOutputBrakeRva == 0
-            || profile.RequestModeCandidateRva == 0
-            || profile.Mode1RequestBrakeCandidateRva == 0
-            || profile.SecondaryRequestEnabledCandidateRva == 0
-            || profile.SecondaryRequestBrakeCandidateRva == 0
-            || profile.ServiceMaximumRequestFlag1Rva == 0
-            || profile.ServiceMaximumRequestFlag2Rva == 0
-            || profile.EmergencyRequestFlag1Rva == 0
-            || profile.EmergencyRequestFlag2Rva == 0
-            || profile.EmergencyRequestFlag3Rva == 0
-            )
-                        {
-                            return;
-                        }
-
-            int requestModeCandidate;
-            int mode1RequestBrakeCandidate;
-            byte secondaryRequestEnabledCandidate;
-            int secondaryRequestBrakeCandidate;
-
-            byte serviceMaximumRequestFlag1;
-            byte serviceMaximumRequestFlag2;
-
-            byte emergencyRequestFlag1;
-            byte emergencyRequestFlag2;
-            byte emergencyRequestFlag3;
-
-            int physicalBrake;
-            int serviceMaximum;
-            int emergency;
-            int outputBrake;
-
-            bool requestModeRead =
-                TryReadRuntimeInt32(
-                    IntPtr.Add(
-                        profile.ModuleBaseAddress,
-                        profile.RequestModeCandidateRva
-                    ),
-                    out requestModeCandidate
-                );
-
-            bool mode1RequestBrakeRead =
-                TryReadRuntimeInt32(
-                    IntPtr.Add(
-                        profile.ModuleBaseAddress,
-                        profile.Mode1RequestBrakeCandidateRva
-                    ),
-                    out mode1RequestBrakeCandidate
-                );
-
-            bool secondaryRequestEnabledRead =
-                TryReadRuntimeByte(
-                    IntPtr.Add(
-                        profile.ModuleBaseAddress,
-                        profile.SecondaryRequestEnabledCandidateRva
-                    ),
-                    out secondaryRequestEnabledCandidate
-                );
-
-            bool secondaryRequestBrakeRead =
-                TryReadRuntimeInt32(
-                    IntPtr.Add(
-                        profile.ModuleBaseAddress,
-                        profile.SecondaryRequestBrakeCandidateRva
-                    ),
-                    out secondaryRequestBrakeCandidate
-                );
-
-            bool serviceMaximumRequestFlag1Read =
-    TryReadRuntimeByte(
-        IntPtr.Add(
-            profile.ModuleBaseAddress,
-            profile.ServiceMaximumRequestFlag1Rva
-        ),
-        out serviceMaximumRequestFlag1
-    );
-
-            bool serviceMaximumRequestFlag2Read =
-                TryReadRuntimeByte(
-                    IntPtr.Add(
-                        profile.ModuleBaseAddress,
-                        profile.ServiceMaximumRequestFlag2Rva
-                    ),
-                    out serviceMaximumRequestFlag2
-                );
-
-            bool emergencyRequestFlag1Read =
-                TryReadRuntimeByte(
-                    IntPtr.Add(
-                        profile.ModuleBaseAddress,
-                        profile.EmergencyRequestFlag1Rva
-                    ),
-                    out emergencyRequestFlag1
-                );
-
-            bool emergencyRequestFlag2Read =
-                TryReadRuntimeByte(
-                    IntPtr.Add(
-                        profile.ModuleBaseAddress,
-                        profile.EmergencyRequestFlag2Rva
-                    ),
-                    out emergencyRequestFlag2
-                );
-
-            bool emergencyRequestFlag3Read =
-                TryReadRuntimeByte(
-                    IntPtr.Add(
-                        profile.ModuleBaseAddress,
-                        profile.EmergencyRequestFlag3Rva
-                    ),
-                    out emergencyRequestFlag3
-                );
-
-            bool physicalRead =
-                TryReadRuntimeInt32(
-                    IntPtr.Add(
-                        profile.ModuleBaseAddress,
-                        profile.DirectPhysicalBrakeRva
-                    ),
-                    out physicalBrake
-                );
-
-            bool serviceRead =
-                TryReadRuntimeInt32(
-                    IntPtr.Add(
-                        profile.ModuleBaseAddress,
-                        profile.DirectServiceMaximumRva
-                    ),
-                    out serviceMaximum
-                );
-
-            bool emergencyRead =
-                TryReadRuntimeInt32(
-                    IntPtr.Add(
-                        profile.ModuleBaseAddress,
-                        profile.DirectEmergencyRva
-                    ),
-                    out emergency
-                );
-
-            bool outputRead =
-                TryReadRuntimeInt32(
-                    IntPtr.Add(
-                        profile.ModuleBaseAddress,
-                        profile.DirectOutputBrakeRva
-                    ),
-                    out outputBrake
-                );
-
-            if (
-                !requestModeRead
-                || !mode1RequestBrakeRead
-                || !secondaryRequestEnabledRead
-                || !secondaryRequestBrakeRead
-                || !serviceMaximumRequestFlag1Read
-                || !serviceMaximumRequestFlag2Read
-                || !emergencyRequestFlag1Read
-                || !emergencyRequestFlag2Read
-                || !emergencyRequestFlag3Read
-                || !physicalRead
-                || !serviceRead
-                || !emergencyRead
-                || !outputRead
+            foreach (
+                RuntimeProfileIdentity profile
+                in runtimeProfilesByHash.Values
             )
             {
-                return;
-            }
+                if (
+                    profile.ModuleBaseAddress == IntPtr.Zero
+                    || !string.Equals(
+                        profile.DetectionStrategy,
+                        "KintetsuEmergencyCandidates",
+                        StringComparison.Ordinal
+                    )
+                    || profile.DirectPhysicalBrakeRva == 0
+                    || profile.DirectServiceMaximumRva == 0
+                    || profile.DirectEmergencyRva == 0
+                    || profile.DirectOutputBrakeRva == 0
+                    || profile.KintetsuAbsoluteStopEmergencyLatchRva == 0
+                    || profile.KintetsuSecondaryEmergencySourceRva == 0
+                )
+                {
+                    continue;
+                }
 
-            bool candidateStateChanged =
-                !profile.HasPreviousRequestCandidateState
-                || requestModeCandidate
-                    != profile.PreviousRequestModeCandidate
-                || mode1RequestBrakeCandidate
-                    != profile.PreviousMode1RequestBrakeCandidate
-                || secondaryRequestEnabledCandidate
-                    != profile.PreviousSecondaryRequestEnabledCandidate
-                || secondaryRequestBrakeCandidate
-                    != profile.PreviousSecondaryRequestBrakeCandidate
-                || serviceMaximumRequestFlag1
-                    != profile.PreviousServiceMaximumRequestFlag1
-                || serviceMaximumRequestFlag2
-                    != profile.PreviousServiceMaximumRequestFlag2
-                || emergencyRequestFlag1
-                    != profile.PreviousEmergencyRequestFlag1
-                || emergencyRequestFlag2
-                    != profile.PreviousEmergencyRequestFlag2
-                || emergencyRequestFlag3
-                    != profile.PreviousEmergencyRequestFlag3
-                || physicalBrake
-                    != profile.PreviousCandidatePhysicalBrake
-                || serviceMaximum
-                    != profile.PreviousCandidateServiceMaximum
-                || emergency
-                    != profile.PreviousCandidateEmergency
-                || outputBrake
-                    != profile.PreviousCandidateOutputBrake;
-            if (!candidateStateChanged)
-            {
-                return;
-            }
+                byte absoluteStopEmergencyLatch;
+                byte secondaryEmergencySource;
+                int physicalBrake;
+                int serviceMaximum;
+                int emergency;
+                int outputBrake;
 
-            // =========================================================
-            // 旧版で動的確認し、更新版で静的対応を確認した要求フラグ。
-            // 更新版については、この診断ログで意味を検証する。
+                bool absoluteStopRead =
+                    TryReadRuntimeByte(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.KintetsuAbsoluteStopEmergencyLatchRva
+                        ),
+                        out absoluteStopEmergencyLatch
+                    );
 
-            //
-            // ServiceFlag2:
-            // 常用最大要求
-            //
-            // EmergencyFlag1:
-            // 非常要求
-            //
-            // 非常要求を常用最大要求より優先する。
-            // =========================================================
-            bool verifiedServiceMaximumRequested =
-                serviceMaximumRequestFlag2 != 0;
+                bool secondarySourceRead =
+                    TryReadRuntimeByte(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.KintetsuSecondaryEmergencySourceRva
+                        ),
+                        out secondaryEmergencySource
+                    );
 
-            bool verifiedEmergencyRequested =
-                emergencyRequestFlag1 != 0;
+                bool physicalRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.DirectPhysicalBrakeRva
+                        ),
+                        out physicalBrake
+                    );
 
-            int safetyRequestBrake = 0;
-            string safetyRequestKind = "None";
-            string safetyRequestSource = "None";
+                bool serviceRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.DirectServiceMaximumRva
+                        ),
+                        out serviceMaximum
+                    );
 
-            if (verifiedEmergencyRequested)
-            {
-                safetyRequestBrake = emergency;
-                safetyRequestKind = "Emergency";
-                safetyRequestSource = "EmergencyFlag1";
-            }
-            else if (verifiedServiceMaximumRequested)
-            {
-                safetyRequestBrake = serviceMaximum;
-                safetyRequestKind = "ServiceMaximum";
-                safetyRequestSource = "ServiceFlag2";
-            }
+                bool emergencyRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.DirectEmergencyRva
+                        ),
+                        out emergency
+                    );
 
-            // ほかの候補フラグは、別モードで使用される可能性があるため
-            // 診断ログには残す。
-            bool anyServiceMaximumCandidate =
-                serviceMaximumRequestFlag1 != 0
-                || serviceMaximumRequestFlag2 != 0;
-
-            bool anyEmergencyCandidate =
-                emergencyRequestFlag1 != 0
-                || emergencyRequestFlag2 != 0
-                || emergencyRequestFlag3 != 0;
-
-            string requestModeInterpretation;
-
-            if (requestModeCandidate == 3)
-            {
-                requestModeInterpretation =
-                    "EmergencyCandidate";
-            }
-            else if (requestModeCandidate == 2)
-            {
-                requestModeInterpretation =
-                    "ServiceMaximumCandidate";
-            }
-            else if (requestModeCandidate == 1)
-            {
-                requestModeInterpretation =
-                    "VariableBrakeCandidate";
-            }
-            else if (requestModeCandidate == 0)
-            {
-                requestModeInterpretation =
-                    "NoneCandidate";
-            }
-            else
-            {
-                requestModeInterpretation =
-                    "UnknownCandidate";
-            }
-
-            // =========================================================
-            // 動的確認済みの要求フラグから、介入状態遷移を生成する。
-            //
-            // PhysicalやOutputは介入判定には使用しない。
-            // そのため、物理EB中でも保安装置側の要求を識別できる。
-            // =========================================================
-            if (!profile.HasPreviousInterventionState)
-            {
-                profile.HasPreviousInterventionState = true;
-                profile.PreviousInterventionKind =
-                    safetyRequestKind;
-            }
-            else if (
-                profile.PreviousInterventionKind
-                    != safetyRequestKind
-            )
-            {
-                string transitionType;
+                bool outputRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.DirectOutputBrakeRva
+                        ),
+                        out outputBrake
+                    );
 
                 if (
-                    profile.PreviousInterventionKind == "None"
-                    && safetyRequestKind != "None"
+                    !absoluteStopRead
+                    || !secondarySourceRead
+                    || !physicalRead
+                    || !serviceRead
+                    || !emergencyRead
+                    || !outputRead
                 )
                 {
-                    transitionType = "START";
+                    continue;
                 }
-                else if (
-                    profile.PreviousInterventionKind != "None"
-                    && safetyRequestKind == "None"
+
+                if (
+                    physicalBrake < -1
+                    || physicalBrake > 100
+                    || serviceMaximum < 0
+                    || serviceMaximum > 100
+                    || emergency < 0
+                    || emergency > 100
+                    || outputBrake < -1
+                    || outputBrake > 100
                 )
                 {
-                    transitionType = "END";
+                    continue;
+                }
+
+                bool stateChanged =
+                    !profile.HasPreviousKintetsuEmergencyCandidateState
+                    || absoluteStopEmergencyLatch
+                        != profile.PreviousKintetsuAbsoluteStopEmergencyLatch
+                    || secondaryEmergencySource
+                        != profile.PreviousKintetsuSecondaryEmergencySource
+                    || physicalBrake
+                        != profile.PreviousKintetsuPhysicalBrake
+                    || serviceMaximum
+                        != profile.PreviousKintetsuServiceMaximum
+                    || emergency
+                        != profile.PreviousKintetsuEmergency
+                    || outputBrake
+                        != profile.PreviousKintetsuOutputBrake;
+
+                if (!stateChanged)
+                {
+                    continue;
+                }
+
+                bool anySafetyEmergencyCandidate =
+                    absoluteStopEmergencyLatch != 0
+                    || secondaryEmergencySource != 0;
+
+                bool outputIsEmergency =
+                    outputBrake == emergency;
+
+                bool emergencyHiddenByPhysical =
+                    anySafetyEmergencyCandidate
+                    && physicalBrake >= emergency;
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[KINTETSU_EMERGENCY_CANDIDATE] "
+                    + $"File:{profile.FileName}, "
+                    + $"SHA256:{profile.Sha256}, "
+                    + $"Strategy:{profile.DetectionStrategy}, "
+                    + "AbsoluteStopEmergencyLatch:"
+                    + $"{absoluteStopEmergencyLatch}, "
+                    + "SecondaryEmergencySource:"
+                    + $"{secondaryEmergencySource}, "
+                    + "AnySafetyEmergencyCandidate:"
+                    + $"{anySafetyEmergencyCandidate}, "
+                    + $"Physical:{physicalBrake}, "
+                    + $"ServiceMax:{serviceMaximum}, "
+                    + $"Emergency:{emergency}, "
+                    + $"Output:{outputBrake}, "
+                    + $"OutputIsEmergency:{outputIsEmergency}, "
+                    + "HiddenByPhysical:"
+                    + $"{emergencyHiddenByPhysical}, "
+                    + "ScoringEnabled:False"
+                );
+
+                profile.HasPreviousKintetsuEmergencyCandidateState =
+                    true;
+
+                profile.PreviousKintetsuAbsoluteStopEmergencyLatch =
+                    absoluteStopEmergencyLatch;
+
+                profile.PreviousKintetsuSecondaryEmergencySource =
+                    secondaryEmergencySource;
+
+                profile.PreviousKintetsuPhysicalBrake =
+                    physicalBrake;
+
+                profile.PreviousKintetsuServiceMaximum =
+                    serviceMaximum;
+
+                profile.PreviousKintetsuEmergency =
+                    emergency;
+
+                profile.PreviousKintetsuOutputBrake =
+                    outputBrake;
+
+                hasChanges = true;
+            }
+        }
+
+        // =========================================================
+        // 近鉄大阪線向け旧版について、非常2源と常用最大2源を
+        // 個別に読み取る。
+        //
+        // この処理は動的検証専用であり、採点には接続しない。
+        // =========================================================
+        private void DiagnoseKintetsuServiceAndEmergencyCandidates(
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            foreach (
+                RuntimeProfileIdentity profile
+                in runtimeProfilesByHash.Values
+            )
+            {
+                if (
+                    profile.ModuleBaseAddress == IntPtr.Zero
+                    || !string.Equals(
+                        profile.DetectionStrategy,
+                        "KintetsuServiceAndEmergencyCandidates",
+                        StringComparison.Ordinal
+                    )
+                    || profile.DirectPhysicalBrakeRva == 0
+                    || profile.DirectServiceMaximumRva == 0
+                    || profile.DirectEmergencyRva == 0
+                    || profile.DirectOutputBrakeRva == 0
+                    || profile.KintetsuEmergencySourceARva == 0
+                    || profile.KintetsuEmergencySourceBRva == 0
+                    || profile.KintetsuServiceMaximumSourceARva == 0
+                    || profile.KintetsuServiceMaximumSourceBRva == 0
+                )
+                {
+                    continue;
+                }
+
+                byte emergencySourceA;
+                byte emergencySourceB;
+                byte serviceMaximumSourceA;
+                byte serviceMaximumSourceB;
+
+                int physicalBrake;
+                int serviceMaximum;
+                int emergency;
+                int outputBrake;
+
+                bool emergencySourceARead =
+                    TryReadRuntimeByte(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.KintetsuEmergencySourceARva
+                        ),
+                        out emergencySourceA
+                    );
+
+                bool emergencySourceBRead =
+                    TryReadRuntimeByte(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.KintetsuEmergencySourceBRva
+                        ),
+                        out emergencySourceB
+                    );
+
+                bool serviceMaximumSourceARead =
+                    TryReadRuntimeByte(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.KintetsuServiceMaximumSourceARva
+                        ),
+                        out serviceMaximumSourceA
+                    );
+
+                bool serviceMaximumSourceBRead =
+                    TryReadRuntimeByte(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.KintetsuServiceMaximumSourceBRva
+                        ),
+                        out serviceMaximumSourceB
+                    );
+
+                bool physicalRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.DirectPhysicalBrakeRva
+                        ),
+                        out physicalBrake
+                    );
+
+                bool serviceRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.DirectServiceMaximumRva
+                        ),
+                        out serviceMaximum
+                    );
+
+                bool emergencyRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.DirectEmergencyRva
+                        ),
+                        out emergency
+                    );
+
+                bool outputRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.DirectOutputBrakeRva
+                        ),
+                        out outputBrake
+                    );
+
+                if (
+                    !emergencySourceARead
+                    || !emergencySourceBRead
+                    || !serviceMaximumSourceARead
+                    || !serviceMaximumSourceBRead
+                    || !physicalRead
+                    || !serviceRead
+                    || !emergencyRead
+                    || !outputRead
+                )
+                {
+                    continue;
+                }
+
+                if (
+                    physicalBrake < -1
+                    || physicalBrake > 100
+                    || serviceMaximum < 0
+                    || serviceMaximum > 100
+                    || emergency < 0
+                    || emergency > 100
+                    || outputBrake < -1
+                    || outputBrake > 100
+                )
+                {
+                    continue;
+                }
+
+                bool stateChanged =
+                    !profile
+                        .HasPreviousKintetsuServiceAndEmergencyCandidateState
+                    || emergencySourceA
+                        != profile.PreviousKintetsuEmergencySourceA
+                    || emergencySourceB
+                        != profile.PreviousKintetsuEmergencySourceB
+                    || serviceMaximumSourceA
+                        != profile.PreviousKintetsuServiceMaximumSourceA
+                    || serviceMaximumSourceB
+                        != profile.PreviousKintetsuServiceMaximumSourceB
+                    || physicalBrake
+                        != profile
+                            .PreviousKintetsuServiceAndEmergencyPhysicalBrake
+                    || serviceMaximum
+                        != profile
+                            .PreviousKintetsuServiceAndEmergencyServiceMaximum
+                    || emergency
+                        != profile
+                            .PreviousKintetsuServiceAndEmergencyEmergency
+                    || outputBrake
+                        != profile
+                            .PreviousKintetsuServiceAndEmergencyOutputBrake;
+
+                if (!stateChanged)
+                {
+                    continue;
+                }
+
+                bool safetyEmergencyRequested =
+                    emergencySourceA != 0
+                    || emergencySourceB != 0;
+
+                bool safetyServiceMaximumRequested =
+                    serviceMaximumSourceA != 0
+                    || serviceMaximumSourceB != 0;
+
+                int requestBrake;
+                string requestKind;
+
+                if (safetyEmergencyRequested)
+                {
+                    requestBrake = emergency;
+                    requestKind = "SafetyEmergency";
+                }
+                else if (safetyServiceMaximumRequested)
+                {
+                    requestBrake = serviceMaximum;
+                    requestKind = "ServiceMaximum";
                 }
                 else
                 {
-                    transitionType = "CHANGE";
+                    requestBrake = 0;
+                    requestKind = "None";
+                }
+
+                bool hiddenByPhysical =
+                    requestBrake > 0
+                    && physicalBrake >= requestBrake;
+
+                bool outputMatchesRequest =
+                    requestBrake > 0
+                    && outputBrake == requestBrake;
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[KINTETSU_SERVICE_EMERGENCY_CANDIDATE] "
+                    + $"File:{profile.FileName}, "
+                    + $"SHA256:{profile.Sha256}, "
+                    + $"Strategy:{profile.DetectionStrategy}, "
+                    + $"EmergencySourceA:{emergencySourceA}, "
+                    + $"EmergencySourceB:{emergencySourceB}, "
+                    + "ServiceMaximumSourceA:"
+                    + $"{serviceMaximumSourceA}, "
+                    + "ServiceMaximumSourceB:"
+                    + $"{serviceMaximumSourceB}, "
+                    + "SafetyEmergencyRequested:"
+                    + $"{safetyEmergencyRequested}, "
+                    + "SafetyServiceMaximumRequested:"
+                    + $"{safetyServiceMaximumRequested}, "
+                    + $"Request:{requestBrake}, "
+                    + $"RequestKind:{requestKind}, "
+                    + $"Physical:{physicalBrake}, "
+                    + $"ServiceMax:{serviceMaximum}, "
+                    + $"Emergency:{emergency}, "
+                    + $"Output:{outputBrake}, "
+                    + $"OutputMatchesRequest:{outputMatchesRequest}, "
+                    + $"HiddenByPhysical:{hiddenByPhysical}, "
+                    + "ScoringEnabled:False"
+                );
+
+                profile
+                    .HasPreviousKintetsuServiceAndEmergencyCandidateState =
+                    true;
+
+                profile.PreviousKintetsuEmergencySourceA =
+                    emergencySourceA;
+
+                profile.PreviousKintetsuEmergencySourceB =
+                    emergencySourceB;
+
+                profile.PreviousKintetsuServiceMaximumSourceA =
+                    serviceMaximumSourceA;
+
+                profile.PreviousKintetsuServiceMaximumSourceB =
+                    serviceMaximumSourceB;
+
+                profile
+                    .PreviousKintetsuServiceAndEmergencyPhysicalBrake =
+                    physicalBrake;
+
+                profile
+                    .PreviousKintetsuServiceAndEmergencyServiceMaximum =
+                    serviceMaximum;
+
+                profile
+                    .PreviousKintetsuServiceAndEmergencyEmergency =
+                    emergency;
+
+                profile
+                    .PreviousKintetsuServiceAndEmergencyOutputBrake =
+                    outputBrake;
+
+                hasChanges = true;
+            }
+        }
+        // =========================================================
+        // ExplicitMetroBrakeRequestState方式の全プロファイルについて、
+        // カタログ記載の内部要求状態を読み取る。
+        //
+        // 特定のSHA-256および固定RVAには依存しない。
+        // この処理は診断ログだけを生成し、採点には接続しない。
+        // =========================================================
+        private void DiagnoseMetroRequestCandidates(
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            foreach (
+                RuntimeProfileIdentity profile
+                in runtimeProfilesByHash.Values
+            )
+            {
+                if (
+                    profile.ModuleBaseAddress == IntPtr.Zero
+                    || !string.Equals(
+                        profile.DetectionStrategy,
+                        "ExplicitMetroBrakeRequestState",
+                        StringComparison.Ordinal
+                    )
+                    || profile.DirectPhysicalBrakeRva == 0
+                    || profile.DirectServiceMaximumRva == 0
+                    || profile.DirectEmergencyRva == 0
+                    || profile.DirectOutputBrakeRva == 0
+                    || profile.MetroEmergencySelectionFlagRva == 0
+                    || profile.MetroLevel7SelectionFlagRva == 0
+                    || profile.MetroLevel4SelectionFlagRva == 0
+                    || profile.MetroControlModeRva == 0
+                    || profile.MetroInternalStateRva == 0
+                )
+                {
+                    continue;
+                }
+
+                byte emergencySelectionFlag;
+                byte level7SelectionFlag;
+                byte serviceMaximumMinus3SelectionFlag;
+
+                int controlMode;
+                int internalState;
+                int safetyEmergencySource = 0;
+
+                int physicalBrake;
+                int serviceMaximum;
+                int emergency;
+                int outputBrake;
+
+                bool emergencySelectionRead =
+                    TryReadRuntimeByte(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.MetroEmergencySelectionFlagRva
+                        ),
+                        out emergencySelectionFlag
+                    );
+
+                bool level7SelectionRead =
+                    TryReadRuntimeByte(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.MetroLevel7SelectionFlagRva
+                        ),
+                        out level7SelectionFlag
+                    );
+
+                bool serviceMaximumMinus3SelectionRead =
+    TryReadRuntimeByte(
+        IntPtr.Add(
+            profile.ModuleBaseAddress,
+            profile.MetroLevel4SelectionFlagRva
+        ),
+        out serviceMaximumMinus3SelectionFlag
+    );
+
+                bool controlModeRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.MetroControlModeRva
+                        ),
+                        out controlMode
+                    );
+
+                bool internalStateRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.MetroInternalStateRva
+                        ),
+                        out internalState
+                    );
+
+                bool safetyEmergencySourceAvailable =
+                    profile.MetroSafetyEmergencySourceRva != 0;
+
+                bool safetyEmergencySourceRead =
+                    !safetyEmergencySourceAvailable
+                    || TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.MetroSafetyEmergencySourceRva
+                        ),
+                        out safetyEmergencySource
+                    );
+
+                bool physicalRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.DirectPhysicalBrakeRva
+                        ),
+                        out physicalBrake
+                    );
+
+                bool serviceRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.DirectServiceMaximumRva
+                        ),
+                        out serviceMaximum
+                    );
+
+                bool emergencyRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.DirectEmergencyRva
+                        ),
+                        out emergency
+                    );
+
+                bool outputRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.DirectOutputBrakeRva
+                        ),
+                        out outputBrake
+                    );
+
+                if (
+                    !emergencySelectionRead
+                    || !level7SelectionRead
+                    || !serviceMaximumMinus3SelectionRead
+                    || !controlModeRead
+                    || !internalStateRead
+                    || !safetyEmergencySourceRead
+                    || !physicalRead
+                    || !serviceRead
+                    || !emergencyRead
+                    || !outputRead
+                )
+                {
+                    continue;
+                }
+
+                if (
+                    physicalBrake < -1
+                    || physicalBrake > 100
+                    || serviceMaximum < 0
+                    || serviceMaximum > 100
+                    || emergency < 0
+                    || emergency > 100
+                    || outputBrake < -1
+                    || outputBrake > 100
+                )
+                {
+                    continue;
+                }
+
+                bool stateChanged =
+                    !profile.HasPreviousMetroRequestCandidateState
+                    || emergencySelectionFlag
+                        != profile.PreviousMetroEmergencyFlag
+                    || level7SelectionFlag
+                        != profile.PreviousMetroLevel7Flag
+                    || serviceMaximumMinus3SelectionFlag
+    != profile.PreviousMetroServiceMaximumMinus3Flag
+                    || controlMode
+                        != profile.PreviousMetroControlMode
+                    || internalState
+                        != profile.PreviousMetroInternalState
+                    || safetyEmergencySource
+                        != profile.PreviousMetroSafetyEmergencySource
+                    || physicalBrake
+                        != profile.PreviousRequestPhysicalBrake
+                    || serviceMaximum
+                        != profile.PreviousRequestServiceMaximum
+                    || emergency
+                        != profile.PreviousRequestEmergency
+                    || outputBrake
+                        != profile.PreviousRequestOutputBrake;
+
+                if (!stateChanged)
+                {
+                    continue;
+                }
+
+                bool safetyEmergencySourceVerified =
+    string.Equals(
+        profile.SafetyEmergencySourceVerificationStatus,
+        "DynamicVerificationPassed",
+        StringComparison.Ordinal
+    );
+
+                bool safetyEmergencyRequested =
+                    safetyEmergencySourceAvailable
+                    && safetyEmergencySourceVerified
+                    && safetyEmergencySource != 0;
+
+                int requestBrake = 0;
+                string requestKind = "None";
+
+                if (safetyEmergencyRequested)
+                {
+                    requestBrake = emergency;
+                    requestKind = "SafetyEmergency";
+                }
+                else if (level7SelectionFlag != 0)
+                {
+                    // 回生失効関連の出力調整によって、最終出力が
+                    // serviceMaximum - 1になる場合でも、内部要求は常用最大。
+                    requestBrake = serviceMaximum;
+                    requestKind = "ServiceMaximum";
+                }
+                else if (serviceMaximumMinus3SelectionFlag != 0)
+                {
+                    requestBrake =
+                        Math.Max(
+                            0,
+                            serviceMaximum - 3
+                        );
+
+                    requestKind = "ServiceMaximumMinus3";
+                }
+
+
+                string safetyEmergencySourceText =
+                    safetyEmergencySourceAvailable
+                        ? safetyEmergencySource.ToString()
+                        : "<N/A>";
+
+                bool outputReducedFromServiceMaximum =
+    level7SelectionFlag != 0
+    && controlMode == 1
+    && outputBrake == serviceMaximum - 1;
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[METRO_REQUEST_CANDIDATE] "
+                    + $"File:{profile.FileName}, "
+                    + $"SHA256:{profile.Sha256}, "
+                    + $"Strategy:{profile.DetectionStrategy}, "
+                    + "EmergencySelectionFlag:"
+                    + $"{emergencySelectionFlag}, "
+                    + $"Level7Flag:{level7SelectionFlag}, "
+                    + "ServiceMaximumMinus3Flag:"
+                    + $"{serviceMaximumMinus3SelectionFlag}, "
+                    + "RegenerativeBrakeAdjustmentState:"
+                    + $"{controlMode}, "
+                    + "OutputReducedFromServiceMaximum:"
+                    + $"{outputReducedFromServiceMaximum}, "
+                    + $"InternalState:{internalState}, "
+                    + "SafetyEmergencySource:"
+                    + $"{safetyEmergencySourceText}, "
+                    + "SafetyEmergencySourceVerification:"
+                    + $"{profile.SafetyEmergencySourceVerificationStatus}, "
+                    + "SafetyEmergencySourceVerified:"
+                    + $"{safetyEmergencySourceVerified}, "
+                    + "SafetyEmergencyRequested:"
+                    + $"{safetyEmergencyRequested}, "
+                    + $"Request:{requestBrake}, "
+                    + $"RequestKind:{requestKind}, "
+                    + $"Physical:{physicalBrake}, "
+                    + $"ServiceMax:{serviceMaximum}, "
+                    + $"Emergency:{emergency}, "
+                    + $"Output:{outputBrake}, "
+                    + "HiddenByPhysical:"
+                    + $"{(requestBrake > 0 && physicalBrake >= requestBrake)}, "
+                    + "ScoringEnabled:False"
+                );
+
+                profile.HasPreviousMetroRequestCandidateState =
+                    true;
+
+                profile.PreviousMetroEmergencyFlag =
+                    emergencySelectionFlag;
+
+                profile.PreviousMetroLevel7Flag =
+                    level7SelectionFlag;
+
+                profile.PreviousMetroServiceMaximumMinus3Flag =
+    serviceMaximumMinus3SelectionFlag;
+
+                profile.PreviousMetroControlMode =
+                    controlMode;
+
+                profile.PreviousMetroInternalState =
+                    internalState;
+
+                profile.PreviousMetroSafetyEmergencySource =
+                    safetyEmergencySource;
+
+                profile.PreviousRequestPhysicalBrake =
+                    physicalBrake;
+
+                profile.PreviousRequestServiceMaximum =
+                    serviceMaximum;
+
+                profile.PreviousRequestEmergency =
+                    emergency;
+
+                profile.PreviousRequestOutputBrake =
+                    outputBrake;
+
+                hasChanges = true;
+            }
+        }
+        // =========================================================
+        // ExplicitBrakeRequestFlags方式の全プロファイルについて、
+        // カタログ記載の要求フラグを読み取る。
+        //
+        // 特定のDLL名、SHA-256、フラグ個数、配列位置には依存しない。
+        // この処理は診断ログだけを生成し、採点には接続しない。
+        // =========================================================
+        private void DiagnoseExplicitBrakeRequestFlags(
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            foreach (
+                RuntimeProfileIdentity profile
+                in runtimeProfilesByHash.Values
+            )
+            {
+                if (
+                    profile.ModuleBaseAddress == IntPtr.Zero
+                    || !string.Equals(
+                        profile.DetectionStrategy,
+                        "ExplicitBrakeRequestFlags",
+                        StringComparison.Ordinal
+                    )
+                    || !string.Equals(
+                        profile.DetectionPriority,
+                        "EmergencyThenServiceMaximum",
+                        StringComparison.Ordinal
+                    )
+                    || profile.DirectPhysicalBrakeRva == 0
+                    || profile.DirectServiceMaximumRva == 0
+                    || profile.DirectEmergencyRva == 0
+                    || profile.DirectOutputBrakeRva == 0
+                    || profile.ServiceMaximumRequestFlagRvas == null
+                    || profile.ServiceMaximumRequestFlagRvas.Count == 0
+                    || profile.EmergencyRequestFlagRvas == null
+                    || profile.EmergencyRequestFlagRvas.Count == 0
+                )
+                {
+                    continue;
+                }
+
+                List<byte> serviceMaximumRequestFlags;
+                List<byte> emergencyRequestFlags;
+
+                bool serviceFlagsRead =
+                    TryReadRuntimeBytes(
+                        profile.ModuleBaseAddress,
+                        profile.ServiceMaximumRequestFlagRvas,
+                        out serviceMaximumRequestFlags
+                    );
+
+                bool emergencyFlagsRead =
+                    TryReadRuntimeBytes(
+                        profile.ModuleBaseAddress,
+                        profile.EmergencyRequestFlagRvas,
+                        out emergencyRequestFlags
+                    );
+
+                int physicalBrake;
+                int serviceMaximum;
+                int emergency;
+                int outputBrake;
+
+                bool physicalRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.DirectPhysicalBrakeRva
+                        ),
+                        out physicalBrake
+                    );
+
+                bool serviceRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.DirectServiceMaximumRva
+                        ),
+                        out serviceMaximum
+                    );
+
+                bool emergencyRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.DirectEmergencyRva
+                        ),
+                        out emergency
+                    );
+
+                bool outputRead =
+                    TryReadRuntimeInt32(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.DirectOutputBrakeRva
+                        ),
+                        out outputBrake
+                    );
+
+                if (
+                    !serviceFlagsRead
+                    || !emergencyFlagsRead
+                    || !physicalRead
+                    || !serviceRead
+                    || !emergencyRead
+                    || !outputRead
+                )
+                {
+                    continue;
+                }
+
+                if (
+                    physicalBrake < -1
+                    || serviceMaximum < 0
+                    || emergency < 0
+                    || outputBrake < -1
+                    || physicalBrake > 100
+                    || serviceMaximum > 100
+                    || emergency > 100
+                    || outputBrake > 100
+                )
+                {
+                    continue;
+                }
+
+                bool stateChanged =
+                    !profile.HasPreviousRequestFlagState
+                    || !RuntimeByteListsEqual(
+                        serviceMaximumRequestFlags,
+                        profile.PreviousServiceMaximumRequestFlags
+                    )
+                    || !RuntimeByteListsEqual(
+                        emergencyRequestFlags,
+                        profile.PreviousEmergencyRequestFlags
+                    )
+                    || physicalBrake
+                        != profile.PreviousRequestPhysicalBrake
+                    || serviceMaximum
+                        != profile.PreviousRequestServiceMaximum
+                    || emergency
+                        != profile.PreviousRequestEmergency
+                    || outputBrake
+                        != profile.PreviousRequestOutputBrake;
+
+                if (!stateChanged)
+                {
+                    continue;
+                }
+
+                bool serviceMaximumRequested =
+                    serviceMaximumRequestFlags.Any(
+                        value => value != 0
+                    );
+
+                bool emergencyRequested =
+                    emergencyRequestFlags.Any(
+                        value => value != 0
+                    );
+
+                int safetyRequestBrake = 0;
+                string safetyRequestKind = "None";
+
+                if (emergencyRequested)
+                {
+                    safetyRequestBrake = emergency;
+                    safetyRequestKind = "Emergency";
+                }
+                else if (serviceMaximumRequested)
+                {
+                    safetyRequestBrake = serviceMaximum;
+                    safetyRequestKind = "ServiceMaximum";
+                }
+
+                string activeServiceRvas =
+                    FormatActiveRequestFlagRvas(
+                        profile.ServiceMaximumRequestFlagRvas,
+                        serviceMaximumRequestFlags
+                    );
+
+                string activeEmergencyRvas =
+                    FormatActiveRequestFlagRvas(
+                        profile.EmergencyRequestFlagRvas,
+                        emergencyRequestFlags
+                    );
+
+                string requestSource;
+
+                if (emergencyRequested)
+                {
+                    requestSource =
+                        $"EmergencyFlags:{activeEmergencyRvas}";
+                }
+                else if (serviceMaximumRequested)
+                {
+                    requestSource =
+                        $"ServiceFlags:{activeServiceRvas}";
+                }
+                else
+                {
+                    requestSource = "None";
+                }
+
+                if (!profile.HasPreviousInterventionState)
+                {
+                    profile.HasPreviousInterventionState = true;
+                    profile.PreviousInterventionKind =
+                        safetyRequestKind;
+                }
+                else if (
+                    profile.PreviousInterventionKind
+                        != safetyRequestKind
+                )
+                {
+                    string transitionType;
+
+                    if (
+                        profile.PreviousInterventionKind == "None"
+                        && safetyRequestKind != "None"
+                    )
+                    {
+                        transitionType = "START";
+                    }
+                    else if (
+                        profile.PreviousInterventionKind != "None"
+                        && safetyRequestKind == "None"
+                    )
+                    {
+                        transitionType = "END";
+                    }
+                    else
+                    {
+                        transitionType = "CHANGE";
+                    }
+
+                    rtLog.AppendLine(
+                        $"[{DateTime.Now:HH:mm:ss.fff}] "
+                        + "[RUNTIME_INTERVENTION] "
+                        + $"Event:{transitionType}, "
+                        + $"File:{profile.FileName}, "
+                        + $"SHA256:{profile.Sha256}, "
+                        + $"Pattern:{profile.Pattern}, "
+                        + $"Strategy:{profile.DetectionStrategy}, "
+                        + "PreviousKind:"
+                        + $"{profile.PreviousInterventionKind}, "
+                        + $"CurrentKind:{safetyRequestKind}, "
+                        + $"SafetyRequest:{safetyRequestBrake}, "
+                        + $"RequestSource:{requestSource}, "
+                        + $"ActiveServiceRvas:{activeServiceRvas}, "
+                        + $"ActiveEmergencyRvas:{activeEmergencyRvas}, "
+                        + $"Physical:{physicalBrake}, "
+                        + $"ServiceMax:{serviceMaximum}, "
+                        + $"Emergency:{emergency}, "
+                        + $"Output:{outputBrake}, "
+                        + "ScoringEnabled:False"
+                    );
+
+                    profile.PreviousInterventionKind =
+                        safetyRequestKind;
+
+                    hasChanges = true;
                 }
 
                 rtLog.AppendLine(
                     $"[{DateTime.Now:HH:mm:ss.fff}] "
-                    + "[RUNTIME_INTERVENTION] "
-                    + $"Event:{transitionType}, "
+                    + "[RUNTIME_REQUEST_FLAGS] "
                     + $"File:{profile.FileName}, "
                     + $"SHA256:{profile.Sha256}, "
                     + $"Pattern:{profile.Pattern}, "
-                    + "PreviousKind:"
-                    + $"{profile.PreviousInterventionKind}, "
-                    + $"CurrentKind:{safetyRequestKind}, "
+                    + $"Strategy:{profile.DetectionStrategy}, "
+                    + "ServiceFlagValues:"
+                    + $"{string.Join("|", serviceMaximumRequestFlags)}, "
+                    + "EmergencyFlagValues:"
+                    + $"{string.Join("|", emergencyRequestFlags)}, "
+                    + $"ActiveServiceRvas:{activeServiceRvas}, "
+                    + $"ActiveEmergencyRvas:{activeEmergencyRvas}, "
                     + $"SafetyRequest:{safetyRequestBrake}, "
-                    + $"RequestSource:{safetyRequestSource}, "
+                    + $"RequestKind:{safetyRequestKind}, "
+                    + $"RequestSource:{requestSource}, "
                     + $"Physical:{physicalBrake}, "
                     + $"ServiceMax:{serviceMaximum}, "
                     + $"Emergency:{emergency}, "
@@ -1976,100 +6694,66 @@ namespace TsScoringPlugin
                     + "ScoringEnabled:False"
                 );
 
-                profile.PreviousInterventionKind =
-                    safetyRequestKind;
+                profile.HasPreviousRequestFlagState = true;
+
+                profile.PreviousServiceMaximumRequestFlags =
+                    new List<byte>(
+                        serviceMaximumRequestFlags
+                    );
+
+                profile.PreviousEmergencyRequestFlags =
+                    new List<byte>(
+                        emergencyRequestFlags
+                    );
+
+                profile.PreviousRequestPhysicalBrake =
+                    physicalBrake;
+
+                profile.PreviousRequestServiceMaximum =
+                    serviceMaximum;
+
+                profile.PreviousRequestEmergency =
+                    emergency;
+
+                profile.PreviousRequestOutputBrake =
+                    outputBrake;
 
                 hasChanges = true;
             }
-
-            rtLog.AppendLine(
-                $"[{DateTime.Now:HH:mm:ss.fff}] "
-                + "[RUNTIME_REQUEST_CANDIDATE] "
-                + $"File:{profile.FileName}, "
-                + $"SHA256:{profile.Sha256}, "
-                + $"Pattern:{profile.Pattern}, "
-                + $"ModeCandidate:{requestModeCandidate}, "
-                + $"ModeMeaning:{requestModeInterpretation}, "
-                + "Mode1RequestBrake:"
-                + $"{mode1RequestBrakeCandidate}, "
-                + "SecondaryEnabled:"
-                + $"{secondaryRequestEnabledCandidate}, "
-                + "SecondaryRequestBrake:"
-                + $"{secondaryRequestBrakeCandidate}, "
-                + "ServiceFlag1:"
-                + $"{serviceMaximumRequestFlag1}, "
-                + "ServiceFlag2:"
-                + $"{serviceMaximumRequestFlag2}, "
-                + "AnyServiceCandidate:"
-                + $"{anyServiceMaximumCandidate}, "
-                + "EmergencyFlag1:"
-                + $"{emergencyRequestFlag1}, "
-                + "EmergencyFlag2:"
-                + $"{emergencyRequestFlag2}, "
-                + "EmergencyFlag3:"
-                + $"{emergencyRequestFlag3}, "
-                + "AnyEmergencyCandidate:"
-                + $"{anyEmergencyCandidate}, "
-                + $"SafetyRequest:{safetyRequestBrake}, "
-                + $"RequestKind:{safetyRequestKind}, "
-                + $"RequestSource:{safetyRequestSource}, "
-                + $"Physical:{physicalBrake}, "
-                + $"ServiceMax:{serviceMaximum}, "
-                + $"Emergency:{emergency}, "
-                + $"Output:{outputBrake}, "
-                + "ScoringEnabled:False"
-            );
-
-            profile.HasPreviousRequestCandidateState = true;
-
-            profile.PreviousRequestModeCandidate =
-                requestModeCandidate;
-
-            profile.PreviousMode1RequestBrakeCandidate =
-                mode1RequestBrakeCandidate;
-
-            profile.PreviousSecondaryRequestEnabledCandidate =
-                secondaryRequestEnabledCandidate;
-
-            profile.PreviousCandidatePhysicalBrake =
-                physicalBrake;
-
-            profile.PreviousCandidateServiceMaximum =
-                serviceMaximum;
-
-            profile.PreviousCandidateEmergency =
-                emergency;
-
-            profile.PreviousCandidateOutputBrake =
-                outputBrake;
-
-            profile.PreviousSecondaryRequestBrakeCandidate =
-                secondaryRequestBrakeCandidate;
-
-            profile.PreviousServiceMaximumRequestFlag1 =
-                serviceMaximumRequestFlag1;
-
-            profile.PreviousServiceMaximumRequestFlag2 =
-                serviceMaximumRequestFlag2;
-
-            profile.PreviousEmergencyRequestFlag1 =
-                emergencyRequestFlag1;
-
-            profile.PreviousEmergencyRequestFlag2 =
-                emergencyRequestFlag2;
-
-            profile.PreviousEmergencyRequestFlag3 =
-                emergencyRequestFlag3;
-            hasChanges = true;
         }
+
         public override void Tick(TimeSpan elapsed)
         {
             if (!BveHacker.IsScenarioCreated)
             {
                 isLogSessionInitialized = false;
                 isAtsStructureDumped = false;
+                hasDumpedVehiclePlugins = false;
+                hasLoggedVehiclePluginsError = false;
+                hasDumpedAtsPtAppDomain = false;
+                hasLoggedAtsPtAppDomainError = false;
+                hasDumpedBveExHostReferences = false;
+                hasLoggedBveExHostReferenceError = false;
+                hasDumpedExtensionSet = false;
+                hasLoggedExtensionSetError = false;
+                hasDumpedBveExStaticPluginHosts = false;
+                hasLoggedBveExStaticPluginHostError = false;
+                hasDumpedPluginHostApp = false;
+                hasLoggedPluginHostAppError = false;
+                hasDumpedBveHackerEventTargets = false;
+                hasLoggedBveHackerEventTargetError = false;
+                atsPt5MainObject = null;
+                atsPt5PtObject = null;
+                hasLoggedAtsPt5RuntimeError = false;
+                hasPreviousAtsPt5RuntimeState = false;
+                previousAtsPt5OutputBrakeHandle = int.MinValue;
+                previousAtsPt5PhysicalBrake = int.MinValue;
+                previousAtsPt5AtsBrake = int.MinValue;
+                previousAtsPt5IsEmgBrake = false;
+                previousAtsPt5SecurityEmgBrake = false;
+                previousAtsPt5BrakeB6 = false;
+                hasDumpedAtsPt5MemberMap = false;
                 isBeaconsLoaded = false;
-
                 serviceMaxBrakeNotch = -1;
                 emergencyBrakeNotch = -1;
 
@@ -2223,17 +6907,55 @@ namespace TsScoringPlugin
 
                     isLogSessionInitialized = true;
                 }
-
-                // =========================================================
-                // 共通ランタイムプロファイルの診断
-                // =========================================================
-
-                // カタログは1回だけ読み込み、DLLは1秒間隔で再走査する。
-                DiagnoseRuntimeProfiles(
+                // AppDomain内のAtsPT5アセンブリとAtsMain型を診断する。
+                DiagnoseAtsPtAppDomain(
+                    bindFlagsAll,
                     rtLog,
                     ref hasChanges
                 );
 
+                // BveExホスト参照の全体診断は完了済み。
+                // DiagnoseBveExHostReferences(
+                //     rtLog,
+                //     ref hasChanges
+                // );
+
+                // ExtensionSetの全項目展開は完了済み。
+                // DiagnoseExtensionSet(
+                //     rtLog,
+                //     ref hasChanges
+                // );
+
+                // BveEx側の静的プラグイン管理参照の全体診断は完了済み。
+                // DiagnoseBveExStaticPluginHosts(
+                //     rtLog,
+                //     ref hasChanges
+                // );
+
+                // BveEx.PluginHost.App.Instanceの診断は完了済み。
+                // DiagnosePluginHostApp(
+                //     rtLog,
+                //     ref hasChanges
+                // );
+
+                // BveHackerイベント購読先の全体診断は完了済み。
+                // DiagnoseBveHackerEventTargets(
+                //     rtLog,
+                //     ref hasChanges
+                // );
+
+                // 共通ランタイムプロファイルの診断
+                DiagnoseRuntimeProfiles(
+                    rtLog,
+                    ref hasChanges
+                );
+                // Pluginsは実走中もnullであることを確認済み。
+                // 別経路の調査へ移行するため無効化する。
+                // DiagnoseVehiclePlugins(
+                //     bindFlagsAll,
+                //     rtLog,
+                //     ref hasChanges
+                // );
                 // MATCH済みのオブジェクト保持型プロファイルについて、
                 // 実メモリ値を変化時だけ記録する。
                 DiagnoseObjectBackedBrakeState(
@@ -2255,9 +6977,27 @@ namespace TsScoringPlugin
                     ref hasChanges
                 );
 
-                // OdakyuAts.dllの保安装置要求候補を
-                // 変化時だけ診断ログへ記録する。
-                DiagnoseOdakyuRequestCandidates(
+                // 近鉄系ATSの2つの非常要求候補を個別に記録する。
+                DiagnoseKintetsuEmergencyCandidates(
+                    rtLog,
+                    ref hasChanges
+                );
+
+                // 近鉄大阪線向け旧版の非常・常用最大要求候補を記録する。
+                DiagnoseKintetsuServiceAndEmergencyCandidates(
+                    rtLog,
+                    ref hasChanges
+                );
+
+                // メトロ総合プラグインの内部指示段候補を記録する。
+                DiagnoseMetroRequestCandidates(
+                    rtLog,
+                    ref hasChanges
+                );
+
+                // カタログでExplicitBrakeRequestFlags方式と判定された
+                // 全プロファイルの要求フラグを診断する。
+                DiagnoseExplicitBrakeRequestFlags(
                     rtLog,
                     ref hasChanges
                 );
@@ -2341,7 +7081,7 @@ namespace TsScoringPlugin
                         realtimeLogPath,
                         "[ATS DUMP] AtsPlugin is NULL\r\n"
                     );
-                    
+
 
                     isAtsStructureDumped = true;
                 }
@@ -3004,6 +7744,16 @@ namespace TsScoringPlugin
                             );
                         }
                     }
+
+                    // =========================================================
+                    // AtsPT5の内部要求を最終動的検証する。
+                    // =========================================================
+                    DiagnoseAtsPt5RuntimeState(
+                        physBrake,
+                        atsBrake,
+                        rtLog,
+                        ref hasChanges
+                    );
 
                     // =========================================================
                     // HandleSet内部のa2オブジェクトを取得
