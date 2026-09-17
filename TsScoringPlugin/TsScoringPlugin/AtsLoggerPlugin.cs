@@ -1,4 +1,4 @@
-using BveEx.PluginHost;
+﻿using BveEx.PluginHost;
 using BveEx.PluginHost.Plugins;
 using BveEx.PluginHost.Plugins.Extensions;
 using System;
@@ -383,6 +383,16 @@ namespace TsScoringPlugin
             public int DirectEmergencyRva;
             public int DirectOutputBrakeRva;
 
+            // 阪急ATSの非常要求統合出口を診断する静的配置
+            public int HankyuInputBrakeRva;
+            public int HankyuOutputBrakeRva;
+            public int HankyuRequestActiveRva;
+            public int HankyuRequestedBrakeRva;
+            public bool HasPreviousHankyuRequestState;
+            public int PreviousHankyuInputBrake;
+            public int PreviousHankyuOutputBrake;
+            public int PreviousHankyuRequestActive;
+            public int PreviousHankyuRequestedBrake;
             // ExplicitMetroBrakeRequestState用の静的配置
             public int MetroEmergencySelectionFlagRva;
             public int MetroLevel7SelectionFlagRva;
@@ -5184,6 +5194,119 @@ namespace TsScoringPlugin
         }
 
         // =========================================================
+        // 阪急ATSの世代別診断プロファイルを登録する。
+        // 両者はDLL全体を同一視せず、ブレーキ統合出口だけを
+        // 独立した診断対象として扱う。
+        // =========================================================
+        private void RegisterHankyuDiagnosticRuntimeProfiles()
+        {
+            RuntimeProfileIdentity newGeneration =
+                new RuntimeProfileIdentity();
+            newGeneration.Sha256 =
+                "5434FE58D3978A4CFF5521B1C7111C8C266D428382D82EA326E59F3568572EBC";
+            newGeneration.Pattern =
+                "HankyuAtsHkNewGeneration";
+            newGeneration.VerificationStatus =
+                "DynamicReverificationPending";
+            newGeneration.DetectionStrategy =
+                "HankyuEmergencyRequestState";
+            newGeneration.DetectionPriority =
+                "EmergencyOnly";
+            newGeneration.DetectionCompletionStatus =
+                "DiagnosticOnly";
+            newGeneration.HankyuInputBrakeRva = 0x14464;
+            newGeneration.HankyuOutputBrakeRva = 0x142A0;
+            newGeneration.HankyuRequestActiveRva = 0x143E0;
+            newGeneration.HankyuRequestedBrakeRva = 0x1435C;
+            runtimeProfilesByHash[newGeneration.Sha256] =
+                newGeneration;
+
+            RuntimeProfileIdentity atsHk110 =
+                new RuntimeProfileIdentity();
+            atsHk110.Sha256 =
+                "98DBBBE2A98676EBF23EF9739C0053A0B4DF58175C59481DA13529A3D08B1929";
+            atsHk110.Pattern =
+                "HankyuAtsHk110";
+            atsHk110.VerificationStatus =
+                "DynamicReverificationPending";
+            atsHk110.DetectionStrategy =
+                "HankyuEmergencyRequestState";
+            atsHk110.DetectionPriority =
+                "EmergencyOnly";
+            atsHk110.DetectionCompletionStatus =
+                "DiagnosticOnly";
+            atsHk110.HankyuInputBrakeRva = 0x14464;
+            atsHk110.HankyuOutputBrakeRva = 0x142A0;
+            atsHk110.HankyuRequestActiveRva = 0x143E0;
+            atsHk110.HankyuRequestedBrakeRva = 0x1435C;
+            runtimeProfilesByHash[atsHk110.Sha256] =
+                atsHk110;
+
+            RuntimeProfileIdentity legacy =
+                new RuntimeProfileIdentity();
+            legacy.Sha256 =
+                "E6FBDD73D1FE25FB1D5913E414170981795F653ACCC7EFF3E6BA42913B665D6F";
+            legacy.Pattern =
+                "HankyuAtsHkLegacy";
+            legacy.VerificationStatus =
+                "DynamicVerificationPending";
+            legacy.DetectionStrategy =
+                "HankyuEmergencyRequestState";
+            legacy.DetectionPriority =
+                "RawSafetyRequest";
+            legacy.DetectionCompletionStatus =
+                "DiagnosticOnly";
+            legacy.HankyuInputBrakeRva = 0x7048;
+            legacy.HankyuOutputBrakeRva = 0x7064;
+            legacy.HankyuRequestActiveRva = 0x70FC;
+            legacy.HankyuRequestedBrakeRva = 0x7040;
+            runtimeProfilesByHash[legacy.Sha256] =
+                legacy;
+
+            RuntimeProfileIdentity alternate =
+                new RuntimeProfileIdentity();
+            alternate.Sha256 =
+                "0D69F0D0E305609F80C0AFC363F23864109A27AF6D18918667D3F22CB644C1E7";
+            alternate.Pattern =
+                "HankyuAtsHkAlternate";
+            alternate.VerificationStatus =
+                "DynamicVerificationPending";
+            alternate.DetectionStrategy =
+                "HankyuEmergencyRequestState";
+            alternate.DetectionPriority =
+                "RawSafetyRequest";
+            alternate.DetectionCompletionStatus =
+                "DiagnosticOnly";
+            alternate.HankyuInputBrakeRva = 0x7028;
+            alternate.HankyuOutputBrakeRva = 0x7044;
+            alternate.HankyuRequestActiveRva = 0x70DC;
+            alternate.HankyuRequestedBrakeRva = 0x7020;
+            runtimeProfilesByHash[alternate.Sha256] =
+                alternate;
+
+            RuntimeProfileIdentity b8Legacy =
+                new RuntimeProfileIdentity();
+            b8Legacy.Sha256 =
+                "77FB95B3868180D00A5E882695A839CB1BF950E064249734F3CECF54CFE1BD82";
+            b8Legacy.Pattern =
+                "HankyuAtsHkB8Legacy";
+            b8Legacy.VerificationStatus =
+                "DynamicVerificationPending";
+            b8Legacy.DetectionStrategy =
+                "HankyuEmergencyRequestState";
+            b8Legacy.DetectionPriority =
+                "RawSafetyRequest";
+            b8Legacy.DetectionCompletionStatus =
+                "DiagnosticOnly";
+            b8Legacy.HankyuInputBrakeRva = 0x7048;
+            b8Legacy.HankyuOutputBrakeRva = 0x7064;
+            b8Legacy.HankyuRequestActiveRva = 0x70FC;
+            b8Legacy.HankyuRequestedBrakeRva = 0x7044;
+            runtimeProfilesByHash[b8Legacy.Sha256] =
+                b8Legacy;
+        }
+
+        // =========================================================
         // 共通ランタイムプロファイルを読み込み、
         // ロード済みDLLとSHA-256で照合する
         //
@@ -5510,6 +5633,7 @@ namespace TsScoringPlugin
                             profile;
                     }
 
+                    RegisterHankyuDiagnosticRuntimeProfiles();
                     hasScannedRuntimeProfiles = true;
 
                     rtLog.AppendLine(
@@ -5671,6 +5795,142 @@ namespace TsScoringPlugin
                     hasLoggedRuntimeProfileError = true;
                     hasChanges = true;
                 }
+            }
+        }
+
+        // =========================================================
+        // 阪急ATSの内部要求有効状態と要求ブレーキ段を読み取る。
+        // 採点には接続せず、変化時だけ診断ログへ記録する。
+        // =========================================================
+        private void DiagnoseHankyuEmergencyRequestState(
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            foreach (
+                RuntimeProfileIdentity profile
+                in runtimeProfilesByHash.Values
+            )
+            {
+                if (
+                    profile.ModuleBaseAddress == IntPtr.Zero
+                    || !string.Equals(
+                        profile.DetectionStrategy,
+                        "HankyuEmergencyRequestState",
+                        StringComparison.Ordinal
+                    )
+                    || profile.HankyuInputBrakeRva == 0
+                    || profile.HankyuOutputBrakeRva == 0
+                    || profile.HankyuRequestActiveRva == 0
+                    || profile.HankyuRequestedBrakeRva == 0
+                )
+                {
+                    continue;
+                }
+                int inputBrake;
+                int outputBrake;
+                int requestActive;
+                int requestedBrake;
+                bool inputRead = TryReadRuntimeInt32(
+                    IntPtr.Add(
+                        profile.ModuleBaseAddress,
+                        profile.HankyuInputBrakeRva
+                    ),
+                    out inputBrake
+                );
+                bool outputRead = TryReadRuntimeInt32(
+                    IntPtr.Add(
+                        profile.ModuleBaseAddress,
+                        profile.HankyuOutputBrakeRva
+                    ),
+                    out outputBrake
+                );
+                bool requestActiveRead = TryReadRuntimeInt32(
+                    IntPtr.Add(
+                        profile.ModuleBaseAddress,
+                        profile.HankyuRequestActiveRva
+                    ),
+                    out requestActive
+                );
+                bool requestedBrakeRead = TryReadRuntimeInt32(
+                    IntPtr.Add(
+                        profile.ModuleBaseAddress,
+                        profile.HankyuRequestedBrakeRva
+                    ),
+                    out requestedBrake
+                );
+                if (
+                    !inputRead
+                    || !outputRead
+                    || !requestActiveRead
+                    || !requestedBrakeRead
+                )
+                {
+                    continue;
+                }
+                if (
+                    inputBrake < -1
+                    || inputBrake > 100
+                    || outputBrake < -1
+                    || outputBrake > 100
+                    || requestedBrake < -1
+                    || requestedBrake > 100
+                    || requestActive < -1000000
+                    || requestActive > 1000000
+                )
+                {
+                    continue;
+                }
+                bool stateChanged =
+                    !profile.HasPreviousHankyuRequestState
+                    || inputBrake != profile.PreviousHankyuInputBrake
+                    || outputBrake != profile.PreviousHankyuOutputBrake
+                    || requestActive != profile.PreviousHankyuRequestActive
+                    || requestedBrake != profile.PreviousHankyuRequestedBrake;
+                if (!stateChanged)
+                {
+                    continue;
+                }
+                bool requestIsActive = requestActive != 0;
+                bool emergencyNotchKnown = emergencyBrakeNotch > 0;
+                bool emergencyCandidate =
+                    requestIsActive
+                    && emergencyNotchKnown
+                    && requestedBrake == emergencyBrakeNotch;
+                bool hiddenByPhysical =
+                    requestIsActive
+                    && requestedBrake > 0
+                    && inputBrake >= requestedBrake;
+                bool outputMatchesRequest =
+                    requestIsActive
+                    && outputBrake == requestedBrake;
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[HANKYU_REQUEST_STATE] "
+                    + $"File:{profile.FileName}, "
+                    + $"SHA256:{profile.Sha256}, "
+                    + $"Profile:{profile.Pattern}, "
+                    + $"InputRva:0x{profile.HankyuInputBrakeRva:X}, "
+                    + $"OutputRva:0x{profile.HankyuOutputBrakeRva:X}, "
+                    + $"RequestActiveRva:0x{profile.HankyuRequestActiveRva:X}, "
+                    + $"RequestedBrakeRva:0x{profile.HankyuRequestedBrakeRva:X}, "
+                    + $"Input:{inputBrake}, "
+                    + $"Output:{outputBrake}, "
+                    + $"RequestActiveRaw:{requestActive}, "
+                    + $"RequestIsActive:{requestIsActive}, "
+                    + $"RequestedBrake:{requestedBrake}, "
+                    + $"EmergencyNotch:{emergencyBrakeNotch}, "
+                    + $"EmergencyCandidate:{emergencyCandidate}, "
+                    + $"OutputMatchesRequest:{outputMatchesRequest}, "
+                    + $"HiddenByPhysical:{hiddenByPhysical}, "
+                    + "ScoringEnabled:False"
+                );
+                profile.HasPreviousHankyuRequestState = true;
+                profile.PreviousHankyuInputBrake = inputBrake;
+                profile.PreviousHankyuOutputBrake = outputBrake;
+                profile.PreviousHankyuRequestActive = requestActive;
+                profile.PreviousHankyuRequestedBrake = requestedBrake;
+                hasChanges = true;
             }
         }
 
@@ -7517,6 +7777,11 @@ namespace TsScoringPlugin
                 //     rtLog,
                 //     ref hasChanges
                 // );
+                // 阪急ATSの内部要求有効状態と要求段を記録する。
+                DiagnoseHankyuEmergencyRequestState(
+                    rtLog,
+                    ref hasChanges
+                );
                 // MATCH済みのオブジェクト保持型プロファイルについて、
                 // 実メモリ値を変化時だけ記録する。
                 DiagnoseObjectBackedBrakeState(
