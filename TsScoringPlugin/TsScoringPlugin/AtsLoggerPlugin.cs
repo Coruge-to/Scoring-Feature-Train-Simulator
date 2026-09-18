@@ -5525,13 +5525,13 @@ namespace TsScoringPlugin
             cats2CommonX86.Pattern =
                 "NnnCats2CommonX86RequestState";
             cats2CommonX86.VerificationStatus =
-                "DynamicVerificationPending";
+                "DynamicallyVerified";
             cats2CommonX86.DetectionStrategy =
                 "NnnCatsRequestState";
             cats2CommonX86.DetectionPriority =
                 "EmergencyThenServiceMaximum";
             cats2CommonX86.DetectionCompletionStatus =
-                "DiagnosticOnly";
+                "ClosedDiagnosticReadout";
             cats2CommonX86.NnnCatsDriverBrakeRva = 0x3840C;
             cats2CommonX86.NnnCatsEmergencyNotchRva = 0x38410;
             cats2CommonX86.NnnCatsReturnedBrakeRva = 0x383D0;
@@ -5552,13 +5552,13 @@ namespace TsScoringPlugin
             cats2Toei5300X86.Pattern =
                 "NnnCats2Toei5300X86RequestState";
             cats2Toei5300X86.VerificationStatus =
-                "DynamicVerificationPending";
+                "DynamicallyVerified";
             cats2Toei5300X86.DetectionStrategy =
                 "NnnCatsRequestState";
             cats2Toei5300X86.DetectionPriority =
                 "EmergencyThenServiceMaximum";
             cats2Toei5300X86.DetectionCompletionStatus =
-                "DiagnosticOnly";
+                "ClosedDiagnosticReadout";
             cats2Toei5300X86.NnnCatsDriverBrakeRva = 0x3840C;
             cats2Toei5300X86.NnnCatsEmergencyNotchRva = 0x38410;
             cats2Toei5300X86.NnnCatsReturnedBrakeRva = 0x383D0;
@@ -5577,13 +5577,13 @@ namespace TsScoringPlugin
             cats2CommonX64.Pattern =
                 "NnnCats2CommonX64RequestState";
             cats2CommonX64.VerificationStatus =
-                "DynamicVerificationPending";
+                "DynamicallyVerified";
             cats2CommonX64.DetectionStrategy =
                 "NnnCatsRequestState";
             cats2CommonX64.DetectionPriority =
                 "EmergencyThenServiceMaximum";
             cats2CommonX64.DetectionCompletionStatus =
-                "DiagnosticOnly";
+                "ClosedDiagnosticReadout";
             cats2CommonX64.NnnCatsDriverBrakeRva = 0x1477C;
             cats2CommonX64.NnnCatsEmergencyNotchRva = 0x14780;
             cats2CommonX64.NnnCatsReturnedBrakeRva = 0x14740;
