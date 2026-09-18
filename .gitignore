@@ -26,3 +26,25 @@ Desktop.ini
 *.sln.docstates
 *.dll.config
 /backups/
+
+# BEGIN BVE GENERATED AND LOCAL ARTIFACTS
+analysis-input/
+analysis-queue/
+ghidra-projects/
+reports/
+logs/
+backups/
+Backup/
+archive/
+cleanup-staging/
+data/inventory-cache.json
+*.bak
+*.tmp
+*.log
+*.gpr
+*.rep
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+# END BVE GENERATED AND LOCAL ARTIFACTS
