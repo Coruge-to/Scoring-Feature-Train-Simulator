@@ -393,6 +393,46 @@ namespace TsScoringPlugin
             public int PreviousHankyuOutputBrake;
             public int PreviousHankyuRequestActive;
             public int PreviousHankyuRequestedBrake;
+            // 南海ATS-Nの非常要求を診断する静的配置
+            public int NankaiNEmergencyFlagRva;
+            public bool HasPreviousNankaiNEmergencyState;
+            public byte PreviousNankaiNEmergencyRequested;
+            // 南海ATS-PNの集約済み要求状態を診断する静的配置
+            public int NankaiPnRequestStatePointerRva;
+            public int NankaiPnServiceMaximumOffset;
+            public int NankaiPnEmergencyOffset;
+            public bool HasPreviousNankaiPnRequestState;
+            public byte PreviousNankaiPnServiceMaximumRequested;
+            public byte PreviousNankaiPnEmergencyRequested;
+            // NNN式C-ATSのcats2.dll内部要求状態
+            public int NnnCatsDriverBrakeRva;
+            public int NnnCatsEmergencyNotchRva;
+            public int NnnCatsReturnedBrakeRva;
+            public int NnnCatsSafetyFlagRva;
+            public int NnnCatsMainStateRva;
+            public int NnnCatsRequestStatePointerRva;
+            public int NnnCatsMode0RequestStateRva;
+            public int NnnCatsMode1RequestStateRva;
+            public bool HasPreviousNnnCatsRequestState;
+            public int PreviousNnnCatsDriverBrake;
+            public int PreviousNnnCatsEmergencyNotch;
+            public int PreviousNnnCatsReturnedBrake;
+            public byte PreviousNnnCatsSafetyFlag;
+            public int PreviousNnnCatsMainState;
+            public long PreviousNnnCatsRequestStateAddress;
+            public int PreviousNnnCatsSelectedRequestState;
+            public int PreviousNnnCatsMode0RequestState;
+            public int PreviousNnnCatsMode1RequestState;
+            // 南海旧系統ATS-PNの直接配置された内部要求状態
+            public int NankaiLegacyPnServiceSourceARva;
+            public int NankaiLegacyPnServiceSourceBRva;
+            public int NankaiLegacyPnServiceSourceCRva;
+            public int NankaiLegacyPnEmergencyFlagRva;
+            public bool HasPreviousNankaiLegacyPnRequestState;
+            public int PreviousNankaiLegacyPnServiceSourceA;
+            public int PreviousNankaiLegacyPnServiceSourceB;
+            public int PreviousNankaiLegacyPnServiceSourceC;
+            public byte PreviousNankaiLegacyPnEmergencyRequested;
             // ExplicitMetroBrakeRequestState用の静的配置
             public int MetroEmergencySelectionFlagRva;
             public int MetroLevel7SelectionFlagRva;
@@ -2340,6 +2380,35 @@ namespace TsScoringPlugin
             );
 
             return true;
+        }
+
+        // =========================================================
+        // 現在のプロセスのポインター幅に合わせてポインターを読み取る。
+        // x86では4バイト、x64では8バイトとして扱う。
+        // =========================================================
+        private bool TryReadRuntimePointer(
+            IntPtr address,
+            out IntPtr value
+        )
+        {
+            value = IntPtr.Zero;
+            if (address == IntPtr.Zero)
+            {
+                return false;
+            }
+            try
+            {
+                value =
+                    System.Runtime.InteropServices.Marshal.ReadIntPtr(
+                        address
+                    );
+                return value != IntPtr.Zero;
+            }
+            catch
+            {
+                value = IntPtr.Zero;
+                return false;
+            }
         }
 
         // =========================================================
@@ -5228,7 +5297,7 @@ namespace TsScoringPlugin
             atsHk110.Pattern =
                 "HankyuAtsHk110";
             atsHk110.VerificationStatus =
-                "DynamicReverificationPending";
+                "DynamicVerificationPassed";
             atsHk110.DetectionStrategy =
                 "HankyuEmergencyRequestState";
             atsHk110.DetectionPriority =
@@ -5262,6 +5331,29 @@ namespace TsScoringPlugin
             legacy.HankyuRequestedBrakeRva = 0x7040;
             runtimeProfilesByHash[legacy.Sha256] =
                 legacy;
+            // 阪急5300系配布物の別ハッシュ。
+            // 静的解析でAlternate配置と同じブレーキ統合出口を確認した。
+            // 動的再検証中のため、採点には接続しない。
+            RuntimeProfileIdentity hankyu5300AlternateCandidate =
+                new RuntimeProfileIdentity();
+            hankyu5300AlternateCandidate.Sha256 =
+                "B55A083C58620E2F07404E1980F77EF2959D3D2B1DB92B5674AA869FBF7DBF7C";
+            hankyu5300AlternateCandidate.Pattern =
+                "HankyuAtsHk5300Alternate";
+            hankyu5300AlternateCandidate.VerificationStatus =
+                "DynamicVerificationPassed";
+            hankyu5300AlternateCandidate.DetectionStrategy =
+                "HankyuEmergencyRequestState";
+            hankyu5300AlternateCandidate.DetectionPriority =
+                "RawSafetyRequest";
+            hankyu5300AlternateCandidate.DetectionCompletionStatus =
+                "DiagnosticOnly";
+            hankyu5300AlternateCandidate.HankyuInputBrakeRva = 0x7028;
+            hankyu5300AlternateCandidate.HankyuOutputBrakeRva = 0x7044;
+            hankyu5300AlternateCandidate.HankyuRequestActiveRva = 0x70DC;
+            hankyu5300AlternateCandidate.HankyuRequestedBrakeRva = 0x7020;
+            runtimeProfilesByHash[hankyu5300AlternateCandidate.Sha256] =
+                hankyu5300AlternateCandidate;
 
             RuntimeProfileIdentity alternate =
                 new RuntimeProfileIdentity();
@@ -5307,7 +5399,207 @@ namespace TsScoringPlugin
         }
 
         // =========================================================
-        // 共通ランタイムプロファイルを読み込み、
+        // 南海ATS-PNの診断プロファイルを登録する。
+        // requestState先頭2バイトはATS-PN内部で4系統を集約した結果で、
+        // +0が非常要求、+1が常用最大要求を表す。
+        // =========================================================
+        private void RegisterNankaiDiagnosticRuntimeProfiles()
+        {
+            RuntimeProfileIdentity atsN32 =
+                new RuntimeProfileIdentity();
+            atsN32.Sha256 =
+                "D714B4C073F21E900324F79194E0EBD6EA3678208FDA269FB4AC081588310E00";
+            atsN32.Pattern =
+                "NankaiAtsNEmergencyRequestState32";
+            atsN32.VerificationStatus =
+                "DynamicVerificationPending";
+            atsN32.DetectionStrategy =
+                "NankaiAtsNEmergencyRequestState";
+            atsN32.DetectionPriority =
+                "EmergencyOnly";
+            atsN32.DetectionCompletionStatus =
+                "DiagnosticOnly";
+            atsN32.NankaiNEmergencyFlagRva = 0x16368;
+            runtimeProfilesByHash[atsN32.Sha256] = atsN32;
+
+            RuntimeProfileIdentity atsN64 =
+                new RuntimeProfileIdentity();
+            atsN64.Sha256 =
+                "2EF29897B76489CB08FBD2131A5B0DC3421632F6B35D9243E14EEF3C61421B89";
+            atsN64.Pattern =
+                "NankaiAtsNEmergencyRequestState64";
+            atsN64.VerificationStatus =
+                "DynamicVerificationPending";
+            atsN64.DetectionStrategy =
+                "NankaiAtsNEmergencyRequestState";
+            atsN64.DetectionPriority =
+                "EmergencyOnly";
+            atsN64.DetectionCompletionStatus =
+                "DiagnosticOnly";
+            atsN64.NankaiNEmergencyFlagRva = 0x1BC78;
+            runtimeProfilesByHash[atsN64.Sha256] = atsN64;
+
+            RuntimeProfileIdentity atsPn32 =
+                new RuntimeProfileIdentity();
+            atsPn32.Sha256 =
+                "7A87B40BABAE6FFF81E6BE368DBF5BC8944B66ECF1FFAF7AC28284415F750F29";
+            atsPn32.Pattern =
+                "NankaiAtsPnAggregatedRequestState32";
+            atsPn32.VerificationStatus =
+                "DynamicVerificationPending";
+            atsPn32.DetectionStrategy =
+                "NankaiAtsPnAggregatedRequestState";
+            atsPn32.DetectionPriority =
+                "EmergencyThenServiceMaximum";
+            atsPn32.DetectionCompletionStatus =
+                "DiagnosticOnly";
+            atsPn32.NankaiPnRequestStatePointerRva = 0x6DBD4;
+            atsPn32.NankaiPnEmergencyOffset = 0x00;
+            atsPn32.NankaiPnServiceMaximumOffset = 0x01;
+            runtimeProfilesByHash[atsPn32.Sha256] = atsPn32;
+
+            RuntimeProfileIdentity atsPn64 =
+                new RuntimeProfileIdentity();
+            atsPn64.Sha256 =
+                "F86E2133F8EFC3AB51369B5A2811E7E265906872F6E2D5DC83F36AFFA13CDCED";
+            atsPn64.Pattern =
+                "NankaiAtsPnAggregatedRequestState64";
+            atsPn64.VerificationStatus =
+                "DynamicVerificationPending";
+            atsPn64.DetectionStrategy =
+                "NankaiAtsPnAggregatedRequestState";
+            atsPn64.DetectionPriority =
+                "EmergencyThenServiceMaximum";
+            atsPn64.DetectionCompletionStatus =
+                "DiagnosticOnly";
+            atsPn64.NankaiPnRequestStatePointerRva = 0x86E20;
+            atsPn64.NankaiPnEmergencyOffset = 0x00;
+            atsPn64.NankaiPnServiceMaximumOffset = 0x01;
+            runtimeProfilesByHash[atsPn64.Sha256] = atsPn64;
+            RuntimeProfileIdentity legacyAtsN =
+                new RuntimeProfileIdentity();
+            legacyAtsN.Sha256 =
+                "BB5E34D69ED07E77E35001AAA9A8733E7B6768A690F861792301308A20237513";
+            legacyAtsN.Pattern =
+                "NankaiLegacyAtsNEmergencyRequestState32";
+            legacyAtsN.VerificationStatus =
+                "DynamicVerificationPending";
+            legacyAtsN.DetectionStrategy =
+                "NankaiAtsNEmergencyRequestState";
+            legacyAtsN.DetectionPriority =
+                "EmergencyOnly";
+            legacyAtsN.DetectionCompletionStatus =
+                "DiagnosticOnly";
+            legacyAtsN.NankaiNEmergencyFlagRva = 0x33A5;
+            runtimeProfilesByHash[legacyAtsN.Sha256] = legacyAtsN;
+            RuntimeProfileIdentity legacyAtsPn =
+                new RuntimeProfileIdentity();
+            legacyAtsPn.Sha256 =
+                "D244535325458BEEDE93EE3CE05C6C4A298E095706D2A77B83844DBB18F8175B";
+            legacyAtsPn.Pattern =
+                "NankaiLegacyAtsPnDirectRequestState32";
+            legacyAtsPn.VerificationStatus =
+                "DynamicVerificationPending";
+            legacyAtsPn.DetectionStrategy =
+                "NankaiLegacyAtsPnDirectRequestState";
+            legacyAtsPn.DetectionPriority =
+                "EmergencyThenServiceMaximum";
+            legacyAtsPn.DetectionCompletionStatus =
+                "DiagnosticOnly";
+            legacyAtsPn.NankaiLegacyPnServiceSourceARva = 0x1587C;
+            legacyAtsPn.NankaiLegacyPnServiceSourceBRva = 0x15880;
+            legacyAtsPn.NankaiLegacyPnServiceSourceCRva = 0x15884;
+            legacyAtsPn.NankaiLegacyPnEmergencyFlagRva = 0x15895;
+            runtimeProfilesByHash[legacyAtsPn.Sha256] = legacyAtsPn;
+        }
+        // =========================================================
+        // NNN式C-ATSの共通x86版cats2.dllを診断対象へ登録する。
+        // 現段階では動的検証専用であり、採点には接続しない。
+        // =========================================================
+        private void RegisterNnnCatsDiagnosticRuntimeProfiles()
+        {
+            RuntimeProfileIdentity cats2CommonX86 =
+                new RuntimeProfileIdentity();
+            cats2CommonX86.Sha256 =
+                "EDBB3B53396ACB20D1AFBC155C37D7ACD9BD3E89FC74886528DF41FC59E96DAF";
+            cats2CommonX86.Pattern =
+                "NnnCats2CommonX86RequestState";
+            cats2CommonX86.VerificationStatus =
+                "DynamicVerificationPending";
+            cats2CommonX86.DetectionStrategy =
+                "NnnCatsRequestState";
+            cats2CommonX86.DetectionPriority =
+                "EmergencyThenServiceMaximum";
+            cats2CommonX86.DetectionCompletionStatus =
+                "DiagnosticOnly";
+            cats2CommonX86.NnnCatsDriverBrakeRva = 0x3840C;
+            cats2CommonX86.NnnCatsEmergencyNotchRva = 0x38410;
+            cats2CommonX86.NnnCatsReturnedBrakeRva = 0x383D0;
+            cats2CommonX86.NnnCatsSafetyFlagRva = 0x38424;
+            cats2CommonX86.NnnCatsMainStateRva = 0x38780;
+            cats2CommonX86.NnnCatsRequestStatePointerRva = 0x3878C;
+            cats2CommonX86.NnnCatsMode0RequestStateRva = 0x3863C;
+            cats2CommonX86.NnnCatsMode1RequestStateRva = 0x386C0;
+            runtimeProfilesByHash[cats2CommonX86.Sha256] =
+                cats2CommonX86;
+
+            // 都営5300系向けNNN式C-ATSのx86版cats2.dll。
+            // 共通x86版と要求状態構造は同じだが、安全フラグRVAが異なる。
+            RuntimeProfileIdentity cats2Toei5300X86 =
+                new RuntimeProfileIdentity();
+            cats2Toei5300X86.Sha256 =
+                "E1C2FCE0C717BC5F203E43BFB96891658EDF46B5AF97B9AC8647A74FFD1783BC";
+            cats2Toei5300X86.Pattern =
+                "NnnCats2Toei5300X86RequestState";
+            cats2Toei5300X86.VerificationStatus =
+                "DynamicVerificationPending";
+            cats2Toei5300X86.DetectionStrategy =
+                "NnnCatsRequestState";
+            cats2Toei5300X86.DetectionPriority =
+                "EmergencyThenServiceMaximum";
+            cats2Toei5300X86.DetectionCompletionStatus =
+                "DiagnosticOnly";
+            cats2Toei5300X86.NnnCatsDriverBrakeRva = 0x3840C;
+            cats2Toei5300X86.NnnCatsEmergencyNotchRva = 0x38410;
+            cats2Toei5300X86.NnnCatsReturnedBrakeRva = 0x383D0;
+            cats2Toei5300X86.NnnCatsSafetyFlagRva = 0x3842C;
+            cats2Toei5300X86.NnnCatsMainStateRva = 0x38780;
+            cats2Toei5300X86.NnnCatsRequestStatePointerRva = 0x3878C;
+            cats2Toei5300X86.NnnCatsMode0RequestStateRva = 0;
+            cats2Toei5300X86.NnnCatsMode1RequestStateRva = 0;
+            runtimeProfilesByHash[cats2Toei5300X86.Sha256] =
+                cats2Toei5300X86;
+
+            RuntimeProfileIdentity cats2CommonX64 =
+                new RuntimeProfileIdentity();
+            cats2CommonX64.Sha256 =
+                "B8EB45820967243F01D50E8EA194669A2F0AABCC81745C73FF76E338081A062E";
+            cats2CommonX64.Pattern =
+                "NnnCats2CommonX64RequestState";
+            cats2CommonX64.VerificationStatus =
+                "DynamicVerificationPending";
+            cats2CommonX64.DetectionStrategy =
+                "NnnCatsRequestState";
+            cats2CommonX64.DetectionPriority =
+                "EmergencyThenServiceMaximum";
+            cats2CommonX64.DetectionCompletionStatus =
+                "DiagnosticOnly";
+            cats2CommonX64.NnnCatsDriverBrakeRva = 0x1477C;
+            cats2CommonX64.NnnCatsEmergencyNotchRva = 0x14780;
+            cats2CommonX64.NnnCatsReturnedBrakeRva = 0x14740;
+            cats2CommonX64.NnnCatsSafetyFlagRva = 0x14798;
+            cats2CommonX64.NnnCatsMainStateRva = 0x14B30;
+            cats2CommonX64.NnnCatsRequestStatePointerRva = 0x14B48;
+            // x64版のモード別状態RVAは未確定。
+            // 選択中状態ポインターの逆参照を主経路とする。
+            cats2CommonX64.NnnCatsMode0RequestStateRva = 0;
+            cats2CommonX64.NnnCatsMode1RequestStateRva = 0;
+            runtimeProfilesByHash[cats2CommonX64.Sha256] =
+                cats2CommonX64;
+        }
+
+        // =========================================================
+        // 共通ランタイムプロファイルを読み込み,
         // ロード済みDLLとSHA-256で照合する
         //
         // 現段階では診断ログだけを出力し、減点には接続しない。
@@ -5634,6 +5926,8 @@ namespace TsScoringPlugin
                     }
 
                     RegisterHankyuDiagnosticRuntimeProfiles();
+                    RegisterNankaiDiagnosticRuntimeProfiles();
+                    RegisterNnnCatsDiagnosticRuntimeProfiles();
                     hasScannedRuntimeProfiles = true;
 
                     rtLog.AppendLine(
@@ -5700,6 +5994,80 @@ namespace TsScoringPlugin
                         // ロード直後などで一時的に読み取れない可能性があるため、
                         // 失敗したパスは記録せず、次回走査で再試行する。
                         continue;
+                    }
+
+                    string moduleFileName =
+                        System.IO.Path.GetFileName(modulePath);
+
+                    if (
+                        string.Equals(
+                            moduleFileName,
+                            "ATS-N.dll",
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                        || string.Equals(
+                            moduleFileName,
+                            "ATS-Nx64.dll",
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                        || string.Equals(
+                            moduleFileName,
+                            "ATS-PN.dll",
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                        || string.Equals(
+                            moduleFileName,
+                            "ATS-PNx64.dll",
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                    {
+                        bool profileRegistered =
+                            runtimeProfilesByHash.ContainsKey(moduleHash);
+
+                        rtLog.AppendLine(
+                            $"[{DateTime.Now:HH:mm:ss.fff}] "
+                            + "[NANKAI_MODULE_DISCOVERY] "
+                            + $"File:{moduleFileName}, "
+                            + $"SHA256:{moduleHash}, "
+                            + $"Base:0x{module.BaseAddress.ToInt64():X}, "
+                            + $"ProfileRegistered:{profileRegistered}, "
+                            + $"Path:{modulePath}, "
+                            + "ScoringEnabled:False"
+                        );
+
+                        hasChanges = true;
+                    }
+
+                    bool isNnnCatsModule =
+                        moduleFileName.IndexOf(
+                            "cats2",
+                            StringComparison.OrdinalIgnoreCase
+                        ) >= 0
+                        || moduleFileName.IndexOf(
+                            "keisei",
+                            StringComparison.OrdinalIgnoreCase
+                        ) >= 0;
+
+                    if (isNnnCatsModule)
+                    {
+                        bool profileRegistered =
+                            runtimeProfilesByHash.ContainsKey(moduleHash);
+
+                        rtLog.AppendLine(
+                            $"[{DateTime.Now:HH:mm:ss.fff}] "
+                            + "[NNN_CATS_MODULE_DISCOVERY] "
+                            + $"File:{moduleFileName}, "
+                            + $"SHA256:{moduleHash}, "
+                            + $"Base:0x{module.BaseAddress.ToInt64():X}, "
+                            + $"ModuleMemorySize:{module.ModuleMemorySize}, "
+                            + $"ProcessPointerSize:{IntPtr.Size}, "
+                            + $"ProfileRegistered:{profileRegistered}, "
+                            + $"Path:{modulePath}, "
+                            + "ScoringEnabled:False"
+                        );
+
+                        hasChanges = true;
                     }
 
                     RuntimeProfileIdentity matchedProfile;
@@ -5798,6 +6166,547 @@ namespace TsScoringPlugin
             }
         }
 
+        // =========================================================
+        // NNN式C-ATSのcats2.dll内部状態を読み取る。
+        // 状態コードの意味は動的確認中のため、候補として記録する。
+        // この処理は採点には接続しない。
+        // =========================================================
+        private void DiagnoseNnnCatsRequestState(
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            foreach (
+                RuntimeProfileIdentity profile
+                in runtimeProfilesByHash.Values
+            )
+            {
+                if (
+                    profile.ModuleBaseAddress == IntPtr.Zero
+                    || !string.Equals(
+                        profile.DetectionStrategy,
+                        "NnnCatsRequestState",
+                        StringComparison.Ordinal
+                    )
+                    || profile.NnnCatsDriverBrakeRva == 0
+                    || profile.NnnCatsEmergencyNotchRva == 0
+                    || profile.NnnCatsReturnedBrakeRva == 0
+                    || profile.NnnCatsSafetyFlagRva == 0
+                    || profile.NnnCatsMainStateRva == 0
+                    || profile.NnnCatsRequestStatePointerRva == 0
+                )
+                {
+                    continue;
+                }
+                int driverBrake;
+                int emergencyNotch;
+                int returnedBrake;
+                byte safetyFlag;
+                int mainState;
+                int mode0RequestState = int.MinValue;
+                int mode1RequestState = int.MinValue;
+                bool driverRead = TryReadRuntimeInt32(
+                    IntPtr.Add(profile.ModuleBaseAddress, profile.NnnCatsDriverBrakeRva),
+                    out driverBrake
+                );
+                bool emergencyNotchRead = TryReadRuntimeInt32(
+                    IntPtr.Add(profile.ModuleBaseAddress, profile.NnnCatsEmergencyNotchRva),
+                    out emergencyNotch
+                );
+                bool returnedBrakeRead = TryReadRuntimeInt32(
+                    IntPtr.Add(profile.ModuleBaseAddress, profile.NnnCatsReturnedBrakeRva),
+                    out returnedBrake
+                );
+                bool safetyFlagRead = TryReadRuntimeByte(
+                    IntPtr.Add(profile.ModuleBaseAddress, profile.NnnCatsSafetyFlagRva),
+                    out safetyFlag
+                );
+                bool mainStateRead = TryReadRuntimeInt32(
+                    IntPtr.Add(profile.ModuleBaseAddress, profile.NnnCatsMainStateRva),
+                    out mainState
+                );
+                bool mode0StateRead =
+                    profile.NnnCatsMode0RequestStateRva == 0
+                    || TryReadRuntimeInt32(
+                        IntPtr.Add(profile.ModuleBaseAddress, profile.NnnCatsMode0RequestStateRva),
+                        out mode0RequestState
+                    );
+                bool mode1StateRead =
+                    profile.NnnCatsMode1RequestStateRva == 0
+                    || TryReadRuntimeInt32(
+                        IntPtr.Add(profile.ModuleBaseAddress, profile.NnnCatsMode1RequestStateRva),
+                        out mode1RequestState
+                    );
+                IntPtr selectedRequestStateAddress;
+                bool pointerRead = TryReadRuntimePointer(
+                    IntPtr.Add(profile.ModuleBaseAddress, profile.NnnCatsRequestStatePointerRva),
+                    out selectedRequestStateAddress
+                );
+                int selectedRequestState = int.MinValue;
+                bool selectedStateRead =
+                    pointerRead
+                    && TryReadRuntimeInt32(
+                        selectedRequestStateAddress,
+                        out selectedRequestState
+                    );
+                if (
+                    !driverRead
+                    || !emergencyNotchRead
+                    || !returnedBrakeRead
+                    || !safetyFlagRead
+                    || !mainStateRead
+                    || !mode0StateRead
+                    || !mode1StateRead
+                )
+                {
+                    continue;
+                }
+                if (
+                    driverBrake < -1
+                    || driverBrake > 100
+                    || emergencyNotch < 1
+                    || emergencyNotch > 100
+                    || returnedBrake < -1
+                    || returnedBrake > 100
+                    || safetyFlag > 1
+                    || mainState < -1000
+                    || mainState > 1000
+                    || (profile.NnnCatsMode0RequestStateRva != 0 && (mode0RequestState < -1000 || mode0RequestState > 1000))
+                    || (profile.NnnCatsMode1RequestStateRva != 0 && (mode1RequestState < -1000 || mode1RequestState > 1000))
+                    || (selectedStateRead && (selectedRequestState < -1000 || selectedRequestState > 1000))
+                )
+                {
+                    continue;
+                }
+                long selectedRequestStateAddressValue =
+                    selectedRequestStateAddress.ToInt64();
+                bool stateChanged =
+                    !profile.HasPreviousNnnCatsRequestState
+                    || driverBrake != profile.PreviousNnnCatsDriverBrake
+                    || emergencyNotch != profile.PreviousNnnCatsEmergencyNotch
+                    || returnedBrake != profile.PreviousNnnCatsReturnedBrake
+                    || safetyFlag != profile.PreviousNnnCatsSafetyFlag
+                    || mainState != profile.PreviousNnnCatsMainState
+                    || selectedRequestStateAddressValue != profile.PreviousNnnCatsRequestStateAddress
+                    || selectedRequestState != profile.PreviousNnnCatsSelectedRequestState
+                    || mode0RequestState != profile.PreviousNnnCatsMode0RequestState
+                    || mode1RequestState != profile.PreviousNnnCatsMode1RequestState;
+                if (!stateChanged)
+                {
+                    continue;
+                }
+                bool selectedOddEmergencyCandidate =
+                    selectedStateRead
+                    && mainState > 2
+                    && (
+                        selectedRequestState == 1
+                        || selectedRequestState == 3
+                        || selectedRequestState == 5
+                    );
+                bool selectedEvenServiceCandidate =
+                    selectedStateRead
+                    && mainState > 2
+                    && (
+                        selectedRequestState == 2
+                        || selectedRequestState == 4
+                        || selectedRequestState == 6
+                    );
+                bool lowMainStateEmergencyOutputCondition =
+                    mainState >= -1
+                    && mainState < 3;
+                bool safetyEmergencyCandidate =
+                    safetyFlag != 0
+                    || selectedOddEmergencyCandidate;
+                bool serviceMaximumCandidate =
+                    !safetyEmergencyCandidate
+                    && selectedEvenServiceCandidate;
+                string requestKindCandidate = "None";
+                int requestBrakeCandidate = 0;
+                if (safetyEmergencyCandidate)
+                {
+                    requestKindCandidate = "EmergencyCandidate";
+                    requestBrakeCandidate = emergencyNotch;
+                }
+                else if (serviceMaximumCandidate)
+                {
+                    requestKindCandidate = "ServiceMaximumCandidate";
+                    requestBrakeCandidate = emergencyNotch - 1;
+                }
+                bool hiddenByPhysical =
+                    requestBrakeCandidate > 0
+                    && driverBrake >= requestBrakeCandidate;
+                bool outputMatchesCandidate =
+                    requestBrakeCandidate > 0
+                    && returnedBrake == requestBrakeCandidate;
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[NNN_CATS_REQUEST_STATE] "
+                    + $"File:{profile.FileName}, "
+                    + $"SHA256:{profile.Sha256}, "
+                    + $"Profile:{profile.Pattern}, "
+                    + $"DriverBrake:{driverBrake}, "
+                    + $"EmergencyNotch:{emergencyNotch}, "
+                    + $"ServiceMaximum:{emergencyNotch - 1}, "
+                    + $"ReturnedBrake:{returnedBrake}, "
+                    + $"SafetyFlag:{safetyFlag}, "
+                    + $"MainState:{mainState}, "
+                    + $"RequestStatePointerRead:{pointerRead}, "
+                    + $"RequestStateAddress:0x{selectedRequestStateAddressValue:X}, "
+                    + $"SelectedRequestStateRead:{selectedStateRead}, "
+                    + $"SelectedRequestState:{(selectedStateRead ? selectedRequestState.ToString() : "<UNREADABLE>")}, "
+                    + $"Mode0RequestState:{(profile.NnnCatsMode0RequestStateRva != 0 ? mode0RequestState.ToString() : "<NOT_CONFIGURED>")}, "
+                    + $"Mode1RequestState:{(profile.NnnCatsMode1RequestStateRva != 0 ? mode1RequestState.ToString() : "<NOT_CONFIGURED>")}, "
+                    + $"OddEmergencyCandidate:{selectedOddEmergencyCandidate}, "
+                    + $"EvenServiceMaximumCandidate:{selectedEvenServiceCandidate}, "
+                    + $"LowMainStateEmergencyOutputCondition:{lowMainStateEmergencyOutputCondition}, "
+                    + $"RequestKindCandidate:{requestKindCandidate}, "
+                    + $"RequestBrakeCandidate:{requestBrakeCandidate}, "
+                    + $"OutputMatchesCandidate:{outputMatchesCandidate}, "
+                    + $"HiddenByPhysical:{hiddenByPhysical}, "
+                    + "ScoringEnabled:False"
+                );
+                profile.HasPreviousNnnCatsRequestState = true;
+                profile.PreviousNnnCatsDriverBrake = driverBrake;
+                profile.PreviousNnnCatsEmergencyNotch = emergencyNotch;
+                profile.PreviousNnnCatsReturnedBrake = returnedBrake;
+                profile.PreviousNnnCatsSafetyFlag = safetyFlag;
+                profile.PreviousNnnCatsMainState = mainState;
+                profile.PreviousNnnCatsRequestStateAddress = selectedRequestStateAddressValue;
+                profile.PreviousNnnCatsSelectedRequestState = selectedRequestState;
+                profile.PreviousNnnCatsMode0RequestState = mode0RequestState;
+                profile.PreviousNnnCatsMode1RequestState = mode1RequestState;
+                hasChanges = true;
+            }
+        }
+
+        // =========================================================
+        // 南海ATS-Nの内部非常要求フラグを読み取る。
+        // この処理は動的検証専用であり、採点には接続しない。
+        // =========================================================
+        private void DiagnoseNankaiAtsNEmergencyRequestState(
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            foreach (
+                RuntimeProfileIdentity profile
+                in runtimeProfilesByHash.Values
+            )
+            {
+                if (
+                    profile.ModuleBaseAddress == IntPtr.Zero
+                    || !string.Equals(
+                        profile.DetectionStrategy,
+                        "NankaiAtsNEmergencyRequestState",
+                        StringComparison.Ordinal
+                    )
+                    || profile.NankaiNEmergencyFlagRva == 0
+                )
+                {
+                    continue;
+                }
+                byte emergencyRequested;
+                if (
+                    !TryReadRuntimeByte(
+                        IntPtr.Add(
+                            profile.ModuleBaseAddress,
+                            profile.NankaiNEmergencyFlagRva
+                        ),
+                        out emergencyRequested
+                    )
+                    || emergencyRequested > 1
+                )
+                {
+                    continue;
+                }
+                bool stateChanged =
+                    !profile.HasPreviousNankaiNEmergencyState
+                    || emergencyRequested
+                        != profile.PreviousNankaiNEmergencyRequested;
+                if (!stateChanged)
+                {
+                    continue;
+                }
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[NANKAI_ATS_N_REQUEST_STATE] "
+                    + $"File:{profile.FileName}, "
+                    + $"SHA256:{profile.Sha256}, "
+                    + $"Profile:{profile.Pattern}, "
+                    + $"EmergencyFlagRva:0x{profile.NankaiNEmergencyFlagRva:X}, "
+                    + $"EmergencyRequestedRaw:{emergencyRequested}, "
+                    + $"EmergencyRequested:{emergencyRequested != 0}, "
+                    + $"RequestBrake:{(emergencyRequested != 0 ? emergencyBrakeNotch : 0)}, "
+                    + $"Emergency:{emergencyBrakeNotch}, "
+                    + "ScoringEnabled:False"
+                );
+                profile.HasPreviousNankaiNEmergencyState = true;
+                profile.PreviousNankaiNEmergencyRequested =
+                    emergencyRequested;
+                hasChanges = true;
+            }
+        }
+
+        // =========================================================
+        // 南海ATS-PNの集約済み常用最大・非常要求を読み取る。
+        // ATS-PN内部4系統の個別フラグではなく、論理和後の2バイトを使う。
+        // この処理は動的検証専用であり、採点には接続しない。
+        // =========================================================
+        private void DiagnoseNankaiAtsPnRequestState(
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            foreach (
+                RuntimeProfileIdentity profile
+                in runtimeProfilesByHash.Values
+            )
+            {
+                if (
+                    profile.ModuleBaseAddress == IntPtr.Zero
+                    || !string.Equals(
+                        profile.DetectionStrategy,
+                        "NankaiAtsPnAggregatedRequestState",
+                        StringComparison.Ordinal
+                    )
+                    || profile.NankaiPnRequestStatePointerRva == 0
+                )
+                {
+                    continue;
+                }
+
+                IntPtr pointerAddress = IntPtr.Add(
+                    profile.ModuleBaseAddress,
+                    profile.NankaiPnRequestStatePointerRva
+                );
+                IntPtr requestStateAddress;
+                try
+                {
+                    requestStateAddress =
+                        System.Runtime.InteropServices.Marshal.ReadIntPtr(
+                            pointerAddress
+                        );
+                }
+                catch
+                {
+                    continue;
+                }
+                if (requestStateAddress == IntPtr.Zero)
+                {
+                    continue;
+                }
+
+                byte emergencyRequested;
+                byte serviceMaximumRequested;
+                bool emergencyRead = TryReadRuntimeByte(
+                    IntPtr.Add(
+                        requestStateAddress,
+                        profile.NankaiPnEmergencyOffset
+                    ),
+                    out emergencyRequested
+                );
+                bool serviceMaximumRead = TryReadRuntimeByte(
+                    IntPtr.Add(
+                        requestStateAddress,
+                        profile.NankaiPnServiceMaximumOffset
+                    ),
+                    out serviceMaximumRequested
+                );
+                if (!emergencyRead || !serviceMaximumRead)
+                {
+                    continue;
+                }
+                if (
+                    emergencyRequested > 1
+                    || serviceMaximumRequested > 1
+                )
+                {
+                    continue;
+                }
+
+                bool stateChanged =
+                    !profile.HasPreviousNankaiPnRequestState
+                    || emergencyRequested
+                        != profile.PreviousNankaiPnEmergencyRequested
+                    || serviceMaximumRequested
+                        != profile.PreviousNankaiPnServiceMaximumRequested;
+                if (!stateChanged)
+                {
+                    continue;
+                }
+
+                string requestKind;
+                int requestBrake;
+                if (emergencyRequested != 0)
+                {
+                    requestKind = "Emergency";
+                    requestBrake = emergencyBrakeNotch;
+                }
+                else if (serviceMaximumRequested != 0)
+                {
+                    requestKind = "ServiceMaximum";
+                    requestBrake = serviceMaxBrakeNotch;
+                }
+                else
+                {
+                    requestKind = "None";
+                    requestBrake = 0;
+                }
+
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[NANKAI_ATS_PN_REQUEST_STATE] "
+                    + $"File:{profile.FileName}, "
+                    + $"SHA256:{profile.Sha256}, "
+                    + $"Profile:{profile.Pattern}, "
+                    + $"PointerRva:0x{profile.NankaiPnRequestStatePointerRva:X}, "
+                    + $"RequestStateAddress:0x{requestStateAddress.ToInt64():X}, "
+                    + $"ServiceMaximumRequestedRaw:{serviceMaximumRequested}, "
+                    + $"EmergencyRequestedRaw:{emergencyRequested}, "
+                    + $"RequestKind:{requestKind}, "
+                    + $"RequestBrake:{requestBrake}, "
+                    + $"ServiceMax:{serviceMaxBrakeNotch}, "
+                    + $"Emergency:{emergencyBrakeNotch}, "
+                    + "Source:AggregatedFourSystems, "
+                    + "ScoringEnabled:False"
+                );
+
+                profile.HasPreviousNankaiPnRequestState = true;
+                profile.PreviousNankaiPnEmergencyRequested =
+                    emergencyRequested;
+                profile.PreviousNankaiPnServiceMaximumRequested =
+                    serviceMaximumRequested;
+                hasChanges = true;
+            }
+        }
+
+        // =========================================================
+        // 南海旧系統ATS-PNの直接配置された内部要求候補を読み取る。
+        // 常用最大は3つのInt32状態の論理和、非常はByte状態を使う。
+        // この処理は動的検証専用であり、採点には接続しない。
+        // =========================================================
+        private void DiagnoseNankaiLegacyAtsPnRequestState(
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            foreach (
+                RuntimeProfileIdentity profile
+                in runtimeProfilesByHash.Values
+            )
+            {
+                if (
+                    profile.ModuleBaseAddress == IntPtr.Zero
+                    || !string.Equals(
+                        profile.DetectionStrategy,
+                        "NankaiLegacyAtsPnDirectRequestState",
+                        StringComparison.Ordinal
+                    )
+                    || profile.NankaiLegacyPnServiceSourceARva == 0
+                    || profile.NankaiLegacyPnServiceSourceBRva == 0
+                    || profile.NankaiLegacyPnServiceSourceCRva == 0
+                    || profile.NankaiLegacyPnEmergencyFlagRva == 0
+                )
+                {
+                    continue;
+                }
+                int serviceSourceA;
+                int serviceSourceB;
+                int serviceSourceC;
+                byte emergencyRequested;
+                bool serviceSourceARead = TryReadRuntimeInt32(
+                    IntPtr.Add(profile.ModuleBaseAddress, profile.NankaiLegacyPnServiceSourceARva),
+                    out serviceSourceA
+                );
+                bool serviceSourceBRead = TryReadRuntimeInt32(
+                    IntPtr.Add(profile.ModuleBaseAddress, profile.NankaiLegacyPnServiceSourceBRva),
+                    out serviceSourceB
+                );
+                bool serviceSourceCRead = TryReadRuntimeInt32(
+                    IntPtr.Add(profile.ModuleBaseAddress, profile.NankaiLegacyPnServiceSourceCRva),
+                    out serviceSourceC
+                );
+                bool emergencyRead = TryReadRuntimeByte(
+                    IntPtr.Add(profile.ModuleBaseAddress, profile.NankaiLegacyPnEmergencyFlagRva),
+                    out emergencyRequested
+                );
+                if (
+                    !serviceSourceARead
+                    || !serviceSourceBRead
+                    || !serviceSourceCRead
+                    || !emergencyRead
+                    || emergencyRequested > 1
+                    || serviceSourceA < -1000000
+                    || serviceSourceA > 1000000
+                    || serviceSourceB < -1000000
+                    || serviceSourceB > 1000000
+                    || serviceSourceC < -1000000
+                    || serviceSourceC > 1000000
+                )
+                {
+                    continue;
+                }
+                bool stateChanged =
+                    !profile.HasPreviousNankaiLegacyPnRequestState
+                    || serviceSourceA != profile.PreviousNankaiLegacyPnServiceSourceA
+                    || serviceSourceB != profile.PreviousNankaiLegacyPnServiceSourceB
+                    || serviceSourceC != profile.PreviousNankaiLegacyPnServiceSourceC
+                    || emergencyRequested != profile.PreviousNankaiLegacyPnEmergencyRequested;
+                if (!stateChanged)
+                {
+                    continue;
+                }
+                bool serviceMaximumRequested =
+                    serviceSourceA != 0
+                    || serviceSourceB != 0
+                    || serviceSourceC != 0;
+                string requestKind;
+                int requestBrake;
+                if (emergencyRequested != 0)
+                {
+                    requestKind = "Emergency";
+                    requestBrake = emergencyBrakeNotch;
+                }
+                else if (serviceMaximumRequested)
+                {
+                    requestKind = "ServiceMaximum";
+                    requestBrake = serviceMaxBrakeNotch;
+                }
+                else
+                {
+                    requestKind = "None";
+                    requestBrake = 0;
+                }
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[NANKAI_LEGACY_ATS_PN_REQUEST_STATE] "
+                    + $"File:{profile.FileName}, "
+                    + $"SHA256:{profile.Sha256}, "
+                    + $"Profile:{profile.Pattern}, "
+                    + $"ServiceSourceARva:0x{profile.NankaiLegacyPnServiceSourceARva:X}, "
+                    + $"ServiceSourceA:{serviceSourceA}, "
+                    + $"ServiceSourceBRva:0x{profile.NankaiLegacyPnServiceSourceBRva:X}, "
+                    + $"ServiceSourceB:{serviceSourceB}, "
+                    + $"ServiceSourceCRva:0x{profile.NankaiLegacyPnServiceSourceCRva:X}, "
+                    + $"ServiceSourceC:{serviceSourceC}, "
+                    + $"EmergencyFlagRva:0x{profile.NankaiLegacyPnEmergencyFlagRva:X}, "
+                    + $"EmergencyRequestedRaw:{emergencyRequested}, "
+                    + $"ServiceMaximumRequested:{serviceMaximumRequested}, "
+                    + $"EmergencyRequested:{emergencyRequested != 0}, "
+                    + $"RequestKind:{requestKind}, "
+                    + $"RequestBrake:{requestBrake}, "
+                    + $"ServiceMax:{serviceMaxBrakeNotch}, "
+                    + $"Emergency:{emergencyBrakeNotch}, "
+                    + "ScoringEnabled:False"
+                );
+                profile.HasPreviousNankaiLegacyPnRequestState = true;
+                profile.PreviousNankaiLegacyPnServiceSourceA = serviceSourceA;
+                profile.PreviousNankaiLegacyPnServiceSourceB = serviceSourceB;
+                profile.PreviousNankaiLegacyPnServiceSourceC = serviceSourceC;
+                profile.PreviousNankaiLegacyPnEmergencyRequested = emergencyRequested;
+                hasChanges = true;
+            }
+        }
         // =========================================================
         // 阪急ATSの内部要求有効状態と要求ブレーキ段を読み取る。
         // 採点には接続せず、変化時だけ診断ログへ記録する。
@@ -7777,6 +8686,26 @@ namespace TsScoringPlugin
                 //     rtLog,
                 //     ref hasChanges
                 // );
+                // NNN式C-ATSのcats2.dll内部要求候補を記録する。
+                DiagnoseNnnCatsRequestState(
+                    rtLog,
+                    ref hasChanges
+                );
+                // 南海ATS-Nの内部非常要求状態を記録する。
+                DiagnoseNankaiAtsNEmergencyRequestState(
+                    rtLog,
+                    ref hasChanges
+                );
+                // 南海ATS-PN内部で4系統を論理和した要求状態を記録する。
+                DiagnoseNankaiAtsPnRequestState(
+                    rtLog,
+                    ref hasChanges
+                );
+                // 南海旧系統ATS-PNの内部要求候補を記録する。
+                DiagnoseNankaiLegacyAtsPnRequestState(
+                    rtLog,
+                    ref hasChanges
+                );
                 // 阪急ATSの内部要求有効状態と要求段を記録する。
                 DiagnoseHankyuEmergencyRequestState(
                     rtLog,
