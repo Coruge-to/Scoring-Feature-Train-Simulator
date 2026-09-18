@@ -1,4 +1,4 @@
-﻿using BveEx.PluginHost;
+using BveEx.PluginHost;
 using BveEx.PluginHost.Plugins;
 using BveEx.PluginHost.Plugins.Extensions;
 using System;
@@ -5412,13 +5412,13 @@ namespace TsScoringPlugin
             atsN32.Pattern =
                 "NankaiAtsNEmergencyRequestState32";
             atsN32.VerificationStatus =
-                "DynamicVerificationPending";
+                "DynamicallyVerified";
             atsN32.DetectionStrategy =
                 "NankaiAtsNEmergencyRequestState";
             atsN32.DetectionPriority =
                 "EmergencyOnly";
             atsN32.DetectionCompletionStatus =
-                "DiagnosticOnly";
+                "ClosedDiagnosticReadout";
             atsN32.NankaiNEmergencyFlagRva = 0x16368;
             runtimeProfilesByHash[atsN32.Sha256] = atsN32;
 
@@ -5429,13 +5429,13 @@ namespace TsScoringPlugin
             atsN64.Pattern =
                 "NankaiAtsNEmergencyRequestState64";
             atsN64.VerificationStatus =
-                "DynamicVerificationPending";
+                "DynamicallyVerified";
             atsN64.DetectionStrategy =
                 "NankaiAtsNEmergencyRequestState";
             atsN64.DetectionPriority =
                 "EmergencyOnly";
             atsN64.DetectionCompletionStatus =
-                "DiagnosticOnly";
+                "ClosedDiagnosticReadout";
             atsN64.NankaiNEmergencyFlagRva = 0x1BC78;
             runtimeProfilesByHash[atsN64.Sha256] = atsN64;
 
@@ -5446,13 +5446,13 @@ namespace TsScoringPlugin
             atsPn32.Pattern =
                 "NankaiAtsPnAggregatedRequestState32";
             atsPn32.VerificationStatus =
-                "DynamicVerificationPending";
+                "DynamicallyVerified";
             atsPn32.DetectionStrategy =
                 "NankaiAtsPnAggregatedRequestState";
             atsPn32.DetectionPriority =
                 "EmergencyThenServiceMaximum";
             atsPn32.DetectionCompletionStatus =
-                "DiagnosticOnly";
+                "ClosedDiagnosticReadout";
             atsPn32.NankaiPnRequestStatePointerRva = 0x6DBD4;
             atsPn32.NankaiPnEmergencyOffset = 0x00;
             atsPn32.NankaiPnServiceMaximumOffset = 0x01;
@@ -5465,13 +5465,13 @@ namespace TsScoringPlugin
             atsPn64.Pattern =
                 "NankaiAtsPnAggregatedRequestState64";
             atsPn64.VerificationStatus =
-                "DynamicVerificationPending";
+                "DynamicallyVerified";
             atsPn64.DetectionStrategy =
                 "NankaiAtsPnAggregatedRequestState";
             atsPn64.DetectionPriority =
                 "EmergencyThenServiceMaximum";
             atsPn64.DetectionCompletionStatus =
-                "DiagnosticOnly";
+                "ClosedDiagnosticReadout";
             atsPn64.NankaiPnRequestStatePointerRva = 0x86E20;
             atsPn64.NankaiPnEmergencyOffset = 0x00;
             atsPn64.NankaiPnServiceMaximumOffset = 0x01;
@@ -5483,7 +5483,7 @@ namespace TsScoringPlugin
             legacyAtsN.Pattern =
                 "NankaiLegacyAtsNEmergencyRequestState32";
             legacyAtsN.VerificationStatus =
-                "DynamicVerificationPending";
+                "DynamicallyVerified";
             legacyAtsN.DetectionStrategy =
                 "NankaiAtsNEmergencyRequestState";
             legacyAtsN.DetectionPriority =
