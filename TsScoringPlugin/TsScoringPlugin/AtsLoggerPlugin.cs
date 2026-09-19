@@ -1,4 +1,4 @@
-using BveEx.PluginHost;
+﻿using BveEx.PluginHost;
 using BveEx.PluginHost.Plugins;
 using BveEx.PluginHost.Plugins.Extensions;
 using System;
@@ -520,9 +520,109 @@ namespace TsScoringPlugin
             // EmergencyFlagへ集約される非常要因候補の前回値
 
             public string PreviousInterventionKind = "None";
+
+            // SWP2装置別要求の診断設定。物理ブレーキは要求値へ混ぜない。
+            public string Swp2Group;
+            public int Swp2RootPointerRva;
+            public int Swp2AtsPBrakeOffset;
+            public int Swp2AtsPApplyOffset;
+            public int Swp2AtsSActiveOffset;
+            public bool HasPreviousSwp2State;
+            public int PreviousSwp2AtsPRequest;
+            public int PreviousSwp2AtsSRequest;
+            public int PreviousSwp2AtsOnlyRequest;
+            public string PreviousSwp2FailureStage = "Uninitialized";
         }
 
-        public AtsLoggerPlugin(PluginBuilder builder) : base(builder) { }
+        private const string ScenarioResetFixV2 = "ScenarioResetFixV2";
+        private int scenarioGeneration;
+        private int handledScenarioGeneration = -1;
+        private bool scenarioResetPending = true;
+        private string pendingScenarioIdentity = "Startup";
+
+        public AtsLoggerPlugin(PluginBuilder builder) : base(builder)
+        {
+            BveHacker.ScenarioOpened += OnAtsLoggerScenarioOpened;
+            BveHacker.ScenarioCreated += OnAtsLoggerScenarioCreated;
+            BveHacker.ScenarioClosed += OnAtsLoggerScenarioClosed;
+        }
+
+        private void OnAtsLoggerScenarioOpened(ScenarioOpenedEventArgs e)
+        {
+            pendingScenarioIdentity =
+                e == null || e.ScenarioInfo == null
+                    ? "ScenarioOpened:null"
+                    : "ScenarioOpened@" + e.ScenarioInfo.ToString();
+        }
+
+        private void OnAtsLoggerScenarioCreated(ScenarioCreatedEventArgs e)
+        {
+            scenarioGeneration++;
+            scenarioResetPending = true;
+            if (e != null && e.Scenario != null)
+            {
+                pendingScenarioIdentity =
+                    "ScenarioCreated@"
+                    + e.Scenario.GetType().FullName
+                    + "#"
+                    + System.Runtime.CompilerServices.RuntimeHelpers
+                        .GetHashCode(e.Scenario)
+                        .ToString("X8");
+            }
+        }
+
+        private void OnAtsLoggerScenarioClosed(EventArgs e)
+        {
+            scenarioResetPending = true;
+            isLogSessionInitialized = false;
+        }
+
+        private void ResetAtsLoggerScenarioState()
+        {
+            isLogSessionInitialized = false;
+            isAtsStructureDumped = false;
+            hasDumpedVehiclePlugins = false;
+            hasLoggedVehiclePluginsError = false;
+            hasDumpedAtsPtAppDomain = false;
+            hasLoggedAtsPtAppDomainError = false;
+            hasDumpedBveExHostReferences = false;
+            hasLoggedBveExHostReferenceError = false;
+            hasDumpedExtensionSet = false;
+            hasLoggedExtensionSetError = false;
+            hasDumpedBveExStaticPluginHosts = false;
+            hasLoggedBveExStaticPluginHostError = false;
+            hasDumpedPluginHostApp = false;
+            hasLoggedPluginHostAppError = false;
+            hasDumpedBveHackerEventTargets = false;
+            hasLoggedBveHackerEventTargetError = false;
+            managedRuntimeResolutions.Clear();
+            nextManagedRuntimeResolveTime = DateTime.MinValue;
+            hasLoggedManagedRuntimeResolverError = false;
+            hasPreviousManagedPrimaryState = false;
+            previousManagedPrimaryRequestKind = "Unknown";
+            previousManagedPrimaryRequestBrake = int.MinValue;
+            previousManagedPrimaryPhysicalBrake = int.MinValue;
+            previousManagedPrimaryAtsBrake = int.MinValue;
+            isBeaconsLoaded = false;
+            serviceMaxBrakeNotch = -1;
+            emergencyBrakeNotch = -1;
+            prevPhysBrake = -1;
+            prevAtsBrake = -1;
+            prevPhysSrcBrake = int.MinValue;
+            prevAtsSrcBrake = int.MinValue;
+            prevRawHandleCBrake = int.MinValue;
+            prevRawHandleLBrake = int.MinValue;
+            prevVehicleStateHandleBrake = int.MinValue;
+            hasScannedRuntimeProfiles = false;
+            hasLoggedRuntimeProfileError = false;
+            runtimeProfilePath = null;
+            nextRuntimeProfileScanTime = DateTime.MinValue;
+            runtimeProfilesByHash.Clear();
+            matchedRuntimeProfileHashes.Clear();
+            inspectedRuntimeModulePaths.Clear();
+            beaconList.Clear();
+            lastLocation = -1.0;
+        }
         private void InitializeManagedRuntimeProfiles()
         {
             if (hasInitializedManagedRuntimeProfiles)
@@ -1459,7 +1559,12 @@ namespace TsScoringPlugin
             }
         }
 
-        public override void Dispose() { }
+        public override void Dispose()
+        {
+            BveHacker.ScenarioOpened -= OnAtsLoggerScenarioOpened;
+            BveHacker.ScenarioCreated -= OnAtsLoggerScenarioCreated;
+            BveHacker.ScenarioClosed -= OnAtsLoggerScenarioClosed;
+        }
 
         private void DumpObjectMembers(
     object target,
@@ -5604,6 +5709,382 @@ namespace TsScoringPlugin
         //
         // 現段階では診断ログだけを出力し、減点には接続しない。
         // =========================================================
+        // =========================================================
+        // SWP2 Group A/B/Cをハッシュ別に登録する。
+        // 装置別のATS-S要求とATS-P要求を復元し、最大値だけを診断する。
+        // Panelと物理ブレーキは要求値の取得元に使わない。
+        // =========================================================
+        private void RegisterSwp2DeviceAggregatedRuntimeProfiles()
+        {
+            RegisterSwp2DeviceAggregatedRuntimeProfile(
+                "1C74CE23AF4DBF1BBCFA9CC459C7899128EC4FFEFF2D597BFB6B802C540899DD",
+                "Swp2GroupADeviceAggregatedRequest",
+                "A",
+                0x5CAA0,
+                0x348,
+                0x354,
+                0x3B4
+            );
+            RegisterSwp2DeviceAggregatedRuntimeProfile(
+                "2E075FB26088D4D4508CB3F19FA25D25E3DF90E2CB0EEC25CBB69E705E325790",
+                "Swp2GroupBDeviceAggregatedRequest",
+                "B",
+                0x52600,
+                0,
+                0,
+                0
+            );
+            RegisterSwp2DeviceAggregatedRuntimeProfile(
+                "BAB4C566762D3F8C07AF81541F953251A8201E263897F82B6BE0E64B6B25368F",
+                "Swp2GroupBDeviceAggregatedRequestAlternate",
+                "B",
+                0x52600,
+                0,
+                0,
+                0
+            );
+            RegisterSwp2DeviceAggregatedRuntimeProfile(
+                "DDB456B080588ED6DC0A270B3B36602DAF3F118DF262EAAD329F582A5F8401B4",
+                "Swp2GroupCDdb4DeviceAggregatedRequest",
+                "C",
+                0x67A28,
+                0x328,
+                0x334,
+                0x39C
+            );
+            RegisterSwp2DeviceAggregatedRuntimeProfile(
+                "6E25B31C799BF09662DFFFACEE3C281D5E84A29DC28F3D3A796C13B152ACD92C",
+                "Swp2GroupC6E25DeviceAggregatedRequest",
+                "C",
+                0x69A38,
+                0x328,
+                0x334,
+                0x39C
+            );
+        }
+
+        private void RegisterSwp2DeviceAggregatedRuntimeProfile(
+            string sha256,
+            string pattern,
+            string group,
+            int rootPointerRva,
+            int atsPBrakeOffset,
+            int atsPApplyOffset,
+            int atsSActiveOffset
+        )
+        {
+            RuntimeProfileIdentity profile = new RuntimeProfileIdentity();
+            profile.Sha256 = sha256;
+            profile.Pattern = pattern;
+            profile.VerificationStatus = "StaticConfirmedDynamicVerificationPending";
+            profile.DetectionStrategy = "Swp2DeviceAggregatedRequest";
+            profile.DetectionPriority = "MaxAtsSAndAtsP";
+            profile.DetectionCompletionStatus = "DiagnosticOnly";
+            profile.Swp2Group = group;
+            profile.Swp2RootPointerRva = rootPointerRva;
+            profile.Swp2AtsPBrakeOffset = atsPBrakeOffset;
+            profile.Swp2AtsPApplyOffset = atsPApplyOffset;
+            profile.Swp2AtsSActiveOffset = atsSActiveOffset;
+            runtimeProfilesByHash[profile.Sha256] = profile;
+        }
+
+        private bool TryReadSwp2GroupBRequest(
+            RuntimeProfileIdentity profile,
+            IntPtr root,
+            out int atsPRequest,
+            out int atsSRequest,
+            out string detail,
+            out string failureStage
+        )
+        {
+            atsPRequest = 0;
+            atsSRequest = 0;
+            detail = "";
+            failureStage = "None";
+
+            IntPtr atsSObject;
+            IntPtr atsSManager;
+            IntPtr atsSTimer;
+            IntPtr clockAddress;
+            IntPtr notchInfo;
+            int now;
+            int deadline;
+            int internalEmergencyNotch;
+            byte timerFinished;
+            byte timerAuxiliary;
+
+            if (!TryReadRuntimePointer32(IntPtr.Add(root, 0x10), out atsSObject))
+            {
+                failureStage = "AtsSObject";
+                return false;
+            }
+            if (!TryReadRuntimePointer32(IntPtr.Add(atsSObject, 0x04), out atsSManager))
+            {
+                failureStage = "AtsSManager";
+                return false;
+            }
+            if (!TryReadRuntimePointer32(IntPtr.Add(atsSObject, 0x14), out atsSTimer))
+            {
+                failureStage = "AtsSTimer";
+                return false;
+            }
+            if (!TryReadRuntimePointer32(IntPtr.Add(atsSManager, 0x10), out clockAddress))
+            {
+                failureStage = "AtsSClock";
+                return false;
+            }
+            if (!TryReadRuntimePointer32(IntPtr.Add(atsSManager, 0x04), out notchInfo))
+            {
+                failureStage = "NotchInfo";
+                return false;
+            }
+            if (
+                !TryReadRuntimeInt32(clockAddress, out now)
+                || !TryReadRuntimeInt32(atsSTimer, out deadline)
+                || !TryReadRuntimeInt32(IntPtr.Add(notchInfo, 0x10), out internalEmergencyNotch)
+                || !TryReadRuntimeByte(IntPtr.Add(atsSTimer, 0x04), out timerFinished)
+                || !TryReadRuntimeByte(IntPtr.Add(atsSTimer, 0x05), out timerAuxiliary)
+            )
+            {
+                failureStage = "AtsSState";
+                return false;
+            }
+            bool atsSEmergency =
+                timerFinished == 0
+                && now >= deadline
+                && timerAuxiliary == 0;
+            if (atsSEmergency)
+            {
+                atsSRequest = internalEmergencyNotch;
+            }
+
+            IntPtr atsPManager;
+            IntPtr atsPState;
+            if (!TryReadRuntimePointer32(IntPtr.Add(root, 0x18), out atsPManager))
+            {
+                failureStage = "AtsPManager";
+                return false;
+            }
+            if (!TryReadRuntimePointer32(IntPtr.Add(atsPManager, 0x10), out atsPState))
+            {
+                failureStage = "AtsPState";
+                return false;
+            }
+            byte state2C;
+            byte state2D;
+            byte state30;
+            if (
+                !TryReadRuntimeByte(IntPtr.Add(atsPState, 0x2C), out state2C)
+                || !TryReadRuntimeByte(IntPtr.Add(atsPState, 0x2D), out state2D)
+                || !TryReadRuntimeByte(IntPtr.Add(atsPState, 0x30), out state30)
+            )
+            {
+                failureStage = "AtsPFlags";
+                return false;
+            }
+            List<byte> latches = new List<byte>();
+            bool anyLatch = false;
+            for (int rva = 0x52618; rva <= 0x5261E; rva++)
+            {
+                byte latch;
+                if (!TryReadRuntimeByte(IntPtr.Add(profile.ModuleBaseAddress, rva), out latch))
+                {
+                    failureStage = "AtsPLatches";
+                    return false;
+                }
+                latches.Add(latch);
+                if (latch != 0)
+                {
+                    anyLatch = true;
+                }
+            }
+            if (state2D != 0 || state30 != 0)
+            {
+                atsPRequest = internalEmergencyNotch;
+            }
+            else if (state2C != 0 || anyLatch)
+            {
+                atsPRequest = Math.Max(0, internalEmergencyNotch - 1);
+            }
+            detail =
+                "AtsSObject:0x" + atsSObject.ToInt64().ToString("X")
+                + ",AtsPState:0x" + atsPState.ToInt64().ToString("X")
+                + ",State2C:" + state2C
+                + ",State2D:" + state2D
+                + ",State30:" + state30
+                + ",Latches:" + string.Join("|", latches)
+                + ",Now:" + now
+                + ",Deadline:" + deadline
+                + ",TimerFinished:" + timerFinished
+                + ",TimerAuxiliary:" + timerAuxiliary
+                + ",InternalEmergencyNotch:" + internalEmergencyNotch;
+            return true;
+        }
+
+        private void DiagnoseSwp2DeviceAggregatedRequest(
+            StringBuilder rtLog,
+            ref bool hasChanges
+        )
+        {
+            foreach (RuntimeProfileIdentity profile in runtimeProfilesByHash.Values)
+            {
+                if (
+                    profile.ModuleBaseAddress == IntPtr.Zero
+                    || !string.Equals(
+                        profile.DetectionStrategy,
+                        "Swp2DeviceAggregatedRequest",
+                        StringComparison.Ordinal
+                    )
+                    || profile.Swp2RootPointerRva == 0
+                )
+                {
+                    continue;
+                }
+
+                IntPtr root;
+                string failureStage = "None";
+                int atsPRequest = 0;
+                int atsSRequest = 0;
+                string detail = "";
+                bool readSucceeded = TryReadRuntimePointer32(
+                    IntPtr.Add(profile.ModuleBaseAddress, profile.Swp2RootPointerRva),
+                    out root
+                );
+                if (!readSucceeded)
+                {
+                    failureStage = "RootPointer";
+                }
+                else if (string.Equals(profile.Swp2Group, "B", StringComparison.Ordinal))
+                {
+                    readSucceeded = TryReadSwp2GroupBRequest(
+                        profile,
+                        root,
+                        out atsPRequest,
+                        out atsSRequest,
+                        out detail,
+                        out failureStage
+                    );
+                }
+                else
+                {
+                    int atsPBrakeCandidate;
+                    int applyBrake;
+                    byte atsSActive;
+                    if (
+                        !TryReadRuntimeInt32(
+                            IntPtr.Add(root, profile.Swp2AtsPBrakeOffset),
+                            out atsPBrakeCandidate
+                        )
+                    )
+                    {
+                        readSucceeded = false;
+                        failureStage = "AtsPBrakeCandidate";
+                    }
+                    else if (
+                        !TryReadRuntimeInt32(
+                            IntPtr.Add(root, profile.Swp2AtsPApplyOffset),
+                            out applyBrake
+                        )
+                    )
+                    {
+                        readSucceeded = false;
+                        failureStage = "AtsPApplyBrake";
+                    }
+                    else if (
+                        !TryReadRuntimeByte(
+                            IntPtr.Add(root, profile.Swp2AtsSActiveOffset),
+                            out atsSActive
+                        )
+                    )
+                    {
+                        readSucceeded = false;
+                        failureStage = "AtsSActive";
+                    }
+                    else
+                    {
+                        atsPRequest = applyBrake != 0 ? atsPBrakeCandidate : 0;
+                        atsSRequest = atsSActive != 0 ? emergencyBrakeNotch : 0;
+                        detail =
+                            "AtsPBrakeCandidate:" + atsPBrakeCandidate
+                            + ",ApplyBrake:" + applyBrake
+                            + ",AtsSActive:" + atsSActive;
+                    }
+                }
+
+                int atsOnlyRequest = Math.Max(atsPRequest, atsSRequest);
+                if (
+                    atsPRequest < 0
+                    || atsPRequest > 100
+                    || atsSRequest < 0
+                    || atsSRequest > 100
+                    || atsOnlyRequest < 0
+                    || atsOnlyRequest > 100
+                )
+                {
+                    readSucceeded = false;
+                    failureStage = "Plausibility";
+                }
+                bool stateChanged =
+                    !profile.HasPreviousSwp2State
+                    || atsPRequest != profile.PreviousSwp2AtsPRequest
+                    || atsSRequest != profile.PreviousSwp2AtsSRequest
+                    || atsOnlyRequest != profile.PreviousSwp2AtsOnlyRequest
+                    || !string.Equals(
+                        failureStage,
+                        profile.PreviousSwp2FailureStage,
+                        StringComparison.Ordinal
+                    );
+                if (!stateChanged)
+                {
+                    continue;
+                }
+                string requestKind = "None";
+                if (atsOnlyRequest > 0)
+                {
+                    if (emergencyBrakeNotch > 0 && atsOnlyRequest == emergencyBrakeNotch)
+                    {
+                        requestKind = "Emergency";
+                    }
+                    else if (serviceMaxBrakeNotch > 0 && atsOnlyRequest == serviceMaxBrakeNotch)
+                    {
+                        requestKind = "ServiceMaximum";
+                    }
+                    else
+                    {
+                        requestKind = "Service";
+                    }
+                }
+                rtLog.AppendLine(
+                    $"[{DateTime.Now:HH:mm:ss.fff}] "
+                    + "[SWP2_DEVICE_AGGREGATED_REQUEST] "
+                    + $"File:{profile.FileName}, "
+                    + $"SHA256:{profile.Sha256}, "
+                    + $"Profile:{profile.Pattern}, "
+                    + $"Group:{profile.Swp2Group}, "
+                    + $"ModuleBase:0x{profile.ModuleBaseAddress.ToInt64():X}, "
+                    + $"Root:0x{root.ToInt64():X}, "
+                    + $"ReadSucceeded:{readSucceeded}, "
+                    + $"FailureStage:{failureStage}, "
+                    + $"AtsPRequest:{atsPRequest}, "
+                    + $"AtsSRequest:{atsSRequest}, "
+                    + $"AtsOnlyRequest:{atsOnlyRequest}, "
+                    + $"RequestKind:{requestKind}, "
+                    + $"ServiceMax:{serviceMaxBrakeNotch}, "
+                    + $"Emergency:{emergencyBrakeNotch}, "
+                    + $"Detail:{detail}, "
+                    + "Aggregation:Max(AtsP,AtsS), "
+                    + "PanelUsed:False, "
+                    + "PhysicalBrakeUsedAsRequest:False, "
+                    + "ScoringEnabled:False"
+                );
+                profile.HasPreviousSwp2State = true;
+                profile.PreviousSwp2AtsPRequest = atsPRequest;
+                profile.PreviousSwp2AtsSRequest = atsSRequest;
+                profile.PreviousSwp2AtsOnlyRequest = atsOnlyRequest;
+                profile.PreviousSwp2FailureStage = failureStage;
+                hasChanges = true;
+            }
+        }
         private void DiagnoseRuntimeProfiles(
     StringBuilder rtLog,
     ref bool hasChanges
@@ -5928,6 +6409,7 @@ namespace TsScoringPlugin
                     RegisterHankyuDiagnosticRuntimeProfiles();
                     RegisterNankaiDiagnosticRuntimeProfiles();
                     RegisterNnnCatsDiagnosticRuntimeProfiles();
+                    RegisterSwp2DeviceAggregatedRuntimeProfiles();
                     hasScannedRuntimeProfiles = true;
 
                     rtLog.AppendLine(
@@ -8448,56 +8930,19 @@ namespace TsScoringPlugin
 
         public override void Tick(TimeSpan elapsed)
         {
+            if (
+                BveHacker.IsScenarioCreated
+                && scenarioResetPending
+            )
+            {
+                ResetAtsLoggerScenarioState();
+                handledScenarioGeneration = scenarioGeneration;
+                scenarioResetPending = false;
+            }
+
             if (!BveHacker.IsScenarioCreated)
             {
-                isLogSessionInitialized = false;
-                isAtsStructureDumped = false;
-                hasDumpedVehiclePlugins = false;
-                hasLoggedVehiclePluginsError = false;
-                hasDumpedAtsPtAppDomain = false;
-                hasLoggedAtsPtAppDomainError = false;
-                hasDumpedBveExHostReferences = false;
-                hasLoggedBveExHostReferenceError = false;
-                hasDumpedExtensionSet = false;
-                hasLoggedExtensionSetError = false;
-                hasDumpedBveExStaticPluginHosts = false;
-                hasLoggedBveExStaticPluginHostError = false;
-                hasDumpedPluginHostApp = false;
-                hasLoggedPluginHostAppError = false;
-                hasDumpedBveHackerEventTargets = false;
-                hasLoggedBveHackerEventTargetError = false;
-                managedRuntimeResolutions.Clear();
-                nextManagedRuntimeResolveTime = DateTime.MinValue;
-                hasLoggedManagedRuntimeResolverError = false;
-                hasPreviousManagedPrimaryState = false;
-                previousManagedPrimaryRequestKind = "Unknown";
-                previousManagedPrimaryRequestBrake = int.MinValue;
-                previousManagedPrimaryPhysicalBrake = int.MinValue;
-                previousManagedPrimaryAtsBrake = int.MinValue;
-                isBeaconsLoaded = false;
-                serviceMaxBrakeNotch = -1;
-                emergencyBrakeNotch = -1;
-
-                prevPhysBrake = -1;
-                prevAtsBrake = -1;
-
-                prevPhysSrcBrake = int.MinValue;
-                prevAtsSrcBrake = int.MinValue;
-                prevRawHandleCBrake = int.MinValue;
-                prevRawHandleLBrake = int.MinValue;
-                prevVehicleStateHandleBrake = int.MinValue;
-
-                hasScannedRuntimeProfiles = false;
-                hasLoggedRuntimeProfileError = false;
-                runtimeProfilePath = null;
-                nextRuntimeProfileScanTime = DateTime.MinValue;
-
-                runtimeProfilesByHash.Clear();
-                matchedRuntimeProfileHashes.Clear();
-                inspectedRuntimeModulePaths.Clear();
-
-                beaconList.Clear();
-                lastLocation = -1.0;
+                ResetAtsLoggerScenarioState();
                 return;
             }
 
@@ -8618,6 +9063,15 @@ namespace TsScoringPlugin
                     );
                     header.AppendLine(
                         $"非常={emergencyBrakeNotch}"
+                    );
+                    header.AppendLine(
+                        $"ScenarioGeneration={handledScenarioGeneration}"
+                    );
+                    header.AppendLine(
+                        $"ScenarioIdentity={pendingScenarioIdentity}"
+                    );
+                    header.AppendLine(
+                        $"LogSessionStarted={DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}"
                     );
                     header.AppendLine();
 
@@ -8753,6 +9207,12 @@ namespace TsScoringPlugin
                 // カタログでExplicitBrakeRequestFlags方式と判定された
                 // 全プロファイルの要求フラグを診断する。
                 DiagnoseExplicitBrakeRequestFlags(
+                    rtLog,
+                    ref hasChanges
+                );
+
+                // SWP2のATS-S要求とATS-P要求を装置別に復元し、最大値を記録する。
+                DiagnoseSwp2DeviceAggregatedRequest(
                     rtLog,
                     ref hasChanges
                 );
