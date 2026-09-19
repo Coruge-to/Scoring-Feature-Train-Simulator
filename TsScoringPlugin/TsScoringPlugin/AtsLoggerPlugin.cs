@@ -2294,6 +2294,41 @@ namespace TsScoringPlugin
         }
 
         // =========================================================
+        // 現在のプロセス内にある64ビット浮動小数点値を安全に読み取る。
+        // BAB4の名前付き値マップはdouble値を保持する。
+        // =========================================================
+        private bool TryReadRuntimeDouble(
+            IntPtr address,
+            out double value
+        )
+        {
+            value = 0.0;
+
+            if (address == IntPtr.Zero)
+            {
+                return false;
+            }
+
+            try
+            {
+                byte[] bytes = new byte[sizeof(double)];
+                System.Runtime.InteropServices.Marshal.Copy(
+                    address,
+                    bytes,
+                    0,
+                    bytes.Length
+                );
+                value = BitConverter.ToDouble(bytes, 0);
+                return !double.IsNaN(value) && !double.IsInfinity(value);
+            }
+            catch
+            {
+                value = 0.0;
+                return false;
+            }
+        }
+
+        // =========================================================
         // 現在のプロセス内にある1バイト値を安全に読み取る
         // =========================================================
         private bool TryReadRuntimeByte(
@@ -5735,10 +5770,28 @@ namespace TsScoringPlugin
                 0
             );
             RegisterSwp2DeviceAggregatedRuntimeProfile(
+                "7EE150FED44B4E3E853D50AAF75E338CCB77C5AD0313EE1107CC44C0F288816B",
+                "Swp2GroupA7Ee1DeviceAggregatedRequest",
+                "A7EE1",
+                0x5CAA0,
+                0x308,
+                0,
+                0x364
+            );
+            RegisterSwp2DeviceAggregatedRuntimeProfile(
                 "BAB4C566762D3F8C07AF81541F953251A8201E263897F82B6BE0E64B6B25368F",
-                "Swp2GroupBDeviceAggregatedRequestAlternate",
-                "B",
-                0x52600,
+                "Swp2GroupBBab4DeviceAggregatedRequest",
+                "BAB4",
+                0x505E8,
+                0,
+                0,
+                0
+            );
+            RegisterSwp2DeviceAggregatedRuntimeProfile(
+                "17D207995B096852BF28EAD51B20C6E8C144831D907F7C3F86CCBC75F4A437BB",
+                "Swp2X64NamedValueAggregatedRequest",
+                "X64",
+                0x70EC8,
                 0,
                 0,
                 0
@@ -5786,6 +5839,226 @@ namespace TsScoringPlugin
             profile.Swp2AtsPApplyOffset = atsPApplyOffset;
             profile.Swp2AtsSActiveOffset = atsSActiveOffset;
             runtimeProfilesByHash[profile.Sha256] = profile;
+        }
+
+        // =========================================================
+        // BAB4の名前付き値マップを外部から読取り専用で探索する。
+        // DLL内部関数の呼出し、フック、メモリ書込みは行わない。
+        //
+        // map + 0x04 = head/sentinel
+        // head + 0x04 = root node
+        // node + 0x00 = left
+        // node + 0x08 = right
+        // node + 0x10 = key address
+        // node + 0x18 = double value
+        // node + 0x29 = nil flag
+        // =========================================================
+        private bool TryReadSwp2Bab4NamedDouble(
+            RuntimeProfileIdentity profile,
+            IntPtr root,
+            int keyRva,
+            out double value,
+            out string failureStage
+        )
+        {
+            value = 0.0;
+            failureStage = "None";
+
+            if (
+                profile == null
+                || profile.ModuleBaseAddress == IntPtr.Zero
+                || root == IntPtr.Zero
+                || keyRva == 0
+            )
+            {
+                failureStage = "Bab4NamedValueArguments";
+                return false;
+            }
+
+            IntPtr mapAddress = IntPtr.Add(root, 0x68);
+            IntPtr head;
+            if (!TryReadRuntimePointer32(IntPtr.Add(mapAddress, 0x04), out head))
+            {
+                failureStage = "Bab4MapHead";
+                return false;
+            }
+
+            IntPtr node;
+            if (!TryReadRuntimePointer32(IntPtr.Add(head, 0x04), out node))
+            {
+                failureStage = "Bab4MapRoot";
+                return false;
+            }
+
+            uint targetKey = unchecked(
+                (uint)IntPtr.Add(profile.ModuleBaseAddress, keyRva).ToInt64()
+            );
+            System.Collections.Generic.HashSet<long> visited =
+                new System.Collections.Generic.HashSet<long>();
+
+            for (int depth = 0; depth < 256; depth++)
+            {
+                if (
+                    node == IntPtr.Zero
+                    || node == head
+                    || !visited.Add(node.ToInt64())
+                )
+                {
+                    failureStage = "Bab4MapNotFound";
+                    return false;
+                }
+
+                byte nilFlag;
+                if (!TryReadRuntimeByte(IntPtr.Add(node, 0x29), out nilFlag))
+                {
+                    failureStage = "Bab4MapNilFlag";
+                    return false;
+                }
+                if (nilFlag != 0)
+                {
+                    failureStage = "Bab4MapNotFound";
+                    return false;
+                }
+
+                IntPtr nodeKeyAddress;
+                if (!TryReadRuntimePointer32(IntPtr.Add(node, 0x10), out nodeKeyAddress))
+                {
+                    failureStage = "Bab4MapKey";
+                    return false;
+                }
+
+                uint nodeKey = unchecked((uint)nodeKeyAddress.ToInt64());
+                if (nodeKey == targetKey)
+                {
+                    if (!TryReadRuntimeDouble(IntPtr.Add(node, 0x18), out value))
+                    {
+                        failureStage = "Bab4MapValue";
+                        return false;
+                    }
+                    return true;
+                }
+
+                int childOffset = targetKey < nodeKey ? 0x00 : 0x08;
+                IntPtr nextNode;
+                if (!TryReadRuntimePointer32(IntPtr.Add(node, childOffset), out nextNode))
+                {
+                    failureStage = "Bab4MapChild";
+                    return false;
+                }
+                node = nextNode;
+            }
+
+            failureStage = "Bab4MapDepthLimit";
+            return false;
+        }
+
+        // =========================================================
+        // BAB4のATS-P・ATS-S要求を名前付き値マップから復元する。
+        // ats_p_work_brakeは作動ゲート、brake_notch_indicatorは要求段、
+        // ats_s_workはATS-S作動状態として扱う。eb_workは診断表示のみで、
+        // ATS-P/ATS-S要求へ混ぜない。
+        // =========================================================
+        private bool TryReadSwp2Bab4Request(
+            RuntimeProfileIdentity profile,
+            IntPtr root,
+            out int atsPRequest,
+            out int atsSRequest,
+            out string detail,
+            out string failureStage
+        )
+        {
+            atsPRequest = 0;
+            atsSRequest = 0;
+            detail = "";
+            failureStage = "None";
+
+            double atsPWorkBrake;
+            if (!TryReadSwp2Bab4NamedDouble(
+                profile,
+                root,
+                0x45F24,
+                out atsPWorkBrake,
+                out failureStage
+            ))
+            {
+                return false;
+            }
+
+            double brakeNotchIndicator;
+            if (!TryReadSwp2Bab4NamedDouble(
+                profile,
+                root,
+                0x45F70,
+                out brakeNotchIndicator,
+                out failureStage
+            ))
+            {
+                return false;
+            }
+
+            double atsSWork;
+            if (!TryReadSwp2Bab4NamedDouble(
+                profile,
+                root,
+                0x45F00,
+                out atsSWork,
+                out failureStage
+            ))
+            {
+                return false;
+            }
+
+            double ebWork;
+            if (!TryReadSwp2Bab4NamedDouble(
+                profile,
+                root,
+                0x45FE8,
+                out ebWork,
+                out failureStage
+            ))
+            {
+                return false;
+            }
+
+            int indicatorRounded = (int)Math.Round(
+                brakeNotchIndicator,
+                MidpointRounding.AwayFromZero
+            );
+            bool indicatorIsIntegral =
+                Math.Abs(brakeNotchIndicator - indicatorRounded) < 0.001;
+            bool indicatorSpecial10 = indicatorRounded == 10;
+            bool indicatorInRange =
+                indicatorIsIntegral
+                && indicatorRounded >= 0
+                && emergencyBrakeNotch > 0
+                && indicatorRounded <= emergencyBrakeNotch;
+            bool atsPActive = Math.Abs(atsPWorkBrake) > 0.001;
+            bool atsSActive = Math.Abs(atsSWork) > 0.001;
+            bool ebActive = Math.Abs(ebWork) > 0.001;
+
+            atsPRequest =
+                atsPActive && indicatorInRange && !indicatorSpecial10
+                    ? indicatorRounded
+                    : 0;
+            atsSRequest =
+                atsSActive && emergencyBrakeNotch > 0
+                    ? emergencyBrakeNotch
+                    : 0;
+
+            detail =
+                "Source:NamedValueMap"
+                + ",AtsPWorkBrake:" + atsPWorkBrake.ToString("R", System.Globalization.CultureInfo.InvariantCulture)
+                + ",BrakeNotchIndicator:" + brakeNotchIndicator.ToString("R", System.Globalization.CultureInfo.InvariantCulture)
+                + ",IndicatorRounded:" + indicatorRounded
+                + ",IndicatorSpecial10:" + indicatorSpecial10
+                + ",IndicatorInRange:" + indicatorInRange
+                + ",AtsSWork:" + atsSWork.ToString("R", System.Globalization.CultureInfo.InvariantCulture)
+                + ",EbWork:" + ebWork.ToString("R", System.Globalization.CultureInfo.InvariantCulture)
+                + ",EbActiveDiagnosticOnly:" + ebActive
+                + ",MapOffset:0x68"
+                + ",NativeFunctionCalled:False"
+                + ",MemoryWritePerformed:False";
+            return true;
         }
 
         private bool TryReadSwp2GroupBRequest(
@@ -5884,18 +6157,26 @@ namespace TsScoringPlugin
             }
             List<byte> latches = new List<byte>();
             bool anyLatch = false;
-            for (int rva = 0x52618; rva <= 0x5261E; rva++)
+            bool useRepresentativeGroupBLatches = string.Equals(
+                profile.Swp2Group,
+                "B",
+                StringComparison.Ordinal
+            );
+            if (useRepresentativeGroupBLatches)
             {
-                byte latch;
-                if (!TryReadRuntimeByte(IntPtr.Add(profile.ModuleBaseAddress, rva), out latch))
+                for (int rva = 0x52618; rva <= 0x5261E; rva++)
                 {
-                    failureStage = "AtsPLatches";
-                    return false;
-                }
-                latches.Add(latch);
-                if (latch != 0)
-                {
-                    anyLatch = true;
+                    byte latch;
+                    if (!TryReadRuntimeByte(IntPtr.Add(profile.ModuleBaseAddress, rva), out latch))
+                    {
+                        failureStage = "AtsPLatches";
+                        return false;
+                    }
+                    latches.Add(latch);
+                    if (latch != 0)
+                    {
+                        anyLatch = true;
+                    }
                 }
             }
             if (state2D != 0 || state30 != 0)
@@ -5913,6 +6194,8 @@ namespace TsScoringPlugin
                 + ",State2D:" + state2D
                 + ",State30:" + state30
                 + ",Latches:" + string.Join("|", latches)
+                + ",Layout:" + profile.Swp2Group
+                + ",AtsPSource:State2C2D30"
                 + ",Now:" + now
                 + ",Deadline:" + deadline
                 + ",TimerFinished:" + timerFinished
@@ -5921,6 +6204,175 @@ namespace TsScoringPlugin
             return true;
         }
 
+        private bool TryReadSwp2X64String(
+            IntPtr stringAddress,
+            out string value
+        )
+        {
+            value = "";
+            long length;
+            long capacity;
+            try
+            {
+                length = System.Runtime.InteropServices.Marshal.ReadInt64(
+                    IntPtr.Add(stringAddress, 0x10)
+                );
+                capacity = System.Runtime.InteropServices.Marshal.ReadInt64(
+                    IntPtr.Add(stringAddress, 0x18)
+                );
+            }
+            catch
+            {
+                return false;
+            }
+            if (length < 0 || length > 256 || capacity < length)
+            {
+                return false;
+            }
+            IntPtr characters = stringAddress;
+            if (capacity > 15)
+            {
+                if (!TryReadRuntimePointer(stringAddress, out characters))
+                {
+                    return false;
+                }
+            }
+            byte[] bytes = new byte[(int)length];
+            try
+            {
+                for (int index = 0; index < bytes.Length; index++)
+                {
+                    bytes[index] = System.Runtime.InteropServices.Marshal.ReadByte(
+                        characters,
+                        index
+                    );
+                }
+                value = System.Text.Encoding.ASCII.GetString(bytes);
+                return true;
+            }
+            catch
+            {
+                value = "";
+                return false;
+            }
+        }
+
+        private bool TryReadSwp2X64NamedInt32(
+            IntPtr mapAddress,
+            string key,
+            out int value
+        )
+        {
+            value = 0;
+            IntPtr head;
+            if (!TryReadRuntimePointer(IntPtr.Add(mapAddress, 0x08), out head))
+            {
+                return false;
+            }
+            IntPtr root;
+            if (!TryReadRuntimePointer(IntPtr.Add(head, 0x08), out root))
+            {
+                return false;
+            }
+            System.Collections.Generic.Stack<IntPtr> pending =
+                new System.Collections.Generic.Stack<IntPtr>();
+            System.Collections.Generic.HashSet<long> visited =
+                new System.Collections.Generic.HashSet<long>();
+            pending.Push(root);
+            int traversed = 0;
+            while (pending.Count > 0 && traversed < 4096)
+            {
+                IntPtr node = pending.Pop();
+                if (node == IntPtr.Zero || node == head || !visited.Add(node.ToInt64()))
+                {
+                    continue;
+                }
+                traversed++;
+                byte nilFlag;
+                if (!TryReadRuntimeByte(IntPtr.Add(node, 0x19), out nilFlag))
+                {
+                    return false;
+                }
+                if (nilFlag != 0)
+                {
+                    continue;
+                }
+                string nodeKey;
+                if (!TryReadSwp2X64String(IntPtr.Add(node, 0x20), out nodeKey))
+                {
+                    return false;
+                }
+                if (string.Equals(nodeKey, key, StringComparison.Ordinal))
+                {
+                    return TryReadRuntimeInt32(IntPtr.Add(node, 0x40), out value);
+                }
+                IntPtr left;
+                if (TryReadRuntimePointer(IntPtr.Add(node, 0x00), out left))
+                {
+                    pending.Push(left);
+                }
+                IntPtr right;
+                if (TryReadRuntimePointer(IntPtr.Add(node, 0x10), out right))
+                {
+                    pending.Push(right);
+                }
+            }
+            return false;
+        }
+
+        private bool TryReadSwp2X64Request(
+            RuntimeProfileIdentity profile,
+            IntPtr vehicle,
+            out int atsPRequest,
+            out int atsSRequest,
+            out int finalBrake,
+            out string detail,
+            out string failureStage
+        )
+        {
+            atsPRequest = 0;
+            atsSRequest = 0;
+            finalBrake = 0;
+            detail = "";
+            failureStage = "None";
+            IntPtr environment;
+            if (!TryReadRuntimePointer(
+                IntPtr.Add(profile.ModuleBaseAddress, 0x70EC0),
+                out environment
+            ))
+            {
+                failureStage = "EnvironmentPointer";
+                return false;
+            }
+            int emergencyNotch;
+            if (!TryReadRuntimeInt32(IntPtr.Add(environment, 0x1C), out emergencyNotch))
+            {
+                failureStage = "EmergencyNotch";
+                return false;
+            }
+            if (!TryReadSwp2X64NamedInt32(IntPtr.Add(vehicle, 0x10), "ats_brake", out atsPRequest))
+            {
+                failureStage = "AtsPNamedValue";
+                return false;
+            }
+            byte atsSEmergency;
+            if (!TryReadRuntimeByte(IntPtr.Add(vehicle, 0x424), out atsSEmergency))
+            {
+                failureStage = "AtsSEmergencyFlag";
+                return false;
+            }
+            atsSRequest = atsSEmergency != 0 ? emergencyNotch : 0;
+            if (!TryReadSwp2X64NamedInt32(IntPtr.Add(vehicle, 0x50), "brake", out finalBrake))
+            {
+                failureStage = "FinalBrakeNamedValue";
+                return false;
+            }
+            detail =
+                "AtsPNamedRequest:" + atsPRequest
+                + ",AtsSEmergencyFlag:" + atsSEmergency
+                + ",FinalBrake:" + finalBrake;
+            return true;
+        }
         private void DiagnoseSwp2DeviceAggregatedRequest(
             StringBuilder rtLog,
             ref bool hasChanges
@@ -5946,13 +6398,89 @@ namespace TsScoringPlugin
                 int atsPRequest = 0;
                 int atsSRequest = 0;
                 string detail = "";
-                bool readSucceeded = TryReadRuntimePointer32(
-                    IntPtr.Add(profile.ModuleBaseAddress, profile.Swp2RootPointerRva),
-                    out root
-                );
+                bool readSucceeded;
+                if (string.Equals(profile.Swp2Group, "X64", StringComparison.Ordinal))
+                {
+                    readSucceeded = TryReadRuntimePointer(
+                        IntPtr.Add(profile.ModuleBaseAddress, profile.Swp2RootPointerRva),
+                        out root
+                    );
+                }
+                else
+                {
+                    readSucceeded = TryReadRuntimePointer32(
+                        IntPtr.Add(profile.ModuleBaseAddress, profile.Swp2RootPointerRva),
+                        out root
+                    );
+                }
                 if (!readSucceeded)
                 {
                     failureStage = "RootPointer";
+                }
+                else if (string.Equals(profile.Swp2Group, "X64", StringComparison.Ordinal))
+                {
+                    int finalBrake;
+                    readSucceeded = TryReadSwp2X64Request(
+                        profile,
+                        root,
+                        out atsPRequest,
+                        out atsSRequest,
+                        out finalBrake,
+                        out detail,
+                        out failureStage
+                    );
+                }
+                else if (string.Equals(profile.Swp2Group, "A7EE1", StringComparison.Ordinal))
+                {
+                    int atsPBrakeCandidate;
+                    byte atsSActive;
+                    if (
+                        !TryReadRuntimeInt32(
+                            IntPtr.Add(root, profile.Swp2AtsPBrakeOffset),
+                            out atsPBrakeCandidate
+                        )
+                    )
+                    {
+                        readSucceeded = false;
+                        failureStage = "A7EE1AtsPBrakeRequest";
+                    }
+                    else if (
+                        !TryReadRuntimeByte(
+                            IntPtr.Add(root, profile.Swp2AtsSActiveOffset),
+                            out atsSActive
+                        )
+                    )
+                    {
+                        readSucceeded = false;
+                        failureStage = "A7EE1AtsSActive";
+                    }
+                    else
+                    {
+                        atsPRequest = Math.Max(
+                            0,
+                            Math.Min(atsPBrakeCandidate, emergencyBrakeNotch)
+                        );
+                        atsSRequest = atsSActive != 0 ? emergencyBrakeNotch : 0;
+                        detail =
+                            "AtsPBrakeRequest:" + atsPBrakeCandidate
+                            + ",AtsSActive:" + atsSActive
+                            + ",DirectLayout:7EE1"
+                            + ",AtsPRequestOffset:0x"
+                            + profile.Swp2AtsPBrakeOffset.ToString("X")
+                            + ",AtsSActiveOffset:0x"
+                            + profile.Swp2AtsSActiveOffset.ToString("X");
+                    }
+                }
+                else if (string.Equals(profile.Swp2Group, "BAB4", StringComparison.Ordinal))
+                {
+                    readSucceeded = TryReadSwp2Bab4Request(
+                        profile,
+                        root,
+                        out atsPRequest,
+                        out atsSRequest,
+                        out detail,
+                        out failureStage
+                    );
                 }
                 else if (string.Equals(profile.Swp2Group, "B", StringComparison.Ordinal))
                 {
