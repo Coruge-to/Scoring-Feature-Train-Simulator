@@ -772,6 +772,7 @@ namespace TsScoringPlugin
 
                     if (targetStationIndex < stationList.Count)
                     {
+                        int stationIndexBeforeAdvance = targetStationIndex;
                         var targetSt = stationList[targetStationIndex];
                         nextStationLoc = targetSt.Location;
                         isPass = targetSt.IsPass ? 1 : 0;
@@ -819,6 +820,18 @@ namespace TsScoringPlugin
                                 hasDoorOpenedAtTarget = false;
                                 opStopDelayStartMs = -1;
                             }
+                        }
+
+                        // 駅遷移したTickでは、更新後の対象駅から駅関連値を導出し直す（旧駅の値をパケットへ残さない）
+                        if (targetStationIndex != stationIndexBeforeAdvance && targetStationIndex < stationList.Count)
+                        {
+                            targetSt = stationList[targetStationIndex];
+                            nextStationLoc = targetSt.Location;
+                            isPass = targetSt.IsPass ? 1 : 0;
+                            isTiming = targetSt.IsScoring ? 1 : 0;
+                            marginBack = targetSt.MarginMin;
+                            marginFront = targetSt.MarginMax;
+                            isTerminal = targetSt.IsTerminal;
                         }
 
                         if (isTerminal)
