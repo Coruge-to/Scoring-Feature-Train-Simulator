@@ -730,7 +730,7 @@ def apply_stop_score(self, d_m, current_time):
     if self.is_stopped_out_of_range: return False
     if not (-self.bve_margin_f <= d_m <= self.bve_margin_b): return False
     d_m_rounded = round(d_m, 2)
-    x_cm = int(abs(d_m_rounded) * 100)
+    x_cm = int(round(abs(d_m_rounded) * 100))
     if x_cm <= 100:
         add = 5 * (100 - x_cm)
         if add > 0:
