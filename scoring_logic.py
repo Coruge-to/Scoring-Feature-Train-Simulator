@@ -38,6 +38,8 @@ def reset_transient_scoring_state(self):
     self.bb_state = "IDLE"
     self.bb_apply_count = 0
     self.bb_release_count = 0
+    self.bb_first_valid_stop_detected = False
+    self.bb_moved_after_first_valid_stop = False
 
     # 初動・緩和ブレーキ判定
     self.hb_strong_entered = False
@@ -57,13 +59,16 @@ def reset_station_evaluation_state(self):
     """
     現在の対象駅に対する接近・範囲外停車・採点済み状態を初期化する。
 
-    出発済み状態、基本制動の内部状態、得点、採点設定、
+    出発済み状態、基本制動の状態・回数、得点、採点設定、
     リトライ回数は変更しない。
+    初回有効停止の記録と、その後の再移動の記録は駅単位の状態なので初期化する。
     """
     self.is_approaching = False
     self.is_stopped_out_of_range = False
     self.has_scored_time_this_station = False
     self.has_scored_stop_this_station = False
+    self.bb_first_valid_stop_detected = False
+    self.bb_moved_after_first_valid_stop = False
 
 
 def reset_score_accumulation(self):
@@ -368,9 +373,11 @@ def update_manual_emergency_brake_penalty(
     eb_event_active = manual_eb_qualified
 
     # 基本制動評価中に物理EBが成立した場合は、加点資格を失わせる。
+    # 初回有効停止の後（速度0.0km/hのまま）の操作は観測対象外とする。
     if (
         manual_eb_qualified
         and self.bb_is_in_zone
+        and not getattr(self, 'bb_first_valid_stop_detected', False)
     ):
         self.bb_state = "FAILED"
 
@@ -1024,6 +1031,50 @@ def get_notch_state(self, notch):
         elif notch <= self.cushion_max: return "CUSHION"
         else: return "STRONG"
 
+def update_basic_braking_first_stop(self):
+    """
+    通常停車駅で許容停止位置内に初めて停止した時点で、基本制動の観測を打ち切る。
+
+    初回有効停止より前のapply・release・込め直し・手動EBは従来どおり観測する。
+    初回有効停止の後は、速度0.0km/hのままのブレーキ操作（EB、増圧、緩解）を
+    基本制動へ影響させない。扉開前に速度が0.0以外になった場合は、実際の再移動として
+    基本制動を不可逆にFAILEDへ遷移させる。元の位置へ戻っても資格は戻さない。
+
+    運転停車は最初の停止で評価が確定するため対象外とする。
+    既存の範囲外停止判定（is_stopped_out_of_range）や転動判定とは独立している。
+    停止位置の加点は従来どおり扉開時の最終停止位置で計算される。
+    """
+    if getattr(self, 'bb_evaluated', False):
+        return
+
+    if getattr(self, 'bb_first_valid_stop_detected', False):
+        if self.bve_speed != 0.0:
+            self.bb_moved_after_first_valid_stop = True
+        if getattr(self, 'bb_moved_after_first_valid_stop', False):
+            self.bb_state = "FAILED"
+        return
+
+    if not getattr(self, 'bb_is_in_zone', False) or self.bve_speed != 0.0:
+        return
+    if getattr(self, 'is_official_jumping', False) or getattr(self, 'jump_lock', False):
+        return
+    if getattr(self, 'is_stopped_out_of_range', False):
+        return
+    if self.bve_is_pass != 0 or getattr(self, 'bve_doordir', 1) == 0:
+        return
+
+    dist_to_stop = self.bve_next_loc - self.bve_location
+    if not (-self.bve_margin_f <= dist_to_stop <= self.bve_margin_b):
+        return
+
+    # 初回有効停止: 保留中のノッチ変化を確定し、基本制動の結果を仮確定する
+    if not getattr(self, 'bb_is_stable', True):
+        self.bb_is_stable = True
+        process_bb_transition(self, self.bb_current_notch)
+
+    self.bb_first_valid_stop_detected = True
+    self.bb_moved_after_first_valid_stop = False
+
 def update_physics_and_scoring(self, current_time, dt):
     # 現在の対象区間に適用される基本制動ルールを取得する
     if getattr(self, 'is_scoring_mode', False) and getattr(self, 'station_list', []):
@@ -1292,7 +1343,14 @@ def update_physics_and_scoring(self, current_time, dt):
     elif not in_station_zone and self.bb_is_in_zone:
         self.bb_is_in_zone = False
 
-    if self.bb_is_in_zone and self.bve_speed > 0.0 and not self.bb_evaluated:
+    update_basic_braking_first_stop(self)
+
+    if (
+        self.bb_is_in_zone
+        and self.bve_speed > 0.0
+        and not self.bb_evaluated
+        and not getattr(self, 'bb_first_valid_stop_detected', False)
+    ):
         current_notch = self.bve_brk_notch
         if current_notch != self.bb_current_notch:
             self.bb_current_notch = current_notch
