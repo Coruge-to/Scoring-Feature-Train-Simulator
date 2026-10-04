@@ -25,7 +25,7 @@ from scoring_logic import (
 )
 from menu_ui import draw_menu
 from hud_ui import draw_hud
-from utils import write_desktop_log
+from utils import write_desktop_log, NumericKeyInputRouter
 
 KERNING_OFFSETS = {
     "メ": 12,
@@ -67,7 +67,7 @@ class Overlay(QWidget):
         self.last_speed_limit_penalty_time = 0.0
         self.accumulated_speed_penalty = 0
 
-        keys_to_track = ['0','1','2','3','4','5','6','7','8','9','a','f1','f2','f5','f8','f11','f12','p','up','down','left','right','enter','backspace', 'h']
+        keys_to_track = ['a','f1','f2','f5','f8','f11','f12','p','up','down','left','right','enter','backspace', 'h']
         self.key_states = {k: False for k in keys_to_track}
         self.key_press_timers = {k: 0.0 for k in keys_to_track}
         self.show_help = False # ヘルプ画面の表示状態
@@ -163,6 +163,10 @@ class Overlay(QWidget):
         
         self.keys_blocked = False
         self.hook_dict = {}
+
+        # 数値入力用のキーイベントルーター（通常数字・テンキー数字を方向キーと区別して受け取る）
+        self.numeric_router = NumericKeyInputRouter()
+        self.numeric_router_hook = None
 
         # 制限速度・保安装置関連の診断ログ
         self.enable_limit_debug_log = False
@@ -715,6 +719,22 @@ class Overlay(QWidget):
             if getattr(self, 'was_advancing_before_menu', False) and self.bve_hwnd:
                 win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
                 win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
+
+    # 数値入力の対象: Aランク%(menu_state 10・カーソル0)と停止距離(menu_state 5・カーソル1)
+    def is_numeric_input_target(self):
+        if not self.input_mode_active:
+            return False
+        return (
+            (self.menu_state == 5 and self.menu_cursor == 1)
+            or (self.menu_state == 10 and self.menu_cursor == 0)
+        )
+
+    def apply_numeric_char(self, char):
+        if self.input_fresh:
+            self.input_buffer = char
+            self.input_fresh = False
+        elif len(self.input_buffer) < 3:
+            self.input_buffer += char
 
     def finalize_margin_input(self):
         if self.input_mode_active:
@@ -1806,6 +1826,25 @@ class Overlay(QWidget):
             self.hook_dict.clear()
             self.keys_blocked = False
 
+        # 数値入力用ルーターは、メニュー表示中かつBVE前面の間だけ登録する
+        # （結果画面のスクショ保存でメニュー用フックが外れた場合も、ここで後始末する）
+        if should_block_keys and self.numeric_router_hook is None:
+            self.numeric_router.reset()
+            self.numeric_router_hook = keyboard.hook(self.numeric_router.on_event, suppress=True)
+        elif not should_block_keys and self.numeric_router_hook is not None:
+            try: keyboard.unhook(self.numeric_router_hook)
+            except Exception as router_exc:
+                write_desktop_log(f"[NUMINPUT] ルーター解除失敗: {type(router_exc).__name__}: {router_exc}")
+            self.numeric_router_hook = None
+            self.numeric_router.reset()
+
+        # 数値入力モード中だけ数字を反映し、それ以外のイベントは破棄する
+        numeric_events = self.numeric_router.drain()
+        if is_bve_active and self.is_numeric_input_target():
+            for event_kind, event_value, _event_source in numeric_events:
+                if event_kind == 'digit':
+                    self.apply_numeric_char(event_value)
+
         is_left_clicked = (win32api.GetAsyncKeyState(win32con.VK_LBUTTON) & 0x8000) != 0
 
         # 評価点スライダーのクリックとドラッグを処理する
@@ -1955,14 +1994,8 @@ class Overlay(QWidget):
             # 従来の if is_pressed and not self.key_states[key] の代わりに trigger_key を使う
             if trigger_key:
                 
-                if key in [str(i) for i in range(10)]:
-                    if (self.menu_state == 5 and self.menu_cursor == 1 and self.input_mode_active) or (self.menu_state == 10 and self.menu_cursor == 0 and self.input_mode_active):
-                        if self.input_fresh:
-                            self.input_buffer = key
-                            self.input_fresh = False
-                        elif len(self.input_buffer) < 3:
-                            self.input_buffer += key
-                elif key == 'f1': 
+                # 数字キーは is_pressed ではなく numeric_router のイベントで処理する
+                if key == 'f1':
                     if self.menu_state == 11 and not getattr(self, 'is_result_saved', False):
                             pass # 未保存時はF1無効
                     else:

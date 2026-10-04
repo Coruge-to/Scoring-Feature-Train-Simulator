@@ -1,5 +1,6 @@
 import math
 import datetime
+from collections import deque
 import os
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFontMetrics, QPainterPath, QPen
@@ -109,3 +110,107 @@ def calculate_apex_speed(v_start_kmh, v_target_kmh, dist_m, lower_limit_kmh):
     v_apex = (-B + math.sqrt(D)) / (2 * A)
     v_apex_kmh = v_apex * 3.6
     return max(v_start_kmh, min(v_apex_kmh, v_target_kmh))
+
+# ==========================================================
+# 数値入力用のキーイベント分類（β版は日本語キーボード配列が対象）
+# ==========================================================
+NUMERIC_DIGIT_NAMES = "0123456789"
+NUMERIC_NAVIGATION_NAMES = ("up", "down", "left", "right")
+
+def classify_numeric_key_event(event, ctrl_alt_pressed=False):
+    """
+    keyboardのKeyboardEventを、数値入力用に分類する。
+
+    戻り値:
+      ("digit", "0"〜"9", "main" | "keypad") … 数字として受理する
+      ("nav", "up" | "down" | "left" | "right", "main" | "keypad") … 数字にしない
+      None … 数値入力と無関係
+
+    event.nameはOSがNumLockとShiftの状態を反映して解決した名前で、
+      通常数字      : "0"〜"9"（is_keypad=False）
+      テンキー数字  : NumLock ONなら"0"〜"9"（is_keypad=True）
+      テンキー      : NumLock OFFならナビゲーション名（is_keypad=True）
+      方向キー      : "up"等（is_keypad=False）
+      Shift+数字    : 記号
+    となる。NumLockの状態は自前で読まない。
+    """
+    if getattr(event, 'event_type', None) != 'down':
+        return None
+
+    name = getattr(event, 'name', None)
+    if not name:
+        return None
+
+    source = 'keypad' if getattr(event, 'is_keypad', False) else 'main'
+
+    if len(name) == 1 and name in NUMERIC_DIGIT_NAMES:
+        if ctrl_alt_pressed:
+            return None
+        return ("digit", name, source)
+
+    if name in NUMERIC_NAVIGATION_NAMES:
+        return ("nav", name, source)
+
+    return None
+
+
+class NumericKeyInputRouter:
+    """
+    数値入力用のキーイベントを集めるルーター。
+
+    keyboard.hook(router.on_event, suppress=True)で登録して使う。
+    on_eventはkeyboardのフックスレッドから呼ばれるため、Qtには触れず、
+    分類結果をdequeへ積むだけにする。Qt側のタイマーがdrain()で取り出す。
+    on_eventは常にTrueを返し、キーの抑止は既存のキーフックに任せる。
+    """
+
+    def __init__(self, max_events=64, allow_repeat=False):
+        self.events = deque(maxlen=max_events)
+        self.allow_repeat = allow_repeat
+        self._held_scan_codes = set()
+        self._ctrl_alt_scan_codes = set()
+
+    def reset(self):
+        self.events.clear()
+        self._held_scan_codes.clear()
+        self._ctrl_alt_scan_codes.clear()
+
+    def on_event(self, event):
+        try:
+            name = getattr(event, 'name', None) or ""
+            scan_code = event.scan_code
+            event_type = event.event_type
+
+            if "ctrl" in name or "alt" in name:
+                if event_type == 'down':
+                    self._ctrl_alt_scan_codes.add(scan_code)
+                else:
+                    self._ctrl_alt_scan_codes.discard(scan_code)
+
+            if event_type == 'up':
+                self._held_scan_codes.discard(scan_code)
+                return True
+
+            is_repeat = scan_code in self._held_scan_codes
+            self._held_scan_codes.add(scan_code)
+            if is_repeat and not self.allow_repeat:
+                return True
+
+            classified = classify_numeric_key_event(
+                event,
+                ctrl_alt_pressed=bool(self._ctrl_alt_scan_codes),
+            )
+            if classified is not None:
+                self.events.append(classified)
+        except Exception:
+            pass
+        return True
+
+    def drain(self):
+        drained = []
+        while True:
+            try:
+                drained.append(self.events.popleft())
+            except IndexError:
+                break
+        return drained
