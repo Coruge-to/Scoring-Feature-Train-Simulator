@@ -184,7 +184,7 @@ class Overlay(QWidget):
         self.init_sub_cursor_x = 0
 
         # 走行中の早送り検出とF8入力抑止に使用する状態
-        self.F8_disable = False  # True: 走行中のF8を無効化＆強制解除 / False: デバッグ用(制限
+        self.F8_disable = True  # True: 走行中のF8を無効化＆強制解除 / False: デバッグ用(制限
         self.ff_check_real_time = 0.0
         self.ff_check_bve_time = 0
         self.is_fast_forwarding = False
