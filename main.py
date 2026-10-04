@@ -176,7 +176,7 @@ class Overlay(QWidget):
         self.pen_eb = True
         self.pen_jerk = True
         self.pen_limit = True
-        self.pen_ats = True
+        self.pen_ats = False
         self.penalty_init_rules = [{"end_idx": -1, "apply": "ON①", "release": "ON①"}]
         self.init_summary_scroll = 0
         self.init_sub_scroll = 0
@@ -994,6 +994,7 @@ class Overlay(QWidget):
             
         elif self.menu_state == 6:
             if self.menu_cursor == 0: max_x = -1
+            elif self.menu_cursor == 1 and not ATS_SIGNAL_IGNORE_AVAILABLE: max_x = -1
             elif 1 <= self.menu_cursor <= 4: max_x = 0
             elif self.menu_cursor == 5: max_x = 1
             else: max_x = -1
@@ -1138,7 +1139,10 @@ class Overlay(QWidget):
 
         elif self.menu_state == 6:
             if self.menu_cursor == 1 and getattr(self, 'menu_cursor_x', 0) == 0:
-                self.pen_ats = not getattr(self, 'pen_ats', True)
+                if ATS_SIGNAL_IGNORE_AVAILABLE:
+                    self.pen_ats = not getattr(self, 'pen_ats', False)
+                else:
+                    self.pen_ats = False
             elif self.menu_cursor == 2 and getattr(self, 'menu_cursor_x', 0) == 0:
                 self.pen_limit = not getattr(self, 'pen_limit', True)
             elif self.menu_cursor == 3 and getattr(self, 'menu_cursor_x', 0) == 0:

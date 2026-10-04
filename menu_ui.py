@@ -912,7 +912,8 @@ def draw_menu(self, painter, logical_width):
         fm = QFontMetrics(self.font_menu)
         fixed_apply_w = fm.horizontalAdvance("ON①")
 
-        def draw_toggle_row(cursor_idx, label_text, is_on, base_y):
+        def draw_toggle_row(cursor_idx, label_text, is_on, base_y, locked=False):
+            # 固定項目(locked)は通常表示のまま、値セルのクリック領域を登録せず値を変更させない
             box_y = base_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET
             label_w = fm.horizontalAdvance(label_text)
             # 項目ラベルのクリック領域
@@ -929,7 +930,8 @@ def draw_menu(self, painter, logical_width):
             
             val_w = fm.horizontalAdvance(val_text)
             # ON/OFF値のクリック領域
-            self.menu_click_zones.append((val_x_start - 10 + GLOBAL_BOX_X_OFFSET, box_y, val_x_start - 10 + GLOBAL_BOX_X_OFFSET + val_w + 20, box_y + fm.height() + 12, cursor_idx, 0))
+            if not locked:
+                self.menu_click_zones.append((val_x_start - 10 + GLOBAL_BOX_X_OFFSET, box_y, val_x_start - 10 + GLOBAL_BOX_X_OFFSET + val_w + 20, box_y + fm.height() + 12, cursor_idx, 0))
 
             is_val_focused = (self.menu_cursor == cursor_idx and getattr(self, 'menu_cursor_x', 0) == 0)
             if cursor_idx != 0: 
@@ -941,7 +943,7 @@ def draw_menu(self, painter, logical_width):
             draw_text_with_outline(painter, val_text, self.font_menu, val_col, COLOR_WHITE, val_x_start, base_y, "left", passes=8)
 
         draw_toggle_row(0, "転動", True, list_y_start)
-        draw_toggle_row(1, "ATS信号無視", getattr(self, 'pen_ats', True), list_y_start + row_h)
+        draw_toggle_row(1, "ATS信号無視", is_ats_signal_ignore_effective(getattr(self, 'pen_ats', False)), list_y_start + row_h, locked=not ATS_SIGNAL_IGNORE_AVAILABLE)
         draw_toggle_row(2, "速度制限超過", getattr(self, 'pen_limit', True), list_y_start + row_h * 2)
         draw_toggle_row(3, "停車時衝動", getattr(self, 'pen_jerk', True), list_y_start + row_h * 3)
         draw_toggle_row(4, "非常ブレーキ", getattr(self, 'pen_eb', True), list_y_start + row_h * 4)
@@ -1083,7 +1085,7 @@ def draw_menu(self, painter, logical_width):
 
         desc_dict = {
             0: "【 転動 】\nドア開扉中に車両が完全に停止していたかを採点します。\n（※ドア開扉中に累計5cm動くたびに-500点）",
-            1: "【 ATS信号無視 】\n未実装\n（※保安装置が働く度に-500点）",
+            1: "【 ATS信号無視 】\nβ版では未対応です。保安装置介入の判定機能は今後のアップデートで対応予定です。",
             2: "【 速度制限超過 】\n速度制限・信号制限を守ったかを採点します。\n（※1秒毎に超過した速度(km/h)を累積減点）",
             3: "【 停車時衝動 】\n列車が完全に停止する際のショックの大きさを停止直前の0.5秒におけるGの平均値により採点します。\n（※0.065G≒2.3km/h/s以上で-100点、0.10G≒3.5km/h/s以上で-200点）",
             4: "【 非常ブレーキ 】\n走行中に非常ブレーキを使用したかどうかを採点します。\n（※非常ブレーキを使用するごとに-500点）",
@@ -1564,7 +1566,7 @@ def draw_menu(self, painter, logical_width):
         sd = getattr(self, 'score_details', {})
         
         # 各減点項目の有効設定からOFF状態を判定する
-        is_ats_off   = not self.pen_ats
+        is_ats_off   = not is_ats_signal_ignore_effective(getattr(self, 'pen_ats', False))
         is_limit_off = not self.pen_limit
         is_jerk_off  = not self.pen_jerk
         is_eb_off    = not self.pen_eb

@@ -29,6 +29,15 @@ OUTLINE_WIDTH = 6
 BASE_SCREEN_W = 1920.0
 BASE_SCREEN_H = 1080.0
 
+# ATS信号無視の採点機能を現在提供できるかを表す唯一の正本。
+# False: β版では未対応。設定UIはOFF固定・トグル不可、採点不可、リザルトは薄いOFF表示。
+# True : 保安装置対応後に、既存のpen_atsによるON/OFF切替を復活できる。
+ATS_SIGNAL_IGNORE_AVAILABLE = False
+
+def is_ats_signal_ignore_effective(pen_ats):
+    # 実効状態は ATS_SIGNAL_IGNORE_AVAILABLE and pen_ats
+    return bool(ATS_SIGNAL_IGNORE_AVAILABLE and pen_ats)
+
 MARGIN_LEFT = 50          
 MARGIN_TOP_BIG = 122      
 MARGIN_TOP_NORMAL = 294   

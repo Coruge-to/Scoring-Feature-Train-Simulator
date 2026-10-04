@@ -629,6 +629,10 @@ def execute_retry(self, index, is_bve_advancing):
         # 万が一古いセーブデータだった場合の保険
         for k in self.score_details: self.score_details[k] = 0
 
+    # ATS信号無視が無効な間は、復元した内訳でも0を維持する
+    if not is_ats_signal_ignore_effective(getattr(self, 'pen_ats', False)):
+        self.score_details['ats'] = 0
+
     #?self.bve_door = 0
     #?self.prev_door = 0
 
@@ -689,6 +693,13 @@ def add_score_popup(
     if (
         getattr(self, 'is_scoring_finished', False)
         and not force
+    ):
+        return
+
+    # ATS信号無視が無効な間は、得点・内訳・ポップアップへ反映しない
+    if (
+        category == "ATS信号無視"
+        and not is_ats_signal_ignore_effective(getattr(self, 'pen_ats', False))
     ):
         return
 
@@ -1127,7 +1138,7 @@ def update_physics_and_scoring(self, current_time, dt):
         if getattr(self, 'pen_limit', True): f_list.append("[制限超]")
         if getattr(self, 'pen_jerk', True): f_list.append("[衝動]")
         if getattr(self, 'pen_eb', True): f_list.append("[EB]")
-        if getattr(self, 'pen_ats', True): f_list.append("[ATS]")
+        if is_ats_signal_ignore_effective(getattr(self, 'pen_ats', False)): f_list.append("[ATS]")
         self.active_features_str = " ".join(f_list) if f_list else "すべてOFF"
 
     update_result_display(self, current_time)
