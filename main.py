@@ -1762,7 +1762,9 @@ class Overlay(QWidget):
         # 採点中かつ走行中はF8入力を抑止する
         should_block_f8 = self.F8_disable and getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False) and self.bve_speed >= 0.1 and is_bve_active and self.menu_state == 0
         
-        if should_block_f8 and not getattr(self, 'f8_physically_blocked', False):
+        # メニュー用キーフック(f8を含む)が登録中は、同じキー名f8の採点用フックを登録しない
+        # (メニューを閉じた直後のtickで両フックが重なり、解除時にKeyErrorで採点用フックが残るのを防ぐ)
+        if should_block_f8 and not getattr(self, 'f8_physically_blocked', False) and not self.keys_blocked:
             if not hasattr(self, 'f8_hook_dict'):
                 self.f8_hook_dict = {}
             self.f8_hook_dict['f8'] = keyboard.on_press_key('f8', lambda e: None, suppress=True)
