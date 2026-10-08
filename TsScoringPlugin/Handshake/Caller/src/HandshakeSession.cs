@@ -1,0 +1,538 @@
+using System;
+using System.Diagnostics;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Security.AccessControl;
+using System.Text;
+using System.Threading;
+
+namespace TSScoringPlugin.Handshake
+{
+    /// <summary>
+    /// Caller-side dependency state. BridgeAvailable is a transient step (evaluated and left within one monitor step).
+    /// </summary>
+    internal enum CallerPhase
+    {
+        Disabled,
+        WaitingForBridge,
+        BridgeAvailable,
+        WaitingForHandshake,
+        Connected,
+        BridgeMissingTimedOut,
+        Disposed,
+    }
+
+    /// <summary>
+    /// One "enabled cycle" of the Caller (Load .. Dispose). Publishes Enabled/Stop and watches the Bridge on ONE background monitor thread:
+    ///
+    ///   WaitingForBridge --BridgeAvailable seen--> (BridgeAvailable) --> WaitingForHandshake --Ready--> Connected
+    ///   Connected --Ready lost, Bridge still there--> WaitingForHandshake
+    ///   any --BridgeAvailable lost--> WaitingForBridge (a new absence stretch)
+    ///   WaitingForBridge --absent for BridgeMissingTimeoutMs--> BridgeMissingTimedOut (ONE notice per absence stretch)
+    ///   BridgeMissingTimedOut --BridgeAvailable back--> WaitingForHandshake (notice re-armed)
+    ///
+    /// Only the absence of BridgeAvailable means "BveEX / the Bridge is not there". A missing Ready (BveEX's Tick runs only while a
+    /// scenario is driven) and a missing scenario never produce the BveEX notice and have no timeout.
+    /// Nothing here runs on BVE's threads except the cheap Start/End calls.
+    /// </summary>
+    internal sealed class HandshakeSession
+    {
+        private const uint MB_OK = 0x00000000;
+        private const uint MB_ICONINFORMATION = 0x00000040;
+        private const uint MB_SETFOREGROUND = 0x00010000;
+        private const uint MB_TOPMOST = 0x00040000;
+
+        [DllImport("user32.dll", EntryPoint = "MessageBoxW", CharSet = CharSet.Unicode)]
+        private static extern int MessageBoxW(IntPtr hWnd, string text, string caption, uint type);
+
+        // Human-facing product name (the technical identifiers elsewhere keep "TSScoringPlugin").
+        internal const string ProductDisplayName = "TS Scoring";
+        internal const string ProviderName = "Coruge-to";
+
+        internal const string NoticeText =
+            "TS ScoringにはBveEXが必要です。\r\n" +
+            "設定 → 入力デバイス でBveEXを有効にし、BVEを再起動してください。";
+
+        /// <summary>Diagnostic for the offline tests: monitor threads currently alive (must return to 0 after every cycle).</summary>
+        internal static int LiveMonitors;
+
+        private readonly object gate = new object();
+        private readonly int pid;
+        private readonly Action<string> showNotice;
+
+        private EventWaitHandle enabled;
+        private EventWaitHandle stop;
+        private EventWaitHandle bridge;
+        private EventWaitHandle ready;
+        private ManualResetEvent wake;
+        private Thread monitor;
+
+        private bool started;
+        private CallerPhase phase = CallerPhase.Disabled;
+        private bool bridgePresent;
+        private bool readyPresent;
+
+        private bool noticedThisAbsence;
+        private bool noticeInFlight;
+        private bool timedOutEver;
+        private bool missedBridgeTarget;
+        private int noticeCount;
+        private int bridgeSeenCount;
+        private int bridgeLostCount;
+        private int readyConnectCount;
+        private int readyLostCount;
+
+        private long enabledQpc;
+        private long absenceStartQpc;
+        private long handshakeStartQpc;
+        private long bridgeFirstSeenQpc;
+        private long bridgeLostQpc;
+        private long readyLastQpc;
+        private long readyLostQpc;
+        private double firstBridgeDetectMs = -1;
+        private double latestBridgeDetectMs = -1;
+        private double latestHandshakeMs = -1;
+        private DateTime enabledLocal;
+
+        /// <summary>Production constructor: this BVE process, real MessageBox.</summary>
+        public HandshakeSession()
+            : this(HandshakeProtocol.CurrentProcessId(), DefaultShowNotice)
+        {
+        }
+
+        /// <summary>Test constructor: explicit PID and a notice sink that can be a test double.</summary>
+        internal HandshakeSession(int pid, Action<string> showNotice)
+        {
+            this.pid = pid;
+            this.showNotice = showNotice ?? DefaultShowNotice;
+        }
+
+        internal CallerPhase Phase { get { lock (gate) { return phase; } } }
+        internal int NoticeCount { get { lock (gate) { return noticeCount; } } }
+        internal int BridgeSeenCount { get { lock (gate) { return bridgeSeenCount; } } }
+        internal int BridgeLostCount { get { lock (gate) { return bridgeLostCount; } } }
+        internal int ReadyConnectCount { get { lock (gate) { return readyConnectCount; } } }
+        internal int ReadyLostCount { get { lock (gate) { return readyLostCount; } } }
+        internal bool NoticeArmed { get { lock (gate) { return !noticedThisAbsence; } } }
+        internal bool MissedBridgeTarget { get { lock (gate) { return missedBridgeTarget; } } }
+        internal bool MonitorAlive { get { Thread t; lock (gate) { t = monitor; } return t != null && t.IsAlive; } }
+
+        private static void DefaultShowNotice(string text)
+        {
+            MessageBoxW(IntPtr.Zero, text, ProductDisplayName, MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST);
+        }
+
+        /// <summary>Cheap: creates the two events and starts the single monitor thread. Called from BVE's Load.</summary>
+        public void Start()
+        {
+            lock (gate)
+            {
+                if (started)
+                {
+                    return; // one monitor per session; never a second thread
+                }
+
+                started = true;
+
+                // Create Stop first and Enabled last, so a Bridge that sees Enabled always finds Stop.
+                bool created;
+                stop = new EventWaitHandle(false, EventResetMode.ManualReset, HandshakeProtocol.StopName(pid), out created);
+                stop.Reset();
+                enabled = new EventWaitHandle(false, EventResetMode.ManualReset, HandshakeProtocol.EnabledName(pid), out created);
+                enabled.Set();
+
+                enabledQpc = Stopwatch.GetTimestamp();
+                absenceStartQpc = enabledQpc;
+                enabledLocal = DateTime.Now;
+                phase = CallerPhase.WaitingForBridge;
+
+                wake = new ManualResetEvent(false);
+                monitor = new Thread(MonitorLoop);
+                monitor.IsBackground = true;
+                monitor.Name = "TSScoringPlugin.Caller.BridgeMonitor";
+                monitor.Start();
+            }
+        }
+
+        /// <summary>Called from Dispose: monitoring ends, Stop is signalled, Enabled is withdrawn, every handle is released.</summary>
+        public void End()
+        {
+            lock (gate)
+            {
+                if (phase == CallerPhase.Disposed)
+                {
+                    return;
+                }
+
+                phase = CallerPhase.Disposed;
+
+                try { if (wake != null) { wake.Set(); } } catch { }
+                try { if (stop != null) { stop.Set(); } } catch { }
+                try { if (enabled != null) { enabled.Reset(); } } catch { }
+
+                Release(ref ready);
+                Release(ref bridge);
+                Release(ref enabled);
+                Release(ref stop);
+            }
+        }
+
+        private static void Release(ref EventWaitHandle handle)
+        {
+            try
+            {
+                if (handle != null)
+                {
+                    handle.Dispose();
+                }
+            }
+            catch
+            {
+            }
+
+            handle = null;
+        }
+
+        private void MonitorLoop()
+        {
+            Interlocked.Increment(ref LiveMonitors);
+            try
+            {
+                ManualResetEvent signal;
+                lock (gate) { signal = wake; }
+
+                // WaitOne returns true as soon as End() sets the signal, so the thread ends promptly; otherwise it ticks every CallerPollMs.
+                while (!signal.WaitOne(HandshakeTiming.CallerPollMs))
+                {
+                    Step();
+                }
+            }
+            catch
+            {
+                // a monitor must never take BVE down
+            }
+            finally
+            {
+                Interlocked.Decrement(ref LiveMonitors);
+            }
+        }
+
+        private void Step()
+        {
+            try
+            {
+                lock (gate)
+                {
+                    if (phase == CallerPhase.Disposed || phase == CallerPhase.Disabled)
+                    {
+                        return;
+                    }
+
+                    long now = Stopwatch.GetTimestamp();
+                    bridgePresent = SignalledLocked(ref bridge, HandshakeProtocol.BridgeAvailableName(pid));
+                    readyPresent = bridgePresent && SignalledLocked(ref ready, HandshakeProtocol.ReadyName(pid));
+
+                    switch (phase)
+                    {
+                        case CallerPhase.WaitingForBridge:
+                            if (bridgePresent)
+                            {
+                                OnBridgeSeenLocked(now);
+                            }
+                            else
+                            {
+                                CheckBridgeTimeoutLocked(now);
+                            }
+
+                            break;
+
+                        case CallerPhase.BridgeMissingTimedOut:
+                            if (bridgePresent)
+                            {
+                                OnBridgeSeenLocked(now); // the Bridge is back: re-arm, then wait for the handshake
+                            }
+
+                            break;
+
+                        case CallerPhase.BridgeAvailable:
+                        case CallerPhase.WaitingForHandshake:
+                            if (!bridgePresent)
+                            {
+                                OnBridgeLostLocked(now);
+                            }
+                            else if (readyPresent)
+                            {
+                                OnReadyLocked(now);
+                            }
+
+                            break;
+
+                        case CallerPhase.Connected:
+                            if (!bridgePresent)
+                            {
+                                OnBridgeLostLocked(now);
+                            }
+                            else if (readyPresent)
+                            {
+                                readyLastQpc = now;
+                            }
+                            else
+                            {
+                                // Ready vanished but the Bridge is still there: BveEX is on, the handshake is only interrupted. No notice.
+                                readyLostCount++;
+                                readyLostQpc = now;
+                                handshakeStartQpc = now;
+                                phase = CallerPhase.WaitingForHandshake;
+                            }
+
+                            break;
+                    }
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+                // handle released by a concurrent End(): nothing left to watch
+            }
+            catch
+            {
+            }
+        }
+
+        /// <summary>An event counts as present only while it exists AND is signalled. Gate must be held.</summary>
+        private static bool SignalledLocked(ref EventWaitHandle handle, string name)
+        {
+            try
+            {
+                if (handle == null)
+                {
+                    EventWaitHandle candidate;
+                    if (!EventWaitHandle.TryOpenExisting(name, EventWaitHandleRights.Synchronize, out candidate))
+                    {
+                        return false;
+                    }
+
+                    handle = candidate;
+                }
+
+                return handle.WaitOne(0);
+            }
+            catch (ObjectDisposedException)
+            {
+                handle = null;
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void OnBridgeSeenLocked(long now)
+        {
+            phase = CallerPhase.BridgeAvailable;
+            bridgeSeenCount++;
+            latestBridgeDetectMs = HandshakeProtocol.QpcToMs(now - absenceStartQpc);
+            if (bridgeFirstSeenQpc == 0)
+            {
+                bridgeFirstSeenQpc = now;
+                firstBridgeDetectMs = latestBridgeDetectMs;
+            }
+
+            if (latestBridgeDetectMs > HandshakeTiming.TargetBridgeAvailableMs)
+            {
+                missedBridgeTarget = true;
+            }
+
+            noticedThisAbsence = false; // the absence stretch is over: re-arm the notice for the next one
+            handshakeStartQpc = now;
+
+            if (readyPresent)
+            {
+                OnReadyLocked(now);
+            }
+            else
+            {
+                phase = CallerPhase.WaitingForHandshake;
+            }
+        }
+
+        private void OnReadyLocked(long now)
+        {
+            phase = CallerPhase.Connected;
+            readyConnectCount++;
+            readyLastQpc = now;
+            latestHandshakeMs = HandshakeProtocol.QpcToMs(now - handshakeStartQpc);
+        }
+
+        private void OnBridgeLostLocked(long now)
+        {
+            if (phase == CallerPhase.Connected)
+            {
+                readyLostCount++;
+                readyLostQpc = now;
+            }
+
+            phase = CallerPhase.WaitingForBridge;
+            bridgeLostCount++;
+            bridgeLostQpc = now;
+            absenceStartQpc = now;          // a NEW absence stretch
+            noticedThisAbsence = false;
+        }
+
+        private void CheckBridgeTimeoutLocked(long now)
+        {
+            double missingMs = HandshakeProtocol.QpcToMs(now - absenceStartQpc);
+            if (missingMs > HandshakeTiming.TargetBridgeAvailableMs)
+            {
+                missedBridgeTarget = true;
+            }
+
+            if (missingMs < HandshakeTiming.BridgeMissingTimeoutMs)
+            {
+                return;
+            }
+
+            phase = CallerPhase.BridgeMissingTimedOut;
+            timedOutEver = true;
+
+            if (!noticedThisAbsence && !noticeInFlight)
+            {
+                noticedThisAbsence = true;
+                noticeInFlight = true;
+                Thread thread = new Thread(ShowNoticeIfStillNeeded);
+                thread.IsBackground = true;
+                thread.Name = "TSScoringPlugin.Caller.Notice";
+                thread.Start();
+            }
+        }
+
+        /// <summary>Runs on its own short-lived thread so the monitor keeps watching while a dialog is open.</summary>
+        private void ShowNoticeIfStillNeeded()
+        {
+            try
+            {
+                bool show;
+                lock (gate)
+                {
+                    // Re-check everything right before showing: still enabled, not disposed, Bridge still absent, still timed out.
+                    show = phase == CallerPhase.BridgeMissingTimedOut && started && !SignalledLocked(ref bridge, HandshakeProtocol.BridgeAvailableName(pid));
+                    if (show)
+                    {
+                        noticeCount++;
+                    }
+                }
+
+                if (show)
+                {
+                    showNotice(NoticeText);
+                }
+            }
+            catch
+            {
+            }
+            finally
+            {
+                lock (gate)
+                {
+                    noticeInFlight = false;
+                }
+            }
+        }
+
+        private static string CombinedState(CallerPhase p)
+        {
+            switch (p)
+            {
+                case CallerPhase.Connected:
+                    return "Connected";
+                case CallerPhase.BridgeAvailable:
+                case CallerPhase.WaitingForHandshake:
+                    return "Bridge loaded, waiting for handshake";
+                case CallerPhase.BridgeMissingTimedOut:
+                    return "Bridge missing, timed out";
+                case CallerPhase.Disposed:
+                    return "Disposed";
+                case CallerPhase.Disabled:
+                    return "Disabled";
+                default:
+                    return "Waiting for Bridge";
+            }
+        }
+
+        private static string ClockAgo(long nowQpc, long thenQpc)
+        {
+            if (thenQpc == 0)
+            {
+                return "-";
+            }
+
+            return DateTime.Now.AddMilliseconds(-HandshakeProtocol.QpcToMs(nowQpc - thenQpc)).ToString("HH:mm:ss.fff");
+        }
+
+        private static string Ms(double value)
+        {
+            return value >= 0 ? value.ToString("F1") + " ms" : "-";
+        }
+
+        /// <summary>Text for the single Configure dialog (read-only snapshot; the monitor thread does all state changes).</summary>
+        public string BuildStatusText()
+        {
+            StringBuilder sb = new StringBuilder();
+            long nowQpc = Stopwatch.GetTimestamp();
+            bool readyNow;
+            lock (gate)
+            {
+                readyNow = phase == CallerPhase.Connected;
+                bool isEnabled = started && phase != CallerPhase.Disposed;
+
+                sb.AppendLine("Product : " + ProductDisplayName);
+                sb.AppendLine("Provider: " + ProviderName);
+                sb.AppendLine("Phase   : B handshake prototype");
+                sb.AppendLine("Assembly: " + Assembly.GetExecutingAssembly().GetName().Name + ".dll");
+                sb.AppendLine();
+                sb.AppendLine("Caller           : " + (isEnabled ? "Enabled" : "Disabled"));
+                sb.AppendLine("Dependency state : " + phase);
+                sb.AppendLine("BridgeAvailable  : " + (isEnabled && bridgePresent ? "Present" : "Missing"));
+                sb.AppendLine("Ready            : " + (isEnabled && readyPresent ? "Present" : "Missing"));
+                sb.AppendLine("Combined state   : " + CombinedState(phase));
+                sb.AppendLine("ScenarioReady    : Not implemented in Phase B (Ready is not ScenarioReady)");
+                sb.AppendLine("BVE PID : " + pid + "   (" + (Environment.Is64BitProcess ? "64-bit" : "32-bit") + ")");
+                sb.AppendLine();
+                sb.AppendLine("Enabled object          : " + HandshakeProtocol.EnabledName(pid));
+                sb.AppendLine("BridgeAvailable object  : " + HandshakeProtocol.BridgeAvailableName(pid));
+                sb.AppendLine("Ready object            : " + HandshakeProtocol.ReadyName(pid));
+                sb.AppendLine("Stop object             : " + HandshakeProtocol.StopName(pid));
+                sb.AppendLine();
+                sb.AppendLine("Enabled created              : " + (enabledQpc != 0 ? enabledLocal.ToString("HH:mm:ss.fff") : "-"));
+                sb.AppendLine("BridgeAvailable first seen    : " + ClockAgo(nowQpc, bridgeFirstSeenQpc));
+                sb.AppendLine("BridgeAvailable lost at       : " + (bridgeLostCount > 0 ? ClockAgo(nowQpc, bridgeLostQpc) : "-"));
+                sb.AppendLine("Ready last confirmed          : " + (readyConnectCount > 0 ? ClockAgo(nowQpc, readyLastQpc) : "-"));
+                sb.AppendLine("Ready lost at                 : " + (readyLostCount > 0 ? ClockAgo(nowQpc, readyLostQpc) : "-"));
+                sb.AppendLine("Time to BridgeAvailable (first / latest): " + Ms(firstBridgeDetectMs) + " / " + Ms(latestBridgeDetectMs));
+                sb.AppendLine("Latest handshake time (Bridge seen or Ready lost -> Ready): " + Ms(latestHandshakeMs));
+                sb.AppendLine("Over the " + HandshakeTiming.TargetBridgeAvailableMs + " ms BridgeAvailable target: " + (missedBridgeTarget ? "yes" : "no"));
+                sb.AppendLine("Bridge-missing timeout (" + HandshakeTiming.BridgeMissingTimeoutMs + " ms) occurred: " + (timedOutEver ? "yes" : "no"));
+                sb.AppendLine("Notice shown : " + (noticeCount > 0 ? "yes (" + noticeCount + "x)" : "no"));
+                sb.AppendLine("Bridge seen " + bridgeSeenCount + "x, lost " + bridgeLostCount + "x;  Ready connected " + readyConnectCount + "x, lost " + readyLostCount + "x");
+            }
+
+            BridgeInfo info;
+            if (readyNow && BridgeInfo.TryRead(pid, out info))
+            {
+                sb.AppendLine();
+                sb.AppendLine("BridgeInfo: Available (Phase B measurement, " + (info.Bitness == 64 ? "64-bit" : "32-bit") + ")");
+                sb.AppendLine("  Bridge load -> BridgeAvailable created: " + HandshakeProtocol.QpcToMs(info.AvailableCreatedQpc - info.BridgeLoadQpc).ToString("F1") + " ms");
+                sb.AppendLine("  Bridge load -> latest Ready created   : " + HandshakeProtocol.QpcToMs(info.ReadyCreatedQpc - info.BridgeLoadQpc).ToString("F1") + " ms");
+                sb.AppendLine("  BridgeAvailable created " + info.AvailableCreateCount + "x / destroyed " + info.AvailableDestroyCount + "x;  Ready created " + info.ReadyCreateCount + "x / destroyed " + info.ReadyDestroyCount + "x");
+                sb.AppendLine("  Last Enabled seen / Stop seen: " + ClockAgo(nowQpc, info.LastEnabledSeenQpc) + " / " + ClockAgo(nowQpc, info.LastStopSeenQpc));
+            }
+            else
+            {
+                sb.AppendLine();
+                sb.AppendLine("BridgeInfo: Unavailable");
+            }
+
+            return sb.ToString();
+        }
+    }
+}

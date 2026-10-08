@@ -1,0 +1,9 @@
+# Build products and run output of the TS Scoring handshake projects (never committed)
+out/
+obj/
+dist/
+logs/
+build.log
+*.dll
+*.pdb
+*.log
