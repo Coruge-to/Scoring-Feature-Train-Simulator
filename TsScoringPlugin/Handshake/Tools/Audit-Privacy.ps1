@@ -71,7 +71,7 @@ foreach ($d in ($dist | Where-Object { $_.Extension -eq '.dll' })) {
 
 Write-Host '== human-facing product name (old name must not appear in human-facing text; counts) =='
 $oldName = 'TSScoringPlugin'
-$allowedInternal = @('Local\\TSScoringPlugin\.v1\.', 'TSScoringPlugin\.(Caller|BveEx|Handshake)[A-Za-z0-9_.]*', 'tsscoringplugin\.caller\.inputdevice', 'TSScoringPlugin\.v1', 'TSScoringPlugin\.Caller\.ReadyMonitor', 'TSScoringPlugin\.Caller\.Notice', 'TsScoringPlugin\.dll')   # the existing production-style DLL file name
+$allowedInternal = @('Local\\TSScoringPlugin\.v1\.', 'TSScoringPlugin\.(Caller|BveEx|AtsExLegacy|Handshake)[A-Za-z0-9_.]*', 'tsscoringplugin\.caller\.inputdevice', 'TSScoringPlugin\.v1', 'TSScoringPlugin\.Caller\.ReadyMonitor', 'TSScoringPlugin\.Caller\.Notice', 'TsScoringPlugin\.dll')   # the existing production-style DLL file name
 function Count-OldName([string]$text) {
     $rest = $text
     foreach ($a in $allowedInternal) { $rest = [regex]::Replace($rest, $a, '', 'IgnoreCase') }

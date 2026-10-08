@@ -126,7 +126,8 @@ $bPinvoke = PInvokeNames $bi.Asm
 Check 'Caller P/Invoke is user32 MessageBoxW only; Bridge has none' ((($cPinvoke -join ',') -eq 'MessageBoxW') -and ($bPinvoke.Count -eq 0))
 
 Write-Host '==== source checks (comment lines are skipped) ===='
-$srcFiles = @(Get-ChildItem $Root -Recurse -Include *.cs | Where-Object { $_.FullName -notlike '*\obj\*' })
+# Phase L1: this script verifies the CURRENT BveEX product only. The AtsEX legacy adapter (Bridge\Legacy\) has its own verification (Tools\Verify-PhaseL1.ps1).
+$srcFiles = @(Get-ChildItem $Root -Recurse -Include *.cs | Where-Object { $_.FullName -notlike '*\obj\*' -and $_.FullName -notlike '*\Bridge\Legacy\*' })
 function SrcHits([string]$pattern) {
     $out = @()
     foreach ($f in $srcFiles) {

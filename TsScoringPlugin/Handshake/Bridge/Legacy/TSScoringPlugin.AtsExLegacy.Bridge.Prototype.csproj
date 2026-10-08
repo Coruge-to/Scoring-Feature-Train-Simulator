@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PHASE L1 - AtsEX LEGACY Bridge (minimal extension): Ready handshake on its own control thread, ScenarioReady life-cycle, observation log.
+  The AtsEX legacy host assemblies are referenced read-only from the installed legacy host (Private=False: never copied or shipped, never in Git).
+  No absolute user paths: the reference folder is built from the PUBLIC environment property.
+  Shared (source-linked) with the Current Bridge: ScenarioReadyTracker, ScenarioReadyPublisher, ScenarioObserver, HandshakeProtocol, ObservationLog.
+  Legacy only: src\TsScoringLegacyBridge.cs (the adapter) and src\HandshakeControlPlane.cs (host independent control thread).
+  The Current Bridge project is not touched by this project.
+-->
+<Project ToolsVersion="Current" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{5E2B8C41-7D63-4F09-B1A8-3C94E7F0A6D2}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <RootNamespace>TSScoringPlugin.Handshake</RootNamespace>
+    <AssemblyName>TSScoringPlugin.AtsExLegacy.Bridge.Prototype</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <Deterministic>true</Deterministic>
+    <LangVersion>9.0</LangVersion>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <Optimize>true</Optimize>
+    <OutputPath>out\</OutputPath>
+    <IntermediateOutputPath>obj\</IntermediateOutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>none</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
+    <AtsExLegacyFolder>$(PUBLIC)\Documents\BveEx\Legacy\</AtsExLegacyFolder>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="AtsEx.PluginHost">
+      <HintPath>$(AtsExLegacyFolder)AtsEx.PluginHost.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="BveTypes">
+      <HintPath>$(AtsExLegacyFolder)BveTypes.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="FastCaching">
+      <HintPath>$(AtsExLegacyFolder)FastCaching.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="FastMember">
+      <HintPath>$(AtsExLegacyFolder)FastMember.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="TypeWrapping">
+      <HintPath>$(AtsExLegacyFolder)TypeWrapping.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="src\AssemblyInfo.cs" />
+    <Compile Include="src\TsScoringLegacyBridge.cs" />
+    <Compile Include="src\HandshakeControlPlane.cs" />
+    <Compile Include="..\src\ScenarioObserver.cs">
+      <Link>Shared\ScenarioObserver.cs</Link>
+    </Compile>
+    <Compile Include="..\src\ScenarioReadyTracker.cs">
+      <Link>Shared\ScenarioReadyTracker.cs</Link>
+    </Compile>
+    <Compile Include="..\src\ScenarioReadyPublisher.cs">
+      <Link>Shared\ScenarioReadyPublisher.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Shared\HandshakeProtocol.cs">
+      <Link>Shared\HandshakeProtocol.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Shared\ObservationLog.cs">
+      <Link>Shared\ObservationLog.cs</Link>
+    </Compile>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>
