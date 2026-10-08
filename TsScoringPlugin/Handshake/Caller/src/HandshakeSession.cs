@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.IO.MemoryMappedFiles;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
@@ -82,6 +83,16 @@ namespace TSScoringPlugin.Handshake
         private long timeoutReachedQpc;
         private long judgeQpc;
 
+        // Phase C3: ScenarioReady as seen from the Caller. Read only: transitions are written to the log, nothing else reacts to them yet.
+        private EventWaitHandle scenarioEvent;
+        private MemoryMappedFile scenarioSection;
+        private MemoryMappedViewAccessor scenarioView;
+        private bool scenarioReadyLevel;
+        private int scenarioGenerationSeen;      // last valid ScenarioGeneration read (0 = none yet)
+        private int scenarioReadyOnCount;
+        private int scenarioReadyOffCount;
+        private int scenarioGenerationChanges;
+
         private bool noticedThisAbsence;
         private bool noticeInFlight;
         private bool timedOutEver;
@@ -126,6 +137,11 @@ namespace TSScoringPlugin.Handshake
         internal bool NoticeArmed { get { lock (gate) { return !noticedThisAbsence; } } }
         internal bool MissedBridgeTarget { get { lock (gate) { return missedBridgeTarget; } } }
         internal bool MonitorAlive { get { Thread t; lock (gate) { t = monitor; } return t != null && t.IsAlive; } }
+        internal bool ScenarioReadyLevel { get { lock (gate) { return scenarioReadyLevel; } } }
+        internal int ScenarioGenerationSeen { get { lock (gate) { return scenarioGenerationSeen; } } }
+        internal int ScenarioReadyOnCount { get { lock (gate) { return scenarioReadyOnCount; } } }
+        internal int ScenarioReadyOffCount { get { lock (gate) { return scenarioReadyOffCount; } } }
+        internal int ScenarioGenerationChanges { get { lock (gate) { return scenarioGenerationChanges; } } }
 
         private static void DefaultShowNotice(string text)
         {
@@ -183,6 +199,14 @@ namespace TSScoringPlugin.Handshake
                 try { if (stop != null) { stop.Set(); } } catch { }
                 try { if (enabled != null) { enabled.Reset(); } } catch { }
 
+                if (scenarioReadyLevel)
+                {
+                    scenarioReadyLevel = false;
+                    scenarioReadyOffCount++;
+                    ObsA("SCN_READY_OFF", "ScenarioGeneration=" + scenarioGenerationSeen + " reason=caller-dispose");
+                }
+
+                ReleaseScenarioObjectsLocked();
                 Release(ref ready);
                 Release(ref bridge);
                 Release(ref enabled);
@@ -309,6 +333,8 @@ namespace TSScoringPlugin.Handshake
 
                             break;
                     }
+
+                    ObserveScenarioLocked(now);
                 }
             }
             catch (ObjectDisposedException)
@@ -451,9 +477,138 @@ namespace TSScoringPlugin.Handshake
             ObservationLog.Write("B", evt, "cycle=" + cycleNo + (string.IsNullOrEmpty(detail) ? string.Empty : " " + detail));
         }
 
+        /// <summary>Phase C3: one log line tagged Track A (scenario life cycle) with this enabled-cycle's number. Never throws.</summary>
+        private void ObsA(string evt, string detail)
+        {
+            ObservationLog.Write("A", evt, "cycle=" + cycleNo + (string.IsNullOrEmpty(detail) ? string.Empty : " " + detail));
+        }
+
         private double SinceEnabledMs(long nowQpc)
         {
             return enabledQpc == 0 ? -1 : Math.Round(HandshakeProtocol.QpcToMs(nowQpc - enabledQpc), 1);
+        }
+
+        /// <summary>
+        /// Phase C3: reads ScenarioReady (event + state block of this BVE process). ScenarioReady counts only while Ready (and so
+        /// BridgeAvailable) is present and BOTH the event is set and the validated block says level 1 for this PID. Transitions are logged;
+        /// the handles are opened lazily and released as soon as Ready is gone. Gate must be held.
+        /// </summary>
+        private void ObserveScenarioLocked(long now)
+        {
+            bool level = false;
+            bool valid = false;
+            ScenarioState state = new ScenarioState();
+
+            if (readyPresent)
+            {
+                if (OpenScenarioObjectsLocked())
+                {
+                    bool eventSet = false;
+                    try { eventSet = scenarioEvent.WaitOne(0); }
+                    catch (ObjectDisposedException) { scenarioEvent = null; }
+
+                    valid = scenarioView != null && ScenarioState.TryReadView(scenarioView, pid, out state);
+                    level = valid && eventSet && state.Ready;
+                }
+            }
+            else
+            {
+                ReleaseScenarioObjectsLocked();
+            }
+
+            if (valid && state.ScenarioGeneration != scenarioGenerationSeen)
+            {
+                int from = scenarioGenerationSeen;
+                scenarioGenerationSeen = state.ScenarioGeneration;
+                scenarioGenerationChanges++;
+                ObsA("SCN_GENERATION_CHANGED", "from=" + from + " to=" + scenarioGenerationSeen + " ready=" + (level ? "Y" : "N") + " sinceEnabledMs=" + SinceEnabledMs(now));
+            }
+
+            if (level != scenarioReadyLevel)
+            {
+                scenarioReadyLevel = level;
+                if (level)
+                {
+                    scenarioReadyOnCount++;
+                    ObsA("SCN_READY_ON", "ScenarioGeneration=" + scenarioGenerationSeen + " sinceEnabledMs=" + SinceEnabledMs(now) + " onCount=" + scenarioReadyOnCount);
+                }
+                else
+                {
+                    scenarioReadyOffCount++;
+                    string why = !bridgePresent ? "bridge-lost" : !readyPresent ? "ready-lost" : "level-false";
+                    ObsA("SCN_READY_OFF", "ScenarioGeneration=" + scenarioGenerationSeen + " reason=" + why + " sinceEnabledMs=" + SinceEnabledMs(now) + " offCount=" + scenarioReadyOffCount);
+                }
+            }
+        }
+
+        /// <summary>Opens the ScenarioReady event and the state block when they exist. False while either is missing. Gate must be held.</summary>
+        private bool OpenScenarioObjectsLocked()
+        {
+            try
+            {
+                if (scenarioEvent == null)
+                {
+                    EventWaitHandle candidate;
+                    if (!EventWaitHandle.TryOpenExisting(HandshakeProtocol.ScenarioReadyName(pid), EventWaitHandleRights.Synchronize, out candidate))
+                    {
+                        return false;
+                    }
+
+                    scenarioEvent = candidate;
+                }
+
+                if (scenarioView == null)
+                {
+                    MemoryMappedFile section = null;
+                    try
+                    {
+                        section = MemoryMappedFile.OpenExisting(HandshakeProtocol.ScenarioStateName(pid), MemoryMappedFileRights.Read);
+                        scenarioView = section.CreateViewAccessor(0, ScenarioState.Size, MemoryMappedFileAccess.Read);
+                        scenarioSection = section;
+                    }
+                    catch
+                    {
+                        if (section != null)
+                        {
+                            try { section.Dispose(); } catch { }
+                        }
+
+                        scenarioView = null;
+                        scenarioSection = null;
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void ReleaseScenarioObjectsLocked()
+        {
+            EventWaitHandle e = scenarioEvent;
+            scenarioEvent = null;
+            if (e != null)
+            {
+                try { e.Dispose(); } catch { }
+            }
+
+            MemoryMappedViewAccessor v = scenarioView;
+            scenarioView = null;
+            if (v != null)
+            {
+                try { v.Dispose(); } catch { }
+            }
+
+            MemoryMappedFile s = scenarioSection;
+            scenarioSection = null;
+            if (s != null)
+            {
+                try { s.Dispose(); } catch { }
+            }
         }
 
         /// <summary>Runs on its own short-lived thread so the monitor keeps watching while a dialog is open.</summary>
@@ -568,7 +723,7 @@ namespace TSScoringPlugin.Handshake
 
                 sb.AppendLine("Product : " + ProductDisplayName);
                 sb.AppendLine("Provider: " + ProviderName);
-                sb.AppendLine("Phase   : C1 observation build " + ObservationLog.Version + " (Phase B handshake behaviour)");
+                sb.AppendLine("Phase   : C3 build " + ObservationLog.Version + " (Phase B handshake behaviour + ScenarioReady, Current BveEX mode)");
                 sb.AppendLine("Log     : " + ObservationLog.FolderName + "\\" + ObservationLog.FileName);
                 sb.AppendLine("Assembly: " + Assembly.GetExecutingAssembly().GetName().Name + ".dll");
                 sb.AppendLine();
@@ -577,13 +732,16 @@ namespace TSScoringPlugin.Handshake
                 sb.AppendLine("BridgeAvailable  : " + (isEnabled && bridgePresent ? "Present" : "Missing"));
                 sb.AppendLine("Ready            : " + (isEnabled && readyPresent ? "Present" : "Missing"));
                 sb.AppendLine("Combined state   : " + CombinedState(phase));
-                sb.AppendLine("ScenarioReady    : Not implemented in Phase B (Ready is not ScenarioReady)");
+                sb.AppendLine("ScenarioReady    : " + (isEnabled && scenarioReadyLevel ? "Yes" : "No") + "   (not the same as Ready; stays Yes on the title screen until the scenario is closed)");
+                sb.AppendLine("ScenarioGeneration: " + (scenarioGenerationSeen > 0 ? scenarioGenerationSeen.ToString() : "-") + "   (changes seen: " + scenarioGenerationChanges + ", Ready on/off: " + scenarioReadyOnCount + "/" + scenarioReadyOffCount + ")");
                 sb.AppendLine("BVE PID : " + pid + "   (" + (Environment.Is64BitProcess ? "64-bit" : "32-bit") + ")");
                 sb.AppendLine();
                 sb.AppendLine("Enabled object          : " + HandshakeProtocol.EnabledName(pid));
                 sb.AppendLine("BridgeAvailable object  : " + HandshakeProtocol.BridgeAvailableName(pid));
                 sb.AppendLine("Ready object            : " + HandshakeProtocol.ReadyName(pid));
                 sb.AppendLine("Stop object             : " + HandshakeProtocol.StopName(pid));
+                sb.AppendLine("ScenarioReady object    : " + HandshakeProtocol.ScenarioReadyName(pid));
+                sb.AppendLine("ScenarioState object    : " + HandshakeProtocol.ScenarioStateName(pid));
                 sb.AppendLine();
                 sb.AppendLine("Enabled created              : " + (enabledQpc != 0 ? enabledLocal.ToString("HH:mm:ss.fff") : "-"));
                 sb.AppendLine("BridgeAvailable first seen    : " + ClockAgo(nowQpc, bridgeFirstSeenQpc));

@@ -1,4 +1,4 @@
-# PHASE C1 - privacy audit (Phase B audit kept; adds the observation log checks). NOT part of any distribution candidate (it holds the forbidden-string list).
+# PHASE C3 - privacy audit (Phase B audit kept; adds the observation log checks). NOT part of any distribution candidate (it holds the forbidden-string list).
 # Prints COUNTS ONLY. Read-only.
 param([string]$Root = (Split-Path $PSScriptRoot -Parent))
 
@@ -6,7 +6,7 @@ param([string]$Root = (Split-Path $PSScriptRoot -Parent))
 $runtimeNames = @($env:USERNAME, $env:COMPUTERNAME, $env:USERDOMAIN, (Split-Path $env:USERPROFILE -Leaf)) | Where-Object { $_ -and $_.Length -ge 3 } | Sort-Object -Unique
 $forbidden = @($runtimeNames) + @(
     'C:\Users\', 'Scoring-Feature-Train-Simulator',
-    'TSScoringPlugin-Handshake-Prototype', 'TSScoringPlugin-Caller-Prototype', 'TSScoringPlugin-Handshake-Phase-C1',
+    'TSScoringPlugin-Handshake-Prototype', 'TSScoringPlugin-Caller-Prototype', 'TSScoringPlugin-Handshake-Phase-C1', 'TSScoringPlugin-Handshake-Phase-C3',
     'gmail', 'hotmail', 'outlook.com', 'ac.jp'
 )
 $emailPattern = '[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}'

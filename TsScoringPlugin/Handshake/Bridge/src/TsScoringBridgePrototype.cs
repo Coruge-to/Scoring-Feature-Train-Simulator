@@ -4,6 +4,7 @@ using System.IO.MemoryMappedFiles;
 using System.Security.AccessControl;
 using System.Threading;
 using BveEx.PluginHost;
+using BveTypes.ClassWrappers;
 using BveEx.PluginHost.Plugins;
 using BveEx.PluginHost.Plugins.Extensions;
 
@@ -85,6 +86,9 @@ namespace TSScoringPlugin.Handshake
         private bool firstTickSeen;
         private bool subscribedExtensions;
 
+        // Phase C3 ScenarioReady (the host independent core lives in ScenarioReadyTracker; this class is the Current BveEX adapter)
+        private ScenarioReadyTracker tracker;
+
         public TsScoringBridgePrototype(PluginBuilder builder)
             : base(builder)
         {
@@ -121,6 +125,24 @@ namespace TSScoringPlugin.Handshake
             {
             }
 
+            // Phase B handshake first (Ready may be created in this very Tick), then the ScenarioReady decision which needs it.
+            HandshakeStep();
+
+            try
+            {
+                if (tracker != null)
+                {
+                    tracker.OnTick();
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        /// <summary>The Phase B part of Tick (unchanged logic): cheap poll for Enabled / Stop, Ready create and withdraw.</summary>
+        private void HandshakeStep()
+        {
             try
             {
                 int now = Environment.TickCount;
@@ -163,6 +185,7 @@ namespace TSScoringPlugin.Handshake
             Obs("AB", "BRIDGE_DISPOSE_BEGIN", "sinceCtorBeginMs=" + SinceLoadMs() + " ready=" + ReadyFlag() + " availablePublished=" + (available != null ? "Y" : "N"));
             try { UnsubscribeObservers(); } catch { }
             try { if (observer != null) { observer.OnDispose(); } } catch { }
+            try { if (tracker != null) { tracker.OnDispose(); } } catch { } // ScenarioReady is cleared and withdrawn before Ready
             try { Release("bridge-dispose"); } catch { }
             try { WithdrawAvailability(); } catch { }
             Obs("AB", "BRIDGE_DISPOSE_END", string.Empty);
@@ -326,6 +349,9 @@ namespace TSScoringPlugin.Handshake
         /// <summary>Withdraws Ready (and the handshake's own handles). BridgeAvailable is NOT touched here; only Dispose removes it.</summary>
         private void Release(string reason)
         {
+            // ScenarioReady is published only while Ready exists: withdraw it first (the level itself is kept by the tracker).
+            try { if (tracker != null) { tracker.OnHandshakeLost(reason); } } catch { }
+
             EventWaitHandle readyToRelease = ready;
             ready = null;
             if (readyToRelease != null)
@@ -408,38 +434,45 @@ namespace TSScoringPlugin.Handshake
             catch { return -1; }
         }
 
-        /// <summary>null = the BVE objects a future ScenarioReady would need are readable now (references only; nothing is read from them).</summary>
+        /// <summary>
+        /// Current BveEX adapter: one safe read of what ScenarioReady needs. Four references plus one finite-number check on the vehicle
+        /// position; no value is stored or logged, only yes/no facts. Any null, NaN, Infinity or exception leaves a short reason code in
+        /// Failure (exception TYPE name only) and the caller simply retries on the next Tick.
+        /// </summary>
+        private BveSnapshot ReadSnapshot()
+        {
+            IBveHacker h = hacker;
+            return BveSnapshotBuilder.Build(
+                h == null ? -1 : ReadIsCreatedValue(),
+                delegate { return h.Scenario; },
+                delegate (object scenario) { return ((Scenario)scenario).TimeManager; },
+                delegate (object scenario) { return ((Scenario)scenario).VehicleLocation; },
+                delegate (object location) { return ((VehicleLocation)location).Location; },
+                delegate (object scenario) { return ((Scenario)scenario).Vehicle; });
+        }
+
+        /// <summary>null = the BVE objects ScenarioReady needs are readable now (candidate E of the C1 log vocabulary).</summary>
         private string ProbeBveInfo()
         {
-            try
+            return ReadSnapshot().Failure;
+        }
+
+        /// <summary>Creates the ScenarioReady tracker. Internal so the offline tests can attach fake readers and a fake publisher.</summary>
+        internal void BeginScenarioReady(Func<BveSnapshot> readSnapshot, IScenarioReadyPublisher publisherOverride)
+        {
+            if (pid == 0)
             {
-                var scenario = hacker.Scenario;
-                if (ReferenceEquals(scenario, null))
-                {
-                    return "scenario-null";
-                }
-
-                if (ReferenceEquals(scenario.TimeManager, null))
-                {
-                    return "timemanager-null";
-                }
-
-                if (ReferenceEquals(scenario.VehicleLocation, null))
-                {
-                    return "vehiclelocation-null";
-                }
-
-                if (ReferenceEquals(scenario.Vehicle, null))
-                {
-                    return "vehicle-null";
-                }
-
-                return null;
+                pid = HandshakeProtocol.CurrentProcessId();
             }
-            catch (Exception ex)
-            {
-                return "exc-" + ex.GetType().Name;
-            }
+
+            IScenarioReadyPublisher publisher = publisherOverride ?? new ScenarioReadyPublisher(pid);
+            tracker = new ScenarioReadyTracker(Obs, readSnapshot, HandshakeUp, publisher, null);
+        }
+
+        /// <summary>The Phase B handshake is up: TS Scoring is enabled, Stop is not set and Ready is published.</summary>
+        private bool HandshakeUp()
+        {
+            return state == BridgeState.Connected && ready != null;
         }
 
         private void SubscribeObservers()
@@ -462,6 +495,7 @@ namespace TSScoringPlugin.Handshake
 
             hacker = h;
             BeginObservation(ReadIsCreatedValue, ProbeBveInfo);
+            BeginScenarioReady(ReadSnapshot, null);
 
             int ok = 0;
             int fail = 0;
@@ -519,11 +553,13 @@ namespace TSScoringPlugin.Handshake
             bool reload = false;
             try { reload = e.IsReload; } catch { }
             try { if (observer != null) { observer.OnScenarioOpened(reload); } } catch { }
+            try { if (tracker != null) { tracker.OnScenarioOpened(); } } catch { }
         }
 
         private void OnHackerScenarioClosed(EventArgs e)
         {
             try { if (observer != null) { observer.OnScenarioClosed(); } } catch { }
+            try { if (tracker != null) { tracker.OnScenarioClosed(); } } catch { }
         }
 
         private void OnHackerPreviewScenarioCreated(ScenarioCreatedEventArgs e)
@@ -534,6 +570,7 @@ namespace TSScoringPlugin.Handshake
         private void OnHackerScenarioCreated(ScenarioCreatedEventArgs e)
         {
             try { if (observer != null) { observer.OnScenarioCreated(); } } catch { }
+            try { if (tracker != null) { tracker.OnScenarioCreated(); } } catch { }
         }
 
         private void OnHackerPreviewTick(object sender, EventArgs e)
@@ -544,6 +581,7 @@ namespace TSScoringPlugin.Handshake
         private void OnHackerPostTick(object sender, EventArgs e)
         {
             try { if (observer != null) { observer.OnPostTick(); } } catch { }
+            try { if (tracker != null) { tracker.OnPostTick(); } } catch { }
         }
 
         private void OnAllExtensionsLoaded(object sender, EventArgs e)

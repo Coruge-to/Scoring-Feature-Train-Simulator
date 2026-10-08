@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
+using System.Threading;
 
 // ============================================================================
 // PHASE B HANDSHAKE PROTOTYPE - shared protocol definition.
@@ -12,7 +13,7 @@ using System.IO.MemoryMappedFiles;
 //   Enabled          the user switched TS Scoring ON in BVE's input-device settings          (Caller)
 //   BridgeAvailable  BveEX loaded the Bridge extension, so the Bridge exists in the process  (Bridge, at load time)
 //   Ready            the Bridge has recognised Enabled: Caller<->Bridge handshake is up      (Bridge)
-//   ScenarioReady    the scenario is loaded and BVE data can be read safely                  (future Bridge; NOT in Phase B)
+//   ScenarioReady    the scenario is loaded and BVE data can be read safely                  (Bridge, Phase C3; per ScenarioGeneration)
 // Ready is NOT ScenarioReady and NOT "the scoring app is up". BveEX's Tick runs only while a scenario is being driven,
 // so "Ready is missing" must never be read as "BveEX is missing"; only the absence of BridgeAvailable means that.
 //
@@ -23,6 +24,9 @@ using System.IO.MemoryMappedFiles;
 //   Local\TSScoringPlugin.v1.<PID>.Ready            manual-reset event, created+set by the Bridge while the handshake is up
 //   Local\TSScoringPlugin.v1.<PID>.BridgeInfo       fixed-size memory-only section with instrumentation numbers
 //                                                   (PHASE B MEASUREMENT ONLY - a removal candidate after Phase B)
+//   Local\TSScoringPlugin.v1.<PID>.ScenarioReady    manual-reset event (Phase C3): SET = the current ScenarioGeneration is ScenarioReady.
+//                                                   Reset or gone = not ScenarioReady. Exists only while Ready exists (full-sleep contract).
+//   Local\TSScoringPlugin.v1.<PID>.ScenarioState    fixed-size memory-only section (Phase C3): protocol, PID, ScenarioGeneration, level, sequence.
 // The protocol names keep the technical identifier "TSScoringPlugin"; the human-facing product name is "TS Scoring".
 // No Global\ names, no files, no registry, no UDP/TCP/pipes, default access rules.
 // ============================================================================
@@ -37,6 +41,8 @@ namespace TSScoringPlugin.Handshake
         public static string BridgeAvailableName(int pid) { return "Local\\TSScoringPlugin.v1." + pid + ".BridgeAvailable"; }
         public static string ReadyName(int pid) { return "Local\\TSScoringPlugin.v1." + pid + ".Ready"; }
         public static string InfoName(int pid) { return "Local\\TSScoringPlugin.v1." + pid + ".BridgeInfo"; }
+        public static string ScenarioReadyName(int pid) { return "Local\\TSScoringPlugin.v1." + pid + ".ScenarioReady"; }
+        public static string ScenarioStateName(int pid) { return "Local\\TSScoringPlugin.v1." + pid + ".ScenarioState"; }
 
         public static int CurrentProcessId()
         {
@@ -171,6 +177,153 @@ namespace TSScoringPlugin.Handshake
                 && AvailableDestroyCount >= 0 && AvailableDestroyCount < 1000000
                 && ReadyCreateCount >= 1 && ReadyCreateCount < 1000000
                 && ReadyDestroyCount >= 0 && ReadyDestroyCount < 1000000;
+        }
+    }
+
+    /// <summary>
+    /// ScenarioGeneration numbering (Phase C3). int32, 0 = "no scenario was opened in this process yet", +1 at every ScenarioOpened,
+    /// never decreases and is never reset inside one BVE process. Opened does not distinguish a first load, a reload of the same
+    /// scenario and another scenario, and no scenario name or path is ever involved.
+    /// Overflow policy: after int.MaxValue the next value wraps to 1 (never 0, never negative). A wrapped value still differs from its
+    /// predecessor, which is all a consumer needs ("a different generation means: drop the scenario state"). Saturating at int.MaxValue
+    /// would give two different scenarios the same number and is therefore the unsafe choice. (2^31 scenario loads are not reachable.)
+    /// </summary>
+    internal static class ScenarioGenerationRule
+    {
+        public const int First = 1;
+
+        public static int Next(int current)
+        {
+            if (current < 0 || current == int.MaxValue)
+            {
+                return First;
+            }
+
+            return current + 1;
+        }
+    }
+
+    /// <summary>
+    /// ScenarioReady state block (Phase C3): fixed 64 bytes, memory-only, written by the Bridge, read by the Caller.
+    /// Holds numbers only: no scenario / vehicle / user name, no path.
+    /// Consistency: Sequence is a seqlock (odd while the Bridge is writing, even and different after every completed write); Check is
+    /// derived from every other field, so a torn or foreign block is detected and read as "not ScenarioReady".
+    /// It exists only while Ready exists (same life as the ScenarioReady event). A missing / short / corrupt / wrong-version / wrong-PID
+    /// block always reads as "not ScenarioReady" - never as an error that reaches BVE.
+    /// </summary>
+    internal struct ScenarioState
+    {
+        public const int Size = 64;
+        public const int StateVersion = 1;
+        private const int CheckSeed = 0x54535343; // "TSSC"
+
+        public int ProtocolVersion;      // offset 0
+        public int BveProcessId;         // 4
+        public int ScenarioGeneration;   // 8   generation the level below belongs to (0 = nothing opened yet)
+        public int IsScenarioReady;      // 12  1 = that generation is ScenarioReady, 0 = not
+        public int Sequence;             // 16  seqlock, even = stable
+        public int Check;                // 20  (24..63 reserved, zero)
+
+        public bool Ready { get { return IsScenarioReady == 1; } }
+
+        internal static int ComputeCheck(int version, int pid, int generation, int ready, int sequence)
+        {
+            unchecked
+            {
+                int h = CheckSeed;
+                h = (h * 31) ^ version;
+                h = (h * 31) ^ pid;
+                h = (h * 31) ^ generation;
+                h = (h * 31) ^ ready;
+                h = (h * 31) ^ sequence;
+                return h;
+            }
+        }
+
+        /// <summary>Writes one consistent state (Bridge side). The sequence continues from the value already in the block.</summary>
+        public static void Write(MemoryMappedViewAccessor view, int pid, int generation, bool ready)
+        {
+            int current = view.ReadInt32(16);
+            if ((current & 1) != 0)
+            {
+                current = unchecked(current + 1); // a previous writer died half-way: restart from an even value
+            }
+
+            int writing = unchecked(current + 1);
+            int finalSeq = unchecked(current + 2);
+            int readyValue = ready ? 1 : 0;
+
+            view.Write(16, writing);          // odd: readers retry / reject
+            Thread.MemoryBarrier();
+            view.Write(0, StateVersion);
+            view.Write(4, pid);
+            view.Write(8, generation);
+            view.Write(12, readyValue);
+            view.Write(20, ComputeCheck(StateVersion, pid, generation, readyValue, finalSeq));
+            Thread.MemoryBarrier();
+            view.Write(16, finalSeq);         // even: stable
+        }
+
+        /// <summary>Reads and validates one state from an already open view (Caller side).</summary>
+        public static bool TryReadView(MemoryMappedViewAccessor view, int expectedPid, out ScenarioState state)
+        {
+            state = new ScenarioState();
+            try
+            {
+                int s1 = view.ReadInt32(16);
+                if ((s1 & 1) != 0)
+                {
+                    return false;
+                }
+
+                ScenarioState read = new ScenarioState();
+                read.ProtocolVersion = view.ReadInt32(0);
+                read.BveProcessId = view.ReadInt32(4);
+                read.ScenarioGeneration = view.ReadInt32(8);
+                read.IsScenarioReady = view.ReadInt32(12);
+                read.Check = view.ReadInt32(20);
+                Thread.MemoryBarrier();
+                int s2 = view.ReadInt32(16);
+                if (s1 != s2)
+                {
+                    return false;
+                }
+
+                read.Sequence = s1;
+                if (read.ProtocolVersion != StateVersion
+                    || read.BveProcessId != expectedPid
+                    || read.ScenarioGeneration < 0
+                    || (read.IsScenarioReady != 0 && read.IsScenarioReady != 1)
+                    || read.Check != ComputeCheck(read.ProtocolVersion, read.BveProcessId, read.ScenarioGeneration, read.IsScenarioReady, read.Sequence))
+                {
+                    return false;
+                }
+
+                state = read;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Opens the block of one BVE process by name, reads it once and closes it again.</summary>
+        public static bool TryRead(int pid, out ScenarioState state)
+        {
+            state = new ScenarioState();
+            try
+            {
+                using (MemoryMappedFile section = MemoryMappedFile.OpenExisting(HandshakeProtocol.ScenarioStateName(pid), MemoryMappedFileRights.Read))
+                using (MemoryMappedViewAccessor view = section.CreateViewAccessor(0, Size, MemoryMappedFileAccess.Read))
+                {
+                    return TryReadView(view, pid, out state);
+                }
+            }
+            catch
+            {
+                return false;
+            }
         }
     }
 }

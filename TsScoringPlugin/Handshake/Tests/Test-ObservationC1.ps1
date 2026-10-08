@@ -195,7 +195,7 @@ try {
     LogW $cLog 'AB' 'L1_AGAIN' 'k=3'
     $l1 = ReadLog $pL1
     Check 'L1 file starts with the diagnostic header and exactly one run header' ((@($l1 | Where-Object { $_ -like '# TS Scoring Phase C1 observation log*' }).Count -eq 1) -and ($l1[0] -like '# TS Scoring Phase C1 observation log*'))
-    Check 'L1 header names the initialising DLL and the version 0.5.0.0' (($l1 -join "`n") -match 'initializedBy=Caller ver=0\.5\.0\.0')
+    Check 'L1 header names the initialising DLL and the version 0.6.0.0 (Phase C3 build; the log format is the unchanged C1 contract)' (($l1 -join "`n") -match 'initializedBy=Caller ver=0\.6\.0\.0')
     Check 'L1 second DLL appended (no second truncation): 3 event lines, sources Caller / Bridge / Caller' ((@($l1 | Where-Object { $_ -match '^\d\d:\d\d' }).Count -eq 3) -and (@($l1 | Where-Object { $_ -match '^\d' })[1] -match ' S=Bridge T=A ') -and (@($l1 | Where-Object { $_ -match '^\d' })[0] -match ' S=Caller T=B '))
     Check 'L1 line format: clock, q, P, S, T, th, EVENT' (@($l1 | Where-Object { $_ -match '^\d\d:\d\d:\d\d\.\d{3} q=\d+\.\d P=930001 S=(Caller|Bridge) T=(A|B|AB) th=\d+ [A-Z0-9_]+( .*)?$' }).Count -eq 3)
 
@@ -356,15 +356,11 @@ try {
     Call $o 'OnScenarioOpened' @($false); Call $o 'OnScenarioCreated'; Call $o 'OnTick'; Call $o 'OnDispose'
     Check 'O11 Dispose with an open generation writes GEN_SUMMARY and OBSERVER_DISPOSE' (((OEvt 'GEN_SUMMARY')[0] -match 'reason=dispose-with-open-generation') -and ((OCount 'OBSERVER_DISPOSE') -eq 1))
 
-    # O12 no formal ScenarioReady anywhere in the compiled DLLs
+    # O12 (C1: "no formal ScenarioReady anywhere"; C3: ScenarioReady now exists, but the OBSERVER must still own none of it)
     $names = New-Object System.Collections.Generic.List[string]
-    foreach ($asm in $callerAsm, $bridgeAsm) {
-        foreach ($t in $asm.GetTypes()) {
-            if ($t.Name -match 'ScenarioReady') { $names.Add('type:' + $t.Name) }
-            foreach ($m in $t.GetMembers([Reflection.BindingFlags]'Public,NonPublic,Instance,Static,DeclaredOnly')) { if ($m.Name -match 'ScenarioReady' -and $t.Name -ne 'ScenarioReadyCandidates') { $names.Add($t.Name + '.' + $m.Name) } }
-        }
-    }
-    Check 'O12 the only ScenarioReady-named code is the candidate-id vocabulary class (no event, state, method or notification)' (($names.Count -eq 1) -and ($names[0] -eq 'type:ScenarioReadyCandidates'))
+    foreach ($t in $bridgeAsm.GetTypes()) { if ($t.Name -match 'ScenarioReady') { $names.Add($t.Name) } }
+    $obsMembers = @($obsType.GetMembers([Reflection.BindingFlags]'Public,NonPublic,Instance,Static,DeclaredOnly') | Where-Object { $_.Name -match 'ScenarioReady' })
+    Check 'O12 C3: ScenarioReady-named Bridge types are exactly the candidate vocabulary, the tracker, the publisher and its interface; ScenarioObserver itself has no ScenarioReady member (it still only logs)' (((($names | Sort-Object) -join ',') -eq 'IScenarioReadyPublisher,ScenarioReadyCandidates,ScenarioReadyPublisher,ScenarioReadyTracker') -and ($obsMembers.Count -eq 0))
 
     # =================================================================================================================
     Write-Host '--- B: Bridge log lines (Track B) through the real Bridge code'
@@ -523,7 +519,7 @@ Start-Sleep -Milliseconds 300
 Check 'Final: no monitor thread alive' (MonitorsDown)
 $leftovers = 0
 foreach ($fp in $allPids) {
-    foreach ($kind in 'Enabled', 'Stop', 'BridgeAvailable', 'Ready') {
+    foreach ($kind in 'Enabled', 'Stop', 'BridgeAvailable', 'Ready', 'ScenarioReady') {
         $hnd = $null
         if ([Threading.EventWaitHandle]::TryOpenExisting("Local\TSScoringPlugin.v1.$fp.$kind", [Security.AccessControl.EventWaitHandleRights]::Synchronize, [ref]$hnd)) { $leftovers++; if ($hnd) { $hnd.Dispose() } }
     }

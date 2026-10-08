@@ -1,6 +1,6 @@
-# PHASE C1 - read-only static verification of the built Caller and Bridge DLLs and of the sources (nothing is executed).
-# Keeps the Phase B checks (contract, timings, notice text, forbidden dependencies) and adds the Phase C1 observation checks.
-# Phase B reference sources are read from Git history (the commit that first added Shared\HandshakeProtocol.cs; read-only) to prove which lines changed.
+# PHASE C3 - read-only static verification of the built Caller and Bridge DLLs and of the sources (nothing is executed).
+# Keeps the Phase B checks (contract, timings, notice text, forbidden dependencies), the Phase C1 observation checks and adds the
+# Phase C3 ScenarioReady checks. Phase B / Phase C1 reference sources are read from Git history (read-only; the commits that first added Shared\HandshakeProtocol.cs and Bridge\src\ScenarioObserver.cs) to prove which lines changed.
 # This script is ASCII-only on purpose.
 param([string]$Root = (Split-Path $PSScriptRoot -Parent))
 
@@ -105,7 +105,7 @@ $outB = @(Inspect $bDll $bridgeAbsent); $outB[0..($outB.Count - 2)]; $bi = $outB
 Write-Host '==== distribution hygiene ===='
 $distFiles = @(Get-ChildItem $dist -File)
 Check 'dist holds exactly the two DLLs (no PDB, no other file)' (($distFiles.Count -eq 2) -and (@($distFiles | Where-Object { $_.Name -in 'TSScoringPlugin.Caller.InputDevice.dll', 'TSScoringPlugin.BveEx.Bridge.Prototype.dll' }).Count -eq 2) -and (@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0))
-Check 'Version 0.5.0.0 in both DLL version resources and assembly versions' (($ci.Version.FileVersion -eq '0.5.0.0') -and ($bi.Version.FileVersion -eq '0.5.0.0') -and ($ci.Asm.GetName().Version.ToString() -eq '0.5.0.0') -and ($bi.Asm.GetName().Version.ToString() -eq '0.5.0.0'))
+Check 'Version 0.6.0.0 in both DLL version resources and assembly versions' (($ci.Version.FileVersion -eq '0.6.0.0') -and ($bi.Version.FileVersion -eq '0.6.0.0') -and ($ci.Asm.GetName().Version.ToString() -eq '0.6.0.0') -and ($bi.Asm.GetName().Version.ToString() -eq '0.6.0.0'))
 Check 'Provider Coruge-to in both DLLs' (($ci.Version.CompanyName -eq 'Coruge-to') -and ($bi.Version.CompanyName -eq 'Coruge-to'))
 Check 'No forbidden dependency token in either DLL' (($ci.Present.Count -eq 0) -and ($bi.Present.Count -eq 0))
 Check 'Caller references only mscorlib, System, System.Core, System.Windows.Forms, Mackoy.IInputDevice' ((($ci.Asm.GetReferencedAssemblies() | ForEach-Object { $_.Name } | Sort-Object) -join ',') -eq 'Mackoy.IInputDevice,mscorlib,System,System.Core,System.Windows.Forms')
@@ -154,16 +154,20 @@ $thr = OnlyIn 'new Thread\(' @('Caller\src\HandshakeSession.cs')
 Check 'new Thread only in Caller\src\HandshakeSession.cs (monitor + notice threads, as in Phase B); none in the Bridge or the log' ($thr.Bad.Count -eq 0)
 
 Write-Host '==== Phase B contract unchanged ===='
+$hpFile = Join-Path $Root 'Shared\HandshakeProtocol.cs'
 $hpBText = GitText 'Shared\HandshakeProtocol.cs' 'Shared\HandshakeProtocol.cs'
-$hpNow = Sha (WorkText 'Shared\HandshakeProtocol.cs')
-$hpB = if ($hpBText) { Sha $hpBText } else { 'PHASE-B-COMMIT-NOT-FOUND' }
-"HandshakeProtocol.cs sha256 (LF-normalised) now / Phase B commit: $hpNow / $hpB"
-Check 'Shared\HandshakeProtocol.cs is identical to the Phase B commit (event names, BridgeInfo v3, all timings; line endings ignored)' ($hpNow -eq $hpB)
-$hp = [IO.File]::ReadAllText((Join-Path $Root 'Shared\HandshakeProtocol.cs'))
+$hpLinesNow = (WorkText 'Shared\HandshakeProtocol.cs') -split "`n"
+$hpLinesB = if ($hpBText) { $hpBText -split "`n" } else { @() }
+$hpRemoved = @(Compare-Object $hpLinesB $hpLinesNow | Where-Object { $_.SideIndicator -eq '<=' } | ForEach-Object { $_.InputObject.Trim() })
+$hpAdded = @(Compare-Object $hpLinesB $hpLinesNow | Where-Object { $_.SideIndicator -eq '=>' })
+"HandshakeProtocol.cs vs Phase B: $($hpRemoved.Count) Phase B line(s) no longer present, $($hpAdded.Count) lines added. Removed lines:"
+$hpRemoved | ForEach-Object { "   - " + $_ }
+Check 'Shared\HandshakeProtocol.cs vs Phase B: ONLY ADDITIONS except one header comment line (the old "ScenarioReady ... NOT in Phase B" sentence); every Phase B line of code, name, BridgeInfo v3 and timing is still there' (($hpLinesB.Count -gt 0) -and ($hpRemoved.Count -eq 1) -and ($hpRemoved[0] -match '^//\s+ScenarioReady\s+the scenario is loaded'))
+$hp = [IO.File]::ReadAllText($hpFile)
 Check 'timings: BridgeMissingTimeoutMs = 500, TargetBridgeAvailableMs = 500, CallerPollMs = 20, BridgePollMs = 100' (($hp -match 'BridgeMissingTimeoutMs = 500;') -and ($hp -match 'TargetBridgeAvailableMs = 500;') -and ($hp -match 'CallerPollMs = 20;') -and ($hp -match 'BridgePollMs = 100;'))
 $named = @(([regex]::Matches((($srcFiles | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n"), 'Local\\\\TSScoringPlugin\.v1\."\s*\+\s*\w+\s*\+\s*"\.(\w+)')) | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
 "named kernel object kinds in sources: " + ($named -join ', ')
-Check 'named objects are exactly the Phase B five plus the two private log guards (no ScenarioReady object)' (($named -join ',') -eq 'BridgeAvailable,BridgeInfo,Enabled,ObsLogLock,ObsLogRun,Ready,Stop')
+Check 'named objects are exactly the Phase B five, the two private log guards and the two Phase C3 objects (ScenarioReady event, ScenarioState block)' (($named -join ',') -eq 'BridgeAvailable,BridgeInfo,Enabled,ObsLogLock,ObsLogRun,Ready,ScenarioReady,ScenarioState,Stop')
 $hsNow = (WorkText 'Caller\src\HandshakeSession.cs') -split "`n"
 $hsBText = GitText 'Shared\HandshakeProtocol.cs' 'Caller\src\HandshakeSession.cs'
 $hsB = if ($hsBText) { $hsBText -split "`n" } else { @() }
@@ -184,16 +188,65 @@ Check 'Track A and Track B identified in the log format (T=A|B|AB) and used by B
 Check 'Caller Track B points present: ctor, Enabled, monitor, first check, first Present, Ready first Present, 500 ms, judge, pre-show, show call, dispose' (@('CALLER_CTOR_BEGIN', 'CALLER_CTOR_END', 'CALLER_ENABLED_CREATED', 'MONITOR_LOOP_BEGIN', 'AVAIL_FIRST_CHECK', 'AVAIL_FIRST_PRESENT', 'READY_FIRST_PRESENT', 'TIMEOUT_REACHED', 'NOTICE_JUDGE_BEGIN', 'NOTICE_PRESHOW', 'NOTICE_SHOW_CALL', 'NOTICE_SUPPRESSED', 'CALLER_DISPOSE_BEGIN', 'CALLER_DISPOSE_END' | Where-Object { $callerSrc -notmatch $_ }).Count -eq 0)
 Check 'Bridge Track B points present: ctor, AvailableCreate begin/ok, ReadyCreate begin/ok, subscriptions, first Tick, Dispose, Ready / Available disposed' (@('BRIDGE_CTOR_BEGIN', 'BRIDGE_CTOR_END', 'AVAIL_CREATE_BEGIN', 'AVAIL_CREATE_OK', 'READY_CREATE_BEGIN', 'READY_CREATE_OK', 'SUBSCRIBE_DONE', 'BRIDGE_FIRST_TICK', 'BRIDGE_DISPOSE_BEGIN', 'BRIDGE_DISPOSE_END', 'READY_DISPOSED', 'AVAIL_DISPOSED' | Where-Object { $bridgeSrc -notmatch $_ }).Count -eq 0)
 Check 'only real BveEX events are subscribed (ScenarioOpened, ScenarioClosed, PreviewScenarioCreated, ScenarioCreated, PreviewTick, PostTick, AllExtensionsLoaded)' (@('h.ScenarioOpened +=', 'h.ScenarioClosed +=', 'h.PreviewScenarioCreated +=', 'h.ScenarioCreated +=', 'h.PreviewTick +=', 'h.PostTick +=', 'Extensions.AllExtensionsLoaded +=' | Where-Object { $bridgeSrc -notmatch [regex]::Escape($_) }).Count -eq 0)
-$sr = SrcHits 'ScenarioReady'
-$srOutside = @($sr | Where-Object { ($_ -split ':')[0] -notin 'Bridge\src\ScenarioObserver.cs', 'Caller\src\HandshakeSession.cs', 'Shared\HandshakeProtocol.cs' })
-Check 'no ScenarioReady-named code outside the candidate vocabulary (ScenarioReadyCandidates) and the existing Phase B status text' ($srOutside.Count -eq 0)
-Check 'ScenarioObserver creates no named object, thread, timer, file or notification' (($obs -notmatch 'EventWaitHandle|new Thread|Timer|FileStream|MemoryMappedFile|Mutex|ThreadPool|Task\.'))
+Check 'ScenarioObserver creates no named object, thread, timer, file or notification (still a log-only observer)' (($obs -notmatch 'EventWaitHandle|new Thread|Timer|FileStream|MemoryMappedFile|Mutex|ThreadPool|Task\.'))
 Check 'Bridge constructor publishes BridgeAvailable BEFORE the observation wiring (observation can not delay it)' ($bridgeSrc.IndexOf('PublishAvailability();') -lt $bridgeSrc.IndexOf('SubscribeObservers();'))
 Check 'log failures are swallowed: ObservationLog.Write has try/catch and never rethrows' ((Get-Content (Join-Path $Root 'Shared\ObservationLog.cs') -Raw) -match 'internal static void Write\([\s\S]*?catch\s*\{[\s\S]*?\}')
 Check 'log initialisation: per-PID run marker, FileMode.Create (truncate) only for the first writer of a run' ((Get-Content (Join-Path $Root 'Shared\ObservationLog.cs') -Raw) -match 'createdNew' -and (Get-Content (Join-Path $Root 'Shared\ObservationLog.cs') -Raw) -match 'FileMode\.Create')
 Check 'log path comes from the OS at run time (no user or path text in the source)' ((Get-Content (Join-Path $Root 'Shared\ObservationLog.cs') -Raw) -match 'SpecialFolder\.UserProfile')
 $cnt = SrcHits '\bmain\.py\b|python'
 Check 'Python is neither started nor named in any source line' ($cnt.Count -eq 0)
+
+Write-Host '==== Phase C3 ScenarioReady checks ===='
+# the C1 observation contract: the observer and the log writer are byte-identical to Phase C1
+foreach ($rel in 'Bridge\src\ScenarioObserver.cs', 'Shared\ObservationLog.cs') {
+    $c1Text = GitText 'Bridge\src\ScenarioObserver.cs' $rel
+    $h1 = if ($c1Text) { Sha $c1Text } else { 'PHASE-C1-COMMIT-NOT-FOUND' }
+    $h3 = Sha (WorkText $rel)
+    "$rel sha256 (LF-normalised) now / Phase C1 commit: $h3 / $h1"
+    Check "$rel is identical to the Phase C1 commit (observation contract: Track A/B lines, candidates A-F, TICK_GAP, log file name and format)" ($h1 -eq $h3)
+}
+$sr = SrcHits 'ScenarioReady'
+$srAllowed = 'Bridge\src\ScenarioObserver.cs', 'Bridge\src\ScenarioReadyTracker.cs', 'Bridge\src\ScenarioReadyPublisher.cs', 'Bridge\src\TsScoringBridgePrototype.cs', 'Bridge\src\AssemblyInfo.cs', 'Caller\src\AssemblyInfo.cs', 'Caller\src\HandshakeSession.cs', 'Shared\HandshakeProtocol.cs'
+$srOutside = @($sr | Where-Object { ($_ -split ':')[0] -notin $srAllowed })
+"ScenarioReady-named lines outside the allowed files: " + ($srOutside -join ', ')
+Check 'ScenarioReady-named code exists only in the tracker, the publisher, the Current adapter (Bridge), the Caller reader, the shared protocol, the candidate vocabulary and the two assembly descriptions' ($srOutside.Count -eq 0)
+# Current-specific BveEX API must not leak into the shared / host independent layer (string literals and comments are stripped first; case-sensitive)
+$leakHits = @()
+foreach ($f in $srcFiles) {
+    $n = 0
+    foreach ($line in [IO.File]::ReadAllLines($f.FullName)) {
+        $n++
+        $code = [regex]::Replace($line, '"(?:[^"\\]|\\.)*"', '""')
+        $code = [regex]::Replace($code, '//.*$', '')
+        if ($code -cmatch 'BveEx|BveTypes|IBveHacker|PluginBuilder|ClassWrappers|AssemblyPluginBase|IExtension|PluginAttribute|AtsEx') { $leakHits += ($f.FullName.Substring($Root.Length + 1) + ':' + $n) }
+    }
+}
+$leakBad = @($leakHits | Where-Object { ($_ -split ':')[0] -ne 'Bridge\src\TsScoringBridgePrototype.cs' })
+"BveEX-specific API in code outside the Current adapter: " + ($leakBad -join ', ')
+Check 'Current-only API (BveEx / BveTypes / IBveHacker / PluginBuilder / ClassWrappers / AtsEx) appears in code ONLY in Bridge\src\TsScoringBridgePrototype.cs (the Current adapter); tracker, publisher, observer, shared protocol and the whole Caller are host independent' (($leakBad.Count -eq 0) -and ($leakHits.Count -gt 0))
+$trk = [IO.File]::ReadAllText((Join-Path $Root 'Bridge\src\ScenarioReadyTracker.cs'))
+$estCalls = ([regex]::Matches($trk, 'EstablishLocked\(')).Count
+$postBody = [regex]::Match($trk, 'public void OnPostTick\(\)[\s\S]*?\n        \}\r?\n').Value
+Check 'establishment (level = true) has exactly one place and one call site (the Tick); PostTick can not set it' (([regex]::Matches($trk, 'level = true;')).Count -eq 1 -and $estCalls -eq 2 -and $postBody.Length -gt 100 -and $postBody -notmatch 'EstablishLocked|level = true')
+Check 'tracker: ScenarioClosed / ScenarioOpened / Dispose clear; Pause, TICK_GAP, isReload and IsScenarioCreated are not inputs (no clock read in the decision, OnScenarioOpened takes no argument)' (($trk -match 'ClearLocked\("closed"\)') -and ($trk -match 'ClearLocked\("opened-reset"\)') -and ($trk -match 'ClearLocked\("bridge-dispose"\)') -and ($trk -match 'public void OnScenarioOpened\(\)') -and (([regex]::Matches($trk, 'nowMs\(\)')).Count -le 2))
+Check 'tracker: the reset happens BEFORE the generation number moves (ClearLocked("opened-reset") precedes ScenarioGenerationRule.Next in OnScenarioOpened)' ($trk.IndexOf('ClearLocked("opened-reset")') -ge 0 -and $trk.IndexOf('ClearLocked("opened-reset")') -lt $trk.IndexOf('ScenarioGenerationRule.Next(generation)'))
+$st = [regex]::Match($hp, 'internal struct ScenarioState[\s\S]*?public bool Ready').Value
+$stFields = @([regex]::Matches($st, 'public (\w+) (\w+);') | ForEach-Object { $_.Groups[1].Value + ' ' + $_.Groups[2].Value })
+"ScenarioState fields: " + ($stFields -join ', ')
+Check 'shared state block holds int32 numbers only (ProtocolVersion, BveProcessId, ScenarioGeneration, IsScenarioReady, Sequence, Check): no string, path, scenario or vehicle name' (($stFields -join ',') -eq 'int ProtocolVersion,int BveProcessId,int ScenarioGeneration,int IsScenarioReady,int Sequence,int Check')
+Check 'generation overflow policy is explicit (wrap to 1, never 0 / negative) and documented in the shared protocol' (($hp -match 'Overflow policy') -and ($hp -match 'return First;') -and ($hp -match 'current == int\.MaxValue'))
+$bridgeSrc2 = [IO.File]::ReadAllText((Join-Path $Root 'Bridge\src\TsScoringBridgePrototype.cs'))
+Check 'Bridge: Release() withdraws ScenarioReady first (handshake lost) and Dispose clears ScenarioReady before Release; tracker runs AFTER the Phase B handshake step in Tick' (($bridgeSrc2.IndexOf('tracker.OnHandshakeLost(reason)') -ge 0) -and ($bridgeSrc2.IndexOf('tracker.OnDispose()') -lt $bridgeSrc2.IndexOf('Release("bridge-dispose")')) -and ($bridgeSrc2.IndexOf('HandshakeStep();') -lt $bridgeSrc2.IndexOf('tracker.OnTick()')))
+Check 'Bridge: the PostTick handler only calls the diagnostic tracker.OnPostTick (no direct state change)' ($bridgeSrc2 -match 'tracker\.OnPostTick\(\)')
+# Phase B / C1 files: what changed in the Caller vs Phase C1
+$hsC1Text = GitText 'Bridge\src\ScenarioObserver.cs' 'Caller\src\HandshakeSession.cs'
+if ($hsC1Text) {
+    $r3 = @(Compare-Object ($hsC1Text -split "`n") ((WorkText 'Caller\src\HandshakeSession.cs') -split "`n") | Where-Object { $_.SideIndicator -eq '<=' } | ForEach-Object { $_.InputObject.Trim() })
+    "HandshakeSession.cs vs Phase C1: lines of C1 no longer present:"
+    $r3 | ForEach-Object { "   - " + $_ }
+    Check 'HandshakeSession.cs vs Phase C1: only the two status-text lines (Phase text, ScenarioReady line) were rewritten; no timing, state-machine, notice or MessageBox line was removed' ($r3.Count -eq 2 -and @($r3 | Where-Object { $_ -match 'Phase   : C1 observation build|ScenarioReady    : Not implemented in Phase B' }).Count -eq 2)
+}
+Check 'notice wording and title are untouched: NoticeText (two lines), ProductDisplayName "TS Scoring", MB flags' ((([IO.File]::ReadAllText((Join-Path $Root 'Caller\src\HandshakeSession.cs'))) -match [regex]::Escape('internal const string ProductDisplayName = "TS Scoring";')) -and (([IO.File]::ReadAllText((Join-Path $Root 'Caller\src\HandshakeSession.cs'))) -match 'MessageBoxW\(IntPtr\.Zero, text, ProductDisplayName, MB_OK \| MB_ICONINFORMATION \| MB_SETFOREGROUND \| MB_TOPMOST\)'))
 
 $failed = @($results | Where-Object { -not $_.Ok })
 "TOTAL {0}  FAILED {1}" -f $results.Count, $failed.Count

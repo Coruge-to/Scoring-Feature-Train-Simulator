@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  PHASE C1 OBSERVATION BUILD - BveEX Bridge (minimal extension).
+  PHASE C3 - BveEX Bridge (minimal extension): Ready handshake, ScenarioReady life-cycle (Current BveEX mode), observation log.
   The BveEX assemblies are referenced read-only from the installed BveEX (Private=False: never copied or shipped).
   No absolute user paths: the reference folder is built from the PUBLIC environment property.
 -->
@@ -60,6 +60,8 @@
     <Compile Include="src\AssemblyInfo.cs" />
     <Compile Include="src\TsScoringBridgePrototype.cs" />
     <Compile Include="src\ScenarioObserver.cs" />
+    <Compile Include="src\ScenarioReadyTracker.cs" />
+    <Compile Include="src\ScenarioReadyPublisher.cs" />
     <Compile Include="..\Shared\HandshakeProtocol.cs">
       <Link>Shared\HandshakeProtocol.cs</Link>
     </Compile>

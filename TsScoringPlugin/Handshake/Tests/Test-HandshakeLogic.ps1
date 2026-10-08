@@ -1,4 +1,6 @@
-# PHASE B suite, kept unchanged in Phase C1 (only the observation log is redirected to a private file) - offline logic test of the REAL Caller session and Bridge code (no BVE, no BveEX runtime, no Python, no UDP, no hooks).
+# PHASE B suite, kept in Phase C1 and C3. Phase C3 changes exactly two things here: the one status-text check that said "ScenarioReady not implemented"
+# (T1) and NoObjects(), which now also proves the two new ScenarioReady objects are gone. Everything else is the Phase B suite verbatim.
+# (The observation log is redirected to a private file) - offline logic test of the REAL Caller session and Bridge code (no BVE, no BveEX runtime, no Python, no UDP, no hooks).
 # The DLLs are loaded from memory (no file lock on dist\). The Bridge is created WITHOUT its constructor (BveEX's PluginBuilder is
 # not available here); the test calls its internal PublishAvailability() (what the constructor does) and then drives Tick/Dispose.
 # The Caller session is created through its internal test constructor with FAKE process ids and a test double for the notice (no
@@ -103,9 +105,12 @@ function ObjectExists([int]$fakePid, [string]$kind) {
 function InfoExists([int]$fakePid) {
     try { $m = [IO.MemoryMappedFiles.MemoryMappedFile]::OpenExisting("Local\TSScoringPlugin.v1.$fakePid.BridgeInfo", [IO.MemoryMappedFiles.MemoryMappedFileRights]::Read); $m.Dispose(); return $true } catch { return $false }
 }
+function ScenarioStateExists([int]$fakePid) {
+    try { $m = [IO.MemoryMappedFiles.MemoryMappedFile]::OpenExisting("Local\TSScoringPlugin.v1.$fakePid.ScenarioState", [IO.MemoryMappedFiles.MemoryMappedFileRights]::Read); $m.Dispose(); return $true } catch { return $false }
+}
 function NoObjects([int]$fakePid) {
-    foreach ($k in 'Enabled', 'Stop', 'BridgeAvailable', 'Ready') { if (ObjectExists $fakePid $k) { return $false } }
-    return -not (InfoExists $fakePid)
+    foreach ($k in 'Enabled', 'Stop', 'BridgeAvailable', 'Ready', 'ScenarioReady') { if (ObjectExists $fakePid $k) { return $false } }
+    return (-not (InfoExists $fakePid)) -and (-not (ScenarioStateExists $fakePid))
 }
 
 # Expected notice text (UTF-8 base64 keeps this script ASCII-only, so any code page reads it the same way)
@@ -135,7 +140,7 @@ try {
     Check ("T1 BridgeAvailable existed, Ready established, Connected ({0} ms)" -f $ms) (($ms -ge 0) -and ($ms -lt 500))
     Wait 400
     Check 'T1 no false notice' (($c1.Recorder.Count -eq 0) -and ((Phase $c1) -eq 'Connected'))
-    Check 'T1 status: Combined state Connected, ScenarioReady not implemented' (((Status $c1) -match 'Combined state   : Connected') -and ((Status $c1) -match 'ScenarioReady    : Not implemented in Phase B'))
+    Check 'T1 status: Combined state Connected; ScenarioReady is shown separately and is No (no scenario in this Phase B test)' (((Status $c1) -match 'Combined state   : Connected') -and ((Status $c1) -match 'ScenarioReady    : No'))
     EndSession $c1; Pump @($b1) 200; DisposeBridge $b1
     Check 'T1 cleaned up' (NoObjects $P1)
 
