@@ -181,20 +181,22 @@ function BytesContain([byte[]]$bytes, [string]$token) {
 $expectedNotice = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('VFMgU2NvcmluZ+OBq+OBr0J2ZUVY44GM5b+F6KaB44Gn44GZ44CCDQroqK3lrpog4oaSIOWFpeWKm+ODh+ODkOOCpOOCuSDjgadCdmVFWOOCkuacieWKueOBq+OBl+OAgUJWReOCkuWGjei1t+WLleOBl+OBpuOBj+OBoOOBleOBhOOAgg=='))
 
 try {
-    Write-Host '--- M1-01: enabled, 500 ms reached, no Bridge, NO first Tick -> diagnostic log only, no dialog'
+    Write-Host '--- M1-01: enabled, 1000 ms start-up diagnostic reached, no Bridge, NO first Tick -> one log line only, no dialog'
     $P = 960001; $lp = NewLog 'M1-01-startup' $P
     $s = NewSession $P
     StartSession $s
     Wait 380
     Check 'M1-01 at 380 ms: StartupWaiting, no notice' (((State $s) -eq 'StartupWaiting') -and ($s.Recorder.Count -eq 0))
-    Wait 420
+    Wait 520
     $log = ReadLog $lp
-    Check 'M1-01 after 800 ms with no Tick: the 500 ms is reached (phase BridgeMissingTimedOut) but NO notice, state still StartupWaiting' (((Phase $s) -eq 'BridgeMissingTimedOut') -and ($s.Recorder.Count -eq 0) -and ((State $s) -eq 'StartupWaiting') -and (-not (SessionBool $s 'NoticeShown')))
-    Check 'M1-01 the log says TIMEOUT_REACHED kind=startup-log-only noticeArmed=no and has no NOTICE_ line' (((EvtLines $log 'TIMEOUT_REACHED').Count -eq 1) -and ((EvtLines $log 'TIMEOUT_REACHED')[0] -match 'timeoutMs=500') -and ((EvtLines $log 'TIMEOUT_REACHED')[0] -match 'kind=startup-log-only') -and ((EvtLines $log 'TIMEOUT_REACHED')[0] -match 'noticeArmed=no') -and (@($log | Where-Object { $_ -match ' NOTICE_' }).Count -eq 0))
+    Check 'M1-01 at about 900 ms (the old 500 ms point is long past): still WaitingForBridge, no start-up diagnostic yet, no notice' (((Phase $s) -eq 'WaitingForBridge') -and ($s.Recorder.Count -eq 0) -and ((EvtLines $log 'STARTUP_BRIDGE_DELAY').Count -eq 0) -and ((EvtLines $log 'TIMEOUT_REACHED').Count -eq 0))
+    Wait 300
+    $log = ReadLog $lp
+    Check 'M1-01 after about 1200 ms with no Tick: the diagnostic is reached (phase BridgeMissingTimedOut) but NO notice, state still StartupWaiting, latch free' (((Phase $s) -eq 'BridgeMissingTimedOut') -and ($s.Recorder.Count -eq 0) -and ((State $s) -eq 'StartupWaiting') -and (-not (SessionBool $s 'NoticeShown')) -and (SessionBool $s 'NoticeArmed'))
+    Check 'M1-01 the log has exactly one STARTUP_BRIDGE_DELAY (startupDiagnosticMs=1000, userVisible=no, at 1000..1100 ms), no TIMEOUT_REACHED and no NOTICE_ line' (((EvtLines $log 'STARTUP_BRIDGE_DELAY').Count -eq 1) -and ((EvtLines $log 'STARTUP_BRIDGE_DELAY')[0] -match 'startupDiagnosticMs=1000') -and ((EvtLines $log 'STARTUP_BRIDGE_DELAY')[0] -match 'userVisible=no') -and ((EvtLines $log 'STARTUP_BRIDGE_DELAY')[0] -match 'sinceEnabledMs=10\d\d(\.\d)?(\s|$)') -and ((EvtLines $log 'TIMEOUT_REACHED').Count -eq 0) -and (@($log | Where-Object { $_ -match ' NOTICE_' }).Count -eq 0))
     Wait 1200
-    Check 'M1-01 even 2 s later (still no Tick): no notice (a scenario list that lasts for minutes shows nothing)' ($s.Recorder.Count -eq 0)
+    Check 'M1-01 even 2 s later (still no Tick): no notice and still only one diagnostic line (a scenario list that lasts for minutes shows nothing)' (($s.Recorder.Count -eq 0) -and ((EvtLines (ReadLog $lp) 'STARTUP_BRIDGE_DELAY').Count -eq 1))
     EndSession $s
-
     Write-Host '--- M1-02: BridgeAvailable established before the first Tick -> no notice at the first Tick'
     $P = 960002; $lp = NewLog 'M1-02-bridge-first' $P
     $b = NewBridge $P; LoadBridge $b
@@ -481,6 +483,121 @@ try {
     Wait 300
     Check 'M1-30 connection-lost first, a second absence stretch and then the first Tick: still exactly one notice' (($s.Recorder.Count -eq 1) -and ((SessionInt $s 'BridgeLostCount') -eq 2))
     EndSession $s
+
+    Write-Host '--- M1b: the start-up diagnostic (1000 ms) and the connection-lost notice (500 ms) are separate waits'
+    # exact boundaries: the session's own timeout step is called with a synthetic clock (no monitor thread, direct probe injected: Missing)
+    $INST = [Reflection.BindingFlags]'NonPublic,Instance'
+    $freq = [Diagnostics.Stopwatch]::Frequency
+    $phaseType = $callerAsm.GetType($NS + 'CallerPhase')
+    $stepMethod = $sessionType.GetMethod('CheckBridgeTimeoutLocked', $INST)
+    $judgeMethod = $sessionType.GetMethod('JudgeFirstTickLocked', $INST)
+    function DriveSession([int]$fakePid, [int]$seenCount, [string]$logName) {
+        $script:lpD = NewLog $logName $fakePid
+        $probeD = New-Object ProbeSwitch; $probeD.Fallback = $false
+        $h = NewSession $fakePid $probeD
+        $t0 = [Diagnostics.Stopwatch]::GetTimestamp()
+        $sessionType.GetField('phase', $INST).SetValue($h.Session, [Enum]::Parse($phaseType, 'WaitingForBridge'))
+        $sessionType.GetField('started', $INST).SetValue($h.Session, $true)
+        $sessionType.GetField('absenceStartQpc', $INST).SetValue($h.Session, $t0)
+        $sessionType.GetField('enabledQpc', $INST).SetValue($h.Session, $t0)
+        $sessionType.GetField('bridgeSeenCount', $INST).SetValue($h.Session, $seenCount)
+        $h | Add-Member -NotePropertyName T0 -NotePropertyValue $t0
+        return $h
+    }
+    function StepAt($h, [double]$ms) { $stepMethod.Invoke($h.Session, @([long]($h.T0 + [long][math]::Ceiling($ms * $freq / 1000.0)))) | Out-Null }
+
+    $d = DriveSession 960101 0 'M1b-01-999ms'
+    StepAt $d 999
+    Wait 150
+    $log = ReadLog $lpD
+    Check 'M1b-01 999 ms after Enable, never connected: no start-up diagnostic, no dialog, phase unchanged' ((@($log | Where-Object { $_ -match ' STARTUP_BRIDGE_DELAY' }).Count -eq 0) -and ($d.Recorder.Count -eq 0) -and ((Phase $d) -eq 'WaitingForBridge'))
+    StepAt $d 1000
+    Wait 250
+    $log = ReadLog $lpD
+    Check 'M1b-02 exactly 1000 ms after Enable, never connected: exactly one start-up diagnostic line (startupDiagnosticMs=1000), no dialog' (((EvtLines $log 'STARTUP_BRIDGE_DELAY').Count -eq 1) -and ((EvtLines $log 'STARTUP_BRIDGE_DELAY')[0] -match 'startupDiagnosticMs=1000') -and ($d.Recorder.Count -eq 0))
+    Check 'M1b-11 the diagnostic does not take the notice latch (NoticeShown false, NoticeArmed true, nothing in flight) and does not block the first-Tick judgement' ((-not (SessionBool $d 'NoticeShown')) -and (SessionBool $d 'NoticeArmed') -and ((Phase $d) -eq 'BridgeMissingTimedOut'))
+    StepAt $d 1500; StepAt $d 4000
+    Wait 250
+    $log = ReadLog $lpD
+    Check 'M1b-12 later steps add no second diagnostic line, no NOTICE_ line, no dialog call' (((EvtLines $log 'STARTUP_BRIDGE_DELAY').Count -eq 1) -and (@($log | Where-Object { $_ -match ' NOTICE_' }).Count -eq 0) -and ($d.Recorder.Count -eq 0))
+    # the first Tick after the diagnostic (judge called directly with the same synthetic session: direct probe = Missing)
+    TickSession $d
+    $judgeMethod.Invoke($d.Session, @([long]($d.T0 + 5 * $freq))) | Out-Null
+    Wait 350
+    Check 'M1b-04 after the 1000 ms diagnostic, the first Tick finds BridgeAvailable Missing: exactly one dependency notice' ($d.Recorder.Count -eq 1)
+    EndSession $d
+
+    # real objects, real time
+    $P = 960102; $lp = NewLog 'M1b-03-present-at-1000' $P
+    $avl = ManualEvent $P 'BridgeAvailable' $true
+    $s = NewSession $P
+    StartSession $s
+    Wait 1250
+    $log = ReadLog $lp
+    Check 'M1b-03 BridgeAvailable present when the 1000 ms point passes: no start-up diagnostic line, no notice' (((EvtLines $log 'STARTUP_BRIDGE_DELAY').Count -eq 0) -and ($s.Recorder.Count -eq 0))
+    EndSession $s; $avl.Dispose()
+
+    $P = 960103; $lp = NewLog 'M1b-04-real-after-diag-missing' $P
+    $s = NewSession $P
+    StartSession $s
+    Wait 1200
+    TickSession $s
+    Wait 300
+    $log = ReadLog $lp
+    Check 'M1b-04 real time: diagnostic line, then the first Tick with the Bridge missing -> exactly one notice (latch taken only now)' (((EvtLines $log 'STARTUP_BRIDGE_DELAY').Count -eq 1) -and ($s.Recorder.Count -eq 1) -and (SessionBool $s 'NoticeShown'))
+    EndSession $s
+
+    $P = 960104; $lp = NewLog 'M1b-05-real-after-diag-present' $P
+    $s = NewSession $P
+    StartSession $s
+    Wait 1200
+    $avl = ManualEvent $P 'BridgeAvailable' $true
+    TickSession $s
+    Wait 400
+    $log = ReadLog $lp
+    Check 'M1b-05 real time: diagnostic line, then BridgeAvailable appears and the first Tick follows at once -> no notice, latch free' (((EvtLines $log 'STARTUP_BRIDGE_DELAY').Count -eq 1) -and ($s.Recorder.Count -eq 0) -and (SessionBool $s 'NoticeArmed'))
+    EndSession $s; $avl.Dispose()
+
+    $P = 960105; $lp = NewLog 'M1b-06-tick-before-1000-missing' $P
+    $s = NewSession $P
+    StartSession $s
+    Wait 120
+    TickSession $s
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while (($s.Recorder.Count -eq 0) -and ($sw.ElapsedMilliseconds -lt 700)) { Start-Sleep -Milliseconds 5 }
+    $sinceTick = $sw.ElapsedMilliseconds
+    $log = ReadLog $lp
+    Check ("M1b-06 first Tick at about 120 ms with the Bridge missing: the notice comes within {0} ms of the Tick, long before 1000 ms (no waiting for the diagnostic), once" -f $sinceTick) (($s.Recorder.Count -eq 1) -and ($sinceTick -lt 400) -and ((EvtLines $log 'STARTUP_BRIDGE_DELAY').Count -eq 0))
+    EndSession $s
+
+    $P = 960106; $lp = NewLog 'M1b-07-tick-before-1000-present' $P
+    $avl = ManualEvent $P 'BridgeAvailable' $true
+    $s = NewSession $P
+    StartSession $s
+    Wait 120
+    TickSession $s
+    Wait 500
+    $log = ReadLog $lp
+    Check 'M1b-07 first Tick at about 120 ms with BridgeAvailable present: no notice, no diagnostic, latch free' (($s.Recorder.Count -eq 0) -and ((EvtLines $log 'STARTUP_BRIDGE_DELAY').Count -eq 0) -and (SessionBool $s 'NoticeArmed'))
+    EndSession $s; $avl.Dispose()
+
+    # connection lost, exact boundaries (BridgeAvailable seen once: bridgeSeenCount = 1)
+    $d = DriveSession 960107 1 'M1b-08-lost-499ms'
+    StepAt $d 499
+    Wait 250
+    Check 'M1b-08 BridgeAvailable seen once and gone for 499 ms: no notice, phase unchanged' (($d.Recorder.Count -eq 0) -and ((Phase $d) -eq 'WaitingForBridge') -and (SessionBool $d 'NoticeArmed'))
+    EndSession $d
+    $d = DriveSession 960108 1 'M1b-09-lost-500ms'
+    StepAt $d 500
+    Wait 350
+    $log = ReadLog $lpD
+    Check 'M1b-09 BridgeAvailable seen once and gone for exactly 500 ms: exactly one notice (TIMEOUT_REACHED timeoutMs=500 kind=connection-lost), no start-up diagnostic line' (($d.Recorder.Count -eq 1) -and ((EvtLines $log 'TIMEOUT_REACHED')[0] -match 'timeoutMs=500') -and ((EvtLines $log 'TIMEOUT_REACHED')[0] -match 'kind=connection-lost') -and (@($log | Where-Object { $_ -match ' STARTUP_BRIDGE_DELAY' }).Count -eq 0))
+    TickSession $d
+    $judgeMethod.Invoke($d.Session, @([long]($d.T0 + 5 * $freq))) | Out-Null
+    StepAt $d 3000
+    Wait 350
+    Check 'M1b-10 after the connection-lost notice, the first Tick and later steps: still exactly one notice (no duplicate in the same Caller)' (($d.Recorder.Count -eq 1) -and (SessionBool $d 'NoticeShown'))
+    EndSession $d
 }
 finally {
     foreach ($h in $live) { try { $sessionType.GetMethod('End').Invoke($h, @()) | Out-Null } catch { } }
@@ -514,6 +631,9 @@ function WorkText([string]$rel) { return (([IO.File]::ReadAllText((Join-Path $Ro
 
 $hp = WorkText 'Shared\HandshakeProtocol.cs'
 $timing = $callerAsm.GetType($NS + 'HandshakeTiming')
+$ctim = $callerAsm.GetType($NS + 'CallerNoticeTiming')
+$hsCode = [regex]::Replace((WorkText 'Caller\src\HandshakeSession.cs'), '//[^\n]*', '')
+Check 'M1-18b separate constants: StartupBridgeDiagnosticMs = 1000 and ConnectionLostNoticeMs = 500 (DLL), ConnectionLostNoticeMs equals the kept Shared BridgeMissingTimeoutMs, and the Caller code no longer decides with BridgeMissingTimeoutMs' (($ctim.GetField('StartupBridgeDiagnosticMs').GetRawConstantValue() -eq 1000) -and ($ctim.GetField('ConnectionLostNoticeMs').GetRawConstantValue() -eq 500) -and ($ctim.GetField('ConnectionLostNoticeMs').GetRawConstantValue() -eq [int]$timing.GetField('BridgeMissingTimeoutMs').GetValue($null)) -and ($hsCode -notmatch 'BridgeMissingTimeoutMs') -and ($hsCode -match 'StartupBridgeDiagnosticMs : CallerNoticeTiming\.ConnectionLostNoticeMs'))
 Check 'M1-18 BridgeMissingTimeoutMs is 500 (value in the built DLL and in the source), TargetBridgeAvailableMs 500, CallerPollMs 20' (([int]$timing.GetField('BridgeMissingTimeoutMs').GetValue($null) -eq 500) -and ($hp -match 'BridgeMissingTimeoutMs = 500;') -and ($hp -match 'TargetBridgeAvailableMs = 500;') -and ($hp -match 'CallerPollMs = 20;') -and ((BaseText 'Shared\HandshakeProtocol.cs') -ceq $hp))
 $noticeField = $sessionType.GetField('NoticeText', $NPS).GetRawConstantValue()
 Check 'M1-19 MessageBox text is the unchanged agreed text (two lines, DLL constant and source identical to the baseline)' (($noticeField -ceq $expectedNotice) -and ($noticeField -notmatch 'TSScoringPlugin'))

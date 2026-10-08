@@ -10,8 +10,8 @@ BveEX が無いときの依存案内（MessageBox）を出す**タイミング**
 
 | | 変更前（0.6.0.0） | 変更後（0.7.0.0） |
 |---|---|---|
-| 起動直後（Caller 有効化から 500 ms、BridgeAvailable なし） | その場で案内を表示 | 診断ログに 1 行記録するだけ。**案内は出さない** |
-| 案内が出る契機 | 500 ms の経過だけ | ① 現在の Caller インスタンスで BVE の **最初の Tick** が来たとき BridgeAvailable が無い ／ ② 一度 BridgeAvailable を確認した後、500 ms 以上消失 |
+| 起動直後（Caller 有効化から 1000 ms、BridgeAvailable を一度も確認できていない） | 500 ms でその場で案内を表示 | 1000 ms 到達で起動遅延診断ログを 1 行記録するだけ。**案内は出さない**・通知ラッチも消費しない・初回 Tick 判定も抑止しない（999 ms までは記録もしない） |
+| 案内が出る契機 | 500 ms の経過だけ | ① 現在の Caller インスタンスで BVE の **最初の Tick** が来たとき BridgeAvailable が無い ／ ② 一度 BridgeAvailable を確認した後、500 ms 以上消失（`ConnectionLostNoticeMs`） |
 | 案内の回数 | 不在区間（連続した消失）ごとに 1 回 | **Caller インスタンスごとに最大 1 回** |
 
 理由（Phase M0 実機観測）: BVE の Tick（= Caller の `IInputDevice.Tick`）は**シナリオを読み込んだときにだけ**呼ばれる。シナリオ一覧を見ているだけの利用者は、TS Scoring をまだ使い始めていないため、BveEX が無くても案内しない。BVE5・BVE6 とも初回 Tick は ScenarioCreated の約 17 ms 後で、BveEX が有効なら BridgeAvailable はそれより十数秒前に成立している。
@@ -22,7 +22,7 @@ BveEX が無いときの依存案内（MessageBox）を出す**タイミング**
 
 | 状態 | 意味 |
 |---|---|
-| StartupWaiting | 有効化直後。最初の Tick も BridgeAvailable の確認もまだ。**警告しない**。500 ms 到達は診断ログのみ（`TIMEOUT_REACHED kind=startup-log-only`） |
+| StartupWaiting | 有効化直後。最初の Tick も BridgeAvailable の確認もまだ。**警告しない**。1000 ms 到達は診断ログ 1 行のみ（`STARTUP_BRIDGE_DELAY`） |
 | UseStarted | 最初の Tick を観測し、BridgeAvailable が無かった（一度だけの初回依存判定が済んだ） |
 | Connected | BridgeAvailable を確認済み（または消失が 500 ms 未満）。初回の依存案内なし |
 | ConnectionLost | 一度 BridgeAvailable を確認した後、500 ms 以上消失 |
@@ -46,14 +46,18 @@ BveEX が無いときの依存案内（MessageBox）を出す**タイミング**
 - TS Scoring を OFF にすると Caller は Dispose され、次の ON で新しい Caller インスタンスができる。新しいインスタンスは新しい通知サイクル（最大 1 回）。
 - 旧 `noticedThisAbsence`（不在区間ごとのラッチ）は廃止し、このラッチ 1 個に置き換えた。`noticeInFlight`（案内スレッド実行中の重複起動防止）は残している。
 
-## 5. 500 ms の役割
+## 5. 待機時間は 2 つ（意味ごとに別の定数）
 
-`BridgeMissingTimeoutMs = 500` は変更していない。
+`HandshakeSession.cs` の `CallerNoticeTiming`:
 
-- BridgeAvailable を一度も確認していない間: 到達は診断ログのみ。初回 Tick が判定する。
-- 一度確認した後の消失: 500 ms 以上続けば接続消失として案内（従来どおり、BVE 終了直前の短い消失で誤通知しない安全性を維持）。
-- TS Scoring の手動 ON: 新しいインスタンスとして初回 Tick 判定に統合する。独立したタイマーは作らない。
+| 定数 | 値 | 役割 |
+|---|---|---|
+| `StartupBridgeDiagnosticMs` | 1000 ms | 起動時の Bridge 遅延診断。BridgeAvailable を一度も確認できないまま到達したらログ 1 行（`STARTUP_BRIDGE_DELAY`）。MessageBox なし・ラッチ消費なし・自動撤回なし。実測で正常な BridgeAvailable 成立が 782 ms・883.5 ms の例があるため、1000 ms 未満の遅れは診断として記録しない |
+| `ConnectionLostNoticeMs` | 500 ms | 一度確認した BridgeAvailable が消失して 500 ms 以上続いたら接続消失として案内（499 ms までは通知なし） |
 
+- 初回 Tick の利用開始判定は 1000 ms を待たない。1000 ms より前に Tick が来ても、その時点で BridgeAvailable を直接確認する（Present なら案内なし、Missing なら 1 回）。診断ログの到達有無は判定条件にしない。
+- `Shared\HandshakeProtocol.cs` の `BridgeMissingTimeoutMs`（500）は Bridge もコンパイルするファイルなので値も定義も変更していない。Caller はもう判定に使っておらず、`ConnectionLostNoticeMs` と同じ 500 であることだけをテストで確認する。
+- TS Scoring の手動 ON = 新しい Caller インスタンスとして初回 Tick 判定に統合。独立したタイマーは作らない。
 ## 6. BveEX の設定変更（実機仕様。テスト設計で混同しない）
 
 - BveEX を OFF にすると警告画面が出る。「中断 / Abort」は現在の BVE を強制終了、「無視 / Ignore」は BveEX だけ OFF になり BVE は同じプロセスで継続。
@@ -62,7 +66,7 @@ BveEX が無いときの依存案内（MessageBox）を出す**タイミング**
 
 ## 7. 診断ログに増えた行
 
-`FIRST_TICK_SEEN`（最初の Tick を監視スレッドが見た）、`FIRST_TICK_JUDGE bridgeDirect=… bridgeCached=… decision=…`、`TIMEOUT_REACHED` に `kind=startup-log-only|connection-lost`、`NOTICE_JUDGE_BEGIN` に `trigger=first-use|connection-lost`。いずれも件数・フラグ・時間のみ（個人情報なし）。既存の行は項目名を含めて維持（`noticeShownThisAbsence` は「このインスタンスで案内済み」の意味）。
+`FIRST_TICK_SEEN`（最初の Tick を監視スレッドが見た）、`FIRST_TICK_JUDGE bridgeDirect=… bridgeCached=… decision=…`、`STARTUP_BRIDGE_DELAY`（起動遅延診断、1000 ms）、`TIMEOUT_REACHED`（接続消失の 500 ms。`kind=connection-lost`）、`NOTICE_JUDGE_BEGIN` に `trigger=first-use|connection-lost`。いずれも件数・フラグ・時間のみ（個人情報なし）。既存の行は項目名を含めて維持（`noticeShownThisAbsence` は「このインスタンスで案内済み」の意味）。
 
 ## 8. 検証
 

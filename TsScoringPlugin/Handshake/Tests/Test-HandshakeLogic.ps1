@@ -176,8 +176,8 @@ try {
     StartSession $c4
     Wait 380
     Check 'T4 at 380 ms: still WaitingForBridge, no notice' (((Phase $c4) -eq 'WaitingForBridge') -and ($c4.Recorder.Count -eq 0))
-    Wait 320
-    Check 'T4 after 500 ms with no Tick (Phase M1: the 500 ms is a log line only): BridgeMissingTimedOut and NO notice; the first Tick then brings exactly one notice' (((Phase $c4) -eq 'BridgeMissingTimedOut') -and ($c4.Recorder.Count -eq 0) -and (-not (SessionBool $c4 'NoticeShown')))
+    Wait 700
+    Check 'T4 after the 1000 ms start-up diagnostic with no Tick (Phase M1: a log line only): BridgeMissingTimedOut and NO notice; the first Tick then brings exactly one notice' (((Phase $c4) -eq 'BridgeMissingTimedOut') -and ($c4.Recorder.Count -eq 0) -and (-not (SessionBool $c4 'NoticeShown')))
     TickSession $c4
     Wait 250
     Check 'T16 notice text is exactly the agreed two lines (old wording absent)' (($c4.Recorder.Last -eq $expectedNotice) -and (-not $c4.Recorder.Last.Contains($oldLeadA)) -and (-not $c4.Recorder.Last.Contains($oldLeadB)) -and ($c4.Recorder.Last -notmatch 'TSScoringPlugin'))

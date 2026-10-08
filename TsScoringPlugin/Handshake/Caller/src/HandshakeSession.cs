@@ -24,6 +24,19 @@ namespace TSScoringPlugin.Handshake
     }
 
     /// <summary>
+    /// The Caller's waiting times, one constant per MEANING. (BridgeMissingTimeoutMs in Shared\HandshakeProtocol.cs is kept as it was: the Bridge
+    /// compiles that file, so it must not change; the Caller no longer decides anything with it.)
+    /// </summary>
+    internal static class CallerNoticeTiming
+    {
+        /// <summary>Start-up diagnostic: BridgeAvailable still never seen this long after Enabled -> ONE log line. Never a dialog, never the notice latch.</summary>
+        public const int StartupBridgeDiagnosticMs = 1000;
+
+        /// <summary>Lost connection: BridgeAvailable was seen once and is then gone this long -> the dependency notice.</summary>
+        public const int ConnectionLostNoticeMs = 500;
+    }
+
+    /// <summary>
     /// What the BveEX dependency notice knows about this Caller instance (Phase M1). Derived from the phase machine, never stored.
     /// </summary>
     internal enum DependencyState
@@ -37,7 +50,7 @@ namespace TSScoringPlugin.Handshake
         /// <summary>BridgeAvailable is (or was a moment ago, under 500 ms) present.</summary>
         Connected,
 
-        /// <summary>BridgeAvailable was seen once and has been gone for BridgeMissingTimeoutMs or longer.</summary>
+        /// <summary>BridgeAvailable was seen once and has been gone for ConnectionLostNoticeMs (500 ms) or longer.</summary>
         ConnectionLost,
     }
 
@@ -47,7 +60,8 @@ namespace TSScoringPlugin.Handshake
     ///   WaitingForBridge --BridgeAvailable seen--> (BridgeAvailable) --> WaitingForHandshake --Ready--> Connected
     ///   Connected --Ready lost, Bridge still there--> WaitingForHandshake
     ///   any --BridgeAvailable lost--> WaitingForBridge (a new absence stretch)
-    ///   WaitingForBridge --absent for BridgeMissingTimeoutMs--> BridgeMissingTimedOut
+    ///   WaitingForBridge --never seen, absent for StartupBridgeDiagnosticMs (1000 ms)--> BridgeMissingTimedOut (one log line)
+    ///   WaitingForBridge --seen before, absent for ConnectionLostNoticeMs (500 ms)--> BridgeMissingTimedOut (the notice)
     ///   BridgeMissingTimedOut --BridgeAvailable back--> WaitingForHandshake
     ///
     /// Only the absence of BridgeAvailable means "BveEX / the Bridge is not there". A missing Ready (BveEX's Tick runs only while a
@@ -57,7 +71,7 @@ namespace TSScoringPlugin.Handshake
     /// dialog is committed; a suppressed attempt leaves it free). Two triggers share it:
     ///   * first use: BVE called Tick for the first time (<see cref="NotifyTick"/>, a flag only) and the monitor thread, looking at the named
     ///     BridgeAvailable event DIRECTLY (not the cached state), finds it missing;
-    ///   * connection lost: BridgeAvailable had been seen and is then gone for BridgeMissingTimeoutMs (500 ms).
+    ///   * connection lost: BridgeAvailable had been seen and is then gone for ConnectionLostNoticeMs (500 ms).
     /// Before the first BridgeAvailable the 500 ms is only a diagnostic log line: the scenario list (no Tick) never produces a notice.
     /// Nothing here runs on BVE's threads except the cheap Start/End/NotifyTick calls.
     /// </summary>
@@ -105,6 +119,7 @@ namespace TSScoringPlugin.Handshake
         private bool firstAvailLogged;
         private bool firstReadyLogged;
         private bool timeoutLoggedThisAbsence;
+        private bool startupDiagLogged;
         private long timeoutReachedQpc;
         private long judgeQpc;
 
@@ -573,7 +588,11 @@ namespace TSScoringPlugin.Handshake
                 missedBridgeTarget = true;
             }
 
-            if (missingMs < HandshakeTiming.BridgeMissingTimeoutMs)
+            // Two different waits (Phase M1): before BridgeAvailable was ever seen the wait is the START-UP diagnostic (1000 ms): one log
+            // line, no dialog, the notice latch and the first-Tick judgement untouched (a scenario list without Tick has nothing to complain
+            // about; the first Tick decides). After it was seen once, losing it for ConnectionLostNoticeMs (500 ms) is a lost connection.
+            bool startup = bridgeSeenCount == 0;
+            if (missingMs < (startup ? CallerNoticeTiming.StartupBridgeDiagnosticMs : CallerNoticeTiming.ConnectionLostNoticeMs))
             {
                 return;
             }
@@ -581,17 +600,25 @@ namespace TSScoringPlugin.Handshake
             phase = CallerPhase.BridgeMissingTimedOut;
             timedOutEver = true;
 
-            // Phase M1: before BridgeAvailable was ever seen this 500 ms is a diagnostic only (the scenario list has no Tick and no
-            // dependency to complain about); the first Tick decides. After it was seen, losing it for 500 ms is a lost connection.
-            bool startup = bridgeSeenCount == 0;
+            if (startup)
+            {
+                if (!startupDiagLogged)
+                {
+                    startupDiagLogged = true;
+                    Obs("STARTUP_BRIDGE_DELAY", "startupDiagnosticMs=" + CallerNoticeTiming.StartupBridgeDiagnosticMs + " missingMs=" + Math.Round(missingMs, 1) + " sinceEnabledMs=" + SinceEnabledMs(now) + " firstTickSeen=" + (tickSeen ? "yes" : "no") + " noticeShown=" + (noticeShown ? "yes" : "no") + " userVisible=no");
+                }
+
+                return;
+            }
+
             if (!timeoutLoggedThisAbsence)
             {
                 timeoutLoggedThisAbsence = true;
                 timeoutReachedQpc = now;
-                Obs("TIMEOUT_REACHED", "timeoutMs=" + HandshakeTiming.BridgeMissingTimeoutMs + " missingMs=" + Math.Round(missingMs, 1) + " sinceEnabledMs=" + SinceEnabledMs(now) + " noticeArmed=" + (!startup && !noticeShown && !noticeInFlight ? "yes" : "no") + " kind=" + (startup ? "startup-log-only" : "connection-lost") + " firstTickSeen=" + (tickSeen ? "yes" : "no"));
+                Obs("TIMEOUT_REACHED", "timeoutMs=" + CallerNoticeTiming.ConnectionLostNoticeMs + " missingMs=" + Math.Round(missingMs, 1) + " sinceEnabledMs=" + SinceEnabledMs(now) + " noticeArmed=" + (!noticeShown && !noticeInFlight ? "yes" : "no") + " kind=connection-lost firstTickSeen=" + (tickSeen ? "yes" : "no"));
             }
 
-            if (!startup && !noticeShown && !noticeInFlight)
+            if (!noticeShown && !noticeInFlight)
             {
                 StartNoticeLocked(NoticeTrigger.ConnectionLost, now);
             }
@@ -880,7 +907,7 @@ namespace TSScoringPlugin.Handshake
                 sb.AppendLine("Time to BridgeAvailable (first / latest): " + Ms(firstBridgeDetectMs) + " / " + Ms(latestBridgeDetectMs));
                 sb.AppendLine("Latest handshake time (Bridge seen or Ready lost -> Ready): " + Ms(latestHandshakeMs));
                 sb.AppendLine("Over the " + HandshakeTiming.TargetBridgeAvailableMs + " ms BridgeAvailable target: " + (missedBridgeTarget ? "yes" : "no"));
-                sb.AppendLine("Bridge-missing timeout (" + HandshakeTiming.BridgeMissingTimeoutMs + " ms) occurred: " + (timedOutEver ? "yes" : "no"));
+                sb.AppendLine("Bridge-missing timeout (" + CallerNoticeTiming.ConnectionLostNoticeMs + " ms) occurred: " + (timedOutEver ? "yes" : "no"));
                 sb.AppendLine("Notice shown : " + (noticeCount > 0 ? "yes (" + noticeCount + "x)" : "no"));
                 sb.AppendLine("Bridge seen " + bridgeSeenCount + "x, lost " + bridgeLostCount + "x;  Ready connected " + readyConnectCount + "x, lost " + readyLostCount + "x");
             }

@@ -407,17 +407,17 @@ try {
     # C1 no Bridge: notice path
     $idC1 = 950001; $pC1 = NewLogPath 'C1-no-bridge'; LogCfgBoth $pC1 $idC1
     $s1 = NewSession $idC1; StartSession $s1
-    Wait 600     # Phase M1: the 500 ms is reached with no Tick (log line only) ...
+    Wait 1100    # Phase M1: the 1000 ms start-up diagnostic is reached with no Tick (log line only) ...
     TickSession $s1  # ... and the first Tick brings the notice
     Wait 300
     $noticeCount1 = $s1.Recorder.Count
     EndSession $s1
     Wait 150
     $lc1 = ReadLog $pC1
-    Check 'C1 notice path is fully logged in order (Enabled, monitor, first check, 500 ms reached, judge, pre-show, show call, closed, dispose)' (InOrder $lc1 @('CALLER_ENABLED_CREATED', 'MONITOR_LOOP_BEGIN', 'AVAIL_FIRST_CHECK', 'TIMEOUT_REACHED', 'NOTICE_JUDGE_BEGIN', 'NOTICE_PRESHOW', 'NOTICE_SHOW_CALL', 'NOTICE_DIALOG_CLOSED', 'CALLER_DISPOSE_BEGIN', 'CALLER_DISPOSE_END'))
-    Check 'C1 Phase B behaviour kept: exactly one notice, and the log says first check Missing, timeout 500, decision show' (($noticeCount1 -eq 1) -and ((EvtLines $lc1 'AVAIL_FIRST_CHECK')[0] -match 'result=Missing') -and ((EvtLines $lc1 'TIMEOUT_REACHED')[0] -match 'timeoutMs=500') -and ((EvtLines $lc1 'NOTICE_PRESHOW')[0] -match 'decision=show reason=bridge-still-missing bridgeAtRecheck=Missing'))
+    Check 'C1 notice path is fully logged in order (Enabled, monitor, first check, 1000 ms start-up diagnostic, judge, pre-show, show call, closed, dispose)' (InOrder $lc1 @('CALLER_ENABLED_CREATED', 'MONITOR_LOOP_BEGIN', 'AVAIL_FIRST_CHECK', 'STARTUP_BRIDGE_DELAY', 'NOTICE_JUDGE_BEGIN', 'NOTICE_PRESHOW', 'NOTICE_SHOW_CALL', 'NOTICE_DIALOG_CLOSED', 'CALLER_DISPOSE_BEGIN', 'CALLER_DISPOSE_END'))
+    Check 'C1 Phase B behaviour kept: exactly one notice, and the log says first check Missing, start-up diagnostic 1000, decision show' (($noticeCount1 -eq 1) -and ((EvtLines $lc1 'AVAIL_FIRST_CHECK')[0] -match 'result=Missing') -and ((EvtLines $lc1 'STARTUP_BRIDGE_DELAY')[0] -match 'startupDiagnosticMs=1000') -and ((EvtLines $lc1 'TIMEOUT_REACHED').Count -eq 0) -and ((EvtLines $lc1 'NOTICE_PRESHOW')[0] -match 'decision=show reason=bridge-still-missing bridgeAtRecheck=Missing'))
     Check 'C1 NOTICE_SHOW_CALL records the Bridge state at the moment of the request' ((EvtLines $lc1 'NOTICE_SHOW_CALL')[0] -match 'bridgeAtCall=Missing')
-    Check 'C1 the 500 ms point is logged at 500..650 ms after Enabled' (((EvtLines $lc1 'TIMEOUT_REACHED')[0] -match 'sinceEnabledMs=(5\d\d|6[0-4]\d)\.\d'))
+    Check 'C1 the 1000 ms start-up diagnostic is logged at 1000..1100 ms after Enabled' (((EvtLines $lc1 'STARTUP_BRIDGE_DELAY')[0] -match 'sinceEnabledMs=10\d\d(\.\d)?(\s|$)'))
 
     # C2 Bridge arrives in time
     $idC2 = 950002; $pC2 = NewLogPath 'C2-bridge-380'; LogCfgBoth $pC2 $idC2
