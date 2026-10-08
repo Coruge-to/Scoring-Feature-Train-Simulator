@@ -63,6 +63,8 @@ function NewSession([int]$fakePid) {
     return [pscustomobject]@{ Session = $s; Recorder = $rec; Pid = $fakePid }
 }
 function StartSession($h) { try { $sessionType.GetMethod('Start').Invoke($h.Session, @()) | Out-Null } catch { } }
+# Phase M1: BVE's first Tick, as seen by the Caller (a flag only; the monitor thread acts on it)
+function TickSession($h) { $sessionType.GetMethod('NotifyTick').Invoke($h.Session, @()) | Out-Null }
 function EndSession($h) { try { $sessionType.GetMethod('End').Invoke($h.Session, @()) | Out-Null } catch { } }
 function Phase($h) { return $sessionType.GetProperty('Phase', $nonPublicInstance).GetValue($h.Session).ToString() }
 function SessionInt($h, [string]$prop) { return [int]$sessionType.GetProperty($prop, $nonPublicInstance).GetValue($h.Session) }
@@ -175,11 +177,13 @@ try {
     Wait 380
     Check 'T4 at 380 ms: still WaitingForBridge, no notice' (((Phase $c4) -eq 'WaitingForBridge') -and ($c4.Recorder.Count -eq 0))
     Wait 320
-    Check 'T4 after 500 ms: BridgeMissingTimedOut with exactly one notice' (((Phase $c4) -eq 'BridgeMissingTimedOut') -and ($c4.Recorder.Count -eq 1))
+    Check 'T4 after 500 ms with no Tick (Phase M1: the 500 ms is a log line only): BridgeMissingTimedOut and NO notice; the first Tick then brings exactly one notice' (((Phase $c4) -eq 'BridgeMissingTimedOut') -and ($c4.Recorder.Count -eq 0) -and (-not (SessionBool $c4 'NoticeShown')))
+    TickSession $c4
+    Wait 250
     Check 'T16 notice text is exactly the agreed two lines (old wording absent)' (($c4.Recorder.Last -eq $expectedNotice) -and (-not $c4.Recorder.Last.Contains($oldLeadA)) -and (-not $c4.Recorder.Last.Contains($oldLeadB)) -and ($c4.Recorder.Last -notmatch 'TSScoringPlugin'))
     Check 'T17 MessageBox title is exactly TS Scoring' ([string]$sessionType.GetField('ProductDisplayName', [Reflection.BindingFlags]'NonPublic,Static').GetRawConstantValue() -ceq 'TS Scoring')
     Wait 1200
-    Check 'T4 no second notice in the same absence stretch' ($c4.Recorder.Count -eq 1)
+    Check 'T4 no second notice (one notice per Caller instance)' ($c4.Recorder.Count -eq 1)
     Check 'T4 status: Bridge missing, timed out' (((Status $c4) -match 'Combined state   : Bridge missing, timed out') -and ((Status $c4) -match 'timeout \(500 ms\) occurred: yes'))
     EndSession $c4
 
@@ -218,10 +222,10 @@ try {
     Check 'T7 after 500 ms: exactly one notice, Bridge missing, timed out' (((Phase $c6) -eq 'BridgeMissingTimedOut') -and ($c6.Recorder.Count -eq 1))
     $b6b = NewBridge $P6; LoadBridge $b6b
     $ms = PumpUntil @($b6b) { (Phase $c6) -eq 'Connected' } 600
-    Check ("T8 Bridge back: handshake and Connected ({0} ms), no extra notice, notice re-armed" -f $ms) (($ms -ge 0) -and ($c6.Recorder.Count -eq 1) -and (SessionBool $c6 'NoticeArmed'))
+    Check ("T8 Bridge back: handshake and Connected ({0} ms), no extra notice, the one-per-instance latch stays taken" -f $ms) (($ms -ge 0) -and ($c6.Recorder.Count -eq 1) -and (-not (SessionBool $c6 'NoticeArmed')) -and (SessionBool $c6 'NoticeShown'))
     DisposeBridge $b6b
     Wait 800
-    Check 'T9 second absence stretch: second notice (total 2), Bridge missing, timed out' (($c6.Recorder.Count -eq 2) -and ((Phase $c6) -eq 'BridgeMissingTimedOut'))
+    Check 'T9 second absence stretch: NO second notice (total stays 1, one per Caller instance), Bridge missing, timed out' (($c6.Recorder.Count -eq 1) -and ((Phase $c6) -eq 'BridgeMissingTimedOut'))
     Check 'T9 counters: Bridge seen 2, lost 2' (((SessionInt $c6 'BridgeSeenCount') -eq 2) -and ((SessionInt $c6 'BridgeLostCount') -eq 2))
     EndSession $c6
     Wait 200

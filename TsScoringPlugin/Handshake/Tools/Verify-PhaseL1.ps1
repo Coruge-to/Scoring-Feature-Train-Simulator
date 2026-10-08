@@ -176,7 +176,9 @@ foreach ($bf in $baseFiles) {
     if ((BaseText $rel) -cne (WorkText $rel)) { $changedBase += $rel }
 }
 "files of the Handshake tree in the baseline: " + $baseFiles.Count + "; differing from the baseline: " + ($changedBase -join ', ')
-Check 'Every Handshake file of the Phase C3 baseline is byte-identical (LF-normalised) EXCEPT the two tool scripts Tools\Verify-PhaseC3.ps1 and Tools\Audit-Privacy.ps1' (($changedBase.Count -eq 2) -and ($changedBase -contains 'Tools\Verify-PhaseC3.ps1') -and ($changedBase -contains 'Tools\Audit-Privacy.ps1'))
+# Phase M1 (Caller 0.7.0.0) deliberately changed the Caller notice code and the tests / checks that describe it; the Current Bridge, the Legacy boundary and the shared protocol / log stay identical.
+$m1Changed = 'Caller\src\AssemblyInfo.cs', 'Caller\src\HandshakeSession.cs', 'Caller\src\TsScoringCallerInputDevice.cs', 'Caller\TSScoringPlugin.Caller.InputDevice.csproj', 'Tests\Test-HandshakeLogic.ps1', 'Tests\Test-ObservationC1.ps1'
+Check 'Every Handshake file of the Phase C3 baseline is byte-identical (LF-normalised) EXCEPT the two L1 tool scripts (Tools\Verify-PhaseC3.ps1, Tools\Audit-Privacy.ps1) and the six Phase M1 Caller / test files; no Bridge or Shared file differs' (($changedBase.Count -eq 8) -and ($changedBase -contains 'Tools\Verify-PhaseC3.ps1') -and ($changedBase -contains 'Tools\Audit-Privacy.ps1') -and (@($m1Changed | Where-Object { $changedBase -notcontains $_ }).Count -eq 0) -and (@($changedBase | Where-Object { $_ -match '^(Bridge|Shared)\\' }).Count -eq 0))
 $apBase = (BaseText 'Tools\Audit-Privacy.ps1') -split "`n"
 $apNow = (WorkText 'Tools\Audit-Privacy.ps1') -split "`n"
 $apRem = @(Compare-Object $apBase $apNow | Where-Object { $_.SideIndicator -eq '<=' } | ForEach-Object { $_.InputObject })
@@ -186,11 +188,15 @@ $c3Base = (BaseText 'Tools\Verify-PhaseC3.ps1') -split "`n"
 $c3Now = (WorkText 'Tools\Verify-PhaseC3.ps1') -split "`n"
 $rem = @(Compare-Object $c3Base $c3Now | Where-Object { $_.SideIndicator -eq '<=' } | ForEach-Object { $_.InputObject })
 $add = @(Compare-Object $c3Base $c3Now | Where-Object { $_.SideIndicator -eq '=>' } | ForEach-Object { $_.InputObject })
-Check 'Verify-PhaseC3.ps1 differs only by the scoping of its source scan to the Current product (1 line replaced, 1 comment line added)' (($rem.Count -eq 1) -and ($add.Count -eq 2) -and ($rem[0] -match '^\$srcFiles = ') -and (@($add | Where-Object { $_ -match "notlike '\*\\Bridge\\Legacy\\\*'" }).Count -eq 1))
+$addText = @($add | Where-Object { $_.Trim() -ne '' })
+Check 'Verify-PhaseC3.ps1 differs only by the L1 scoping of its source scan to the Current product (1 line replaced, 1 comment line added) and the Phase M1 Caller-contract updates (version line, comment-aware removed-line filters; 4 more lines replaced)' (($rem.Count -eq 5) -and ($addText.Count -eq 9) -and (@($rem | Where-Object { $_ -match '^\$srcFiles = ' }).Count -eq 1) -and (@($addText | Where-Object { $_ -match "notlike '\*\\Bridge\\Legacy\\\*'" }).Count -eq 1) -and (@($addText | Where-Object { $_ -match 'Phase L1:' }).Count -eq 1) -and (@($rem | Where-Object { $_ -match 'Version 0\.6\.0\.0 in both|NoticeText \(both lines\)|no timeout / state-machine line|only the two status-text lines' }).Count -eq 4) -and (@($addText | Where-Object { $_ -match 'Phase M1|removedCode|r3Code|Version: Caller 0\.7\.0\.0' }).Count -eq 7))
 $hp = WorkText 'Shared\HandshakeProtocol.cs'
 Check 'Timings unchanged: BridgeMissingTimeoutMs = 500 (and 500 / 20 / 100 for the others)' (($hp -match 'BridgeMissingTimeoutMs = 500;') -and ($hp -match 'TargetBridgeAvailableMs = 500;') -and ($hp -match 'CallerPollMs = 20;') -and ($hp -match 'BridgePollMs = 100;'))
 $hsNow = WorkText 'Caller\src\HandshakeSession.cs'
-Check 'MessageBox contract unchanged: Caller\src\HandshakeSession.cs (notice text, title, flags, 500 ms logic) is identical to the baseline' ((BaseText 'Caller\src\HandshakeSession.cs') -ceq $hsNow)
+$mbPattern = '^\s*(internal const string (NoticeText|ProductDisplayName|ProviderName)|private const uint MB_|\[DllImport\("user32\.dll", EntryPoint = "MessageBoxW"|private static extern int MessageBoxW|"TS Scoring|"[^"]*(BveEX|BveEx)[^"]*"|MessageBoxW\()'
+$mbNow = @(($hsNow -split "`n") | Where-Object { $_ -match $mbPattern })
+$mbBase = @(((BaseText 'Caller\src\HandshakeSession.cs') -split "`n") | Where-Object { $_ -match $mbPattern })
+Check 'MessageBox contract unchanged: every MessageBox line of Caller\src\HandshakeSession.cs (notice text, title, flags, P/Invoke, the call) is identical to the baseline; the 500 ms constants are checked above' (($mbBase.Count -ge 8) -and (($mbNow -join "`n") -ceq ($mbBase -join "`n")))
 Check 'Named objects of the contract are the same set (Enabled, Stop, BridgeAvailable, Ready, BridgeInfo, ScenarioReady, ScenarioState); no new named object kind was introduced by the Legacy sources' ((@(([regex]::Matches((($allSrc | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n"), 'Local\\\\TSScoringPlugin\.v1\."\s*\+\s*\w+\s*\+\s*"\.(\w+)')) | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique) -join ',') -eq 'BridgeAvailable,BridgeInfo,Enabled,ObsLogLock,ObsLogRun,Ready,ScenarioReady,ScenarioState,Stop')
 
 Write-Host '==== repository scope ===='
@@ -202,8 +208,10 @@ $touched = @($changedTracked + $untracked | Sort-Object -Unique)
 $touched | ForEach-Object { "   " + $_ }
 $allowedPrefix = $prefix + 'Bridge/Legacy/'
 $allowedExact = @(($prefix + 'Tests/Test-LegacyL1.ps1'), ($prefix + 'Tools/Verify-PhaseL1.ps1'), ($prefix + 'Tools/Verify-PhaseC3.ps1'), ($prefix + 'Tools/Audit-Privacy.ps1'), ($prefix + 'Docs/Handshake-PhaseL1-LegacyAdapter.md'))
+# Phase M1 files (the Caller notice change, its tests and its document)
+$allowedExact += @('Caller/src/AssemblyInfo.cs', 'Caller/src/HandshakeSession.cs', 'Caller/src/TsScoringCallerInputDevice.cs', 'Caller/TSScoringPlugin.Caller.InputDevice.csproj', 'Tests/Test-HandshakeLogic.ps1', 'Tests/Test-ObservationC1.ps1', 'Tests/Test-DependencyNoticeM1.ps1', 'Docs/Handshake-PhaseM1-DependencyNotice.md' | ForEach-Object { $prefix + $_ })
 $outside = @($touched | Where-Object { -not ($_.StartsWith($allowedPrefix) -or ($_ -in $allowedExact)) })
-Check 'Only the Legacy adapter (Bridge\Legacy\), its test, its verification, one line each of Verify-PhaseC3.ps1 and Audit-Privacy.ps1, and one document are touched' ($outside.Count -eq 0)
+Check 'Only the Legacy adapter (Bridge\Legacy\), its test, its verification, the Verify-PhaseC3.ps1 / Audit-Privacy.ps1 edits, one L1 document, and the Phase M1 Caller / test / document files are touched' ($outside.Count -eq 0)
 Check 'No Python, Class1.cs, AtsLoggerPlugin.cs, packages or project file of the existing plugin is touched' (@($touched | Where-Object { $_ -match '\.py$|Class1\.cs$|AtsLoggerPlugin\.cs$|/packages/|\.vcxproj|\.slnx$|\.dll$|\.pdb$|\.log$|\.bak' }).Count -eq 0)
 Check 'No build output, third-party DLL, PDB or log among the files to be committed (obj / out / build.log stay ignored)' (@($touched | Where-Object { $_ -match '/out/|/obj/|/dist|build\.log|\.dll$|\.pdb$|\.log$' }).Count -eq 0)
 

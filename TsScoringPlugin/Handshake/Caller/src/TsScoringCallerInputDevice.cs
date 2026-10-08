@@ -47,7 +47,9 @@ namespace TSScoringPlugin.Handshake
 
         public void Tick()
         {
-            // intentionally empty: BVE's input polling stays untouched
+            // BVE's input polling stays untouched. Phase M1: the first call raises one flag for the monitor thread (a timestamp and a
+            // volatile write - no lock, no I/O, no dialog, no wait); every later call returns at once.
+            try { session.NotifyTick(); } catch { }
         }
 
         public void SetAxisRanges(int[][] ranges)

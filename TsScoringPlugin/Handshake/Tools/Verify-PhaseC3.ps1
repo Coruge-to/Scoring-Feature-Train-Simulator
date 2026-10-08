@@ -105,7 +105,7 @@ $outB = @(Inspect $bDll $bridgeAbsent); $outB[0..($outB.Count - 2)]; $bi = $outB
 Write-Host '==== distribution hygiene ===='
 $distFiles = @(Get-ChildItem $dist -File)
 Check 'dist holds exactly the two DLLs (no PDB, no other file)' (($distFiles.Count -eq 2) -and (@($distFiles | Where-Object { $_.Name -in 'TSScoringPlugin.Caller.InputDevice.dll', 'TSScoringPlugin.BveEx.Bridge.Prototype.dll' }).Count -eq 2) -and (@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0))
-Check 'Version 0.6.0.0 in both DLL version resources and assembly versions' (($ci.Version.FileVersion -eq '0.6.0.0') -and ($bi.Version.FileVersion -eq '0.6.0.0') -and ($ci.Asm.GetName().Version.ToString() -eq '0.6.0.0') -and ($bi.Asm.GetName().Version.ToString() -eq '0.6.0.0'))
+Check 'Version: Caller 0.7.0.0 (Phase M1) and Bridge 0.6.0.0 (Phase C3 core, unchanged) in the version resources and assembly versions' (($ci.Version.FileVersion -eq '0.7.0.0') -and ($bi.Version.FileVersion -eq '0.6.0.0') -and ($ci.Asm.GetName().Version.ToString() -eq '0.7.0.0') -and ($bi.Asm.GetName().Version.ToString() -eq '0.6.0.0'))
 Check 'Provider Coruge-to in both DLLs' (($ci.Version.CompanyName -eq 'Coruge-to') -and ($bi.Version.CompanyName -eq 'Coruge-to'))
 Check 'No forbidden dependency token in either DLL' (($ci.Present.Count -eq 0) -and ($bi.Present.Count -eq 0))
 Check 'Caller references only mscorlib, System, System.Core, System.Windows.Forms, Mackoy.IInputDevice' ((($ci.Asm.GetReferencedAssemblies() | ForEach-Object { $_.Name } | Sort-Object) -join ',') -eq 'Mackoy.IInputDevice,mscorlib,System,System.Core,System.Windows.Forms')
@@ -176,8 +176,10 @@ $removed = @(Compare-Object $hsB $hsNow | Where-Object { $_.SideIndicator -eq '<
 $added = @(Compare-Object $hsB $hsNow | Where-Object { $_.SideIndicator -eq '=>' })
 "HandshakeSession.cs vs Phase B: $($removed.Count) Phase B lines no longer present, $($added.Count) lines added. Removed lines:"
 $removed | ForEach-Object { "   - " + $_ }
-Check 'HandshakeSession.cs: NoticeText (both lines), MessageBox flags and the title constant are untouched' (@($removed | Where-Object { $_ -match 'NoticeText|TS Scoring|MessageBoxW|ProductDisplayName|MB_|BveEX|BveEx' }).Count -eq 0)
-Check 'HandshakeSession.cs: no timeout / state-machine line was removed (only the notice condition and status text were rewritten)' (@($removed | Where-Object { $_ -match 'BridgeMissingTimeoutMs|TargetBridgeAvailableMs|CallerPollMs|case CallerPhase|phase = CallerPhase' }).Count -le 0)
+# Phase M1: only CODE lines count here (comment lines and log-text Obs( lines are rewritten by M1; the MessageBox contract is proven line by line in Tests\Test-DependencyNoticeM1.ps1)
+$removedCode = @($removed | Where-Object { $_ -notmatch '^//' -and $_ -notmatch '^Obs\(' })
+Check 'HandshakeSession.cs: NoticeText (both lines), MessageBox flags and the title constant are untouched' (@($removedCode | Where-Object { $_ -match 'NoticeText|TS Scoring|MessageBoxW|ProductDisplayName|MB_|BveEX|BveEx' }).Count -eq 0)
+Check 'HandshakeSession.cs: no timeout / state-machine line was removed (only the notice condition and status text were rewritten; Phase M1 moved the notice latch, no phase transition)' (@($removedCode | Where-Object { $_ -match 'BridgeMissingTimeoutMs|TargetBridgeAvailableMs|CallerPollMs|case CallerPhase|phase = CallerPhase' }).Count -le 0)
 
 Write-Host '==== Phase C1 observation checks ===='
 $obs = [IO.File]::ReadAllText((Join-Path $Root 'Bridge\src\ScenarioObserver.cs'))
@@ -245,7 +247,8 @@ if ($hsC1Text) {
     $r3 = @(Compare-Object ($hsC1Text -split "`n") ((WorkText 'Caller\src\HandshakeSession.cs') -split "`n") | Where-Object { $_.SideIndicator -eq '<=' } | ForEach-Object { $_.InputObject.Trim() })
     "HandshakeSession.cs vs Phase C1: lines of C1 no longer present:"
     $r3 | ForEach-Object { "   - " + $_ }
-    Check 'HandshakeSession.cs vs Phase C1: only the two status-text lines (Phase text, ScenarioReady line) were rewritten; no timing, state-machine, notice or MessageBox line was removed' ($r3.Count -eq 2 -and @($r3 | Where-Object { $_ -match 'Phase   : C1 observation build|ScenarioReady    : Not implemented in Phase B' }).Count -eq 2)
+    $r3Code = @($r3 | Where-Object { $_ -notmatch '^//' -and $_ -notmatch '^Obs\(' })
+    Check 'HandshakeSession.cs vs Phase C1: the two status-text lines (Phase text, ScenarioReady line) were rewritten; no timing, phase-transition, NoticeText, title or MessageBox line was removed (Phase M1 only rewrote the notice trigger and latch)' (@($r3 | Where-Object { $_ -match 'Phase   : C1 observation build|ScenarioReady    : Not implemented in Phase B' }).Count -eq 2 -and @($r3Code | Where-Object { $_ -match 'BridgeMissingTimeoutMs|TargetBridgeAvailableMs|CallerPollMs|case CallerPhase|phase = CallerPhase|NoticeText|ProductDisplayName|MessageBoxW|MB_' }).Count -eq 0)
 }
 Check 'notice wording and title are untouched: NoticeText (two lines), ProductDisplayName "TS Scoring", MB flags' ((([IO.File]::ReadAllText((Join-Path $Root 'Caller\src\HandshakeSession.cs'))) -match [regex]::Escape('internal const string ProductDisplayName = "TS Scoring";')) -and (([IO.File]::ReadAllText((Join-Path $Root 'Caller\src\HandshakeSession.cs'))) -match 'MessageBoxW\(IntPtr\.Zero, text, ProductDisplayName, MB_OK \| MB_ICONINFORMATION \| MB_SETFOREGROUND \| MB_TOPMOST\)'))
 

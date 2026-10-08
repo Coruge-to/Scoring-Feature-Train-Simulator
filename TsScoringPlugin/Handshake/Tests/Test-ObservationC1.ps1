@@ -128,6 +128,8 @@ function NewSession([int]$fakePid) {
     return [pscustomobject]@{ Session = $sessionCtor.Invoke(@($fakePid, $del)); Recorder = $rec; Pid = $fakePid }
 }
 function StartSession($h) { $sessionType.GetMethod('Start').Invoke($h.Session, @()) | Out-Null }
+# Phase M1: BVE's first Tick, as seen by the Caller (a flag only; the monitor thread acts on it)
+function TickSession($h) { $sessionType.GetMethod('NotifyTick').Invoke($h.Session, @()) | Out-Null }
 function EndSession($h) { try { $sessionType.GetMethod('End').Invoke($h.Session, @()) | Out-Null } catch { } }
 function Phase($h) { return $sessionType.GetProperty('Phase', $NPI).GetValue($h.Session).ToString() }
 function NewBridge([int]$fakePid) {
@@ -195,7 +197,7 @@ try {
     LogW $cLog 'AB' 'L1_AGAIN' 'k=3'
     $l1 = ReadLog $pL1
     Check 'L1 file starts with the diagnostic header and exactly one run header' ((@($l1 | Where-Object { $_ -like '# TS Scoring Phase C1 observation log*' }).Count -eq 1) -and ($l1[0] -like '# TS Scoring Phase C1 observation log*'))
-    Check 'L1 header names the initialising DLL and the version 0.6.0.0 (Phase C3 build; the log format is the unchanged C1 contract)' (($l1 -join "`n") -match 'initializedBy=Caller ver=0\.6\.0\.0')
+    Check 'L1 header names the initialising DLL and the version 0.7.0.0 (Phase M1 Caller; the log format is the unchanged C1 contract)' (($l1 -join "`n") -match 'initializedBy=Caller ver=0\.7\.0\.0')
     Check 'L1 second DLL appended (no second truncation): 3 event lines, sources Caller / Bridge / Caller' ((@($l1 | Where-Object { $_ -match '^\d\d:\d\d' }).Count -eq 3) -and (@($l1 | Where-Object { $_ -match '^\d' })[1] -match ' S=Bridge T=A ') -and (@($l1 | Where-Object { $_ -match '^\d' })[0] -match ' S=Caller T=B '))
     Check 'L1 line format: clock, q, P, S, T, th, EVENT' (@($l1 | Where-Object { $_ -match '^\d\d:\d\d:\d\d\.\d{3} q=\d+\.\d P=930001 S=(Caller|Bridge) T=(A|B|AB) th=\d+ [A-Z0-9_]+( .*)?$' }).Count -eq 3)
 
@@ -405,7 +407,9 @@ try {
     # C1 no Bridge: notice path
     $idC1 = 950001; $pC1 = NewLogPath 'C1-no-bridge'; LogCfgBoth $pC1 $idC1
     $s1 = NewSession $idC1; StartSession $s1
-    Wait 760
+    Wait 600     # Phase M1: the 500 ms is reached with no Tick (log line only) ...
+    TickSession $s1  # ... and the first Tick brings the notice
+    Wait 300
     $noticeCount1 = $s1.Recorder.Count
     EndSession $s1
     Wait 150
@@ -428,7 +432,9 @@ try {
     # C3 Bridge arrives after the notice
     $idC3 = 950003; $pC3 = NewLogPath 'C3-bridge-late'; LogCfgBoth $pC3 $idC3
     $s3 = NewSession $idC3; StartSession $s3
-    Wait 800
+    Wait 600     # Phase M1: past 500 ms with no Tick (log line only) ...
+    TickSession $s3  # ... then the first Tick brings the notice (Bridge still absent)
+    Wait 250
     $b4 = NewBridge $idC3; LoadBridge $b4
     [void](PumpUntil @($b4) { (Phase $s3) -eq 'Connected' } 600)
     EndSession $s3; Pump @($b4) 200; DisposeBridge $b4

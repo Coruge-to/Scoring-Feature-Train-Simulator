@@ -24,17 +24,42 @@ namespace TSScoringPlugin.Handshake
     }
 
     /// <summary>
+    /// What the BveEX dependency notice knows about this Caller instance (Phase M1). Derived from the phase machine, never stored.
+    /// </summary>
+    internal enum DependencyState
+    {
+        /// <summary>Enabled, no Tick yet and BridgeAvailable never seen: nothing is shown to the user (the 500 ms is a log line only).</summary>
+        StartupWaiting,
+
+        /// <summary>The first Tick arrived and BridgeAvailable was missing: the one-time dependency check has run.</summary>
+        UseStarted,
+
+        /// <summary>BridgeAvailable is (or was a moment ago, under 500 ms) present.</summary>
+        Connected,
+
+        /// <summary>BridgeAvailable was seen once and has been gone for BridgeMissingTimeoutMs or longer.</summary>
+        ConnectionLost,
+    }
+
+    /// <summary>
     /// One "enabled cycle" of the Caller (Load .. Dispose). Publishes Enabled/Stop and watches the Bridge on ONE background monitor thread:
     ///
     ///   WaitingForBridge --BridgeAvailable seen--> (BridgeAvailable) --> WaitingForHandshake --Ready--> Connected
     ///   Connected --Ready lost, Bridge still there--> WaitingForHandshake
     ///   any --BridgeAvailable lost--> WaitingForBridge (a new absence stretch)
-    ///   WaitingForBridge --absent for BridgeMissingTimeoutMs--> BridgeMissingTimedOut (ONE notice per absence stretch)
-    ///   BridgeMissingTimedOut --BridgeAvailable back--> WaitingForHandshake (notice re-armed)
+    ///   WaitingForBridge --absent for BridgeMissingTimeoutMs--> BridgeMissingTimedOut
+    ///   BridgeMissingTimedOut --BridgeAvailable back--> WaitingForHandshake
     ///
     /// Only the absence of BridgeAvailable means "BveEX / the Bridge is not there". A missing Ready (BveEX's Tick runs only while a
-    /// scenario is driven) and a missing scenario never produce the BveEX notice and have no timeout.
-    /// Nothing here runs on BVE's threads except the cheap Start/End calls.
+    /// scenario is driven) and a missing scenario never produce the BveEX notice.
+    ///
+    /// Phase M1 - WHEN the notice may appear. The notice is ONE per Caller instance (single latch <c>noticeShown</c>, taken at the moment the
+    /// dialog is committed; a suppressed attempt leaves it free). Two triggers share it:
+    ///   * first use: BVE called Tick for the first time (<see cref="NotifyTick"/>, a flag only) and the monitor thread, looking at the named
+    ///     BridgeAvailable event DIRECTLY (not the cached state), finds it missing;
+    ///   * connection lost: BridgeAvailable had been seen and is then gone for BridgeMissingTimeoutMs (500 ms).
+    /// Before the first BridgeAvailable the 500 ms is only a diagnostic log line: the scenario list (no Tick) never produces a notice.
+    /// Nothing here runs on BVE's threads except the cheap Start/End/NotifyTick calls.
     /// </summary>
     internal sealed class HandshakeSession
     {
@@ -93,7 +118,16 @@ namespace TSScoringPlugin.Handshake
         private int scenarioReadyOffCount;
         private int scenarioGenerationChanges;
 
-        private bool noticedThisAbsence;
+        // Phase M1: the single notice latch (per Caller instance) and the first-Tick hand-over from BVE's thread to the monitor thread.
+        private enum NoticeTrigger { FirstUse, ConnectionLost }
+
+        private volatile bool tickSeen;          // written by BVE's Tick (first call only); read by the monitor
+        private long firstTickQpc;               // written before tickSeen is published
+        private bool firstTickJudged;
+        private bool noticeShown;                // the latch: a dialog was committed for this instance
+        private long noticeTriggerQpc;
+        private readonly Func<bool> bridgeProbeOverride;   // offline tests only (null in production)
+
         private bool noticeInFlight;
         private bool timedOutEver;
         private bool missedBridgeTarget;
@@ -123,9 +157,16 @@ namespace TSScoringPlugin.Handshake
 
         /// <summary>Test constructor: explicit PID and a notice sink that can be a test double.</summary>
         internal HandshakeSession(int pid, Action<string> showNotice)
+            : this(pid, showNotice, null)
+        {
+        }
+
+        /// <summary>Test constructor: additionally replaces the direct BridgeAvailable check (to separate it from the cached state).</summary>
+        internal HandshakeSession(int pid, Action<string> showNotice, Func<bool> bridgeProbeOverride)
         {
             this.pid = pid;
             this.showNotice = showNotice ?? DefaultShowNotice;
+            this.bridgeProbeOverride = bridgeProbeOverride;
         }
 
         internal CallerPhase Phase { get { lock (gate) { return phase; } } }
@@ -134,7 +175,11 @@ namespace TSScoringPlugin.Handshake
         internal int BridgeLostCount { get { lock (gate) { return bridgeLostCount; } } }
         internal int ReadyConnectCount { get { lock (gate) { return readyConnectCount; } } }
         internal int ReadyLostCount { get { lock (gate) { return readyLostCount; } } }
-        internal bool NoticeArmed { get { lock (gate) { return !noticedThisAbsence; } } }
+        internal bool NoticeArmed { get { lock (gate) { return !noticeShown && !noticeInFlight; } } }
+        internal bool NoticeShown { get { lock (gate) { return noticeShown; } } }
+        internal bool FirstTickSeen { get { return tickSeen; } }
+        internal bool FirstTickJudged { get { lock (gate) { return firstTickJudged; } } }
+        internal DependencyState State { get { lock (gate) { return StateLocked(); } } }
         internal bool MissedBridgeTarget { get { lock (gate) { return missedBridgeTarget; } } }
         internal bool MonitorAlive { get { Thread t; lock (gate) { t = monitor; } return t != null && t.IsAlive; } }
         internal bool ScenarioReadyLevel { get { lock (gate) { return scenarioReadyLevel; } } }
@@ -146,6 +191,21 @@ namespace TSScoringPlugin.Handshake
         private static void DefaultShowNotice(string text)
         {
             MessageBoxW(IntPtr.Zero, text, ProductDisplayName, MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST);
+        }
+
+        /// <summary>
+        /// Called from BVE's Tick (every frame it runs). Only the FIRST call does anything: one timestamp and one flag write.
+        /// No lock, no I/O, no log, no dialog, no wait: the monitor thread picks the flag up and does the dependency check.
+        /// </summary>
+        public void NotifyTick()
+        {
+            if (tickSeen)
+            {
+                return;
+            }
+
+            firstTickQpc = Stopwatch.GetTimestamp();
+            tickSeen = true; // volatile write: publishes firstTickQpc
         }
 
         /// <summary>Cheap: creates the two events and starts the single monitor thread. Called from BVE's Load.</summary>
@@ -334,6 +394,7 @@ namespace TSScoringPlugin.Handshake
                             break;
                     }
 
+                    JudgeFirstTickLocked(now);
                     ObserveScenarioLocked(now);
                 }
             }
@@ -375,10 +436,78 @@ namespace TSScoringPlugin.Handshake
             }
         }
 
+        /// <summary>
+        /// The one-time dependency check of Phase M1, run by the monitor thread after BVE's first Tick. BridgeAvailable is looked at
+        /// DIRECTLY (the named event, right now); the cached state, Ready, the Bridge kind and everything about the scenario are not consulted.
+        /// Present: nothing happens and the notice latch stays free. Missing: the first-use notice is requested (once per instance).
+        /// </summary>
+        private void JudgeFirstTickLocked(long now)
+        {
+            if (firstTickJudged || !tickSeen || phase == CallerPhase.Disposed)
+            {
+                return;
+            }
+
+            firstTickJudged = true;
+            bool cached = bridgePresent;
+            bool direct = ProbeBridgeDirectLocked();
+            Obs("FIRST_TICK_SEEN", "sinceEnabledMs=" + SinceEnabledMs(firstTickQpc) + " lagMs=" + Math.Round(HandshakeProtocol.QpcToMs(now - firstTickQpc), 1) + " phase=" + phase);
+
+            bool request = !direct && !noticeShown && !noticeInFlight;
+            Obs("FIRST_TICK_JUDGE", "bridgeDirect=" + (direct ? "Present" : "Missing") + " bridgeCached=" + (cached ? "Present" : "Missing") + " noticeShown=" + (noticeShown ? "yes" : "no") + " noticeInFlight=" + (noticeInFlight ? "yes" : "no") + " decision=" + (direct ? "no-notice-bridge-present" : request ? "request-notice" : "no-notice-already-handled"));
+            if (request)
+            {
+                StartNoticeLocked(NoticeTrigger.FirstUse, now);
+            }
+        }
+
+        /// <summary>
+        /// BridgeAvailable, checked directly: our own cached handle is dropped first (an open handle of ours would keep a dead named
+        /// object alive), then the event is opened by name and must exist AND be signalled. Gate must be held.
+        /// </summary>
+        private bool ProbeBridgeDirectLocked()
+        {
+            Release(ref bridge);
+            if (bridgeProbeOverride != null)
+            {
+                try { return bridgeProbeOverride(); } catch { return false; }
+            }
+
+            return SignalledLocked(ref bridge, HandshakeProtocol.BridgeAvailableName(pid));
+        }
+
+        private DependencyState StateLocked()
+        {
+            switch (phase)
+            {
+                case CallerPhase.BridgeAvailable:
+                case CallerPhase.WaitingForHandshake:
+                case CallerPhase.Connected:
+                    return DependencyState.Connected;
+            }
+
+            if (bridgeSeenCount > 0)
+            {
+                return phase == CallerPhase.BridgeMissingTimedOut ? DependencyState.ConnectionLost : DependencyState.Connected;
+            }
+
+            return tickSeen ? DependencyState.UseStarted : DependencyState.StartupWaiting;
+        }
+
+        private void StartNoticeLocked(NoticeTrigger trigger, long now)
+        {
+            noticeInFlight = true;
+            noticeTriggerQpc = now;
+            Thread thread = new Thread(() => ShowNoticeIfStillNeeded(trigger));
+            thread.IsBackground = true;
+            thread.Name = "TSScoringPlugin.Caller.Notice";
+            thread.Start();
+        }
+
         private void OnBridgeSeenLocked(long now)
         {
             CallerPhase phaseBefore = phase;
-            bool noticeWasShownThisAbsence = noticedThisAbsence;
+            bool noticeWasShownThisAbsence = noticeShown;
             phase = CallerPhase.BridgeAvailable;
             bridgeSeenCount++;
             latestBridgeDetectMs = HandshakeProtocol.QpcToMs(now - absenceStartQpc);
@@ -393,8 +522,7 @@ namespace TSScoringPlugin.Handshake
                 missedBridgeTarget = true;
             }
 
-            noticedThisAbsence = false; // the absence stretch is over: re-arm the notice for the next one
-            timeoutLoggedThisAbsence = false;
+            timeoutLoggedThisAbsence = false; // the absence stretch is over (the notice latch is NOT re-armed: one notice per instance)
             handshakeStartQpc = now;
 
             Obs(firstAvailLogged ? "AVAIL_SEEN" : "AVAIL_FIRST_PRESENT", "phaseBefore=" + phaseBefore + " sinceEnabledMs=" + SinceEnabledMs(now) + " absentMs=" + Math.Round(latestBridgeDetectMs, 1) + " over500=" + (latestBridgeDetectMs > HandshakeTiming.TargetBridgeAvailableMs ? "yes" : "no") + " noticeShownThisAbsence=" + (noticeWasShownThisAbsence ? "yes" : "no") + " seenCount=" + bridgeSeenCount);
@@ -433,7 +561,6 @@ namespace TSScoringPlugin.Handshake
             bridgeLostCount++;
             bridgeLostQpc = now;
             absenceStartQpc = now;          // a NEW absence stretch
-            noticedThisAbsence = false;
             timeoutLoggedThisAbsence = false;
             Obs("AVAIL_LOST", "phaseBefore=" + lostFrom + " sinceEnabledMs=" + SinceEnabledMs(now) + " lostCount=" + bridgeLostCount);
         }
@@ -453,21 +580,20 @@ namespace TSScoringPlugin.Handshake
 
             phase = CallerPhase.BridgeMissingTimedOut;
             timedOutEver = true;
+
+            // Phase M1: before BridgeAvailable was ever seen this 500 ms is a diagnostic only (the scenario list has no Tick and no
+            // dependency to complain about); the first Tick decides. After it was seen, losing it for 500 ms is a lost connection.
+            bool startup = bridgeSeenCount == 0;
             if (!timeoutLoggedThisAbsence)
             {
                 timeoutLoggedThisAbsence = true;
                 timeoutReachedQpc = now;
-                Obs("TIMEOUT_REACHED", "timeoutMs=" + HandshakeTiming.BridgeMissingTimeoutMs + " missingMs=" + Math.Round(missingMs, 1) + " sinceEnabledMs=" + SinceEnabledMs(now) + " noticeArmed=" + (!noticedThisAbsence && !noticeInFlight ? "yes" : "no"));
+                Obs("TIMEOUT_REACHED", "timeoutMs=" + HandshakeTiming.BridgeMissingTimeoutMs + " missingMs=" + Math.Round(missingMs, 1) + " sinceEnabledMs=" + SinceEnabledMs(now) + " noticeArmed=" + (!startup && !noticeShown && !noticeInFlight ? "yes" : "no") + " kind=" + (startup ? "startup-log-only" : "connection-lost") + " firstTickSeen=" + (tickSeen ? "yes" : "no"));
             }
 
-            if (!noticedThisAbsence && !noticeInFlight)
+            if (!startup && !noticeShown && !noticeInFlight)
             {
-                noticedThisAbsence = true;
-                noticeInFlight = true;
-                Thread thread = new Thread(ShowNoticeIfStillNeeded);
-                thread.IsBackground = true;
-                thread.Name = "TSScoringPlugin.Caller.Notice";
-                thread.Start();
+                StartNoticeLocked(NoticeTrigger.ConnectionLost, now);
             }
         }
 
@@ -612,7 +738,7 @@ namespace TSScoringPlugin.Handshake
         }
 
         /// <summary>Runs on its own short-lived thread so the monitor keeps watching while a dialog is open.</summary>
-        private void ShowNoticeIfStillNeeded()
+        private void ShowNoticeIfStillNeeded(NoticeTrigger trigger)
         {
             try
             {
@@ -621,22 +747,25 @@ namespace TSScoringPlugin.Handshake
                 lock (gate)
                 {
                     judgeQpc = Stopwatch.GetTimestamp();
-                    Obs("NOTICE_JUDGE_BEGIN", "lagSinceTimeoutMs=" + Math.Round(HandshakeProtocol.QpcToMs(judgeQpc - timeoutReachedQpc), 1) + " sinceEnabledMs=" + SinceEnabledMs(judgeQpc));
+                    string lag = Math.Round(HandshakeProtocol.QpcToMs(judgeQpc - (trigger == NoticeTrigger.FirstUse ? noticeTriggerQpc : timeoutReachedQpc)), 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    Obs("NOTICE_JUDGE_BEGIN", (trigger == NoticeTrigger.FirstUse ? "lagSinceFirstUseMs=" : "lagSinceTimeoutMs=") + lag + " sinceEnabledMs=" + SinceEnabledMs(judgeQpc) + " trigger=" + (trigger == NoticeTrigger.FirstUse ? "first-use" : "connection-lost"));
 
-                    // Re-check everything right before showing: still enabled, not disposed, Bridge still absent, still timed out.
-                    // (Same single condition as Phase B; split only so the log can say which part decided.)
-                    bool phaseTimedOut = phase == CallerPhase.BridgeMissingTimedOut;
+                    // Re-check everything right before showing: still enabled, not disposed, no notice yet, and BridgeAvailable still
+                    // missing when looked at DIRECTLY. A connection-lost notice additionally needs the 500 ms timeout state to still hold.
+                    // (Split only so the log can say which part decided.)
+                    bool stateHolds = trigger == NoticeTrigger.ConnectionLost ? phase == CallerPhase.BridgeMissingTimedOut : phase != CallerPhase.Disposed;
                     bool bridgeAtRecheck = false;
-                    if (phaseTimedOut && started)
+                    if (stateHolds && started && !noticeShown)
                     {
-                        bridgeAtRecheck = SignalledLocked(ref bridge, HandshakeProtocol.BridgeAvailableName(pid));
+                        bridgeAtRecheck = ProbeBridgeDirectLocked();
                     }
 
-                    show = phaseTimedOut && started && !bridgeAtRecheck;
-                    decision = show ? "bridge-still-missing" : !phaseTimedOut ? "phase-changed-" + phase : !started ? "not-started" : "bridge-present-at-recheck";
-                    Obs("NOTICE_PRESHOW", "decision=" + (show ? "show" : "suppress") + " reason=" + decision + " bridgeAtRecheck=" + (phaseTimedOut && started ? (bridgeAtRecheck ? "Present" : "Missing") : "NotChecked") + " phase=" + phase);
+                    show = stateHolds && started && !noticeShown && !bridgeAtRecheck;
+                    decision = show ? "bridge-still-missing" : !stateHolds ? "phase-changed-" + phase : !started ? "not-started" : noticeShown ? "already-noticed" : "bridge-present-at-recheck";
+                    Obs("NOTICE_PRESHOW", "decision=" + (show ? "show" : "suppress") + " reason=" + decision + " bridgeAtRecheck=" + (stateHolds && started && !noticeShown ? (bridgeAtRecheck ? "Present" : "Missing") : "NotChecked") + " phase=" + phase);
                     if (show)
                     {
+                        noticeShown = true; // the latch: this Caller instance never notices again
                         noticeCount++;
                     }
                 }
@@ -649,7 +778,7 @@ namespace TSScoringPlugin.Handshake
                     {
                         if (phase != CallerPhase.Disposed)
                         {
-                            atCall = SignalledLocked(ref bridge, HandshakeProtocol.BridgeAvailableName(pid)) ? "Present" : "Missing";
+                            atCall = ProbeBridgeDirectLocked() ? "Present" : "Missing";
                         }
                     }
 
