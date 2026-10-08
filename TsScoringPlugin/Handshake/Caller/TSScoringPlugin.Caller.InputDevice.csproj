@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  PHASE B - input-device Caller.
+  PHASE C1 OBSERVATION BUILD - input-device Caller.
   Mackoy.IInputDevice is referenced read-only from the installed BVE6 (identical to BVE5's copy), never copied or shipped.
   No absolute user paths: the reference path is built from the ProgramW6432 environment property.
 -->
@@ -24,7 +24,7 @@
     <Optimize>true</Optimize>
     <OutputPath>out\</OutputPath>
     <IntermediateOutputPath>obj\</IntermediateOutputPath>
-    <DefineConstants>TRACE</DefineConstants>
+    <DefineConstants>TRACE;CALLER_DLL</DefineConstants>
     <ErrorReport>none</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -46,6 +46,9 @@
     <Compile Include="src\TsScoringCallerInputDevice.cs" />
     <Compile Include="..\Shared\HandshakeProtocol.cs">
       <Link>Shared\HandshakeProtocol.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\ObservationLog.cs">
+      <Link>Shared\ObservationLog.cs</Link>
     </Compile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

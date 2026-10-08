@@ -3,12 +3,20 @@ using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using System.Security.AccessControl;
 using System.Threading;
+using BveEx.PluginHost;
 using BveEx.PluginHost.Plugins;
 using BveEx.PluginHost.Plugins.Extensions;
 
 // ============================================================================
-// PHASE B HANDSHAKE PROTOTYPE - BveEX Bridge (a minimal BveEX extension), human-facing name: "TS Scoring".
-// Contract used: BveEX's public Plugin API only (PluginAttribute, AssemblyPluginBase, IExtension, Tick, Dispose).
+// PHASE C1 OBSERVATION BUILD - BveEX Bridge (a minimal BveEX extension), human-facing name: "TS Scoring".
+// Phase B behaviour is unchanged (BridgeAvailable at load, Ready from Tick, same event names, same timings).
+// Phase C1 only ADDS log lines (Shared\ObservationLog.cs) and read-only event subscriptions (Bridge\src\ScenarioObserver.cs):
+//   Track B: constructor begin / end, BridgeAvailable create begin / ok, Ready create begin / ok, subscription done, first Tick, Dispose,
+//            Ready and BridgeAvailable disposal.
+//   Track A: ScenarioOpened, PreviewScenarioCreated, ScenarioCreated, IsScenarioCreated, ScenarioClosed, Tick / PreviewTick / PostTick
+//            ordering, and the ScenarioReady CANDIDATES A-F (log lines only; there is NO ScenarioReady event, state or notification).
+//
+// Contract used: BveEX's public Plugin API only (PluginAttribute, AssemblyPluginBase, IExtension, Tick, Dispose, IBveHacker events).
 //
 // Lifecycle facts this prototype is built on (BveEX public documentation):
 //   * The constructor runs when BveEX loads the extension.
@@ -21,12 +29,13 @@ using BveEx.PluginHost.Plugins.Extensions;
 //      Ready is NOT ScenarioReady (a future event) and NOT "the scoring app is up".
 //
 // Behaviour:
-//  * Constructor: stores two timestamps and publishes BridgeAvailable (no thread, timer, file, socket, reflection, window, hook).
+//  * Constructor: stores two timestamps and publishes BridgeAvailable (no thread, timer, socket, reflection, window, hook).
+//    Afterwards (so BridgeAvailable is never delayed by it) the observation subscriptions are made.
 //  * Tick (BveEX's, cheap): at most every HandshakeTiming.BridgePollMs it peeks for the Caller's Enabled event while "Searching".
 //    While "Connected" it only watches Enabled/Stop; when the Caller stops (Stop set, or Enabled lost) it withdraws Ready and
 //    goes back to Searching, so a later enabled cycle is picked up without restarting BVE.
 //  * Dispose (BveEX switched off / ending): Ready, BridgeInfo and BridgeAvailable are reset and released.
-//  * No exception ever leaves the constructor, Tick or Dispose.
+//  * No exception ever leaves the constructor, Tick, Dispose or an event handler.
 // BridgeInfo is a PHASE B MEASUREMENT block (removal candidate after Phase B); it exists only while Ready is published.
 // It does not contain the current ScoringPlugin, AtsLoggerPlugin, any ATS data, or any code of this repository.
 // ============================================================================
@@ -40,6 +49,8 @@ namespace TSScoringPlugin.Handshake
             Searching,
             Connected,
         }
+
+        private static int instances;
 
         private readonly long loadQpc;
         private readonly long loadUtcTicks;
@@ -67,18 +78,49 @@ namespace TSScoringPlugin.Handshake
         private int readyCreateCount;
         private int readyDestroyCount;
 
+        // Phase C1 observation (log only)
+        private int instNo;
+        private IBveHacker hacker;
+        private ScenarioObserver observer;
+        private bool firstTickSeen;
+        private bool subscribedExtensions;
+
         public TsScoringBridgePrototype(PluginBuilder builder)
             : base(builder)
         {
             loadQpc = Stopwatch.GetTimestamp();
             loadUtcTicks = DateTime.UtcNow.Ticks;
+            instNo = Interlocked.Increment(ref instances);
+            Obs("AB", "BRIDGE_CTOR_BEGIN", "ver=" + ObservationLog.Version + " bitness=" + (Environment.Is64BitProcess ? 64 : 32));
 
             // The ONLY side effect of loading: one named event that says "the Bridge exists". Never throws.
             PublishAvailability();
+
+            // Read-only observation wiring, AFTER BridgeAvailable so it can never delay it.
+            try { SubscribeObservers(); } catch { }
+
+            Obs("AB", "BRIDGE_CTOR_END", "sinceCtorBeginMs=" + SinceLoadMs() + " availablePublished=" + (available != null ? "Y" : "N") + " observer=" + (observer != null ? "Y" : "N"));
         }
 
         public override void Tick(TimeSpan elapsed)
         {
+            try
+            {
+                if (!firstTickSeen)
+                {
+                    firstTickSeen = true;
+                    Obs("AB", "BRIDGE_FIRST_TICK", "sinceCtorBeginMs=" + SinceLoadMs() + " availablePublished=" + (available != null ? "Y" : "N") + " ready=" + ReadyFlag() + " isCreated=" + ReadIsCreatedText());
+                }
+
+                if (observer != null)
+                {
+                    observer.OnTick();
+                }
+            }
+            catch
+            {
+            }
+
             try
             {
                 int now = Environment.TickCount;
@@ -104,22 +146,26 @@ namespace TSScoringPlugin.Handshake
                 }
                 else if (!StillEnabled())
                 {
-                    Release();
+                    Release("caller-stopped-or-disabled");
                     state = BridgeState.Searching;
                 }
             }
-            catch
+            catch (Exception ex)
             {
                 // An extension must never take BVE down; on any problem withdraw Ready and keep searching.
-                try { Release(); } catch { }
+                try { Release("tick-exception-" + ex.GetType().Name); } catch { }
                 state = BridgeState.Searching;
             }
         }
 
         public override void Dispose()
         {
-            try { Release(); } catch { }
+            Obs("AB", "BRIDGE_DISPOSE_BEGIN", "sinceCtorBeginMs=" + SinceLoadMs() + " ready=" + ReadyFlag() + " availablePublished=" + (available != null ? "Y" : "N"));
+            try { UnsubscribeObservers(); } catch { }
+            try { if (observer != null) { observer.OnDispose(); } } catch { }
+            try { Release("bridge-dispose"); } catch { }
             try { WithdrawAvailability(); } catch { }
+            Obs("AB", "BRIDGE_DISPOSE_END", string.Empty);
         }
 
         /// <summary>Creates and sets the BridgeAvailable event once. Internal so the offline tests can run it without BveEX's PluginBuilder.</summary>
@@ -137,16 +183,19 @@ namespace TSScoringPlugin.Handshake
                     pid = HandshakeProtocol.CurrentProcessId();
                 }
 
+                Obs("B", "AVAIL_CREATE_BEGIN", "sinceCtorBeginMs=" + SinceLoadMs());
                 bool created;
                 EventWaitHandle handle = new EventWaitHandle(false, EventResetMode.ManualReset, HandshakeProtocol.BridgeAvailableName(pid), out created);
                 handle.Set();
                 available = handle;
                 availableCreatedQpc = Stopwatch.GetTimestamp();
                 availableCreateCount++;
+                Obs("B", "AVAIL_CREATE_OK", "sinceCtorBeginMs=" + SinceLoadMs() + " createdNew=" + (created ? "Y" : "N") + " createCount=" + availableCreateCount);
             }
-            catch
+            catch (Exception ex)
             {
                 // creation failed: BVE must not be affected; Tick retries
+                Obs("B", "AVAIL_CREATE_FAIL", "type=" + ex.GetType().Name);
             }
         }
 
@@ -160,6 +209,7 @@ namespace TSScoringPlugin.Handshake
                 availableDestroyCount++;
                 try { toRelease.Reset(); } catch { }
                 try { toRelease.Dispose(); } catch { }
+                Obs("B", "AVAIL_DISPOSED", "destroyCount=" + availableDestroyCount);
             }
         }
 
@@ -195,6 +245,7 @@ namespace TSScoringPlugin.Handshake
             enabled = foundEnabled;
             stop = foundStop;
             lastEnabledSeenQpc = Stopwatch.GetTimestamp();
+            Obs("B", "READY_CREATE_BEGIN", "sinceCtorBeginMs=" + SinceLoadMs() + " createCount=" + (readyCreateCount + 1));
 
             // Instrumentation first (best effort, never decisive), then Ready, so a Caller that sees Ready can read the numbers.
             readyCreateCount++;
@@ -230,6 +281,7 @@ namespace TSScoringPlugin.Handshake
             ready = new EventWaitHandle(false, EventResetMode.ManualReset, HandshakeProtocol.ReadyName(pid), out created);
             ready.Set();
             state = BridgeState.Connected;
+            Obs("B", "READY_CREATE_OK", "sinceCtorBeginMs=" + SinceLoadMs() + " createdNew=" + (created ? "Y" : "N") + " createCount=" + readyCreateCount);
         }
 
         private bool StillEnabled()
@@ -272,7 +324,7 @@ namespace TSScoringPlugin.Handshake
         }
 
         /// <summary>Withdraws Ready (and the handshake's own handles). BridgeAvailable is NOT touched here; only Dispose removes it.</summary>
-        private void Release()
+        private void Release(string reason)
         {
             EventWaitHandle readyToRelease = ready;
             ready = null;
@@ -294,6 +346,7 @@ namespace TSScoringPlugin.Handshake
 
                 try { readyToRelease.Reset(); } catch { }
                 try { readyToRelease.Dispose(); } catch { }
+                Obs("B", "READY_DISPOSED", "reason=" + reason + " destroyCount=" + readyDestroyCount);
             }
 
             DisposeInfo();
@@ -311,6 +364,191 @@ namespace TSScoringPlugin.Handshake
             {
                 try { enabledToRelease.Dispose(); } catch { }
             }
+        }
+
+        // ------------------------------------------------------------------------------------------------------------------
+        // Phase C1 observation (log only; every method below is exception-safe and has no effect on the handshake)
+        // ------------------------------------------------------------------------------------------------------------------
+
+        private double SinceLoadMs()
+        {
+            return Math.Round(HandshakeProtocol.QpcToMs(Stopwatch.GetTimestamp() - loadQpc), 1);
+        }
+
+        private void Obs(string track, string evt, string detail)
+        {
+            ObservationLog.Write(track, evt, "inst=" + instNo + (string.IsNullOrEmpty(detail) ? string.Empty : " " + detail));
+        }
+
+        /// <summary>Creates the scenario observer. Internal so the offline tests can attach fake readers.</summary>
+        internal void BeginObservation(Func<int> readIsCreated, Func<string> probeBveInfo)
+        {
+            observer = new ScenarioObserver(Obs, readIsCreated, probeBveInfo, ReadyFlag, delegate { return Environment.TickCount; });
+        }
+
+        private string ReadyFlag()
+        {
+            return ready != null ? "Y" : "N";
+        }
+
+        private string ReadIsCreatedText()
+        {
+            if (hacker == null)
+            {
+                return "n/a";
+            }
+
+            int v = ReadIsCreatedValue();
+            return v == 1 ? "1" : v == 0 ? "0" : "unreadable";
+        }
+
+        private int ReadIsCreatedValue()
+        {
+            try { return hacker.IsScenarioCreated ? 1 : 0; }
+            catch { return -1; }
+        }
+
+        /// <summary>null = the BVE objects a future ScenarioReady would need are readable now (references only; nothing is read from them).</summary>
+        private string ProbeBveInfo()
+        {
+            try
+            {
+                var scenario = hacker.Scenario;
+                if (ReferenceEquals(scenario, null))
+                {
+                    return "scenario-null";
+                }
+
+                if (ReferenceEquals(scenario.TimeManager, null))
+                {
+                    return "timemanager-null";
+                }
+
+                if (ReferenceEquals(scenario.VehicleLocation, null))
+                {
+                    return "vehiclelocation-null";
+                }
+
+                if (ReferenceEquals(scenario.Vehicle, null))
+                {
+                    return "vehicle-null";
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                return "exc-" + ex.GetType().Name;
+            }
+        }
+
+        private void SubscribeObservers()
+        {
+            IBveHacker h = null;
+            try
+            {
+                h = BveHacker;
+            }
+            catch (Exception ex)
+            {
+                Obs("AB", "SUBSCRIBE_FAIL", "target=BveHacker type=" + ex.GetType().Name);
+            }
+
+            if (h == null)
+            {
+                Obs("AB", "SUBSCRIBE_DONE", "ok=0 reason=no-BveHacker");
+                return;
+            }
+
+            hacker = h;
+            BeginObservation(ReadIsCreatedValue, ProbeBveInfo);
+
+            int ok = 0;
+            int fail = 0;
+            Sub("ScenarioOpened", delegate { h.ScenarioOpened += OnHackerScenarioOpened; }, ref ok, ref fail);
+            Sub("ScenarioClosed", delegate { h.ScenarioClosed += OnHackerScenarioClosed; }, ref ok, ref fail);
+            Sub("PreviewScenarioCreated", delegate { h.PreviewScenarioCreated += OnHackerPreviewScenarioCreated; }, ref ok, ref fail);
+            Sub("ScenarioCreated", delegate { h.ScenarioCreated += OnHackerScenarioCreated; }, ref ok, ref fail);
+            Sub("PreviewTick", delegate { h.PreviewTick += OnHackerPreviewTick; }, ref ok, ref fail);
+            Sub("PostTick", delegate { h.PostTick += OnHackerPostTick; }, ref ok, ref fail);
+            Sub("AllExtensionsLoaded", delegate { Extensions.AllExtensionsLoaded += OnAllExtensionsLoaded; subscribedExtensions = true; }, ref ok, ref fail);
+
+            Obs("AB", "SUBSCRIBE_DONE", "ok=" + ok + " failed=" + fail + " isCreatedAtCtor=" + ReadIsCreatedText());
+        }
+
+        private void Sub(string name, Action action, ref int ok, ref int fail)
+        {
+            try
+            {
+                action();
+                ok++;
+                Obs("AB", "SUBSCRIBE", "event=" + name + " result=ok");
+            }
+            catch (Exception ex)
+            {
+                fail++;
+                Obs("AB", "SUBSCRIBE", "event=" + name + " result=fail type=" + ex.GetType().Name);
+            }
+        }
+
+        private void UnsubscribeObservers()
+        {
+            IBveHacker h = hacker;
+            if (h == null)
+            {
+                return;
+            }
+
+            try { h.ScenarioOpened -= OnHackerScenarioOpened; } catch { }
+            try { h.ScenarioClosed -= OnHackerScenarioClosed; } catch { }
+            try { h.PreviewScenarioCreated -= OnHackerPreviewScenarioCreated; } catch { }
+            try { h.ScenarioCreated -= OnHackerScenarioCreated; } catch { }
+            try { h.PreviewTick -= OnHackerPreviewTick; } catch { }
+            try { h.PostTick -= OnHackerPostTick; } catch { }
+            if (subscribedExtensions)
+            {
+                subscribedExtensions = false;
+                try { Extensions.AllExtensionsLoaded -= OnAllExtensionsLoaded; } catch { }
+            }
+
+            Obs("AB", "UNSUBSCRIBED", string.Empty);
+        }
+
+        private void OnHackerScenarioOpened(ScenarioOpenedEventArgs e)
+        {
+            bool reload = false;
+            try { reload = e.IsReload; } catch { }
+            try { if (observer != null) { observer.OnScenarioOpened(reload); } } catch { }
+        }
+
+        private void OnHackerScenarioClosed(EventArgs e)
+        {
+            try { if (observer != null) { observer.OnScenarioClosed(); } } catch { }
+        }
+
+        private void OnHackerPreviewScenarioCreated(ScenarioCreatedEventArgs e)
+        {
+            try { if (observer != null) { observer.OnPreviewScenarioCreated(); } } catch { }
+        }
+
+        private void OnHackerScenarioCreated(ScenarioCreatedEventArgs e)
+        {
+            try { if (observer != null) { observer.OnScenarioCreated(); } } catch { }
+        }
+
+        private void OnHackerPreviewTick(object sender, EventArgs e)
+        {
+            try { if (observer != null) { observer.OnPreviewTick(); } } catch { }
+        }
+
+        private void OnHackerPostTick(object sender, EventArgs e)
+        {
+            try { if (observer != null) { observer.OnPostTick(); } } catch { }
+        }
+
+        private void OnAllExtensionsLoaded(object sender, EventArgs e)
+        {
+            try { if (observer != null) { observer.OnAllExtensionsLoaded(); } } catch { }
         }
     }
 }

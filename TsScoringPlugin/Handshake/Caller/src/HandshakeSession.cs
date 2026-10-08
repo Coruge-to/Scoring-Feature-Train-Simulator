@@ -72,6 +72,16 @@ namespace TSScoringPlugin.Handshake
         private bool bridgePresent;
         private bool readyPresent;
 
+        // Phase C1 observation (log only)
+        private static int cycleCounter;
+        private int cycleNo;
+        private bool firstCheckLogged;
+        private bool firstAvailLogged;
+        private bool firstReadyLogged;
+        private bool timeoutLoggedThisAbsence;
+        private long timeoutReachedQpc;
+        private long judgeQpc;
+
         private bool noticedThisAbsence;
         private bool noticeInFlight;
         private bool timedOutEver;
@@ -145,6 +155,8 @@ namespace TSScoringPlugin.Handshake
                 absenceStartQpc = enabledQpc;
                 enabledLocal = DateTime.Now;
                 phase = CallerPhase.WaitingForBridge;
+                cycleNo = Interlocked.Increment(ref cycleCounter);
+                Obs("CALLER_ENABLED_CREATED", "pid=" + pid + " ver=" + ObservationLog.Version);
 
                 wake = new ManualResetEvent(false);
                 monitor = new Thread(MonitorLoop);
@@ -164,6 +176,7 @@ namespace TSScoringPlugin.Handshake
                     return;
                 }
 
+                Obs("CALLER_DISPOSE_BEGIN", "phaseBefore=" + phase + " sinceEnabledMs=" + SinceEnabledMs(Stopwatch.GetTimestamp()));
                 phase = CallerPhase.Disposed;
 
                 try { if (wake != null) { wake.Set(); } } catch { }
@@ -174,6 +187,7 @@ namespace TSScoringPlugin.Handshake
                 Release(ref bridge);
                 Release(ref enabled);
                 Release(ref stop);
+                Obs("CALLER_DISPOSE_END", string.Empty);
             }
         }
 
@@ -200,6 +214,7 @@ namespace TSScoringPlugin.Handshake
             {
                 ManualResetEvent signal;
                 lock (gate) { signal = wake; }
+                Obs("MONITOR_LOOP_BEGIN", "sinceEnabledMs=" + SinceEnabledMs(Stopwatch.GetTimestamp()));
 
                 // WaitOne returns true as soon as End() sets the signal, so the thread ends promptly; otherwise it ticks every CallerPollMs.
                 while (!signal.WaitOne(HandshakeTiming.CallerPollMs))
@@ -231,6 +246,12 @@ namespace TSScoringPlugin.Handshake
                     long now = Stopwatch.GetTimestamp();
                     bridgePresent = SignalledLocked(ref bridge, HandshakeProtocol.BridgeAvailableName(pid));
                     readyPresent = bridgePresent && SignalledLocked(ref ready, HandshakeProtocol.ReadyName(pid));
+
+                    if (!firstCheckLogged)
+                    {
+                        firstCheckLogged = true;
+                        Obs("AVAIL_FIRST_CHECK", "result=" + (bridgePresent ? "Present" : "Missing") + " sinceEnabledMs=" + SinceEnabledMs(now));
+                    }
 
                     switch (phase)
                     {
@@ -283,6 +304,7 @@ namespace TSScoringPlugin.Handshake
                                 readyLostQpc = now;
                                 handshakeStartQpc = now;
                                 phase = CallerPhase.WaitingForHandshake;
+                                Obs("READY_LOST", "bridgeStillPresent=Y count=" + readyLostCount + " sinceEnabledMs=" + SinceEnabledMs(now));
                             }
 
                             break;
@@ -329,6 +351,8 @@ namespace TSScoringPlugin.Handshake
 
         private void OnBridgeSeenLocked(long now)
         {
+            CallerPhase phaseBefore = phase;
+            bool noticeWasShownThisAbsence = noticedThisAbsence;
             phase = CallerPhase.BridgeAvailable;
             bridgeSeenCount++;
             latestBridgeDetectMs = HandshakeProtocol.QpcToMs(now - absenceStartQpc);
@@ -344,7 +368,11 @@ namespace TSScoringPlugin.Handshake
             }
 
             noticedThisAbsence = false; // the absence stretch is over: re-arm the notice for the next one
+            timeoutLoggedThisAbsence = false;
             handshakeStartQpc = now;
+
+            Obs(firstAvailLogged ? "AVAIL_SEEN" : "AVAIL_FIRST_PRESENT", "phaseBefore=" + phaseBefore + " sinceEnabledMs=" + SinceEnabledMs(now) + " absentMs=" + Math.Round(latestBridgeDetectMs, 1) + " over500=" + (latestBridgeDetectMs > HandshakeTiming.TargetBridgeAvailableMs ? "yes" : "no") + " noticeShownThisAbsence=" + (noticeWasShownThisAbsence ? "yes" : "no") + " seenCount=" + bridgeSeenCount);
+            firstAvailLogged = true;
 
             if (readyPresent)
             {
@@ -362,6 +390,8 @@ namespace TSScoringPlugin.Handshake
             readyConnectCount++;
             readyLastQpc = now;
             latestHandshakeMs = HandshakeProtocol.QpcToMs(now - handshakeStartQpc);
+            Obs(firstReadyLogged ? "READY_CONNECTED" : "READY_FIRST_PRESENT", "sinceEnabledMs=" + SinceEnabledMs(now) + " handshakeMs=" + Math.Round(latestHandshakeMs, 1) + " connectCount=" + readyConnectCount);
+            firstReadyLogged = true;
         }
 
         private void OnBridgeLostLocked(long now)
@@ -372,11 +402,14 @@ namespace TSScoringPlugin.Handshake
                 readyLostQpc = now;
             }
 
+            CallerPhase lostFrom = phase;
             phase = CallerPhase.WaitingForBridge;
             bridgeLostCount++;
             bridgeLostQpc = now;
             absenceStartQpc = now;          // a NEW absence stretch
             noticedThisAbsence = false;
+            timeoutLoggedThisAbsence = false;
+            Obs("AVAIL_LOST", "phaseBefore=" + lostFrom + " sinceEnabledMs=" + SinceEnabledMs(now) + " lostCount=" + bridgeLostCount);
         }
 
         private void CheckBridgeTimeoutLocked(long now)
@@ -394,6 +427,12 @@ namespace TSScoringPlugin.Handshake
 
             phase = CallerPhase.BridgeMissingTimedOut;
             timedOutEver = true;
+            if (!timeoutLoggedThisAbsence)
+            {
+                timeoutLoggedThisAbsence = true;
+                timeoutReachedQpc = now;
+                Obs("TIMEOUT_REACHED", "timeoutMs=" + HandshakeTiming.BridgeMissingTimeoutMs + " missingMs=" + Math.Round(missingMs, 1) + " sinceEnabledMs=" + SinceEnabledMs(now) + " noticeArmed=" + (!noticedThisAbsence && !noticeInFlight ? "yes" : "no"));
+            }
 
             if (!noticedThisAbsence && !noticeInFlight)
             {
@@ -406,16 +445,41 @@ namespace TSScoringPlugin.Handshake
             }
         }
 
+        /// <summary>Phase C1 observation: one log line tagged Track B and with this enabled-cycle's number. Never throws.</summary>
+        private void Obs(string evt, string detail)
+        {
+            ObservationLog.Write("B", evt, "cycle=" + cycleNo + (string.IsNullOrEmpty(detail) ? string.Empty : " " + detail));
+        }
+
+        private double SinceEnabledMs(long nowQpc)
+        {
+            return enabledQpc == 0 ? -1 : Math.Round(HandshakeProtocol.QpcToMs(nowQpc - enabledQpc), 1);
+        }
+
         /// <summary>Runs on its own short-lived thread so the monitor keeps watching while a dialog is open.</summary>
         private void ShowNoticeIfStillNeeded()
         {
             try
             {
                 bool show;
+                string decision;
                 lock (gate)
                 {
+                    judgeQpc = Stopwatch.GetTimestamp();
+                    Obs("NOTICE_JUDGE_BEGIN", "lagSinceTimeoutMs=" + Math.Round(HandshakeProtocol.QpcToMs(judgeQpc - timeoutReachedQpc), 1) + " sinceEnabledMs=" + SinceEnabledMs(judgeQpc));
+
                     // Re-check everything right before showing: still enabled, not disposed, Bridge still absent, still timed out.
-                    show = phase == CallerPhase.BridgeMissingTimedOut && started && !SignalledLocked(ref bridge, HandshakeProtocol.BridgeAvailableName(pid));
+                    // (Same single condition as Phase B; split only so the log can say which part decided.)
+                    bool phaseTimedOut = phase == CallerPhase.BridgeMissingTimedOut;
+                    bool bridgeAtRecheck = false;
+                    if (phaseTimedOut && started)
+                    {
+                        bridgeAtRecheck = SignalledLocked(ref bridge, HandshakeProtocol.BridgeAvailableName(pid));
+                    }
+
+                    show = phaseTimedOut && started && !bridgeAtRecheck;
+                    decision = show ? "bridge-still-missing" : !phaseTimedOut ? "phase-changed-" + phase : !started ? "not-started" : "bridge-present-at-recheck";
+                    Obs("NOTICE_PRESHOW", "decision=" + (show ? "show" : "suppress") + " reason=" + decision + " bridgeAtRecheck=" + (phaseTimedOut && started ? (bridgeAtRecheck ? "Present" : "Missing") : "NotChecked") + " phase=" + phase);
                     if (show)
                     {
                         noticeCount++;
@@ -424,7 +488,24 @@ namespace TSScoringPlugin.Handshake
 
                 if (show)
                 {
+                    // Diagnostic only (never changes the decision above): is the Bridge present at the very moment the dialog is requested?
+                    string atCall = "NotChecked";
+                    lock (gate)
+                    {
+                        if (phase != CallerPhase.Disposed)
+                        {
+                            atCall = SignalledLocked(ref bridge, HandshakeProtocol.BridgeAvailableName(pid)) ? "Present" : "Missing";
+                        }
+                    }
+
+                    long callQpc = Stopwatch.GetTimestamp();
+                    Obs("NOTICE_SHOW_CALL", "bridgeAtCall=" + atCall + " gapSinceRecheckMs=" + Math.Round(HandshakeProtocol.QpcToMs(callQpc - judgeQpc), 1) + " sinceEnabledMs=" + SinceEnabledMs(callQpc));
                     showNotice(NoticeText);
+                    Obs("NOTICE_DIALOG_CLOSED", "openMs=" + Math.Round(HandshakeProtocol.QpcToMs(Stopwatch.GetTimestamp() - callQpc), 1));
+                }
+                else
+                {
+                    Obs("NOTICE_SUPPRESSED", "reason=" + decision);
                 }
             }
             catch
@@ -487,7 +568,8 @@ namespace TSScoringPlugin.Handshake
 
                 sb.AppendLine("Product : " + ProductDisplayName);
                 sb.AppendLine("Provider: " + ProviderName);
-                sb.AppendLine("Phase   : B handshake prototype");
+                sb.AppendLine("Phase   : C1 observation build " + ObservationLog.Version + " (Phase B handshake behaviour)");
+                sb.AppendLine("Log     : " + ObservationLog.FolderName + "\\" + ObservationLog.FileName);
                 sb.AppendLine("Assembly: " + Assembly.GetExecutingAssembly().GetName().Name + ".dll");
                 sb.AppendLine();
                 sb.AppendLine("Caller           : " + (isEnabled ? "Enabled" : "Disabled"));

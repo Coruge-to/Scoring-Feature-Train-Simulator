@@ -1,4 +1,4 @@
-# PHASE B - privacy audit. NOT part of any distribution candidate (it holds the forbidden-string list).
+# PHASE C1 - privacy audit (Phase B audit kept; adds the observation log checks). NOT part of any distribution candidate (it holds the forbidden-string list).
 # Prints COUNTS ONLY. Read-only.
 param([string]$Root = (Split-Path $PSScriptRoot -Parent))
 
@@ -6,7 +6,7 @@ param([string]$Root = (Split-Path $PSScriptRoot -Parent))
 $runtimeNames = @($env:USERNAME, $env:COMPUTERNAME, $env:USERDOMAIN, (Split-Path $env:USERPROFILE -Leaf)) | Where-Object { $_ -and $_.Length -ge 3 } | Sort-Object -Unique
 $forbidden = @($runtimeNames) + @(
     'C:\Users\', 'Scoring-Feature-Train-Simulator',
-    'TSScoringPlugin-Handshake-Prototype', 'TSScoringPlugin-Caller-Prototype',
+    'TSScoringPlugin-Handshake-Prototype', 'TSScoringPlugin-Caller-Prototype', 'TSScoringPlugin-Handshake-Phase-C1',
     'gmail', 'hotmail', 'outlook.com', 'ac.jp'
 )
 $emailPattern = '[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}'
@@ -51,7 +51,8 @@ Audit-Group 'dist\ (distribution candidates)'            @($all | Where-Object {
 Audit-Group 'Caller\out (Caller build output)'            @($all | Where-Object { $_.FullName -like (Join-Path $Root 'Caller\out\*') })
 Audit-Group 'Bridge\out (Bridge build output)'            @($all | Where-Object { $_.FullName -like (Join-Path $Root 'Bridge\out\*') })
 Audit-Group 'sources (*.cs, *.csproj, Shared)'            @($all | Where-Object { $_.Extension -in '.cs', '.csproj' -and $_.FullName -notlike '*\obj\*' })
-Audit-Group 'documents (README)'                          @($all | Where-Object { $_.Extension -in '.md', '.txt' -and $_.FullName -notlike '*\obj\*' })
+Audit-Group 'documents (README)'                          @($all | Where-Object { $_.Extension -in '.md' -and $_.FullName -notlike '*\obj\*' })
+Audit-Group 'observation logs written by the tests (logs\)' @($all | Where-Object { $_.Extension -eq '.log' -and $_.FullName -like (Join-Path $Root 'logs\*') })
 
 Write-Host '== NOT candidates (build intermediates / logs; local paths are expected here) =='
 Audit-Group 'obj\ and build.log (not shipped)'            @($all | Where-Object { $_.FullName -like '*\obj\*' -or $_.Name -eq 'build.log' })
@@ -89,21 +90,32 @@ foreach ($d in (Get-ChildItem (Join-Path $Root 'dist') -Filter *.dll -File)) {
 $docs = Get-ChildItem (Join-Path $Root 'Docs') -File | Where-Object { $_.Extension -eq '.md' }
 foreach ($d in $docs) { "{0,-46} README outside DLL/protocol identifiers={1}" -f $d.Name, (Count-OldName ([IO.File]::ReadAllText($d.FullName, [Text.Encoding]::UTF8))) }
 
-Write-Host '== old 2000 ms value (must not remain in sources, README or tools; counts) =='
-$old2000 = 0
-foreach ($f in (Get-ChildItem $Root -Recurse -File | Where-Object { $_.Extension -in '.cs', '.csproj', '.md', '.ps1' -and $_.FullName -notlike '*\obj\*' })) {
-    if ($f.Name -eq 'Audit-Privacy.ps1') { continue }
-    $old2000 += ([regex]::Matches([IO.File]::ReadAllText($f.FullName, [Text.Encoding]::UTF8), '\b2000\b')).Count
+Write-Host '== old timeout values 1000 / 2000 ms (must not remain in the Phase B contract files or the README; counts) =='
+$contract = @('Shared\HandshakeProtocol.cs', 'Caller\src\HandshakeSession.cs', 'Caller\src\TsScoringCallerInputDevice.cs', 'Bridge\src\TsScoringBridgePrototype.cs') | ForEach-Object { Join-Path $Root $_ }
+$contract += @(Get-ChildItem $Root -File -Filter *.md | ForEach-Object { $_.FullName })
+$old1000 = 0; $old2000 = 0
+foreach ($f in $contract) {
+    $txt = [IO.File]::ReadAllText($f, [Text.Encoding]::UTF8)
+    $old1000 += ([regex]::Matches($txt, '\b1000\b(?![.\d])')).Count
+    $old2000 += ([regex]::Matches($txt, '\b2000\b')).Count
 }
-"occurrences of the old value: $old2000"
-Write-Host '== old 1000 ms notice timeout (must not remain in sources, README or tools; counts) =='
-$old1000 = 0
-foreach ($f in (Get-ChildItem $Root -Recurse -File | Where-Object { $_.Extension -in '.cs', '.csproj', '.md', '.ps1' -and $_.FullName -notlike '*\obj\*' })) {
-    if ($f.Name -eq 'Audit-Privacy.ps1') { continue }
-    $old1000 += ([regex]::Matches([IO.File]::ReadAllText($f.FullName, [Text.Encoding]::UTF8), '\b1000\b(?![.\d])')).Count
-}
-"occurrences of the old value: $old1000"
+"files checked: " + $contract.Count + "   occurrences of 1000: $old1000   occurrences of 2000: $old2000"
+Write-Host '== 500 ms contract (counts) =='
+$hp = [IO.File]::ReadAllText((Join-Path $Root 'Shared\HandshakeProtocol.cs'))
+"BridgeMissingTimeoutMs = 500 : " + ([regex]::Matches($hp, 'BridgeMissingTimeoutMs = 500;')).Count + "   TargetBridgeAvailableMs = 500 : " + ([regex]::Matches($hp, 'TargetBridgeAvailableMs = 500;')).Count
 
+Write-Host '== observation log content policy in the sources (counts of risky constructs; expected 0) =='
+$logSources = Get-ChildItem $Root -Recurse -Include *.cs | Where-Object { $_.FullName -notlike '*\obj\*' }
+$risky = 0
+foreach ($f in $logSources) {
+    foreach ($line in [IO.File]::ReadAllLines($f.FullName)) {
+        if ($line -match '\.Message\b|\.StackTrace\b|MachineName|UserName|GetFullPath|ScenarioInfo|\.Path\b|\.Title\b|Environment\.CurrentDirectory|GetCurrentDirectory') { if (-not $line.TrimStart().StartsWith('//')) { $risky++ } }
+    }
+}
+"lines that read exception messages, machine / user names, paths or scenario info: $risky"
+Write-Host '== per-PID log guard names and fixed log file name (counts) =='
+$ol = [IO.File]::ReadAllText((Join-Path $Root 'Shared\ObservationLog.cs'))
+"log file name constant present once: " + ([regex]::Matches($ol, 'TSScoring-Phase-C1-Observation\.log')).Count + "   literal drive/user path in the log source: " + ([regex]::Matches($ol, '[A-Za-z]:\\\\')).Count
 Write-Host '== old notice wording (must not remain in DLLs, sources, README, tools; counts) =='
 function FromCodes([string[]]$hex) { return -join ($hex | ForEach-Object { [char][Convert]::ToInt32($_, 16) }) }
 $oldFragments = @(

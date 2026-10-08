@@ -1,4 +1,4 @@
-# PHASE B - offline logic test of the REAL Caller session and Bridge code (no BVE, no BveEX runtime, no Python, no UDP, no hooks).
+# PHASE B suite, kept unchanged in Phase C1 (only the observation log is redirected to a private file) - offline logic test of the REAL Caller session and Bridge code (no BVE, no BveEX runtime, no Python, no UDP, no hooks).
 # The DLLs are loaded from memory (no file lock on dist\). The Bridge is created WITHOUT its constructor (BveEX's PluginBuilder is
 # not available here); the test calls its internal PublishAvailability() (what the constructor does) and then drives Tick/Dispose.
 # The Caller session is created through its internal test constructor with FAKE process ids and a test double for the notice (no
@@ -40,6 +40,11 @@ $nonPublicInstance = [Reflection.BindingFlags]'NonPublic,Public,Instance'
 $sessionCtor = $sessionType.GetConstructor($nonPublicInstance, $null, [Type[]]@([int], [Action[string]]), $null)
 $tickMethod = $bridgeType.GetMethod('Tick')
 $publishMethod = $bridgeType.GetMethod('PublishAvailability', $nonPublicInstance)
+
+# Phase C1: the observation log must never touch the fixed Downloads file during tests - give both DLLs a private file.
+New-Item -ItemType Directory -Force (Join-Path $Root 'logs') | Out-Null
+$obsPrivate = Join-Path $Root 'logs\phase-b-suite-observation.log'
+foreach ($a in @($callerAsm, $bridgeAsm)) { $ot = $a.GetType('TSScoringPlugin.Handshake.ObservationLog'); $ot.GetProperty('TestPath', [Reflection.BindingFlags]'NonPublic,Static').SetValue($null, $obsPrivate) }
 
 $results = New-Object System.Collections.Generic.List[object]
 function Check([string]$name, [bool]$ok) { $results.Add([pscustomobject]@{ Name = $name; Ok = $ok }); ("{0} {1}" -f $(if ($ok) { 'PASS' } else { 'FAIL' }), $name) }

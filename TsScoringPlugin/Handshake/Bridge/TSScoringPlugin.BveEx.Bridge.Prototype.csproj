@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  PHASE B - BveEX Bridge (minimal extension).
+  PHASE C1 OBSERVATION BUILD - BveEX Bridge (minimal extension).
   The BveEX assemblies are referenced read-only from the installed BveEX (Private=False: never copied or shipped).
   No absolute user paths: the reference folder is built from the PUBLIC environment property.
 -->
@@ -59,8 +59,12 @@
   <ItemGroup>
     <Compile Include="src\AssemblyInfo.cs" />
     <Compile Include="src\TsScoringBridgePrototype.cs" />
+    <Compile Include="src\ScenarioObserver.cs" />
     <Compile Include="..\Shared\HandshakeProtocol.cs">
       <Link>Shared\HandshakeProtocol.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\ObservationLog.cs">
+      <Link>Shared\ObservationLog.cs</Link>
     </Compile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
