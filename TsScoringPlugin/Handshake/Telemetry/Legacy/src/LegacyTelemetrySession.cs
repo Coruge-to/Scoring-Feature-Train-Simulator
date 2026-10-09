@@ -11,8 +11,9 @@ using System.Threading;
 // sentinels of the telemetry contract, and an AVAIL part that names exactly those data groups. Nothing is guessed, defaulted or carried over:
 //
 //   * a value that cannot be read is not written, and its token is not in AVAIL;
-//   * data that does not exist in the Legacy API (handle texts, brake cylinder / brake pipe pressure, the ground limit look-ahead, the vehicle
-//     length derivation, the jump) has no token and no key, ever;
+//   * data that does not exist in the Legacy API (the ground limit look-ahead, the vehicle length derivation, the jump) has no token and no key, ever;
+//   * Phase LI1: the handle group (generic texts built from the handle numbers) and the brake pressures (StateStore, kPa) are offered by LegacyInputTelemetry
+//     from the same all-or-nothing rule: a group that cannot be built completely in this Tick is neither written nor announced;
 //   * a new scenario instance (ScenarioOpened / ScenarioClosed / ScenarioCreated, a different ORIGINAL Scenario object, IsScenarioCreated false) ends the
 //     old one at once: new SCENARIO_ID, the station state machine, the acceleration reference and the datagram cadence all start from nothing;
 //   * "the same scenario" is decided by the reference identity of the original BVE Scenario object (LegacyScenarioIdentity.Source), NEVER by the wrapper:
@@ -74,6 +75,8 @@ namespace TSScoringPlugin.Telemetry
         private bool gradientFirstLogged;       // the gradient unit diagnostic of this instance (see ReportGradient)
         private bool gradientNonZeroLogged;
         private readonly LegacyInputProbe inputProbe;   // Phase LI0 observation (Tick thread only); null when not wired
+        private readonly LegacyInputTickCache inputCache;           // Phase LI1: one read of the input surface per Tick for both consumers below; null when no input is wired
+        private readonly LegacyInputTelemetry inputTelemetry;       // Phase LI1: the handle group and the pressures of the line; null when no input is wired
 
         // diagnostics (tests, and a future log)
         internal int Epochs { get; private set; }
@@ -92,7 +95,11 @@ namespace TSScoringPlugin.Telemetry
         {
         }
 
-        /// <summary>input = the read surface of the Phase LI0 input observation (diagnostic log only, never the telemetry stream); null = no observation.</summary>
+        /// <summary>
+        /// input = the read surface of the scoring inputs. Phase LI1: the handle group and the brake pressures of the line come from it (LegacyInputTelemetry);
+        /// null = no input wired, none of those groups is ever written or announced. Phase LI0: with a diagnostic as well, the read-only observation
+        /// (diagnostic log only) runs on the same reads.
+        /// </summary>
         internal LegacyTelemetrySession(ILegacyApi api, ITelemetrySink sink, Func<long> nowMs, Func<long> idSeed, ITelemetryDiag diag, ILegacyInputApi input)
         {
             this.api = api;
@@ -101,9 +108,14 @@ namespace TSScoringPlugin.Telemetry
             this.idSeed = idSeed;
             this.diag = diag;
             lastScenarioId = -1;
-            if (input != null && diag != null)
+            if (input != null)
             {
-                inputProbe = new LegacyInputProbe(input, Log);
+                inputCache = new LegacyInputTickCache(input);
+                inputTelemetry = new LegacyInputTelemetry(inputCache, Log);
+                if (diag != null)
+                {
+                    inputProbe = new LegacyInputProbe(inputCache, Log);
+                }
             }
         }
 
@@ -174,6 +186,7 @@ namespace TSScoringPlugin.Telemetry
         private void EndInputProbe()
         {
             try { if (inputProbe != null) { inputProbe.EndGeneration(); } } catch { }
+            try { if (inputTelemetry != null) { inputTelemetry.End(); } } catch { }
         }
 
         /// <summary>The observation of the scoring inputs (diagnostic log only). It never changes the telemetry line and can never throw out of here.</summary>
@@ -232,6 +245,7 @@ namespace TSScoringPlugin.Telemetry
             scenarioActive = true;
             Log("TEL_EPOCH_BEGIN", "n=" + Epochs + " scenarioId=" + id + " reason=" + reason + " identity=" + identityKind);
             try { if (inputProbe != null) { inputProbe.Begin(id); } } catch { }
+            try { if (inputTelemetry != null) { inputTelemetry.Begin(id); } } catch { }
         }
 
         // -- the gradient unit ----------------------------------------------------------------------------------------------------------------
@@ -339,6 +353,9 @@ namespace TSScoringPlugin.Telemetry
             {
                 StartEpoch(identity);
             }
+
+            // Phase LI1: the input surface is read at most once per Tick; the observation below (diagnostic log only) and the input groups of the line share that read
+            try { if (inputCache != null) { inputCache.BeginTick(); } } catch { }
 
             // Phase LI0: observe the scoring-input candidates (handles, notch layout, pressures) into the diagnostic log; nothing of it enters the line below
             ObserveInput();
@@ -529,6 +546,19 @@ namespace TSScoringPlugin.Telemetry
                     }
 
                     lb.Group(TelemetryContract.TokPRates, "PRATES", r.ToString() + ":" + TelemetryContract.F(maxPa / 1000.0, "F1"));
+                }
+            }
+            catch
+            {
+            }
+
+            // Phase LI1: the handle group and the brake pressures. Each group is offered only when it could be built completely from what the host gave in this
+            // Tick (the group, its keys and its AVAIL token appear together or not at all); see LegacyInputTelemetry
+            try
+            {
+                if (inputTelemetry != null)
+                {
+                    inputTelemetry.Compose(delegate (string token, string[] pairs) { lb.Group(token, pairs); });
                 }
             }
             catch

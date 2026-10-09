@@ -426,6 +426,75 @@ namespace TsScoringLegacyTelemetryTests
         public static int HeadCount { get { return LegacyInputProbe.HeadCount; } }
     }
 
+    // ---- PHASE LI1 (handle group and pressures of the line) -------------------------------------------------------------------------------------
+    /// <summary>The pure handle contract. Returns { "ok", REV, POW, BRK, HTYPE, ALLTXT } (the values after the key) or { "drop", reason }.</summary>
+    public static class HandleInfo
+    {
+        public static string[] Build(int handleType, int brakeKind, int? rev, int? pow, int? brk, int? powN, int? brkN, int? ebN, bool? hold)
+        {
+            LegacyHandleSnapshot s = new LegacyHandleSnapshot();
+            s.CabTypeName = "x";
+            s.HandleType = (LegacyHandleType)handleType;
+            s.BrakeKind = (LegacyBrakeKind)brakeKind;
+            s.Reverser = rev;
+            s.Power = pow;
+            s.Brake = brk;
+            s.PowerNotchCount = powN;
+            s.BrakeNotchCount = brkN;
+            s.EmergencyBrakeNotch = ebN;
+            s.HasHoldingSpeedBrake = hold;
+            LegacyHandleLine line;
+            string reason;
+            if (!LegacyHandleContract.TryBuild(s, out line, out reason))
+            {
+                return new string[] { "drop", reason };
+            }
+
+            string[] pairs = line.Pairs();
+            string[] result = new string[6];
+            result[0] = "ok";
+            for (int i = 0; i < 5; i++) { result[i + 1] = pairs[i * 2 + 1]; }
+            return result;
+        }
+
+        public static string[] Keys()
+        {
+            LegacyHandleLine line = new LegacyHandleLine();
+            line.RevText = "a"; line.PowText = "a"; line.BrkText = "a"; line.AllRev = "a"; line.AllPow = "a"; line.AllBrk = "a";
+            string[] pairs = line.Pairs();
+            string[] keys = new string[5];
+            for (int i = 0; i < 5; i++) { keys[i] = pairs[i * 2]; }
+            return keys;
+        }
+
+        public static int MaxNotches { get { return LegacyHandleContract.MaxNotches; } }
+    }
+
+    /// <summary>The pure pressure contract: "ok:123.4" or "drop:reason:length".</summary>
+    public static class PressureInfo
+    {
+        public static string Try(double[] array)
+        {
+            double v;
+            string reason;
+            int length;
+            if (LegacyPressureContract.TryValue(array, out v, out reason, out length))
+            {
+                return "ok:" + LegacyPressureContract.Format(v);
+            }
+
+            return "drop:" + reason + ":" + length;
+        }
+
+        public static string Format(double v) { return LegacyPressureContract.Format(v); }
+    }
+
+    public static class InputTelemetryInfo
+    {
+        public static int MaxLines { get { return LegacyInputTelemetry.MaxLinesPerGeneration; } }
+        public static string SafeWord(string text, string fallback) { return LegacyInputTelemetry.SafeWord(text, fallback); }
+    }
+
     /// <summary>The REAL host adapter (AtsExLegacyApi) with nothing attached: it must answer with fixed reasons, never throw. Needs the host assemblies to load.</summary>
     public static class AdapterProbe
     {
@@ -464,6 +533,13 @@ namespace TsScoringLegacyTelemetryTests
         {
             if (withInput) { Input = new FakeInputApi(); }
             session = Make(Diag);
+        }
+
+        /// <summary>Phase LI1: withDiag=false builds the session with NO diagnostic (the observation is then not wired, the handle group and the pressures still are).</summary>
+        public Harness(bool withInput, bool withDiag)
+        {
+            if (withInput) { Input = new FakeInputApi(); }
+            session = Make(withDiag ? (ITelemetryDiag)Diag : null);
         }
 
         private LegacyTelemetrySession Make(ITelemetryDiag d)
@@ -539,9 +615,18 @@ namespace TsScoringLegacyTelemetryTests
         public long Seed = 7000000000L;
         private LegacyTelemetrySession session;
 
+        public FakeInputApi Input = null;         // Phase LI1: null = the sender of Phase L3 (no handle group, no pressures)
+
         public LiveHarness()
         {
             session = new LegacyTelemetrySession(Api, Sink, delegate { return Now; }, delegate { return Seed; });
+        }
+
+        /// <summary>withInput: the input surface is wired (a FakeInputApi in Input); the handle group and the pressures go out through the real UDP sink.</summary>
+        public LiveHarness(bool withInput)
+        {
+            if (withInput) { Input = new FakeInputApi(); }
+            session = new LegacyTelemetrySession(Api, Sink, delegate { return Now; }, delegate { return Seed; }, null, Input);
         }
 
         public void Run(int ticks, int stepMs)

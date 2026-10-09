@@ -182,7 +182,7 @@ $h = NewIn; $h.Run(5, 16); $h.Input.NativeFail = $true; $h.Input.NativeReason = 
 $ua = @((Ev $h 'TEL_INPUT_UNAVAILABLE') | Where-Object { $_ -match 'group=nativeState' })
 Check 'D07 a group that fails later is reported once with its fixed reason (state-null), not per Tick; the earlier first line stays' (($ua.Count -eq 1) -and ($ua[0] -eq 'TEL_INPUT_UNAVAILABLE gen=0 group=nativeState reason=state-null') -and (@((Ev $h 'TEL_PRESSURE_FIRST') | Where-Object { $_ -match 'src=native' }).Count -eq 1))
 $h = NewIn; $h.Input.HandlesFail = $true; $h.Input.HandlesReason = 'cab-null'; $h.Run(200, 16)
-Check 'D08 an unreadable group is retried only every N Ticks (calls <= 8 in 200 Ticks), reported once, and the rest of the observation goes on' (($h.Input.CallCount('TryHandles') -ge 2) -and ($h.Input.CallCount('TryHandles') -le 8) -and ((Ev $h 'TEL_INPUT_UNAVAILABLE').Count -eq 1) -and ((Ev $h 'TEL_INPUT_UNAVAILABLE')[0] -eq 'TEL_INPUT_UNAVAILABLE gen=0 group=handles reason=cab-null') -and ((Ev $h 'TEL_PRESSURE_FIRST').Count -eq 2))
+Check 'D08 an unreadable group is reported once by the observation (not per Tick) and the rest of the observation goes on; since Phase LI1 the telemetry needs the handles EVERY Tick, so the host is asked once per Tick (200 calls in 200 Ticks, never more) and the observation shares that read' (($h.Input.CallCount('TryHandles') -eq 200) -and ((Ev $h 'TEL_INPUT_UNAVAILABLE').Count -eq 1) -and ((Ev $h 'TEL_INPUT_UNAVAILABLE')[0] -eq 'TEL_INPUT_UNAVAILABLE gen=0 group=handles reason=cab-null') -and ((Ev $h 'TEL_PRESSURE_FIRST').Count -eq 2))
 $h = NewIn; $h.Input.HandlesFail = $true; $h.Run(40, 16); $h.Input.HandlesFail = $false; $h.Run(60, 16)
 $idxU = $h.Diag.Events.FindIndex([Predicate[string]]{ param($s) $s.StartsWith('TEL_INPUT_UNAVAILABLE') }); $idxF = $h.Diag.Events.FindIndex([Predicate[string]]{ param($s) $s.StartsWith('TEL_HANDLE_FIRST') })
 Check 'D09 a group that becomes readable later gets its HANDLE_FIRST then (after the unavailable line)' (($idxU -ge 0) -and ($idxF -gt $idxU) -and ((Ev $h 'TEL_HANDLE_FIRST').Count -eq 1))
@@ -246,11 +246,15 @@ $wo = NewH $false; Scripted $wo
 $wi = NewIn
 $wi.Input.HandleTypeValue = 1; $wi.Input.BrakeKindValue = 3; $wi.Input.NativeBc = 77.0     # one-lever Cl, the unexpected combination, with moving values
 Scripted $wi
-Check 'G01 the datagrams of a session WITH the observation are byte-identical to one WITHOUT it (60 Ticks, a gradient change, a reload, one-lever Cl)' (($wo.Sink.Sent.Count -gt 50) -and (($wo.Sink.Sent -join "`n") -eq ($wi.Sink.Sent -join "`n")))
+$wn = New-Object TsScoringLegacyTelemetryTests.Harness -ArgumentList @($true, $false)      # the same input values, but NO diagnostic: the observation is not wired
+$wn.Input.HandleTypeValue = 1; $wn.Input.BrakeKindValue = 3; $wn.Input.NativeBc = 77.0
+Scripted $wn
+# (Phase LI1 sends the handle group and the pressures, so a session with the input surface is no longer identical to one without it; what stays true is that the OBSERVATION adds nothing)
+Check 'G01 the datagrams of a session WITH the observation are byte-identical to one with the same input values but WITHOUT the observation (60 Ticks, a gradient change, a reload, one-lever Cl)' (($wi.Sink.Sent.Count -gt 50) -and (($wi.Sink.Sent -join "`n") -eq ($wn.Sink.Sent -join "`n")))
 $lines = @($wi.Sink.Lines())
-Check 'G02 no line of the stream carries a handle / pressure key (REV POW BRK ALLTXT HTYPE BCP BPP) and AVAIL has no handle / bcp / bpp token' ((@($lines | Where-Object { $_ -match $NEVERKEY }).Count -eq 0) -and (@($lines | Where-Object { $a = $_; (@($NEVERTOK | Where-Object { $a -match ('[:+]' + $_ + '([+,]|$)') })).Count -gt 0 }).Count -eq 0))
-$one = $lines[1]
-Check 'G03 AVAIL is the same 14 tokens as before the observation (calcg from the second line)' ([regex]::Match($one, 'AVAIL:1:([^,]*)').Groups[1].Value -eq 'brake_cab+brake_type+calcg+door+grad+loc+maplimit+meta+prates+siglimit+siglimit_ahead+speed+station+time')
+$linesOld = @($wo.Sink.Lines())
+Check 'G02 the sender WITHOUT an input surface (Phase L3) writes no handle / pressure key and no handle / bcp / bpp token; with one, a one-lever Cl (outside the supported set) still writes no handle group but the pressures' ((@($linesOld | Where-Object { $_ -match $NEVERKEY }).Count -eq 0) -and (@($linesOld | Where-Object { $a = $_; (@($NEVERTOK | Where-Object { $a -match ('[:+]' + $_ + '([+,]|$)') })).Count -gt 0 }).Count -eq 0) -and (@($lines | Where-Object { $_ -match '(^|,)(REV|POW|BRK|ALLTXT|HTYPE):' }).Count -eq 0) -and (@($lines | Where-Object { $_ -notmatch '(^|,)BCP:' }).Count -eq 0))
+Check 'G03 AVAIL without an input surface is the same 14 tokens as before (calcg from the second line); with the input surface and a one-lever Cl it is those 14 plus bcp and bpp (no handle)' (([regex]::Match($linesOld[1], 'AVAIL:1:([^,]*)').Groups[1].Value -eq 'brake_cab+brake_type+calcg+door+grad+loc+maplimit+meta+prates+siglimit+siglimit_ahead+speed+station+time') -and ([regex]::Match($lines[1], 'AVAIL:1:([^,]*)').Groups[1].Value -eq 'bcp+bpp+brake_cab+brake_type+calcg+door+grad+loc+maplimit+meta+prates+siglimit+siglimit_ahead+speed+station+time'))
 Check 'G04 the gradient stays the x 1000 value (0.0125 -> GRADIENT:12.5, 0.02 -> GRADIENT:20) and BTYPE:Cl is the only brake word on the line' (($lines[0] -match 'GRADIENT:12\.5(,|$)') -and ($lines[40] -match 'GRADIENT:20(,|$)') -and ($lines[0] -match 'BTYPE:Cl'))
 Check 'G05 the existing gradient diagnostic is unchanged: TEL_GRADIENT_FIRST once per scenario generation (2 generations -> 2 lines)' ((Ev $wi 'TEL_GRADIENT_FIRST').Count -eq 2)
 Check 'G06 a session built the old way (no input wired) writes no input line at all' ((InputEvents $wo).Count -eq 0)
@@ -268,21 +272,20 @@ $bad = @($all | Where-Object { $_ -notmatch '^TEL_[A-Z_]+ gen=\d+( [A-Za-z0-9]+=
 Check ('H01 every input line has the fixed shape NAME gen=N key=value ... with letters, digits, _ . - only (' + $all.Count + ' lines checked): no path, no free text, no exception text') ($bad.Count -eq 0)
 $hf = NewIn; $hf.Api.Meta = @('SecretTitle', 'SecretRoute', 'SecretVehicle', 'SecretAuthor', 'SecretComment'); $fileLog = Join-Path $testDir 'li0-diag.log'; $hf.UseFileDiag($fileLog); $hf.Run(50, 16); $hf.Dispose()
 $fl = @([IO.File]::ReadAllLines($fileLog))
-$fi = @($fl | Where-Object { $_ -match ' TEL_(INPUT|HANDLE|SPEC|PRESSURE)_' })
+$fi = @($fl | Where-Object { ($_ -match ' TEL_(INPUT|HANDLE|SPEC|PRESSURE)_') -and ($_ -notmatch ' TEL_(HANDLE_SEND|HANDLE_DROP|PRESSURE_SEND|PRESSURE_DROP|INPUT_PUBLISH) ') })     # (the Phase LI1 lines are tested by Test-LegacyInputLI1.ps1)
 Check 'H02 the real file log carries the input lines in the TEL_ log format (HH:mm:ss.fff P= I= NAME gen=...), no scenario text, no path' (($fi.Count -eq 5 + 1) -and (@($fi | Where-Object { $_ -notmatch '^\d\d:\d\d:\d\d\.\d{3} P=\d+ I=\d+ TEL_[A-Z_]+ gen=\d+ ' }).Count -eq 0) -and (($fl -join "`n") -notmatch 'Secret') -and (($fi -join "`n") -notmatch '[A-Za-z]:\\'))
-Check 'H03 the DLL is 0.1.3.0 (assembly and file version), product TS Scoring, provider Coruge-to' (([TsScoringLegacyTelemetryTests.DiagInfo]::Version -eq '0.1.3.0') -and ((Get-Item $dllPath).VersionInfo.FileVersion -eq '0.1.3.0') -and ((Get-Item $dllPath).VersionInfo.ProductName -eq 'TS Scoring') -and ((Get-Item $dllPath).VersionInfo.CompanyName -eq 'Coruge-to'))
+Check 'H03 the DLL is 0.2.0.0 (assembly and file version; Phase LI1 builds on the LI0 observation, which this test still covers), product TS Scoring, provider Coruge-to' (([TsScoringLegacyTelemetryTests.DiagInfo]::Version -eq '0.2.0.0') -and ((Get-Item $dllPath).VersionInfo.FileVersion -eq '0.2.0.0') -and ((Get-Item $dllPath).VersionInfo.ProductName -eq 'TS Scoring') -and ((Get-Item $dllPath).VersionInfo.CompanyName -eq 'Coruge-to'))
 Check 'H04 the probe file names no AtsEx / BveTypes type (host independent); the adapter file is still the only one that does' (($probeCode -cnotmatch 'AtsEx|BveTypes') -and ($extCode -cmatch 'AtsEx\.PluginHost') -and ((Code ([IO.File]::ReadAllText((Join-Path $Root 'Telemetry\Legacy\src\LegacyTelemetrySession.cs')))) -cnotmatch 'AtsEx|BveTypes'))
 function RunGit([string[]]$gitArgs) { $out = & git @gitArgs 2>$null; if ($LASTEXITCODE -ne 0) { return '' }; return ($out -join "`n") }
 $top = (RunGit @('-C', $Root, 'rev-parse', '--show-toplevel')).Trim() -replace '/', '\'
 $changed = @((RunGit @('-C', $top, 'diff', '--name-only', 'HEAD')) -split "`n" | Where-Object { $_ })
 $untracked = @((RunGit @('-C', $top, 'ls-files', '--others', '--exclude-standard')) -split "`n" | Where-Object { $_ })
 $touched = @($changed + $untracked | Sort-Object -Unique)
-# the parent-exit fix (P1) is a separate, earlier change of the managed lifecycle (Python + two test scripts); it is the only Python this phase may sit next to
-$p1Files = @('managed_mode.py', 'tests/parent_exit_child.py', 'tests/test_parent_exit_p1.py', 'tests/test_managed_hud_e4.py',
-             'TsScoringPlugin/Handshake/Tests/Test-AppProcessE3.ps1', 'TsScoringPlugin/Handshake/Tests/Test-HudLinkE4.ps1')
-$li0Touched = @($touched | Where-Object { $_ -notin $p1Files })
-$allowed = @($li0Touched | Where-Object { $_ -match '^TsScoringPlugin/Handshake/(Telemetry/Legacy/|Tests/(TelemetryTestFixture\.cs|Test-LegacyInputLI0\.ps1|Test-DependencyNoticeM1\.ps1|Test-HudLinkE4\.ps1)|Tools/Verify-Phase(L1|L3)\.ps1|Docs/)' })      # the three older scope guards that had to learn about this phase are the only other files
-Check ('H05 scope: besides the P1 files only the Legacy telemetry project, its fixture, this test and a document changed (' + $li0Touched.Count + ' LI0 files); no other Python, HUD, Caller, Bridge, Current, shared contract or LegacyApi.cs') (($allowed.Count -eq $li0Touched.Count) -and ($touched -notcontains 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyApi.cs') -and (@($li0Touched | Where-Object { $_ -match '\.py$|Caller/|Bridge/|Shared/|Class1\.cs' }).Count -eq 0))
+# (Phase LI1 builds on top of this phase. The LI0 commit is HEAD now, so the guard says what must NOT move: the observation itself and everything the observation never touched.)
+$li0Frozen = @('TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyApi.cs', 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyInputProbe.cs', 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs')
+$li0Moved = @($touched | Where-Object { $_ -in $li0Frozen })
+$productMoved = @($touched | Where-Object { $_ -match '^(main|hud_ui|network|scoring_logic|menu_ui|config|utils|managed_[a-z]+|telemetry_[a-z]+)\.py$|/Caller/|/Bridge/|/Handshake/Shared/|Class1\.cs$|AtsLoggerPlugin\.cs$' })
+Check ('H05 scope: the observation (LegacyInputProbe.cs), the Legacy API seam (LegacyApi.cs) and the host adapter are unchanged since the LI0 commit; no production Python, HUD, Caller, Bridge, Current sender or Handshake shared file changed (' + $touched.Count + ' files touched by the working tree)') (($li0Moved.Count -eq 0) -and ($productMoved.Count -eq 0))
 
 # ---------------------------------------------------------------------------------------------------------------------------------------------
 $fail = @($results | Where-Object { -not $_.Ok }).Count

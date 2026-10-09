@@ -8,7 +8,8 @@
 # here. The user's launcher.json is never read (LauncherConfigLoader.TestPath). This script is ASCII-only on purpose.
 param(
     [string]$Root = (Split-Path $PSScriptRoot -Parent),
-    [string]$PythonExe = ''
+    [string]$PythonExe = '',
+    [string]$Phase = 'L3'      # 'LI1': the sender also writes the handle group and the pressures (Phase LI1); the rest of the chain is the same
 )
 
 Add-Type -TypeDefinition @'
@@ -58,7 +59,8 @@ public static class WinEnum
 '@
 
 $legacyHost = Join-Path $env:PUBLIC 'Documents\BveEx\Legacy'
-$testDir = Join-Path $Root 'logs\l3-integration'
+$withInput = ($Phase -eq 'LI1')
+$testDir = Join-Path $Root ($(if ($withInput) { 'logs\li1-integration' } else { 'logs\l3-integration' }))
 if (Test-Path $testDir) { Remove-Item $testDir -Recurse -Force }
 New-Item -ItemType Directory -Force $testDir | Out-Null
 $sandbox = Join-Path $testDir 'profile'
@@ -199,7 +201,7 @@ $qtOk = $false
 try { $qtOk = ((& $py -c "import PyQt6.QtWidgets, win32gui, win32process; print('ok')") -eq 'ok') } catch { $qtOk = $false }
 $udpBusy = @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveUdpListeners() | Where-Object { $_.Port -eq 54321 }).Count -gt 0
 $mainRunning = $false
-try { $mainRunning = @(Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='pythonw.exe'" -ErrorAction Stop | Where-Object { $_.CommandLine -match 'main\.py' }).Count -gt 0 } catch { $mainRunning = $true }
+. (Join-Path $PSScriptRoot 'MainProcessGuard.ps1'); $mainRunning = Get-TsScoringMainRunning $mainPy      # only <repo>\main.py counts (another project's main.py is not ours); unknown / relative = safe side
 $savedProfile = $env:USERPROFILE
 $savedHome = $env:HOME
 try {
@@ -231,7 +233,8 @@ try {
         $m = NewMgr $bvePid (NewOpts 25000 6000 3000)
         $s = NewSession $bvePid $m.Mgr
         # the pseudo Legacy world: a scenario with four stations, driven by the real sender core, sending through the REAL UDP sink
-        $lh = New-Object TsScoringLegacyTelemetryTests.LiveHarness
+        $lh = New-Object TsScoringLegacyTelemetryTests.LiveHarness -ArgumentList $withInput
+        if ($withInput) { $lh.Input.CabName = 'TwoLeverCab'; $lh.Input.HandleTypeValue = 2; $lh.Input.BrakeKindValue = 2; $lh.Api.BrakeKind = 2; $lh.Input.PowN = 4; $lh.Input.BrkN = 9; $lh.Input.EbN = 10; $lh.Input.Rev = 1; $lh.Input.Pow = 2; $lh.Input.Brk = 0; $lh.Input.StoreBc = [double[]]@(120.5); $lh.Input.StoreBp = [double[]]@(490.0) }
         $lh.Api.FreshWrapperEachCall = $true      # the real host: IBveHacker.Scenario is a NEW wrapper object on every Tick (the L3-live defect needs this)
         $lh.Api.SpeedMps = 15.0; $lh.Api.Location = 900.0; $lh.Api.GradientRatio = 0.008
         $lh.Api.Stations.Add((NewStation 'A' 0.0)); $lh.Api.Stations.Add((NewStation 'B' 1000.0 36100000 36130000)); $lh.Api.Stations.Add((NewStation 'C' 2000.0 -1 -1 $true)); $lh.Api.Stations.Add((NewStation 'D' 3000.0 36400000 -1 $false $true))
@@ -326,8 +329,15 @@ try {
         $udpAfter = @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveUdpListeners() | Where-Object { $_.Port -eq 54321 }).Count -gt 0
         Check 'T14 UDP 54321 is free again and the stand-in BVE window is untouched' ((-not $udpAfter) -and (PidAlive $bvePid))
         $firsts = [regex]::Matches($text, 'event=telemetry-first[^\r\n]*')
-        Check ('T15 the application logged the first telemetry of each generation (' + $firsts.Count + ') with the sender''s announcement: explicit AVAIL; the first line has no acceleration reference yet, the next line adds it, and what is missing is exactly what the Legacy API cannot provide') (($firsts.Count -ge 2) -and ($firsts[0].Value -match 'avail=explicit') -and ($firsts[0].Value -match 'missing=bcp\+bpp\+calcg\+doortime\+handle\+jump\+maplimit_ahead\+trainlen') -and ($text -match 'event=telemetry-avail[^\r\n]*missing=bcp\+bpp\+doortime\+handle\+jump\+maplimit_ahead\+trainlen(\s|$)'))
-        Check 'T16 the HUD reported the items the sender cannot provide: only the handle row' ($text -match 'event=hud-items[^\r\n]*unavailable=handle(\s|$)')
+        if (-not $withInput) {
+            Check ('T15 the application logged the first telemetry of each generation (' + $firsts.Count + ') with the sender''s announcement: explicit AVAIL; the first line has no acceleration reference yet, the next line adds it, and what is missing is exactly what the Legacy API cannot provide') (($firsts.Count -ge 2) -and ($firsts[0].Value -match 'avail=explicit') -and ($firsts[0].Value -match 'missing=bcp\+bpp\+calcg\+doortime\+handle\+jump\+maplimit_ahead\+trainlen') -and ($text -match 'event=telemetry-avail[^\r\n]*missing=bcp\+bpp\+doortime\+handle\+jump\+maplimit_ahead\+trainlen(\s|$)'))
+            Check 'T16 the HUD reported the items the sender cannot provide: only the handle row' ($text -match 'event=hud-items[^\r\n]*unavailable=handle(\s|$)')
+        }
+        else {
+            # Phase LI1: the sender writes the handle group and both pressures, so the handle row is no longer missing and bcp / bpp / handle are announced
+            Check ('T15 (LI1) the first telemetry of each generation (' + $firsts.Count + ') is announced with explicit AVAIL; the first line lacks only the acceleration reference and what the Legacy API cannot provide - NOT handle, bcp or bpp - and the next line adds calcg') (($firsts.Count -ge 2) -and ($firsts[0].Value -match 'avail=explicit') -and ($firsts[0].Value -match 'missing=calcg\+doortime\+jump\+maplimit_ahead\+trainlen(\s|$)') -and ($text -match 'event=telemetry-avail[^\r\n]*missing=doortime\+jump\+maplimit_ahead\+trainlen(\s|$)') -and ($text -notmatch 'missing=[^\r\n]*(handle|bcp|bpp)'))
+            Check 'T16 (LI1) the HUD reports no item the sender cannot provide: the handle row is available (unavailable=none)' (($text -match 'event=hud-items[^\r\n]*unavailable=none(\s|$)') -and ($text -notmatch 'event=hud-items[^\r\n]*unavailable=handle'))
+        }
         Check 'T17 stale datagrams were dropped and counted: ONE telemetry-drop line for the burst (reason=stale-epoch), telemetry-summary tel_stale > 0' ((([regex]::Matches($text, 'event=telemetry-drop[^\r\n]*reason=stale-epoch')).Count -eq 1) -and ($text -match 'event=telemetry-summary[^\r\n]*tel_stale=([1-9]\d*)'))
         Check 'T18 the telemetry summary counts the accepted telemetry and no invalid line' (($text -match 'event=telemetry-summary[^\r\n]*tel_accepted=([1-9]\d*)') -and ($text -match 'event=telemetry-summary[^\r\n]*tel_invalid=0'))
         $managedLines = @($el | Where-Object { $_ -match '\[MANAGED\]' })

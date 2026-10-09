@@ -23,7 +23,7 @@ Write-Host '==== the built DLL ===='
 $outFiles = @(Get-ChildItem $outDir -File -ErrorAction SilentlyContinue)
 Check 'out holds exactly the one telemetry DLL (no PDB, no third-party DLL, no other file)' (($outFiles.Count -eq 1) -and ($outFiles[0].Name -eq 'TSScoringPlugin.AtsExLegacy.Telemetry.dll') -and (@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0))
 $vi = (Get-Item $dllPath).VersionInfo
-Check 'file version 0.1.3.0 (Phase LI0 read-only input observation on top of the Phase L3 sender), product TS Scoring, provider Coruge-to, description names Phase L3' (($vi.FileVersion -eq '0.1.3.0') -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.CompanyName -eq 'Coruge-to') -and ($vi.Comments -match 'Phase L3'))
+Check 'file version 0.2.0.0 (Phase LI1 handle / pressure sending on top of the Phase L3 sender and the LI0 observation), product TS Scoring, provider Coruge-to, description names Phase L3' (($vi.FileVersion -eq '0.2.0.0') -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.CompanyName -eq 'Coruge-to') -and ($vi.Comments -match 'Phase L3'))
 $proj = [IO.File]::ReadAllText((Join-Path $telDir 'Legacy\TSScoringPlugin.AtsExLegacy.Telemetry.csproj'))
 $projCode = [regex]::Replace($proj, '<!--[\s\S]*?-->', '')      # the comments of the project file may name the Bridge
 Add-Type -TypeDefinition @"
@@ -84,7 +84,7 @@ $unknown = @($csTokens | Where-Object { $_ -notin $pyTokens })
 Check ('every token the C# sender can announce is in the Python vocabulary (' + $csTokens.Count + ' tokens)') (($unknown.Count -eq 0) -and ($csTokens.Count -ge 10))
 Check 'protocol version 1 in both languages' (($contractCs -match 'ProtocolVersion = 1;') -and ((Get-Content (Join-Path $top 'telemetry_contract.py') -Raw) -match 'PROTOCOL_VERSION = 1'))
 $notSent = @($pyTokens | Where-Object { $_ -notin $csTokens })
-Check ('the tokens the Legacy sender never announces are exactly: ' + ($notSent -join ' ')) ((($notSent | Sort-Object) -join ',') -eq 'bcp,bpp,doortime,handle,jump,maplimit_ahead,trainlen')
+Check ('the tokens the Legacy sender never announces are exactly: ' + ($notSent -join ' ')) ((($notSent | Sort-Object) -join ',') -eq 'doortime,jump,maplimit_ahead,trainlen')
 
 Write-Host '==== repository scope ===='
 $changed = @((RunGit @('-C', $top, 'diff', '--name-only', $Baseline)) -split "`n" | Where-Object { $_ })
@@ -103,7 +103,9 @@ $allowedExact = @(
     # parent-exit fix (P1): the owner-process watch in the managed lifecycle module, its tests, and the E3 test whose stand-in BVE is now a live process
     'managed_mode.py', 'tests/parent_exit_child.py', 'tests/test_parent_exit_p1.py', ($prefix + 'Tests/Test-AppProcessE3.ps1'),
     # Phase LI0 (read-only Legacy input observation): its test and document; the Telemetry project itself is covered by the Telemetry/ prefix
-    ($prefix + 'Tests/Test-LegacyInputLI0.ps1'), ($prefix + 'Docs/Handshake-PhaseLI0-LegacyInputObservation.md')
+    ($prefix + 'Tests/Test-LegacyInputLI0.ps1'), ($prefix + 'Docs/Handshake-PhaseLI0-LegacyInputObservation.md'),
+    # Phase LI1 (Legacy handle / pressure telemetry): its tests, the Python reference and test, the main.py guard helper of the live-chain tests, its document
+    'tests/test_legacy_input_li1.py', 'tests/legacy_input_reference.py', ($prefix + 'Tests/Test-LegacyInputLI1.ps1'), ($prefix + 'Tests/MainProcessGuard.ps1'), ($prefix + 'Docs/Handshake-PhaseLI1-LegacyInputTelemetry.md')
 )
 $outside = @($touched | Where-Object { -not ($_.StartsWith($prefix + 'Telemetry/') -or ($_ -in $allowedExact)) })
 if ($outside.Count -gt 0) { "outside the allowance: " + ($outside -join ', ') }
@@ -144,7 +146,7 @@ if (-not $SkipDeployedCheck) {
     function H8([string]$p) { if (Test-Path $p) { return (Get-FileHash $p -Algorithm SHA256).Hash.Substring(0, 8) } else { return 'absent' } }
     $pub = $env:PUBLIC
     Check 'deployed Caller (BVE6 and BVE5) is the E4 Caller 0.11.0.0 (1B2F7C1F) deployed for L3-live - this fix changes no Caller' ((H8 (Join-Path $env:ProgramW6432 'mackoy\BveTs6\Input Devices\TSScoringPlugin.Caller.InputDevice.dll')) -eq '1B2F7C1F' -and (H8 (Join-Path ${env:ProgramFiles(x86)} 'mackoy\BveTs5\Input Devices\TSScoringPlugin.Caller.InputDevice.dll')) -eq '1B2F7C1F')
-    Check 'deployed Current Bridge (247F6724) and Legacy Bridge (C2883E40) are unchanged; the Legacy Extensions folder holds no telemetry DLL, the L3-live 0.1.0.0 (8BFD06AA) or this build, and the Current Extensions folder none' (((H8 (Join-Path $pub 'Documents\BveEx\2.0\Extensions\TSScoringPlugin.BveEx.Bridge.Prototype.dll')) -eq '247F6724') -and ((H8 (Join-Path $pub 'Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll')) -eq 'C2883E40') -and ((H8 (Join-Path $pub 'Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Telemetry.dll')) -in @('8BFD06AA', '10683A92', 'absent', (H8 $dllPath))) -and ((H8 (Join-Path $pub 'Documents\BveEx\2.0\Extensions\TSScoringPlugin.AtsExLegacy.Telemetry.dll')) -eq 'absent'))
+    Check 'deployed Current Bridge (247F6724) and Legacy Bridge (C2883E40) are unchanged; the Legacy Extensions folder holds no telemetry DLL, the L3-live 0.1.0.0 (8BFD06AA) or this build, and the Current Extensions folder none' (((H8 (Join-Path $pub 'Documents\BveEx\2.0\Extensions\TSScoringPlugin.BveEx.Bridge.Prototype.dll')) -eq '247F6724') -and ((H8 (Join-Path $pub 'Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll')) -eq 'C2883E40') -and ((H8 (Join-Path $pub 'Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Telemetry.dll')) -in @('8BFD06AA', '10683A92', '1F8AE8D3', 'A01C80BF', 'absent', (H8 $dllPath))) -and ((H8 (Join-Path $pub 'Documents\BveEx\2.0\Extensions\TSScoringPlugin.AtsExLegacy.Telemetry.dll')) -eq 'absent'))
     Check 'launcher.json is the E3 one (91471ACC)' ((H8 (Join-Path $env:LOCALAPPDATA 'Coruge-to\TS Scoring\launcher.json')) -eq '91471ACC')
 }
 

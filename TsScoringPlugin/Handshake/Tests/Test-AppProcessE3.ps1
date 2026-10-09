@@ -821,7 +821,7 @@ else {
 }
 $udpBusy = @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveUdpListeners() | Where-Object { $_.Port -eq 54321 }).Count -gt 0
 $mainRunning = $false
-try { $mainRunning = @(Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='pythonw.exe'" -ErrorAction Stop | Where-Object { $_.CommandLine -match 'main\.py' }).Count -gt 0 } catch { $mainRunning = $true }
+. (Join-Path $PSScriptRoot 'MainProcessGuard.ps1'); $mainRunning = Get-TsScoringMainRunning $mainPy      # only <repo>\main.py counts (another project's main.py is not ours); unknown / relative = safe side
 if ($qtOk -and (-not $udpBusy) -and (-not $mainRunning) -and (Test-Path $mainPy)) {
     SetTestPath $cfgPath
     SetMode 'ok'
