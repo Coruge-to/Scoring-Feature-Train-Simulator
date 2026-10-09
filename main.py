@@ -6,7 +6,7 @@ import win32gui
 import win32con
 from datetime import datetime
 from PyQt6.QtWidgets import QApplication, QWidget, QFileDialog
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QFont, QPainter, QFontDatabase, QColor, QFontMetrics, QPixmap 
 from PyQt6.QtNetwork import QUdpSocket, QHostAddress
 import keyboard
@@ -26,6 +26,7 @@ from scoring_logic import (
 from menu_ui import draw_menu
 from hud_ui import draw_hud
 from utils import write_desktop_log, NumericKeyInputRouter
+import managed_mode
 
 KERNING_OFFSETS = {
     "メ": 12,
@@ -220,7 +221,7 @@ class Overlay(QWidget):
         self.is_linked = False 
         
         self.udp_socket = QUdpSocket(self)
-        self.udp_socket.bind(QHostAddress.SpecialAddress.LocalHost, 54321)
+        self.udp_bind_ok = self.udp_socket.bind(QHostAddress.SpecialAddress.LocalHost, 54321)  # normal mode ignores it; managed mode exits with code 2
         self.udp_socket.readyRead.connect(self.read_udp_data)
         
         self.bve_speed = 0.0
@@ -2090,8 +2091,105 @@ class Overlay(QWidget):
             painter.scale(hud_scale, hud_scale)
             draw_hud(self, painter, hud_logical_width)
 
-if __name__ == '__main__':
+class _ManagedShutdownBridge(QObject):
+    """Hands the stop request of the watcher thread to the UI thread (a queued signal); only the slot touches Qt objects."""
+    shutdown_requested = pyqtSignal()
+
+    @pyqtSlot()
+    def on_shutdown_requested(self):
+        QApplication.quit()
+
+
+def _release_overlay(overlay):
+    """Managed-mode clean-up of the Overlay: stop its timer, release any key hook it holds, close the UDP socket and the window."""
+    timer = getattr(overlay, 'timer', None)
+    if timer is not None:
+        timer.stop()
+    for name in ('hook_dict', 'sys_hook_dict', 'f8_hook_dict'):
+        for hook in list(getattr(overlay, name, {}).values()):
+            if hook:
+                try: keyboard.unhook(hook)
+                except Exception: pass
+    router_hook = getattr(overlay, 'numeric_router_hook', None)
+    if router_hook is not None:
+        try: keyboard.unhook(router_hook)
+        except Exception: pass
+    sock = getattr(overlay, 'udp_socket', None)
+    if sock is not None:
+        sock.close()
+    overlay.close()
+
+
+def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_log):
+    """Phase E2 managed mode. Never shows the HUD and never runs the Overlay's update timer (no Esc quit, no key hooks, no BVE window search,
+    no scoring): it only proves the management contract (identity, AppReady, stop request, exit code). Returns the process exit code."""
+    args, error = managed_mode.parse_managed_args(argv[1:])
+    if error is not None:
+        log("[MANAGED] event=args-invalid reason=%s" % error)
+        return managed_mode.EXIT_ARGS_INVALID
+    try:
+        life = managed_mode.ManagedLifecycle(args, sync or managed_mode.Win32Sync(), log)
+    except Exception as e:
+        log("[MANAGED] event=exit code=%d reason=win32-unavailable:%s" % (managed_mode.EXIT_INIT_FAILED, type(e).__name__))
+        return managed_mode.EXIT_INIT_FAILED
+    code = life.acquire()
+    if code is not None:
+        return code
+
+    app = None
+    overlay = None
+    bridge = None
+
+    def excepthook(exc_type, exc, tb):
+        # PyQt6 would abort the process on an unhandled exception in a slot; report it as exit code 1 instead and leave the loop
+        if exc is not None:
+            exc.__traceback__ = tb
+            life.fail(managed_mode.EXIT_RUNTIME_ERROR, "unhandled-exception:" + managed_mode.describe_exception(exc))
+        if bridge is not None:
+            bridge.shutdown_requested.emit()
+
+    previous_hook = sys.excepthook
+    sys.excepthook = excepthook
+    try:
+        app = QApplication(argv[:1])
+        bridge = _ManagedShutdownBridge()
+        bridge.shutdown_requested.connect(bridge.on_shutdown_requested)
+        overlay = (overlay_factory or Overlay)()
+        if not getattr(overlay, 'udp_bind_ok', False):
+            life.fail(managed_mode.EXIT_BIND_FAILED, "udp-bind-failed")
+        else:
+            overlay.timer.stop()  # never run update_logic in E2; the Overlay stays hidden
+            life.start_stop_watch(bridge.shutdown_requested.emit)
+            if life.publish_ready():
+                app.exec()
+    except Exception as e:
+        life.fail(managed_mode.EXIT_INIT_FAILED if not life.ready_published else managed_mode.EXIT_RUNTIME_ERROR,
+                  "exception:" + managed_mode.describe_exception(e))
+    finally:
+        sys.excepthook = previous_hook
+        cleanup = (lambda: _release_overlay(overlay)) if overlay is not None else None
+        result = life.shutdown(cleanup)
+        # Qt objects go before the QApplication so that nothing is destroyed in an arbitrary order when the function returns
+        cleanup = overlay = bridge = None
+        if app is not None:
+            app.processEvents()
+        app = None
+    return result
+
+
+def _run_normal():
     app = QApplication(sys.argv)
     overlay = Overlay()
     overlay.show()
-    sys.exit(app.exec())
+    return app.exec()
+
+
+def main(argv=None):
+    argv = sys.argv if argv is None else argv
+    if managed_mode.is_managed_requested(argv[1:]):
+        return run_managed(argv)
+    return _run_normal()
+
+
+if __name__ == '__main__':
+    sys.exit(main())
