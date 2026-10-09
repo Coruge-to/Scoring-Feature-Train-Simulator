@@ -1,4 +1,4 @@
-# PHASE M1 - offline tests of the BveEX dependency notice at scenario use start (Caller 0.7.0.0).
+# PHASE M1 - offline tests of the BveEX dependency notice at scenario use start (introduced in Caller 0.7.0.0, unchanged by Phase D1 / Caller 0.8.0.0).
 # The REAL Caller session code is driven with fake PIDs and a notice test double: no MessageBox is ever shown, no BVE, no BveEX runtime,
 # no Python, no UDP, no hooks. The first BVE Tick is simulated by calling the session's NotifyTick (what TsScoringCallerInputDevice.Tick does).
 # Where the cached state must differ from the direct BridgeAvailable check, an injected probe (test constructor) or a real kernel object whose
@@ -441,7 +441,7 @@ try {
     $notifyBody = [regex]::Replace($m2.Groups['b'].Value, '//.*', '')
     $bad = 'Obs\(|ObsA\(|ObservationLog|MessageBox|showNotice|File|Stream|Directory|lock\s*\(|Monitor\.|Sleep|WaitOne|Wait\(|Join|Thread|Task|Invoke|Open|EventWaitHandle|Registry|Process|Console|Debug|Trace'
     Check 'M1-17 Tick() body only calls session.NotifyTick() (inside try/catch): no I/O, log, dialog, lock, wait, thread' (($m.Success) -and ($devTickBody -match 'session\.NotifyTick\(\)') -and ($devTickBody -notmatch $bad))
-    Check 'M1-17 NotifyTick() body: a flag test, one timestamp, one volatile write; no I/O, log, dialog, lock, wait, thread, kernel object' (($m2.Success) -and ($notifyBody -match 'Stopwatch\.GetTimestamp\(\)') -and ($notifyBody -match 'tickSeen = true') -and ($notifyBody -notmatch $bad))
+    Check 'M1-17 NotifyTick() body: two Interlocked writes (Phase D1: Tick time, Tick count), then the first-call flag test, one timestamp, one volatile write; no I/O, log, dialog, lock, wait, thread, kernel object' (($m2.Success) -and ($notifyBody -match 'Stopwatch\.GetTimestamp\(\)') -and ($notifyBody -match 'tickSeen = true') -and ($notifyBody -notmatch $bad))
     $P = 960018; $lp = NewLog 'M1-17-tick-cost' $P
     $dev = [Activator]::CreateInstance($deviceType)
     $devTick = [Delegate]::CreateDelegate([Action], $dev, 'Tick')
@@ -651,10 +651,11 @@ $curOutSha = (Get-FileHash (Join-Path $Root 'Bridge\out\TSScoringPlugin.BveEx.Br
 $legSha = (Get-FileHash (Join-Path $Root 'Bridge\Legacy\out\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll') -Algorithm SHA256).Hash
 Check 'M1-21 Current Bridge DLL (dist and out) and Legacy Bridge DLL are byte-identical to the formal artifacts (SHA-256)' (($curSha -eq '247F67243253E5AD3C98D1B04BF8C4C8F19399C8B91317A7744D5E12A901A5AA') -and ($curOutSha -eq $curSha) -and ($legSha -eq 'C2883E400B1DCC1E0720392B90EAAED7CD770F6EB8DC6CF4CBA06FF80598EB48'))
 $top = (RunGit @('rev-parse', '--show-toplevel')).Trim()
-$changed = @((RunGit @('-C', $top, 'diff', '--name-only', $Baseline)) -split "`n" | Where-Object { $_ })
-$untracked = @((RunGit @('-C', $top, 'ls-files', '--others', '--exclude-standard')) -split "`n" | Where-Object { $_ })
+$changed = @((RunGit @('-C', $top, 'diff', '--name-only', $Baseline, '--', $prefix)) -split "`n" | Where-Object { $_ })
+$untracked = @((RunGit @('-C', $top, 'ls-files', '--others', '--exclude-standard', '--', $prefix)) -split "`n" | Where-Object { $_ })
+$committedAll = @((RunGit @('-C', $top, 'diff', '--name-only', $Baseline, 'HEAD')) -split "`n" | Where-Object { $_ })   # whole repository, committed history only (a dirty file of someone else is not this phase)
 $touched = @($changed + $untracked | Sort-Object -Unique)
-Check 'M1-21 no source of the Current Bridge, the Legacy Bridge or the shared protocol / log differs from the baseline' (@($touched | Where-Object { $_ -like ($prefix + 'Bridge/*') -or $_ -like ($prefix + 'Shared/*') }).Count -eq 0)
+Check 'M1-21 no source of the Current Bridge, the Legacy Bridge or the shared protocol / log differs from the baseline (Phase D1 only adds Shared\AppProtocol.cs, the two DrivingActive thresholds)' (@($touched | Where-Object { ($_ -like ($prefix + 'Bridge/*')) -or (($_ -like ($prefix + 'Shared/*')) -and ($_ -ne ($prefix + 'Shared/AppProtocol.cs'))) }).Count -eq 0)
 $scenarioFiles = 'Bridge\src\ScenarioReadyTracker.cs', 'Bridge\src\ScenarioReadyPublisher.cs', 'Bridge\src\ScenarioObserver.cs', 'Bridge\src\TsScoringBridgePrototype.cs', 'Shared\HandshakeProtocol.cs', 'Shared\ObservationLog.cs'
 $scenarioSame = @($scenarioFiles | Where-Object { (BaseText $_) -cne (WorkText $_) })
 Check 'M1-22 ScenarioReady contract unchanged: tracker, publisher, observer, Bridge entry and protocol sources are identical to the baseline' ($scenarioSame.Count -eq 0)
@@ -663,14 +664,14 @@ function CodeOf([string]$s) { return [regex]::Replace($s, '//[^\n]*', '') }
 $srMethods = 'ObserveScenarioLocked', 'OpenScenarioObjectsLocked', 'ReleaseScenarioObjectsLocked'
 $srSame = @($srMethods | Where-Object { $b0 = MethodText $hsBase $_; ($b0.Length -gt 200) -and ($b0 -ceq (MethodText $hsNow $_)) })
 Check 'M1-23 ScenarioGeneration / ScenarioReady reading in the Caller (ObserveScenarioLocked, OpenScenarioObjectsLocked, ReleaseScenarioObjectsLocked) is byte-identical to the baseline, and nothing in the notice code reads them' (($srSame.Count -eq 3) -and ((CodeOf (MethodText $hsNow 'JudgeFirstTickLocked')) -notmatch 'scenario|Scenario') -and ((CodeOf (MethodText $hsNow 'ShowNoticeIfStillNeeded')) -notmatch 'scenario|Scenario') -and ((CodeOf (MethodText $hsNow 'CheckBridgeTimeoutLocked')) -notmatch 'scenario|Scenario'))
-Check 'M1-24 no Python file and no UDP / HUD / scoring / updater file is touched' (@($touched | Where-Object { $_ -match '\.py$|menu_ui|config\.py|utils\.py|Class1\.cs|AtsLoggerPlugin\.cs|installer|\.iss$|\.vcxproj|\.slnx$' }).Count -eq 0)
+Check 'M1-24 no Python file and no UDP / HUD / scoring / updater file is touched' (@($touched + $committedAll | Where-Object { $_ -match '\.py$|menu_ui|config\.py|utils\.py|Class1\.cs|AtsLoggerPlugin\.cs|installer|\.iss$|\.vcxproj|\.slnx$' }).Count -eq 0)
 $proj = [IO.File]::ReadAllText((Join-Path $Root 'Caller\TSScoringPlugin.Caller.InputDevice.csproj'))
 Check 'M1-25 no observation source in the product: no M0Observation.cs in the tree, the project, or the Caller DLL' ((-not (Test-Path (Join-Path $Root 'Caller\src\M0Observation.cs'))) -and ($proj -notmatch 'M0') -and (-not (BytesContain ([IO.File]::ReadAllBytes($callerPath)) 'M0Observ')) -and (@(Get-ChildItem $Root -Recurse -Include *.cs | Where-Object { $_.FullName -notlike '*\obj\*' -and ([IO.File]::ReadAllText($_.FullName) -match 'M0Observ|class M0') }).Count -eq 0))
 $cbytes = [IO.File]::ReadAllBytes($callerPath)
 Check 'M1-26 the Caller DLL contains none of the observation-build identifiers (fixed M0 log name, Tick-rate / SetAxisRanges aggregation, NOTICE_WOULD_SHOW, CALLER_FIRST_TICK)' ((@('TSScoring-PhaseM0', 'PhaseM0', 'Caller-Observation', 'NOTICE_WOULD_SHOW', 'CALLER_FIRST_TICK', 'SETAXIS', 'OBSERVATION build', 'diagnostic, not the beta') | Where-Object { BytesContain $cbytes $_ }).Count -eq 0)
 $vi = (Get-Item $callerPath).VersionInfo
 $casm = $callerAsm
-Check 'M1-28 provider Coruge-to (company, copyright, ProviderName constant); product TS Scoring; version 0.7.0.0; description names Phase M1 and no observation wording' (($vi.CompanyName -eq 'Coruge-to') -and ($vi.LegalCopyright -match 'Coruge-to') -and ($vi.ProductName -eq 'TS Scoring') -and ([string]$sessionType.GetField('ProviderName', $NPS).GetRawConstantValue() -ceq 'Coruge-to') -and ($vi.FileVersion -eq '0.7.0.0') -and ($casm.GetName().Version.ToString() -eq '0.7.0.0') -and ($vi.Comments -match 'Phase M1') -and ($vi.Comments -notmatch '(?i)observation|diagnostic'))
+Check 'M1-28 provider Coruge-to (company, copyright, ProviderName constant); product TS Scoring; version 0.8.0.0 (Phase D1); description names Phase D1 and no observation wording' (($vi.CompanyName -eq 'Coruge-to') -and ($vi.LegalCopyright -match 'Coruge-to') -and ($vi.ProductName -eq 'TS Scoring') -and ([string]$sessionType.GetField('ProviderName', $NPS).GetRawConstantValue() -ceq 'Coruge-to') -and ($vi.FileVersion -eq '0.8.0.0') -and ($casm.GetName().Version.ToString() -eq '0.8.0.0') -and ($vi.Comments -match 'Phase D1') -and ($vi.Comments -notmatch '(?i)observation|diagnostic'))
 Check 'M1-29 no PDB anywhere in the tree or in dist / out, and dist holds exactly the two DLLs' ((@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0) -and ((@(Get-ChildItem (Join-Path $Root 'dist') -File | ForEach-Object { $_.Name } | Sort-Object) -join ',') -eq 'TSScoringPlugin.BveEx.Bridge.Prototype.dll,TSScoringPlugin.Caller.InputDevice.dll'))
 $runtimeNames = @($env:USERNAME, $env:COMPUTERNAME, $env:USERDOMAIN, (Split-Path $env:USERPROFILE -Leaf)) | Where-Object { $_ -and $_.Length -ge 3 } | Sort-Object -Unique
 $forbidden = @($runtimeNames) + @('C:\Users\', 'Scoring-Feature-Train-Simulator', 'gmail', 'hotmail', 'outlook.com', 'ac.jp')
@@ -692,10 +693,11 @@ Check ('M1-27 no user name, machine name, drive path, repository name or e-mail 
 $m1Allowed = @(
     'Caller/src/AssemblyInfo.cs', 'Caller/src/HandshakeSession.cs', 'Caller/src/TsScoringCallerInputDevice.cs', 'Caller/TSScoringPlugin.Caller.InputDevice.csproj',
     'Tests/Test-HandshakeLogic.ps1', 'Tests/Test-ObservationC1.ps1', 'Tests/Test-DependencyNoticeM1.ps1',
-    'Tools/Verify-PhaseC3.ps1', 'Tools/Verify-PhaseL1.ps1', 'Docs/Handshake-PhaseM1-DependencyNotice.md'
+    'Tools/Verify-PhaseC3.ps1', 'Tools/Verify-PhaseL1.ps1', 'Docs/Handshake-PhaseM1-DependencyNotice.md',
+    'Caller/src/DrivingActivityState.cs', 'Shared/AppProtocol.cs', 'Tests/Test-DrivingActiveD1.ps1', 'Docs/Handshake-PhaseD1-DrivingActive.md'
 ) | ForEach-Object { $prefix + $_ }
 $m1Outside = @($touched | Where-Object { $_ -notin $m1Allowed })
-Check ('M1-31 only the Phase M1 Caller / test / verification / document files differ from the baseline commit (' + $touched.Count + ' files)') (($m1Outside.Count -eq 0) -and ($touched.Count -ge 8))
+Check ('M1-31 only the Phase M1 and Phase D1 Caller / test / verification / document files differ from the baseline commit (' + $touched.Count + ' files)') (($m1Outside.Count -eq 0) -and ($touched.Count -ge 8))
 if ($m1Outside.Count -gt 0) { $m1Outside | ForEach-Object { '   outside scope: ' + $_ } }
 $failed = @($results | Where-Object { -not $_.Ok })
 "TOTAL {0}  FAILED {1}" -f $results.Count, $failed.Count

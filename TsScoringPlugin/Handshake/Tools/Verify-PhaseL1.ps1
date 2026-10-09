@@ -189,7 +189,7 @@ $c3Now = (WorkText 'Tools\Verify-PhaseC3.ps1') -split "`n"
 $rem = @(Compare-Object $c3Base $c3Now | Where-Object { $_.SideIndicator -eq '<=' } | ForEach-Object { $_.InputObject })
 $add = @(Compare-Object $c3Base $c3Now | Where-Object { $_.SideIndicator -eq '=>' } | ForEach-Object { $_.InputObject })
 $addText = @($add | Where-Object { $_.Trim() -ne '' })
-Check 'Verify-PhaseC3.ps1 differs only by the L1 scoping of its source scan to the Current product (1 line replaced, 1 comment line added) and the Phase M1 Caller-contract updates (version line, comment-aware removed-line filters; 4 more lines replaced)' (($rem.Count -eq 5) -and ($addText.Count -eq 9) -and (@($rem | Where-Object { $_ -match '^\$srcFiles = ' }).Count -eq 1) -and (@($addText | Where-Object { $_ -match "notlike '\*\\Bridge\\Legacy\\\*'" }).Count -eq 1) -and (@($addText | Where-Object { $_ -match 'Phase L1:' }).Count -eq 1) -and (@($rem | Where-Object { $_ -match 'Version 0\.6\.0\.0 in both|NoticeText \(both lines\)|no timeout / state-machine line|only the two status-text lines' }).Count -eq 4) -and (@($addText | Where-Object { $_ -match 'Phase M1|removedCode|r3Code|Version: Caller 0\.7\.0\.0' }).Count -eq 7))
+Check 'Verify-PhaseC3.ps1 differs only by the L1 scoping of its source scan to the Current product (1 line replaced, 1 comment line added) and the Phase M1 / Phase D1 Caller-contract updates (version line, comment-aware removed-line filters, the ScenarioReady-named-code allow-list; 6 more lines replaced)' (($rem.Count -eq 7) -and ($addText.Count -eq 11) -and (@($rem | Where-Object { $_ -match '^\$srcFiles = ' }).Count -eq 1) -and (@($addText | Where-Object { $_ -match "notlike '\*\\Bridge\\Legacy\\\*'" }).Count -eq 1) -and (@($addText | Where-Object { $_ -match 'Phase L1:' }).Count -eq 1) -and (@($rem | Where-Object { $_ -match 'Version 0\.6\.0\.0 in both|NoticeText \(both lines\)|no timeout / state-machine line|only the two status-text lines|srAllowed = |ScenarioReady-named code exists' }).Count -eq 6) -and (@($addText | Where-Object { $_ -match 'Phase M1|removedCode|r3Code|Version: Caller 0\.8\.0\.0|srAllowed = .*DrivingActivityState|ScenarioReady-named code exists.*Phase D1' }).Count -eq 9))
 $hp = WorkText 'Shared\HandshakeProtocol.cs'
 Check 'Timings unchanged: BridgeMissingTimeoutMs = 500 (and 500 / 20 / 100 for the others)' (($hp -match 'BridgeMissingTimeoutMs = 500;') -and ($hp -match 'TargetBridgeAvailableMs = 500;') -and ($hp -match 'CallerPollMs = 20;') -and ($hp -match 'BridgePollMs = 100;'))
 $hsNow = WorkText 'Caller\src\HandshakeSession.cs'
@@ -201,18 +201,19 @@ Check 'Named objects of the contract are the same set (Enabled, Stop, BridgeAvai
 
 Write-Host '==== repository scope ===='
 $top = (RunGit @('rev-parse', '--show-toplevel')).Trim()
-$changedTracked = @((RunGit @('-C', $top, 'diff', '--name-only', $Baseline)) -split "`n" | Where-Object { $_ })
-$untracked = @((RunGit @('-C', $top, 'ls-files', '--others', '--exclude-standard')) -split "`n" | Where-Object { $_ })
+$changedTracked = @((RunGit @('-C', $top, 'diff', '--name-only', $Baseline, '--', $prefix)) -split "`n" | Where-Object { $_ })
+$untracked = @((RunGit @('-C', $top, 'ls-files', '--others', '--exclude-standard', '--', $prefix)) -split "`n" | Where-Object { $_ })
+$committedAll = @((RunGit @('-C', $top, 'diff', '--name-only', $Baseline, 'HEAD')) -split "`n" | Where-Object { $_ })   # whole repository, committed history only (a dirty file of someone else is not this phase)
 $touched = @($changedTracked + $untracked | Sort-Object -Unique)
 "files touched relative to the baseline (tracked changes + untracked): " + $touched.Count
 $touched | ForEach-Object { "   " + $_ }
 $allowedPrefix = $prefix + 'Bridge/Legacy/'
 $allowedExact = @(($prefix + 'Tests/Test-LegacyL1.ps1'), ($prefix + 'Tools/Verify-PhaseL1.ps1'), ($prefix + 'Tools/Verify-PhaseC3.ps1'), ($prefix + 'Tools/Audit-Privacy.ps1'), ($prefix + 'Docs/Handshake-PhaseL1-LegacyAdapter.md'))
-# Phase M1 files (the Caller notice change, its tests and its document)
-$allowedExact += @('Caller/src/AssemblyInfo.cs', 'Caller/src/HandshakeSession.cs', 'Caller/src/TsScoringCallerInputDevice.cs', 'Caller/TSScoringPlugin.Caller.InputDevice.csproj', 'Tests/Test-HandshakeLogic.ps1', 'Tests/Test-ObservationC1.ps1', 'Tests/Test-DependencyNoticeM1.ps1', 'Docs/Handshake-PhaseM1-DependencyNotice.md' | ForEach-Object { $prefix + $_ })
+# Phase M1 files (the Caller notice change, its tests and its document) and Phase D1 files (DrivingActive state, thresholds, test, document)
+$allowedExact += @('Caller/src/AssemblyInfo.cs', 'Caller/src/HandshakeSession.cs', 'Caller/src/TsScoringCallerInputDevice.cs', 'Caller/TSScoringPlugin.Caller.InputDevice.csproj', 'Tests/Test-HandshakeLogic.ps1', 'Tests/Test-ObservationC1.ps1', 'Tests/Test-DependencyNoticeM1.ps1', 'Docs/Handshake-PhaseM1-DependencyNotice.md', 'Caller/src/DrivingActivityState.cs', 'Shared/AppProtocol.cs', 'Tests/Test-DrivingActiveD1.ps1', 'Docs/Handshake-PhaseD1-DrivingActive.md' | ForEach-Object { $prefix + $_ })
 $outside = @($touched | Where-Object { -not ($_.StartsWith($allowedPrefix) -or ($_ -in $allowedExact)) })
-Check 'Only the Legacy adapter (Bridge\Legacy\), its test, its verification, the Verify-PhaseC3.ps1 / Audit-Privacy.ps1 edits, one L1 document, and the Phase M1 Caller / test / document files are touched' ($outside.Count -eq 0)
-Check 'No Python, Class1.cs, AtsLoggerPlugin.cs, packages or project file of the existing plugin is touched' (@($touched | Where-Object { $_ -match '\.py$|Class1\.cs$|AtsLoggerPlugin\.cs$|/packages/|\.vcxproj|\.slnx$|\.dll$|\.pdb$|\.log$|\.bak' }).Count -eq 0)
+Check 'Only the Legacy adapter (Bridge\Legacy\), its test, its verification, the Verify-PhaseC3.ps1 / Audit-Privacy.ps1 edits, one L1 document, the Phase M1 Caller / test / document files and the Phase D1 DrivingActive files are touched in the Handshake tree' ($outside.Count -eq 0)
+Check 'No Python, Class1.cs, AtsLoggerPlugin.cs, packages or project file of the existing plugin is touched' (@($touched + $committedAll | Where-Object { $_ -match '\.py$|Class1\.cs$|AtsLoggerPlugin\.cs$|/packages/|\.vcxproj|\.slnx$|\.dll$|\.pdb$|\.log$|\.bak' }).Count -eq 0)
 Check 'No build output, third-party DLL, PDB or log among the files to be committed (obj / out / build.log stay ignored)' (@($touched | Where-Object { $_ -match '/out/|/obj/|/dist|build\.log|\.dll$|\.pdb$|\.log$' }).Count -eq 0)
 
 Write-Host '==== privacy / provider / documentation ===='

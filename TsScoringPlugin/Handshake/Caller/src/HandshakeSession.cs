@@ -74,6 +74,9 @@ namespace TSScoringPlugin.Handshake
     ///   * connection lost: BridgeAvailable had been seen and is then gone for ConnectionLostNoticeMs (500 ms).
     /// Before the first BridgeAvailable the 500 ms is only a diagnostic log line: the scenario list (no Tick) never produces a notice.
     /// Nothing here runs on BVE's threads except the cheap Start/End/NotifyTick calls.
+    ///
+    /// Phase D1 adds DrivingActive (DrivingActivityState.cs) as an internal, read-only state evaluated by the same monitor thread; it changes
+    /// nothing above (the notice, the phases and ScenarioReady are untouched) and nothing consumes it yet.
     /// </summary>
     internal sealed class HandshakeSession
     {
@@ -143,6 +146,18 @@ namespace TSScoringPlugin.Handshake
         private long noticeTriggerQpc;
         private readonly Func<bool> bridgeProbeOverride;   // offline tests only (null in production)
 
+        // Phase D1: DrivingActive (see DrivingActivityState.cs). Internal and read-only: nothing consumes it yet.
+        // BVE's Tick only writes the two Interlocked values; the monitor thread evaluates the state under the gate.
+        private long lastTickQpc;                // Interlocked (64-bit value, BVE5 is a 32-bit process): time of the last Tick
+        private long tickSeq;                    // Interlocked: Tick count of THIS Caller instance (never carried over to another instance)
+        private readonly DrivingActivityState driving = new DrivingActivityState();
+        private int drivingOnCount;
+        private int drivingHardOffCount;
+        private int drivingSoftOffCount;
+        private int drivingExceptionLines;
+        private long drivingOnQpc;
+        private DrivingOffReason drivingLastOffReason;
+
         private bool noticeInFlight;
         private bool timedOutEver;
         private bool missedBridgeTarget;
@@ -202,6 +217,12 @@ namespace TSScoringPlugin.Handshake
         internal int ScenarioReadyOnCount { get { lock (gate) { return scenarioReadyOnCount; } } }
         internal int ScenarioReadyOffCount { get { lock (gate) { return scenarioReadyOffCount; } } }
         internal int ScenarioGenerationChanges { get { lock (gate) { return scenarioGenerationChanges; } } }
+        internal bool DrivingActive { get { lock (gate) { return driving.Active; } } }
+        internal int DrivingActiveOnCount { get { lock (gate) { return drivingOnCount; } } }
+        internal int DrivingHardOffCount { get { lock (gate) { return drivingHardOffCount; } } }
+        internal int DrivingSoftOffCount { get { lock (gate) { return drivingSoftOffCount; } } }
+        internal DrivingOffReason DrivingLastOffReason { get { lock (gate) { return drivingLastOffReason; } } }
+        internal long TickSequence { get { return Interlocked.Read(ref tickSeq); } }
 
         private static void DefaultShowNotice(string text)
         {
@@ -209,11 +230,15 @@ namespace TSScoringPlugin.Handshake
         }
 
         /// <summary>
-        /// Called from BVE's Tick (every frame it runs). Only the FIRST call does anything: one timestamp and one flag write.
-        /// No lock, no I/O, no log, no dialog, no wait: the monitor thread picks the flag up and does the dependency check.
+        /// Called from BVE's Tick (every frame it runs). Every call does two atomic writes for DrivingActive (Phase D1: the Tick time, then the
+        /// Tick count); only the FIRST call also raises the first-Tick flag (Phase M1: one timestamp and one flag write).
+        /// No lock, no I/O, no log, no dialog, no wait, no kernel object: the monitor thread reads the values and decides.
         /// </summary>
         public void NotifyTick()
         {
+            Interlocked.Exchange(ref lastTickQpc, Stopwatch.GetTimestamp());
+            Interlocked.Increment(ref tickSeq);
+
             if (tickSeen)
             {
                 return;
@@ -269,6 +294,7 @@ namespace TSScoringPlugin.Handshake
 
                 Obs("CALLER_DISPOSE_BEGIN", "phaseBefore=" + phase + " sinceEnabledMs=" + SinceEnabledMs(Stopwatch.GetTimestamp()));
                 phase = CallerPhase.Disposed;
+                EvaluateDrivingLocked(Stopwatch.GetTimestamp()); // Phase D1: DrivingActive goes OFF (hard, dispose) before anything is released
 
                 try { if (wake != null) { wake.Set(); } } catch { }
                 try { if (stop != null) { stop.Set(); } } catch { }
@@ -287,6 +313,59 @@ namespace TSScoringPlugin.Handshake
                 Release(ref enabled);
                 Release(ref stop);
                 Obs("CALLER_DISPOSE_END", string.Empty);
+            }
+        }
+
+        /// <summary>
+        /// Phase D1: evaluates DrivingActive from what the Caller already knows. Gate must be held and ScenarioReady must have been read
+        /// just before (Step) or the Caller must be ending. The Tick count is read AFTER ScenarioReady (a Tick between the publication and this
+        /// reading is not counted as "after the publication"), and the Tick time AFTER the count (BVE's Tick writes the time first), so the
+        /// time always belongs to a Tick at least as new as the count says. Only state CHANGES are logged. Never throws.
+        /// </summary>
+        private void EvaluateDrivingLocked(long now)
+        {
+            try
+            {
+                long seq = Interlocked.Read(ref tickSeq);
+                long last = Interlocked.Read(ref lastTickQpc);
+                double ageMs = last == 0 ? -1 : Math.Max(0, HandshakeProtocol.QpcToMs(now - last));
+                bool isEnabled = started && phase != CallerPhase.Disabled && phase != CallerPhase.Disposed;
+                DrivingStep step = driving.Evaluate(isEnabled, phase != CallerPhase.Disposed, scenarioReadyLevel, scenarioGenerationSeen, seq, ageMs);
+                if (!step.Changed)
+                {
+                    return;
+                }
+
+                string age = Math.Round(ageMs, 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                if (step.Active)
+                {
+                    drivingOnCount++;
+                    drivingOnQpc = now;
+                    ObsA("DRIVING_ACTIVE_ON", "ScenarioGeneration=" + scenarioGenerationSeen + " tickAgeMs=" + age + " onCount=" + drivingOnCount);
+                }
+                else
+                {
+                    bool hard = DrivingOffReasons.IsHard(step.OffReason);
+                    drivingLastOffReason = step.OffReason;
+                    if (hard)
+                    {
+                        drivingHardOffCount++;
+                    }
+                    else
+                    {
+                        drivingSoftOffCount++;
+                    }
+
+                    ObsA("DRIVING_ACTIVE_OFF", "reason=" + DrivingOffReasons.Name(step.OffReason) + " class=" + (hard ? "hard" : "soft") + " ScenarioGeneration=" + scenarioGenerationSeen + " tickAgeMs=" + age + " activeForMs=" + Math.Round(HandshakeProtocol.QpcToMs(now - drivingOnQpc), 1).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                }
+            }
+            catch (Exception ex)
+            {
+                if (drivingExceptionLines < 3)
+                {
+                    drivingExceptionLines++;
+                    ObsA("DRIVING_EXCEPTION", "type=" + ex.GetType().Name);
+                }
             }
         }
 
@@ -411,6 +490,7 @@ namespace TSScoringPlugin.Handshake
 
                     JudgeFirstTickLocked(now);
                     ObserveScenarioLocked(now);
+                    EvaluateDrivingLocked(now);
                 }
             }
             catch (ObjectDisposedException)

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  PHASE M1 - input-device Caller (handshake, ScenarioReady reader + log, BveEX dependency notice at scenario use start).
+  PHASE D1 - input-device Caller (handshake, ScenarioReady reader + log, BveEX dependency notice at scenario use start, DrivingActive state).
   Mackoy.IInputDevice is referenced read-only from the installed BVE6 (identical to BVE5's copy), never copied or shipped.
   No absolute user paths: the reference path is built from the ProgramW6432 environment property.
 -->
@@ -42,8 +42,12 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="src\AssemblyInfo.cs" />
+    <Compile Include="src\DrivingActivityState.cs" />
     <Compile Include="src\HandshakeSession.cs" />
     <Compile Include="src\TsScoringCallerInputDevice.cs" />
+    <Compile Include="..\Shared\AppProtocol.cs">
+      <Link>Shared\AppProtocol.cs</Link>
+    </Compile>
     <Compile Include="..\Shared\HandshakeProtocol.cs">
       <Link>Shared\HandshakeProtocol.cs</Link>
     </Compile>

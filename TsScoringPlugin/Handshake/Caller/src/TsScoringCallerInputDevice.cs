@@ -47,8 +47,8 @@ namespace TSScoringPlugin.Handshake
 
         public void Tick()
         {
-            // BVE's input polling stays untouched. Phase M1: the first call raises one flag for the monitor thread (a timestamp and a
-            // volatile write - no lock, no I/O, no dialog, no wait); every later call returns at once.
+            // BVE's input polling stays untouched. Phase M1 / D1: every call does two atomic writes (Tick time, Tick count) and the first
+            // call also raises one flag for the monitor thread - no lock, no I/O, no dialog, no wait, no kernel object.
             try { session.NotifyTick(); } catch { }
         }
 
