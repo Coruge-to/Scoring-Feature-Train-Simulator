@@ -34,6 +34,7 @@ import managed_state as ms  # noqa: E402
 HAS_QT = importlib.util.find_spec("PyQt6") is not None
 CHILD = os.path.join(ROOT, "tests", "managed_hud_child.py")
 E3_COMMIT = "b9611dad47e2c95f8fa1c89a8bd0286896c75cea"
+L3_GRADIENT_COMMIT = "d9cc783df283138124396475bb9daaa95c1b6ea0"      # the commit before the HUD Z-order fix: main.py / hud_ui.py must not differ from it
 CALLER_SRC = os.path.join(ROOT, "TsScoringPlugin", "Handshake", "Caller", "src")
 
 
@@ -533,13 +534,17 @@ class FakeOverlay(object):
         self.geoms = []
         self.updates = 0
         self.closed = False
+        self.z_api = None              # when set: show() behaves like a (re)created native window and goes to the top of the Z order
+        self.hwnd = 1000
 
     def winId(self):
-        return 1000
+        return self.hwnd
 
     def show(self):
         self.visible = True
         self.shows += 1
+        if self.z_api is not None:
+            self.z_api.z_on_show(self.hwnd)
 
     def hide(self):
         self.visible = False
@@ -567,6 +572,52 @@ class FakeWindowApi(object):
         self.searches = 0
         self.owner_calls = []
         self.owners = {}
+        # a fake Z order, top -> bottom (window ids); the Overlay joins it when it is shown. z_calls: every place_below the HUD asked for.
+        self.z = [5000]
+        self.topmost = set()
+        self.z_calls = []
+        self.z_queries = 0
+        self.z_shows = 0
+        self.z_fail = None
+
+    def z_on_show(self, overlay_hwnd):
+        """What Windows does with a newly shown (or re-created) top-level window: the top of the normal band, in front of everything non-topmost."""
+        self.z_shows += 1
+        owner = self.owners.get(overlay_hwnd, 0)                 # an owner still set when the window is shown is brought to the front WITH it
+        if overlay_hwnd in self.z:
+            self.z.remove(overlay_hwnd)
+        if owner and owner in self.z:
+            self.z.remove(owner)
+            self.z.insert(self._normal_band_top(), owner)
+        self.z.insert(self._normal_band_top(), overlay_hwnd)
+        self.owners.pop(overlay_hwnd, None)                      # and Qt clears the owner while it shows the window (too late for the z effect)
+
+    def _normal_band_top(self):
+        i = 0
+        while i < len(self.z) and self.z[i] in self.topmost:
+            i += 1
+        return i
+
+    def z_above(self, hwnd):
+        self.z_queries += 1
+        if hwnd not in self.z:
+            return 0
+        i = self.z.index(hwnd)
+        return self.z[i - 1] if i > 0 else 0
+
+    def is_topmost(self, hwnd):
+        return hwnd in self.topmost
+
+    def place_below(self, overlay_hwnd, above_hwnd):
+        self.z_calls.append((overlay_hwnd, above_hwnd))
+        if self.z_fail is not None:
+            raise self.z_fail
+        if overlay_hwnd in self.z:
+            self.z.remove(overlay_hwnd)
+        if above_hwnd:
+            self.z.insert(self.z.index(above_hwnd) + 1, overlay_hwnd)
+        else:
+            self.z.insert(self._normal_band_top(), overlay_hwnd)
 
     def find_bve_window(self, bve_pid):
         self.searches += 1
@@ -597,7 +648,7 @@ class Clock(object):
         return self.t
 
 
-class E_Controller(unittest.TestCase):
+class ControllerCase(unittest.TestCase):
     def setUp(self):
         FakeOverlay.created = 0
         self.args = args_for()
@@ -607,6 +658,7 @@ class E_Controller(unittest.TestCase):
         self.overlay = FakeOverlay()
         self.timer = FakeTimer()
         self.api = FakeWindowApi()
+        self.overlay.z_api = self.api
         self.clock = Clock()
         self.steps = []
         self.count = 0
@@ -622,6 +674,8 @@ class E_Controller(unittest.TestCase):
             self.clock.t += 0.02
             self.hud.tick()
 
+
+class E_Controller(ControllerCase):
     def test_initial_state_is_hidden_and_nothing_is_updated(self):
         self.hud.start()
         self.pump(50)
@@ -665,7 +719,8 @@ class E_Controller(unittest.TestCase):
         self.pump(5)
         self.assertEqual((self.hud.mode, self.overlay.visible, self.overlay.shows), (ms.MODE_ACTIVE, True, 2))
         self.assertEqual(FakeOverlay.created, 1)
-        self.assertEqual(len(self.api.owner_calls), 1)                           # not re-linked: same overlay, same BVE window
+        # same overlay, same BVE window: the owner is released before the second show and set again right after it (the log's hud-owner-set n=2)
+        self.assertEqual(self.api.owner_calls, [(1000, 5000), (1000, 0), (1000, 5000)])
         self.assertEqual(self.hud.link_count, 1)
         self.assertEqual(self.timer.starts, 0)                                   # the controller never starts / creates a timer
 
@@ -1028,6 +1083,376 @@ class E_Controller(unittest.TestCase):
         for line in self.log.lines:
             self.assertTrue(line.startswith("[MANAGED] event="), line)
             self.assertLess(len(line), 300)
+
+
+# ---------------------------------------------------------------------------------------------------------------------------------------
+SELECT = 7000      # the scenario selection window of BVE in the fake Z order (never identified by the HUD: only its place matters)
+OTHER = 7100       # an unrelated application window
+TOPMOST = 7200     # an always-on-top window of another application
+HUD = 1000         # the Overlay
+
+
+class I_ZOrder(ControllerCase):
+    """The Z order of the HUD: directly above the BVE driving window, below whatever lies over that window (the scenario selection window), never
+    topmost, never activating. The fake Z order is a list (top -> bottom); the Overlay joins it at the top when it is shown, like a (re)created native window."""
+
+    def activate(self, z=None):
+        if z is not None:
+            self.api.z = list(z)
+        self.hud.start()
+        self.publish(True, True, 1)
+        self.pump(1)
+
+    def test_select_window_over_the_driving_view_ends_up_over_the_hud(self):
+        # [HUD, Select, BVE] (what show() produces) -> [Select, HUD, BVE]
+        self.activate([SELECT, 5000])
+        self.assertTrue(self.overlay.visible)
+        self.assertEqual(self.api.z, [SELECT, HUD, 5000])
+        self.assertEqual(self.api.z_calls, [(HUD, SELECT)])
+        self.assertEqual(self.hud.z_sets, 1)
+        self.assertEqual(len(self.log.events("hud-zorder-set")), 1)
+
+    def test_already_in_place_nothing_is_done(self):
+        # [Select, HUD, BVE] -> unchanged, however long it stays like that
+        self.activate([SELECT, 5000])
+        self.api.z_calls.clear()
+        self.pump(200)
+        self.assertEqual(self.api.z, [SELECT, HUD, 5000])
+        self.assertEqual(self.api.z_calls, [])
+        self.assertEqual(self.hud.z_sets, 1)
+
+    def test_without_a_select_window_the_hud_is_directly_above_bve(self):
+        # [HUD, BVE]: the HUD is the window directly above BVE already: nothing to correct
+        self.activate()
+        self.assertEqual(self.api.z, [HUD, 5000])
+        self.assertEqual(self.api.z_calls, [])
+        self.assertEqual(self.hud.z_sets, 0)
+        self.assertEqual(self.log.events("hud-zorder-set"), [])
+
+    def test_unrelated_windows_keep_their_relations(self):
+        # [HUD, OtherApp, Select, BVE] -> [OtherApp, Select, HUD, BVE]: HUD under the window directly above BVE; OtherApp / Select untouched relative to each other
+        self.activate([OTHER, SELECT, 5000])
+        self.assertEqual(self.api.z, [OTHER, SELECT, HUD, 5000])
+        self.assertEqual(self.api.z_calls, [(HUD, SELECT)])
+        self.assertLess(self.api.z.index(OTHER), self.api.z.index(SELECT))
+
+    def test_the_hud_is_not_taken_as_its_own_reference(self):
+        # the window directly above BVE is the HUD itself: it is recognised and left alone (no call with the HUD as the reference)
+        self.activate([SELECT, 5000])
+        self.api.z_calls.clear()
+        self.assertEqual(self.api.z_above(5000), HUD)
+        self.pump(5)
+        self.assertEqual(self.api.z_calls, [])
+        for _hud, above in self.api.z_calls:
+            self.assertNotEqual(above, HUD)
+
+    def test_drift_while_shown_is_corrected_once(self):
+        # a window appears over the driving view while the HUD is up (BVE opens its selection window): HUD above it -> moved under it, once
+        self.activate()
+        self.assertEqual(self.api.z, [HUD, 5000])
+        self.api.z = [HUD, SELECT, 5000]
+        self.pump(100)
+        self.assertEqual(self.api.z, [SELECT, HUD, 5000])
+        self.assertEqual(self.api.z_calls, [(HUD, SELECT)])
+
+    def test_selection_window_closed_the_same_hud_is_directly_above_bve_again(self):
+        self.activate([SELECT, 5000])
+        self.api.z.remove(SELECT)                          # the selection window is closed
+        self.pump(20)
+        self.assertEqual(self.api.z, [HUD, 5000])
+        self.assertTrue(self.overlay.visible)
+        self.assertEqual((self.overlay.shows, self.overlay.hides, FakeOverlay.created), (1, 0, 1))
+        self.assertEqual(self.api.z_calls, [(HUD, SELECT)])  # no further correction was needed
+
+    def test_a_topmost_window_over_the_driving_view_never_makes_the_hud_topmost(self):
+        # the HUD fell below BVE: [Topmost, BVE, HUD]; the window directly above BVE is topmost -> HUD goes to the top of the NORMAL band, not behind the topmost one
+        self.activate()
+        self.api.topmost = {TOPMOST}
+        self.api.z = [TOPMOST, 5000, HUD]
+        self.pump(5)
+        self.assertEqual(self.api.z, [TOPMOST, HUD, 5000])
+        self.assertEqual(self.api.z_calls, [(HUD, 0)])
+        self.assertNotIn(HUD, self.api.topmost)
+        for _hud, above in self.api.z_calls:
+            self.assertNotIn(above, self.api.topmost)
+
+    def test_hidden_hud_is_not_ordered(self):
+        self.activate([SELECT, 5000])
+        self.api.z_calls.clear()
+        self.publish(True, False, 1)                       # soft OFF: hidden
+        self.pump(5)
+        self.assertFalse(self.overlay.visible)
+        queries = self.api.z_queries
+        self.api.z = [HUD, SELECT, 5000]
+        self.pump(50)
+        self.assertEqual(self.api.z_calls, [])
+        self.assertEqual(self.api.z_queries, queries)      # not even looked at while hidden
+
+    def test_minimized_bve_is_not_ordered_and_the_restore_is(self):
+        self.activate([SELECT, 5000])
+        self.api.iconic = True
+        self.pump(3)
+        self.assertFalse(self.overlay.visible)
+        self.api.z_calls.clear()
+        queries = self.api.z_queries
+        self.pump(10)
+        self.assertEqual(self.api.z_queries, queries)
+        self.api.iconic = False
+        self.pump(3)                                       # shown again: top of the Z order -> corrected
+        self.assertTrue(self.overlay.visible)
+        self.assertEqual(self.api.z, [SELECT, HUD, 5000])
+        self.assertEqual(self.api.z_calls, [(HUD, SELECT)])
+
+    def test_bve_window_lost_is_not_ordered(self):
+        self.activate([SELECT, 5000])
+        self.api.z_calls.clear()
+        queries = self.api.z_queries
+        self.api.alive = False
+        self.pump(10)
+        self.assertFalse(self.overlay.visible)
+        self.assertEqual(self.api.z_calls, [])
+        self.assertEqual(self.api.z_queries, queries)
+
+    def test_hud_window_not_created_nothing_is_ordered(self):
+        self.overlay.hwnd = 0
+        self.activate([SELECT, 5000])
+        self.pump(10)
+        self.assertEqual((self.api.z_calls, self.api.z_queries, self.hud.z_sets, self.hud.z_errors), ([], 0, 0, 0))
+
+    def test_correction_follows_every_show_after_a_soft_off(self):
+        self.activate([SELECT, 5000])
+        self.publish(True, False, 1)                       # soft OFF (the Tick stopped while the selection window was open)
+        self.pump(5)
+        self.assertFalse(self.overlay.visible)
+        self.api.z_calls.clear()
+        self.publish(True, True, 1)                        # soft ON: shown again -> at the top of the Z order -> corrected
+        self.pump(5)
+        self.assertTrue(self.overlay.visible)
+        self.assertEqual(self.api.z_shows, 2)
+        self.assertEqual(self.api.z, [SELECT, HUD, 5000])
+        self.assertEqual(self.api.z_calls, [(HUD, SELECT)])
+        self.assertEqual((self.overlay.shows, FakeOverlay.created), (2, 1))
+        self.assertEqual(self.timer.starts, 0)             # no timer was (re)created or started by the HUD
+
+    def test_correction_follows_the_show_of_a_reloaded_scenario(self):
+        self.activate([SELECT, 5000])
+        self.publish(False, False, 1)                      # hard OFF
+        self.pump(5)
+        self.api.z_calls.clear()
+        self.publish(True, True, 2)                        # new ScenarioGeneration: the same Overlay is shown again
+        self.pump(5)
+        self.assertEqual(self.api.z, [SELECT, HUD, 5000])
+        self.assertEqual(self.api.z_calls, [(HUD, SELECT)])
+        self.assertEqual((FakeOverlay.created, self.overlay.shows), (1, 2))
+
+    def test_reshow_does_not_lift_the_bve_window_over_the_selection_window(self):
+        # a window shown while it still has an owner takes the owner with it: the owner is released before show(), the BVE window stays under the selection window
+        self.activate([SELECT, 5000])
+        self.assertEqual(self.api.owners.get(HUD), 5000)
+        self.publish(True, False, 1)
+        self.pump(5)
+        self.api.owner_calls.clear()
+        self.publish(True, True, 1)
+        self.pump(5)
+        self.assertEqual(self.api.owner_calls[0], (HUD, 0))                 # released first
+        self.assertEqual(self.api.owner_calls[1], (HUD, 5000))              # linked again right after the show
+        self.assertEqual(self.hud.owner_releases, 1)
+        self.assertEqual(self.api.z, [SELECT, HUD, 5000])
+        self.assertLess(self.api.z.index(SELECT), self.api.z.index(5000))
+        self.assertEqual(self.api.owners.get(HUD), 5000)
+
+    def test_first_show_releases_no_owner(self):
+        self.activate()
+        self.assertEqual(self.api.owner_calls, [(HUD, 5000)])
+        self.assertEqual(self.hud.owner_releases, 0)
+
+    def test_a_failing_owner_release_never_blocks_the_show(self):
+        self.activate([SELECT, 5000])
+        self.publish(True, False, 1)
+        self.pump(3)
+        real = self.api.set_owner
+
+        def failing(overlay_hwnd, bve_hwnd):
+            if bve_hwnd == 0:
+                raise OSError("no")
+            real(overlay_hwnd, bve_hwnd)
+
+        self.api.set_owner = failing
+        self.publish(True, True, 1)
+        self.pump(3)
+        self.assertTrue(self.overlay.visible)
+        self.assertEqual(self.hud.z_errors, 1)
+        self.assertEqual(self.hud.errors, 0)
+
+    def test_a_failing_order_operation_is_contained(self):
+        self.api.z_fail = OSError("boom C:\\Users\\x")
+        self.activate([SELECT, 5000])
+        self.pump(100)
+        self.assertTrue(self.overlay.visible)              # the HUD stays up, linked
+        self.assertEqual((self.hud.link_count, self.overlay.hides, self.hud.errors), (1, 0, 0))
+        self.assertEqual(self.hud.z_errors, 101)
+        lines = self.log.events("hud-zorder-error")
+        self.assertEqual(len(lines), mh.MAX_ZORDER_LINES)   # a few lines, then only counted
+        self.assertNotIn("C:\\", "\n".join(lines))
+        self.assertEqual(len(self.steps), 101)              # the data keeps being updated
+        self.hud.shutdown()
+        summary = self.log.events("hud-zorder-summary")
+        self.assertEqual(len(summary), 1)
+        self.assertIn("errors=101", summary[0])
+
+    def test_only_a_pure_z_order_operation_is_asked_of_the_window_api(self):
+        # nothing but z_above / is_topmost / place_below is added to the window API calls of the HUD, and no ordering happens while Z is right
+        self.activate()
+        self.pump(300)
+        self.assertEqual(self.api.z_calls, [])
+        self.assertEqual(self.hud.z_sets, 0)
+        self.assertEqual(self.overlay.geoms, [(100, 100, 800, 600)])   # a Z operation moves or resizes nothing
+
+    def test_summary_line_only_when_the_order_was_touched(self):
+        self.activate()
+        self.hud.shutdown()
+        self.assertEqual(self.log.events("hud-zorder-summary"), [])
+
+    def test_many_hide_show_cycles_never_multiply_the_overlay_the_timer_or_the_link(self):
+        self.activate([SELECT, 5000])
+        for generation in range(1, 9):
+            self.publish(True, False, generation)                # soft OFF: hidden
+            self.pump(3)
+            self.publish(True, True, generation)                 # soft ON: shown again (the selection window is still open)
+            self.pump(3)
+            self.publish(False, False, generation)               # hard OFF (scenario ended)
+            self.pump(3)
+            self.publish(True, True, generation + 1)             # reload: a new ScenarioGeneration
+            self.pump(3)
+            self.assertEqual(self.api.z, [SELECT, HUD, 5000])
+        self.assertEqual((FakeOverlay.created, self.hud.link_count, self.timer.starts), (1, 1, 0))
+        self.assertEqual(self.overlay.shows, 1 + 2 * 8)        # one show per soft ON and one per reload
+        self.assertEqual(self.api.z.count(HUD), 1)                # one HUD window in the Z order, however often it was shown
+        self.assertLess(self.api.z.index(SELECT), self.api.z.index(5000))
+
+    def test_the_same_result_for_every_host_the_controller_only_sees_a_bve_window(self):
+        # Current (BVE6, 64 bit) and Legacy (BVE5, 32 bit) differ only in the process id and the window handle the Caller hands over
+        for pid, hwnd, owner in ((6001, 5000, "caller"), (5001, 8800, "caller")):
+            with self.subTest(pid=pid):
+                FakeOverlay.created = 0
+                args = args_for(pid=pid)
+                source = FakeSource(make_block(args.bve_pid, args.instance))
+                api = FakeWindowApi()
+                api.hwnd = hwnd
+                api.z = [SELECT, hwnd]
+                overlay = FakeOverlay()
+                overlay.z_api = api
+                log = Log()
+                hud = mh.ManagedHudController(overlay, ms.StateReader(args, source, log), api, args, log, update_step=lambda o: None,
+                                              timer=FakeTimer(), clock=Clock())
+                hud.start()
+                source.data = make_block(args.bve_pid, args.instance, True, True, False, 1, 1)
+                for _ in range(5):
+                    hud.tick()
+                self.assertEqual(api.z, [SELECT, HUD, hwnd])
+                self.assertEqual(api.z_calls, [(HUD, SELECT)])
+
+
+# ---------------------------------------------------------------------------------------------------------------------------------------
+class J_Win32ZOrderApi(unittest.TestCase):
+    """Win32WindowApi.place_below / z_above against a recording pywin32 stand-in: the exact SetWindowPos arguments, and nothing else."""
+
+    def setUp(self):
+        class Con(object):
+            GW_HWNDPREV = 3
+            HWND_TOP = 0
+            SWP_NOSIZE = 1
+            SWP_NOMOVE = 2
+            SWP_NOZORDER = 4
+            SWP_NOACTIVATE = 16
+            SWP_SHOWWINDOW = 64
+            WS_EX_TOPMOST = 8
+            GWL_EXSTYLE = -20
+
+        class Gui(object):
+            def __init__(inner):
+                inner.calls = []
+                inner.prev = {}
+
+            def SetWindowPos(inner, *a):
+                inner.calls.append(("SetWindowPos",) + a)
+
+            def GetWindow(inner, hwnd, cmd):
+                inner.calls.append(("GetWindow", hwnd, cmd))
+                if hwnd not in inner.prev:
+                    raise OSError("no previous window")
+                return inner.prev[hwnd]
+
+            def GetWindowLong(inner, hwnd, index):
+                inner.calls.append(("GetWindowLong", hwnd, index))
+                return 8 if hwnd == 7200 else 0
+
+        self.con, self.gui = Con, Gui()
+        self.api = mh.Win32WindowApi.__new__(mh.Win32WindowApi)
+        self.api._con, self.api._gui = Con, self.gui
+
+    def test_place_below_a_window(self):
+        self.api.place_below(1000, 7000)
+        self.assertEqual(self.gui.calls, [("SetWindowPos", 1000, 7000, 0, 0, 0, 0, 2 | 1 | 16)])
+
+    def test_place_below_nothing_is_the_top_of_the_normal_band(self):
+        self.api.place_below(1000, 0)
+        self.assertEqual(self.gui.calls, [("SetWindowPos", 1000, self.con.HWND_TOP, 0, 0, 0, 0, 2 | 1 | 16)])
+
+    def test_flags_never_include_zorder_suppression_or_show_or_activation(self):
+        self.api.place_below(1000, 7000)
+        flags = self.gui.calls[0][-1]
+        self.assertTrue(flags & self.con.SWP_NOACTIVATE and flags & self.con.SWP_NOMOVE and flags & self.con.SWP_NOSIZE)
+        self.assertFalse(flags & (self.con.SWP_NOZORDER | self.con.SWP_SHOWWINDOW))
+        self.assertNotEqual(self.gui.calls[0][2], -1)       # HWND_TOPMOST is -1
+
+    def test_z_above_returns_the_previous_window_or_zero(self):
+        self.gui.prev = {5000: 7000}
+        self.assertEqual(self.api.z_above(5000), 7000)
+        self.assertEqual(self.api.z_above(6000), 0)          # pywin32 raised: no previous window
+
+    def test_is_topmost_reads_the_extended_style(self):
+        self.assertTrue(self.api.is_topmost(7200))
+        self.assertFalse(self.api.is_topmost(7000))
+
+
+# ---------------------------------------------------------------------------------------------------------------------------------------
+ZORDER_REAL = os.path.join(ROOT, "tests", "zorder_real_check.py")
+
+
+class K_RealWindowsZOrder(unittest.TestCase):
+    """REAL top-level windows (Qt) and the REAL Win32WindowApi: the defect is reproduced (the Overlay is shown in front of the selection window) and the
+    correction puts it under it, for a selection window that is owned by the BVE window and for one that is not. Needs a desktop; no BVE, no BveEX."""
+
+    def run_check(self, variant):
+        if not HAS_QT or importlib.util.find_spec("win32gui") is None:
+            self.skipTest("PyQt6 / pywin32 not importable (INCONCLUSIVE)")
+        env = dict(os.environ)
+        env.pop("QT_QPA_PLATFORM", None)                      # REAL windows: not the offscreen platform the other suites run with
+        r = subprocess.run([sys.executable, ZORDER_REAL, variant], capture_output=True, timeout=120, cwd=ROOT, env=env, creationflags=0x08000000)
+        out = r.stdout.decode("utf-8", "replace")
+        self.assertEqual(r.returncode, 0, out + r.stderr.decode("utf-8", "replace"))
+        import json
+        return json.loads(out.strip().splitlines()[-1])
+
+    def check(self, result):
+        self.assertTrue(result["defect_reproduced"], result)            # show() really put the HUD in front of the selection window
+        self.assertEqual(result["after_fix"], ["select", "hud", "bve"], result)
+        self.assertEqual(result["repeat_calls"], 0, result)             # in place: nothing is done again
+        self.assertEqual(result["closed_select"], ["hud", "bve"], result)
+        self.assertTrue(result["owner_released_before_show"], result)   # the re-show released the owner first ...
+        self.assertTrue(result["bve_kept_under_select"], result)        # ... so the BVE window was not lifted over the selection window with it
+        self.assertEqual(result["reshow_before_fix"], ["hud", "select", "bve"], result)
+        self.assertEqual(result["reshow_after_hide"], ["select", "hud", "bve"], result)
+        self.assertTrue(result["hud_owner_is_bve"], result)
+        self.assertFalse(result["hud_topmost"], result)
+        self.assertTrue(result["foreground_unchanged"], result)         # the correction did not take the foreground
+
+    def test_selection_window_owned_by_the_bve_window(self):
+        self.check(self.run_check("owned"))
+
+    def test_selection_window_not_owned(self):
+        self.check(self.run_check("unowned"))
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------------
@@ -1463,10 +1888,52 @@ class H_StaticGuards(unittest.TestCase):
         body = "".join(line.strip() for line in inspect.getsource(main._run_normal).splitlines()[1:])
         self.assertEqual(body, "app = QApplication(sys.argv)overlay = Overlay()overlay.show()return app.exec()")
 
+    @staticmethod
+    def code_only(text):
+        return re.sub(r"#.*", "", re.sub(r'"""[\s\S]*?"""', "", text))
+
+    def test_z_order_uses_no_global_topmost_no_activation_no_raise(self):
+        hud = self.code_only(self.read("managed_hud.py"))
+        for token in ("HWND_TOPMOST", "WindowStaysOnTopHint", "raise_", "activateWindow", "SetForegroundWindow", "BringWindowToTop", "SWP_SHOWWINDOW",
+                      "SWP_NOZORDER", "SetFocus", "SetActiveWindow"):
+            self.assertNotIn(token, hud, token)
+        main = self.code_only(self.read("main.py"))
+        for token in ("WindowStaysOnTopHint", "HWND_TOPMOST", "raise_(", "activateWindow"):
+            self.assertNotIn(token, main, token)
+        self.assertIn("self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowTransparentForInput | Qt.WindowType.Tool)", main)
+
+    def test_the_only_set_window_pos_is_the_pure_z_operation(self):
+        hud = self.code_only(self.read("managed_hud.py"))
+        self.assertEqual(hud.count("SetWindowPos("), 1)
+        body = hud[hud.index("def place_below"):]
+        body = body[:body.index("def hud_update_step")]
+        for flag in ("SWP_NOMOVE", "SWP_NOSIZE", "SWP_NOACTIVATE"):
+            self.assertIn(flag, body)
+        self.assertEqual(hud.count("place_below("), 2)           # the definition and the controller's one call
+
+    def test_the_selection_window_is_never_identified(self):
+        hud = self.code_only(self.read("managed_hud.py"))
+        for token in ("GetWindowText(hwnd).lower()", ):          # the BVE window lookup of the normal mode (title "bve trainsim") is the only title use
+            self.assertEqual(hud.count(token), 1)
+        for token in ("GetClassName", "ScenarioSelect", "シナリオ", "select", "Select", "generation_changed"):
+            body = hud[hud.index("def _ensure_z_order"):hud.index("def _unlink")]
+            self.assertNotIn(token, body, token)
+
+    def test_the_hud_module_has_no_host_branch(self):
+        hud = self.code_only(self.read("managed_hud.py"))
+        for token in ("Legacy", "AtsEx", "BveEx", "BveEX", "Current", "BVE5", "BVE6"):
+            self.assertNotIn(token, hud, token)
+
+    def test_main_py_and_hud_ui_are_untouched_by_the_z_order_fix(self):
+        out = _git("diff", "--name-only", L3_GRADIENT_COMMIT, "--", "main.py", "hud_ui.py", "scoring_logic.py", "menu_ui.py", "network.py", "telemetry_contract.py")
+        if out is None:
+            self.skipTest("git not available (INCONCLUSIVE)")
+        self.assertEqual(out.strip(), "")
+
     def test_all_python_files_compile(self):
         import py_compile
         with tempfile.TemporaryDirectory() as d:
-            for name in ("main.py", "managed_mode.py", "managed_state.py", "managed_hud.py",
+            for name in ("main.py", "managed_mode.py", "managed_state.py", "managed_hud.py", os.path.join("tests", "zorder_real_check.py"),
                          os.path.join("tests", "managed_hud_child.py"), os.path.join("tests", "fake_bve_window.py"),
                          os.path.join("tests", "test_managed_hud_e4.py")):
                 py_compile.compile(os.path.join(ROOT, name), cfile=os.path.join(d, name.replace(os.sep, "_") + "c"), doraise=True)

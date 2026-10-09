@@ -95,9 +95,9 @@ $touched | ForEach-Object { "   " + $_ }
 $allowedExact = @(
     'main.py', 'hud_ui.py', 'managed_hud.py', 'telemetry_contract.py', 'telemetry_gate.py',
     'tests/test_telemetry_l3.py', 'tests/telemetry_xcheck.py', 'tests/telemetry_overlay_check.py', 'tests/overlay_guard.py',
-    'tests/test_managed_hud_e4.py', 'tests/test_managed_mode_e2.py', 'tests/test_hud_data_path_e4.py',
+    'tests/test_managed_hud_e4.py', 'tests/test_managed_mode_e2.py', 'tests/test_hud_data_path_e4.py', 'tests/managed_hud_child.py', 'tests/zorder_real_check.py',
     ($prefix + 'Tests/Test-TelemetryL3.ps1'), ($prefix + 'Tests/Test-TelemetryIntegrationL3.ps1'), ($prefix + 'Tests/TelemetryTestFixture.cs'), 'tests/telemetry_gate_check.py',
-    ($prefix + 'Tools/Verify-PhaseL3.ps1'), ($prefix + 'Docs/Handshake-PhaseL3-LegacyTelemetry.md'),
+    ($prefix + 'Tools/Verify-PhaseL3.ps1'), ($prefix + 'Docs/Handshake-PhaseL3-LegacyTelemetry.md'), ($prefix + 'Docs/Handshake-PhaseE4-HudZOrder.md'),
     ($prefix + 'Docs/Handshake-PhaseE4-LegacyTelemetryAudit.md'),
     ($prefix + 'Tests/Test-HudLinkE4.ps1'), ($prefix + 'Tests/Test-DependencyNoticeM1.ps1'), ($prefix + 'Tools/Verify-PhaseL1.ps1'), ($prefix + 'Tools/Verify-PhaseC3.ps1')
 )

@@ -27,6 +27,7 @@ ACTIVE_INTERVAL_MS = 16          # the interval the Overlay's own timer has alwa
 IDLE_INTERVAL_MS = 100           # while nothing is shown: only the state block is looked at
 WINDOW_SEARCH_INTERVAL_S = 0.5   # EnumWindows is not run more often than this while no BVE window is linked
 MAX_HUD_ERROR_LINES = 5
+MAX_ZORDER_LINES = 5             # hud-zorder-set / hud-zorder-error lines; further ones are only counted
 
 
 class Win32WindowApi(object):
@@ -78,6 +79,22 @@ class Win32WindowApi(object):
         """Makes the BVE window the OWNER of the Overlay (the way normal mode links it), so the HUD stays above BVE and follows it."""
         self._gui.SetWindowLong(int(overlay_hwnd), self._con.GWL_HWNDPARENT, bve_hwnd)
 
+    def z_above(self, hwnd):
+        """The window directly above `hwnd` in the Z order (visible or not, any process); 0 when `hwnd` is the top of its band."""
+        try:
+            return int(self._gui.GetWindow(int(hwnd), self._con.GW_HWNDPREV) or 0)
+        except Exception:
+            return 0                     # pywin32 raises when there is no previous window
+
+    def is_topmost(self, hwnd):
+        return bool(self._gui.GetWindowLong(int(hwnd), self._con.GWL_EXSTYLE) & self._con.WS_EX_TOPMOST)
+
+    def place_below(self, overlay_hwnd, above_hwnd):
+        """Puts the Overlay directly BELOW `above_hwnd` in the Z order (0: at the top of the normal, non-topmost band). Never TOPMOST, never activates,
+        never moves or resizes: a pure Z-order operation."""
+        flags = self._con.SWP_NOMOVE | self._con.SWP_NOSIZE | self._con.SWP_NOACTIVATE
+        self._gui.SetWindowPos(int(overlay_hwnd), above_hwnd if above_hwnd else self._con.HWND_TOP, 0, 0, 0, 0, flags)
+
 
 def hud_update_step(overlay):
     """The data part of Overlay.update_logic that the HUD content depends on, in the same order and with the same rules: the clock of the
@@ -103,7 +120,7 @@ class ManagedHudController(object):
 
     overlay     needs show / hide / isVisible / setGeometry / geometry / winId / update (the real Overlay; a fake in tests)
     timer       the Overlay's one QTimer (setInterval only; the controller never creates a timer)
-    window_api  find_bve_window / is_window / is_iconic / client_rect_on_screen / owner_of / set_owner
+    window_api  find_bve_window / is_window / is_iconic / client_rect_on_screen / owner_of / set_owner / z_above / is_topmost / place_below
     update_step called once per tick while ACTIVE
     telemetry   Phase L3: the strict TelemetryGate (telemetry_gate.py) or None. With it the HUD is only shown while real telemetry of the CURRENT
                 ScenarioGeneration has been received (and the sender has not moved on to the next scenario); without it (None) nothing is waited for.
@@ -142,6 +159,9 @@ class ManagedHudController(object):
         self.ticks = 0
         self.link_count = 0
         self.owner_sets = 0
+        self.z_sets = 0
+        self.z_errors = 0
+        self.owner_releases = 0
         self.errors = 0
 
     # -- diagnostics --------------------------------------------------------------------------------------------------------------------
@@ -285,6 +305,7 @@ class ManagedHudController(object):
                         self._geom = rect
                     self._show()
                     self._ensure_owner()
+                    self._ensure_z_order()
             except Exception:
                 self._unlink("bve-window-error")
                 linked = False
@@ -334,6 +355,35 @@ class ManagedHudController(object):
             self.owner_sets += 1
             self._emit("hud-owner-set", n=self.owner_sets)
 
+    def _ensure_z_order(self):
+        """The HUD belongs DIRECTLY ABOVE the BVE driving window: above the driving view, below every other window that is above it - the scenario
+        selection window of BVE among them, which is NOT identified (no title, no class, no ScenarioGeneration): whatever lies over the driving window
+        stays over the HUD. Being the OWNER's window is not enough: show() puts a (re)created native window at the top of the Z order, in front of
+        such a window, and setting the owner afterwards does not reorder anything.
+
+        Nothing is done while the HUD already is the window directly above the driving window (one GetWindow call per active tick). Otherwise the HUD
+        is moved directly under the window that lies directly above the driving window (a pure Z operation: no activation, no move, no resize), or to
+        the top of the NORMAL band when that window is a topmost one - the HUD never becomes topmost. A failure here is counted and logged (a few
+        lines), never hides the HUD and never unlinks it."""
+        try:
+            overlay_hwnd = int(self._overlay.winId())
+            if not overlay_hwnd:
+                return                               # the native window does not exist (yet): nothing to order
+            api = self._api
+            above = api.z_above(self._hwnd)
+            if above == overlay_hwnd:
+                return                               # already directly above the driving window
+            if above and api.is_topmost(above):
+                above = 0                            # stay in the normal band, right over the driving window
+            api.place_below(overlay_hwnd, above)
+            self.z_sets += 1
+            if self.z_sets <= MAX_ZORDER_LINES:
+                self._emit("hud-zorder-set", n=self.z_sets)
+        except Exception as e:
+            self.z_errors += 1
+            if self.z_errors <= MAX_ZORDER_LINES:
+                self._emit("hud-zorder-error", error=describe_exception(e), n=self.z_errors)
+
     def _unlink(self, reason):
         if self._hwnd is not None:
             self._hwnd = None
@@ -342,9 +392,23 @@ class ManagedHudController(object):
             self._emit("hud-window-unlinked", reason=reason)
         self._hide(reason)
 
+    def _release_owner_before_show(self):
+        """Showing a window that still has an OWNER brings the owner to the front with it (Windows keeps an owner and its owned windows together): a
+        re-shown HUD that still is owned by the BVE window would lift the whole driving window over the scenario selection window. Qt only clears the
+        owner while it shows the window, too late. So the owner is released BEFORE show(); _ensure_owner() links the HUD again right after it. Nothing
+        happens for a window that has no owner (the first show). A failure is counted, never blocks the show."""
+        try:
+            overlay_hwnd = int(self._overlay.winId())
+            if overlay_hwnd and self._api.owner_of(overlay_hwnd):
+                self._api.set_owner(overlay_hwnd, 0)
+                self.owner_releases += 1
+        except Exception:
+            self.z_errors += 1
+
     def _show(self):
         if self._shown:
             return
+        self._release_owner_before_show()
         self._overlay.show()
         self._shown = True
         self.shows += 1
@@ -407,6 +471,8 @@ class ManagedHudController(object):
         self._emit("hud-summary", end=end, failsafes=self.failsafes, ticks=self.ticks, updates=self.updates, shows=self.shows, hides=self.hides, starts=self.update_starts,
                    waits=self.update_waits, state_changes=self.gate.changes, duplicates=self.gate.suppressed, gen_changes=self.gate.generation_changes,
                    coalesced=self.gate.skipped_changes, links=self.link_count, owner_sets=self.owner_sets, errors=self.errors)
+        if self.z_sets or self.z_errors or self.owner_releases:
+            self.emit_event("hud-zorder-summary", sets=self.z_sets, releases=self.owner_releases, errors=self.z_errors)    # only when the Z order was ever touched; a line of its own, hud-summary is already longer than the Caller transcribes
         if self._telemetry is not None:
             self.emit_event("telemetry-summary", **self._telemetry.summary_fields())     # a line of its own: hud-summary is already longer than the Caller transcribes
 

@@ -86,6 +86,15 @@ class _FakeWindowApi(object):
     def set_owner(self, overlay_hwnd, bve_hwnd):
         self.owner = bve_hwnd
 
+    def z_above(self, hwnd):
+        return 4242                      # the Overlay already is directly above the (fake) BVE window: nothing to order
+
+    def is_topmost(self, hwnd):
+        return False
+
+    def place_below(self, overlay_hwnd, above_hwnd):
+        pass
+
 
 def _update_step(overlay):
     if MODE == "boom-update":
