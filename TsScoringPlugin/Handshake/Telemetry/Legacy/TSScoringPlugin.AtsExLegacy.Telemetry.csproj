@@ -61,6 +61,7 @@
   <ItemGroup>
     <Compile Include="src\AssemblyInfo.cs" />
     <Compile Include="src\LegacyApi.cs" />
+    <Compile Include="src\LegacyInputProbe.cs" />
     <Compile Include="src\LegacyStationTimeline.cs" />
     <Compile Include="src\LegacyTelemetrySession.cs" />
     <Compile Include="src\LegacyTelemetryExtension.cs" />

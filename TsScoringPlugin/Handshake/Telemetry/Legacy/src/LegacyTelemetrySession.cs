@@ -73,6 +73,7 @@ namespace TSScoringPlugin.Telemetry
         private bool metaSent;
         private bool gradientFirstLogged;       // the gradient unit diagnostic of this instance (see ReportGradient)
         private bool gradientNonZeroLogged;
+        private readonly LegacyInputProbe inputProbe;   // Phase LI0 observation (Tick thread only); null when not wired
 
         // diagnostics (tests, and a future log)
         internal int Epochs { get; private set; }
@@ -87,6 +88,12 @@ namespace TSScoringPlugin.Telemetry
         }
 
         internal LegacyTelemetrySession(ILegacyApi api, ITelemetrySink sink, Func<long> nowMs, Func<long> idSeed, ITelemetryDiag diag)
+            : this(api, sink, nowMs, idSeed, diag, null)
+        {
+        }
+
+        /// <summary>input = the read surface of the Phase LI0 input observation (diagnostic log only, never the telemetry stream); null = no observation.</summary>
+        internal LegacyTelemetrySession(ILegacyApi api, ITelemetrySink sink, Func<long> nowMs, Func<long> idSeed, ITelemetryDiag diag, ILegacyInputApi input)
         {
             this.api = api;
             this.sink = sink;
@@ -94,6 +101,10 @@ namespace TSScoringPlugin.Telemetry
             this.idSeed = idSeed;
             this.diag = diag;
             lastScenarioId = -1;
+            if (input != null && diag != null)
+            {
+                inputProbe = new LegacyInputProbe(input, Log);
+            }
         }
 
         private void Log(string name, string detail)
@@ -152,11 +163,23 @@ namespace TSScoringPlugin.Telemetry
         {
             if (epochActive)
             {
+                EndInputProbe();
                 Log("TEL_EPOCH_END", "scenarioId=" + scenarioId + " lines=" + epochLines + " reason=" + reason);
                 endReason = reason;      // the FIRST cause is the reason; later events of the same reload (Opened, then Created) do not overwrite it
             }
 
             ResetEpochState();
+        }
+
+        private void EndInputProbe()
+        {
+            try { if (inputProbe != null) { inputProbe.EndGeneration(); } } catch { }
+        }
+
+        /// <summary>The observation of the scoring inputs (diagnostic log only). It never changes the telemetry line and can never throw out of here.</summary>
+        private void ObserveInput()
+        {
+            try { if (inputProbe != null) { inputProbe.Observe(); } } catch { }
         }
 
         private void ResetEpochState()
@@ -182,6 +205,7 @@ namespace TSScoringPlugin.Telemetry
             string reason = epochActive ? "identity-changed" : endReason;
             if (epochActive)
             {
+                EndInputProbe();
                 Log("TEL_EPOCH_END", "scenarioId=" + scenarioId + " lines=" + epochLines + " reason=" + reason);
             }
 
@@ -207,6 +231,7 @@ namespace TSScoringPlugin.Telemetry
             lastScenarioId = id;
             scenarioActive = true;
             Log("TEL_EPOCH_BEGIN", "n=" + Epochs + " scenarioId=" + id + " reason=" + reason + " identity=" + identityKind);
+            try { if (inputProbe != null) { inputProbe.Begin(id); } } catch { }
         }
 
         // -- the gradient unit ----------------------------------------------------------------------------------------------------------------
@@ -314,6 +339,9 @@ namespace TSScoringPlugin.Telemetry
             {
                 StartEpoch(identity);
             }
+
+            // Phase LI0: observe the scoring-input candidates (handles, notch layout, pressures) into the diagnostic log; nothing of it enters the line below
+            ObserveInput();
 
             // the core: without time, position and speed there is no telemetry line at all
             int timeMs;

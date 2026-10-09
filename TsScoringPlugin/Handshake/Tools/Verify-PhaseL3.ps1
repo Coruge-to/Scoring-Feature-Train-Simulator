@@ -23,7 +23,7 @@ Write-Host '==== the built DLL ===='
 $outFiles = @(Get-ChildItem $outDir -File -ErrorAction SilentlyContinue)
 Check 'out holds exactly the one telemetry DLL (no PDB, no third-party DLL, no other file)' (($outFiles.Count -eq 1) -and ($outFiles[0].Name -eq 'TSScoringPlugin.AtsExLegacy.Telemetry.dll') -and (@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0))
 $vi = (Get-Item $dllPath).VersionInfo
-Check 'file version 0.1.2.0 (Phase L3 gradient unit fix), product TS Scoring, provider Coruge-to, description names Phase L3' (($vi.FileVersion -eq '0.1.2.0') -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.CompanyName -eq 'Coruge-to') -and ($vi.Comments -match 'Phase L3'))
+Check 'file version 0.1.3.0 (Phase LI0 read-only input observation on top of the Phase L3 sender), product TS Scoring, provider Coruge-to, description names Phase L3' (($vi.FileVersion -eq '0.1.3.0') -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.CompanyName -eq 'Coruge-to') -and ($vi.Comments -match 'Phase L3'))
 $proj = [IO.File]::ReadAllText((Join-Path $telDir 'Legacy\TSScoringPlugin.AtsExLegacy.Telemetry.csproj'))
 $projCode = [regex]::Replace($proj, '<!--[\s\S]*?-->', '')      # the comments of the project file may name the Bridge
 Add-Type -TypeDefinition @"
@@ -101,7 +101,9 @@ $allowedExact = @(
     ($prefix + 'Docs/Handshake-PhaseE4-LegacyTelemetryAudit.md'),
     ($prefix + 'Tests/Test-HudLinkE4.ps1'), ($prefix + 'Tests/Test-DependencyNoticeM1.ps1'), ($prefix + 'Tools/Verify-PhaseL1.ps1'), ($prefix + 'Tools/Verify-PhaseC3.ps1'),
     # parent-exit fix (P1): the owner-process watch in the managed lifecycle module, its tests, and the E3 test whose stand-in BVE is now a live process
-    'managed_mode.py', 'tests/parent_exit_child.py', 'tests/test_parent_exit_p1.py', ($prefix + 'Tests/Test-AppProcessE3.ps1')
+    'managed_mode.py', 'tests/parent_exit_child.py', 'tests/test_parent_exit_p1.py', ($prefix + 'Tests/Test-AppProcessE3.ps1'),
+    # Phase LI0 (read-only Legacy input observation): its test and document; the Telemetry project itself is covered by the Telemetry/ prefix
+    ($prefix + 'Tests/Test-LegacyInputLI0.ps1'), ($prefix + 'Docs/Handshake-PhaseLI0-LegacyInputObservation.md')
 )
 $outside = @($touched | Where-Object { -not ($_.StartsWith($prefix + 'Telemetry/') -or ($_ -in $allowedExact)) })
 if ($outside.Count -gt 0) { "outside the allowance: " + ($outside -join ', ') }
@@ -109,7 +111,8 @@ Check 'only the L3 files differ from the E4 commit (telemetry project, telemetry
 $frozen = @($touched | Where-Object { $_ -match ('^' + [regex]::Escape($prefix) + '(Caller|Bridge|Shared)/') -or $_ -match 'Class1\.cs$|AtsLoggerPlugin\.cs$|/packages/|\.vcxproj|\.slnx$|^scoring_logic\.py$|^menu_ui\.py$|^config\.py$|^utils\.py$|^network\.py$|^managed_state\.py$|launcher\.template\.json$|Handshake-Phase(B|C1|C3|D1|E1|E3|L1|M1|E4-StatePublication)' })
 Check 'the control plane is untouched: Caller, both Bridges, Shared, Class1.cs, packages, project files, managed_state (managed_mode.py only gained the P1 owner-process watch, allowed above), the scoring / UI modules and the documents of earlier phases' ($frozen.Count -eq 0)
 Check 'no build output, DLL, PDB, log or personal launcher.json among the files of the phase' (@($touched | Where-Object { $_ -match '/out/|/obj/|/dist/|/logs/|build\.log|\.dll$|\.pdb$|\.log$|\.exe$' -or $_ -match '(^|/)launcher\.json$' }).Count -eq 0)
-Check 'no push: the branch is only ahead of its upstream (this script does not push; the upstream still points at the E3 commit)' ((RunGit @('-C', $top, 'rev-parse', 'origin/refactor/state-transitions')).Trim() -eq 'b9611dad47e2c95f8fa1c89a8bd0286896c75cea')
+& git -C $top merge-base --is-ancestor origin/refactor/state-transitions HEAD 2>$null
+Check 'no push: the branch is only ahead of its upstream, never behind or diverged (this script does not push; the upstream position moves with the pushes the owner makes)' ($LASTEXITCODE -eq 0)
 
 Write-Host '==== the document ===='
 $docPath = Join-Path $Root 'Docs\Handshake-PhaseL3-LegacyTelemetry.md'

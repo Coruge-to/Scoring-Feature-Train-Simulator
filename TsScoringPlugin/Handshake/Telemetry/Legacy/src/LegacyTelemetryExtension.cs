@@ -26,6 +26,11 @@ using BveTypes.ClassWrappers;
 //   Scenario.SectionManager.CurrentSectionSpeedLimit / ForwardSectionSpeedLimit / Sections
 //   Scenario.Vehicle.Instruments.BrakeSystem / Cab.Handles.NotchInfo
 //
+// Phase LI0 (observation only, diagnostic log only - nothing below is sent to the telemetry stream), read on the Tick thread only:
+//   PluginBase.Native (the public INative of the plugin; no hook, no private member): VehicleSpec.BrakeNotches / PowerNotches / B67Notch, VehicleState.BcPressure / BpPressure
+//   Scenario.Vehicle.Instruments.Cab (runtime type) .Handles: ReverserPosition / PowerNotch / BrakeNotch / NotchInfo (counts, EmergencyBrakeNotch, B67Notch, HasHoldingSpeedBrake)
+//   Scenario.Vehicle.Panel.StateStore.BcPressure / BpPressure (arrays, logged as they are)
+//
 // The timer thread (heartbeat) uses the session's own volatile fields only; it never touches BveHacker, a Scenario or any BVE object.
 // No exception ever leaves the constructor, Tick, Dispose, an event handler or the timer.
 // ============================================================================
@@ -50,7 +55,16 @@ namespace TSScoringPlugin.Telemetry
         {
             sink = new UdpTelemetrySink();
             AtsExLegacyApi api = new AtsExLegacyApi();
-            session = new LegacyTelemetrySession(api, sink, delegate { return clock.ElapsedMilliseconds; }, delegate { return DateTime.UtcNow.Ticks; }, diag);
+            session = new LegacyTelemetrySession(api, sink, delegate { return clock.ElapsedMilliseconds; }, delegate { return DateTime.UtcNow.Ticks; }, diag, api);
+            try
+            {
+                api.AttachNative(Native);      // PluginBase.Native: the public route to INative; only held here, read on the Tick thread
+            }
+            catch
+            {
+                // without it the native group is reported as unavailable (native-null); everything else is unaffected
+            }
+
             try
             {
                 hacker = BveHacker;
@@ -194,9 +208,10 @@ namespace TSScoringPlugin.Telemetry
     }
 
     /// <summary>The Legacy API read into ILegacyApi. Every Try method catches everything: an unreadable value is "not available", never a default.</summary>
-    internal sealed class AtsExLegacyApi : ILegacyApi
+    internal sealed class AtsExLegacyApi : ILegacyApi, ILegacyInputApi
     {
         private IBveHacker hacker;
+        private INative nativeHost;
         private Scenario current;
         private int sectionCursor;
         private object sectionOwner;
@@ -204,6 +219,11 @@ namespace TSScoringPlugin.Telemetry
         internal void Attach(IBveHacker h)
         {
             hacker = h;
+        }
+
+        internal void AttachNative(INative n)
+        {
+            nativeHost = n;
         }
 
         public bool IsScenarioCreated()
@@ -400,24 +420,173 @@ namespace TSScoringPlugin.Telemetry
                     return false;
                 }
 
-                if (controller is Smee)
-                {
-                    kind = LegacyBrakeKind.Smee;
-                }
-                else if (controller is Cl)
-                {
-                    kind = LegacyBrakeKind.Cl;
-                }
-                else if (controller is Ecb)
-                {
-                    kind = LegacyBrakeKind.Ecb;
-                }
-
+                kind = KindOf(controller);
                 return kind != LegacyBrakeKind.None;
             }
             catch
             {
                 kind = LegacyBrakeKind.None;
+                return false;
+            }
+        }
+
+        private static LegacyBrakeKind KindOf(BrakeControllerBase controller)
+        {
+            if (controller is Smee)
+            {
+                return LegacyBrakeKind.Smee;
+            }
+
+            if (controller is Cl)
+            {
+                return LegacyBrakeKind.Cl;
+            }
+
+            if (controller is Ecb)
+            {
+                return LegacyBrakeKind.Ecb;
+            }
+
+            return LegacyBrakeKind.None;
+        }
+
+        // -- Phase LI0: the scoring-input observation (ILegacyInputApi). Tick thread only; every Try method turns any exception into a fixed reason. ----------
+        bool ILegacyInputApi.NativeReachable
+        {
+            get { return nativeHost != null; }
+        }
+
+        bool ILegacyInputApi.TryHandles(out LegacyHandleSnapshot snapshot, out string reason)
+        {
+            snapshot = null;
+            reason = LegacyInputReason.ReadException;
+            try
+            {
+                if (ReferenceEquals(current, null)) { reason = LegacyInputReason.ScenarioNull; return false; }
+                Vehicle vehicle = current.Vehicle;
+                if (ReferenceEquals(vehicle, null)) { reason = LegacyInputReason.VehicleNull; return false; }
+                VehicleInstrumentSet instruments = vehicle.Instruments;
+                if (ReferenceEquals(instruments, null)) { reason = LegacyInputReason.InstrumentsNull; return false; }
+                CabBase cab = instruments.Cab;
+                if (ReferenceEquals(cab, null)) { reason = LegacyInputReason.CabNull; return false; }
+                HandleSet handles = cab.Handles;
+                if (ReferenceEquals(handles, null)) { reason = LegacyInputReason.HandlesNull; return false; }
+
+                LegacyHandleSnapshot s = new LegacyHandleSnapshot();
+                Type cabType = cab.GetType();
+                s.CabTypeName = LegacyInputProbe.SafeTypeName(cabType);
+                s.HandleType = LegacyInputProbe.ClassifyCabType(cabType);
+                try
+                {
+                    BrakeControllerBase controller = instruments.BrakeSystem.BrakeController;
+                    s.BrakeKind = ReferenceEquals(controller, null) ? LegacyBrakeKind.None : KindOf(controller);
+                }
+                catch
+                {
+                    s.BrakeKind = LegacyBrakeKind.None;
+                }
+
+                try { s.Reverser = (int)handles.ReverserPosition; } catch { }
+                try { s.Power = handles.PowerNotch; } catch { }
+                try { s.Brake = handles.BrakeNotch; } catch { }
+                NotchInfo info = null;
+                try { info = handles.NotchInfo; } catch { }
+                if (!ReferenceEquals(info, null))
+                {
+                    try { s.PowerNotchCount = info.PowerNotchCount; } catch { }
+                    try { s.BrakeNotchCount = info.BrakeNotchCount; } catch { }
+                    try { s.EmergencyBrakeNotch = info.EmergencyBrakeNotch; } catch { }
+                    try { s.HasHoldingSpeedBrake = info.HasHoldingSpeedBrake; } catch { }
+                    try { s.B67Notch = info.B67Notch; } catch { }
+                }
+
+                snapshot = s;
+                return true;
+            }
+            catch
+            {
+                snapshot = null;
+                reason = LegacyInputReason.ReadException;
+                return false;
+            }
+        }
+
+        bool ILegacyInputApi.TryNativeSpec(out LegacySpecSnapshot spec, out string reason)
+        {
+            spec = null;
+            reason = LegacyInputReason.ReadException;
+            try
+            {
+                INative n = nativeHost;
+                if (n == null) { reason = LegacyInputReason.NativeNull; return false; }
+                AtsEx.PluginHost.Native.VehicleSpec native = n.VehicleSpec;
+                if (native == null) { reason = LegacyInputReason.SpecNull; return false; }
+
+                LegacySpecSnapshot s = new LegacySpecSnapshot();
+                try { s.BrakeNotches = native.BrakeNotches; } catch { }
+                try { s.PowerNotches = native.PowerNotches; } catch { }
+                try { s.B67Notch = native.B67Notch; } catch { }
+                spec = s;
+                return true;
+            }
+            catch
+            {
+                spec = null;
+                reason = LegacyInputReason.ReadException;
+                return false;
+            }
+        }
+
+        bool ILegacyInputApi.TryNativePressure(out LegacyNativePressure pressure, out string reason)
+        {
+            pressure = null;
+            reason = LegacyInputReason.ReadException;
+            try
+            {
+                INative n = nativeHost;
+                if (n == null) { reason = LegacyInputReason.NativeNull; return false; }
+                AtsEx.PluginHost.Native.VehicleState state = n.VehicleState;
+                if (state == null) { reason = LegacyInputReason.StateNull; return false; }
+
+                LegacyNativePressure p = new LegacyNativePressure();
+                p.Bc = state.BcPressure;
+                p.Bp = state.BpPressure;
+                pressure = p;
+                return true;
+            }
+            catch
+            {
+                pressure = null;
+                reason = LegacyInputReason.ReadException;
+                return false;
+            }
+        }
+
+        bool ILegacyInputApi.TryStorePressure(out LegacyStorePressure pressure, out string reason)
+        {
+            pressure = null;
+            reason = LegacyInputReason.ReadException;
+            try
+            {
+                if (ReferenceEquals(current, null)) { reason = LegacyInputReason.ScenarioNull; return false; }
+                Vehicle vehicle = current.Vehicle;
+                if (ReferenceEquals(vehicle, null)) { reason = LegacyInputReason.VehicleNull; return false; }
+                VehiclePanel panel = vehicle.Panel;
+                if (ReferenceEquals(panel, null)) { reason = LegacyInputReason.PanelNull; return false; }
+                VehicleStateStore store = panel.StateStore;
+                if (ReferenceEquals(store, null)) { reason = LegacyInputReason.StoreNull; return false; }
+
+                LegacyStorePressure p = new LegacyStorePressure();
+                try { p.Bc = store.BcPressure; } catch { }
+                try { p.Bp = store.BpPressure; } catch { }
+                if (p.Bc == null && p.Bp == null) { reason = LegacyInputReason.ArrayNull; return false; }
+                pressure = p;
+                return true;
+            }
+            catch
+            {
+                pressure = null;
+                reason = LegacyInputReason.ReadException;
                 return false;
             }
         }

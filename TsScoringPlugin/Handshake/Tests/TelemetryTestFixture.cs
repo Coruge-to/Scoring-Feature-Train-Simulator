@@ -267,32 +267,235 @@ namespace TsScoringLegacyTelemetryTests
         }
     }
 
+    // ---- PHASE LI0 (input observation) fakes -------------------------------------------------------------------------------------------------
+    // Cab classes with the names of the host's wrappers (the classification is by class name, so the fake types prove it without the host).
+    public class CabBase { }
+    public class OneLeverCab : CabBase { }
+    public class TwoLeverCab : CabBase { }
+    public class MyTwoLeverCab : TwoLeverCab { }
+    public class UnrelatedCab : CabBase { }
+
+    /// <summary>A fake of the input read surface (ILegacyInputApi). Records the thread of every call.</summary>
+    public class FakeInputApi : ILegacyInputApi
+    {
+        public bool NativeReach = true;
+
+        // handles
+        public bool HandlesFail = false;
+        public string HandlesReason = "cab-null";
+        public bool HandlesThrow = false;
+        public string CabName = "OneLeverCab";
+        public int HandleTypeValue = 1;           // 0 unknown, 1 one lever, 2 two lever
+        public int BrakeKindValue = 1;            // 0 none, 1 Ecb, 2 Smee, 3 Cl
+        public int? Rev = 1;
+        public int? Pow = 0;
+        public int? Brk = 0;
+        public int? PowN = 5;
+        public int? BrkN = 8;
+        public int? EbN = 9;
+        public bool? Hold = false;
+        public int? B67 = -1;
+
+        // native
+        public bool SpecFail = false;
+        public string SpecReason = "native-null";
+        public bool SpecThrow = false;
+        public int? SpecBrake = 8;
+        public int? SpecPower = 5;
+        public int? SpecB67 = -1;
+        public bool NativeFail = false;
+        public string NativeReason = "native-null";
+        public bool NativeThrow = false;
+        public double NativeBc = 0.0;
+        public double NativeBp = 490.0;
+
+        // store
+        public bool StoreFail = false;
+        public string StoreReason = "store-null";
+        public bool StoreThrow = false;
+        public double[] StoreBc = new double[] { 0.0 };
+        public double[] StoreBp = new double[] { 490.0 };
+
+        public Dictionary<string, int> Calls = new Dictionary<string, int>();
+        public HashSet<int> Threads = new HashSet<int>();
+
+        private void Note(string name)
+        {
+            int n;
+            Calls.TryGetValue(name, out n);
+            Calls[name] = n + 1;
+            lock (Threads) { Threads.Add(System.Threading.Thread.CurrentThread.ManagedThreadId); }
+        }
+
+        public int CallCount(string name)
+        {
+            int n;
+            Calls.TryGetValue(name, out n);
+            return n;
+        }
+
+        public int TotalCalls()
+        {
+            int t = 0;
+            foreach (int v in Calls.Values) { t += v; }
+            return t;
+        }
+
+        bool ILegacyInputApi.NativeReachable { get { Note("NativeReachable"); return NativeReach; } }
+
+        bool ILegacyInputApi.TryHandles(out LegacyHandleSnapshot snapshot, out string reason)
+        {
+            Note("TryHandles");
+            snapshot = null;
+            reason = HandlesReason;
+            if (HandlesThrow) { throw new InvalidOperationException("fake failure in handles"); }
+            if (HandlesFail) { return false; }
+            LegacyHandleSnapshot s = new LegacyHandleSnapshot();
+            s.CabTypeName = CabName;
+            s.HandleType = (LegacyHandleType)HandleTypeValue;
+            s.BrakeKind = (LegacyBrakeKind)BrakeKindValue;
+            s.Reverser = Rev;
+            s.Power = Pow;
+            s.Brake = Brk;
+            s.PowerNotchCount = PowN;
+            s.BrakeNotchCount = BrkN;
+            s.EmergencyBrakeNotch = EbN;
+            s.HasHoldingSpeedBrake = Hold;
+            s.B67Notch = B67;
+            snapshot = s;
+            return true;
+        }
+
+        bool ILegacyInputApi.TryNativeSpec(out LegacySpecSnapshot spec, out string reason)
+        {
+            Note("TryNativeSpec");
+            spec = null;
+            reason = SpecReason;
+            if (SpecThrow) { throw new InvalidOperationException("fake failure in spec"); }
+            if (SpecFail || !NativeReach) { if (!NativeReach) { reason = "native-null"; } return false; }
+            LegacySpecSnapshot s = new LegacySpecSnapshot();
+            s.BrakeNotches = SpecBrake;
+            s.PowerNotches = SpecPower;
+            s.B67Notch = SpecB67;
+            spec = s;
+            return true;
+        }
+
+        bool ILegacyInputApi.TryNativePressure(out LegacyNativePressure pressure, out string reason)
+        {
+            Note("TryNativePressure");
+            pressure = null;
+            reason = NativeReason;
+            if (NativeThrow) { throw new InvalidOperationException("fake failure in native pressure"); }
+            if (NativeFail || !NativeReach) { if (!NativeReach) { reason = "native-null"; } return false; }
+            LegacyNativePressure p = new LegacyNativePressure();
+            p.Bc = NativeBc;
+            p.Bp = NativeBp;
+            pressure = p;
+            return true;
+        }
+
+        bool ILegacyInputApi.TryStorePressure(out LegacyStorePressure pressure, out string reason)
+        {
+            Note("TryStorePressure");
+            pressure = null;
+            reason = StoreReason;
+            if (StoreThrow) { throw new InvalidOperationException("fake failure in store"); }
+            if (StoreFail) { return false; }
+            LegacyStorePressure p = new LegacyStorePressure();
+            p.Bc = StoreBc;
+            p.Bp = StoreBp;
+            if (p.Bc == null && p.Bp == null) { reason = "array-null"; return false; }
+            pressure = p;
+            return true;
+        }
+    }
+
+    /// <summary>The pure parts of the probe and its limits, for the tests.</summary>
+    public static class InputInfo
+    {
+        public static int Classify(Type t) { return (int)LegacyInputProbe.ClassifyCabType(t); }
+        public static string Combo(int handleType, int brakeKind) { return LegacyInputProbe.ComboText((LegacyHandleType)handleType, (LegacyBrakeKind)brakeKind); }
+        public static string Head(double[] a) { return LegacyInputProbe.HeadText(a); }
+        public static bool Moved(double current, double reference) { return LegacyInputProbe.Moved(current, reference); }
+        public static string SafeName(Type t) { return LegacyInputProbe.SafeTypeName(t); }
+        public static int MaxLines { get { return LegacyInputProbe.MaxLinesPerGeneration; } }
+        public static int RetryEvery { get { return LegacyInputProbe.RetryEveryTicks; } }
+        public static int CapHandleChange { get { return LegacyInputProbe.CapHandleChange; } }
+        public static int CapPressureChange { get { return LegacyInputProbe.CapPressureChange; } }
+        public static int HeadCount { get { return LegacyInputProbe.HeadCount; } }
+    }
+
+    /// <summary>The REAL host adapter (AtsExLegacyApi) with nothing attached: it must answer with fixed reasons, never throw. Needs the host assemblies to load.</summary>
+    public static class AdapterProbe
+    {
+        public static string[] Run()
+        {
+            Type adapterType = typeof(ILegacyInputApi).Assembly.GetType("TSScoringPlugin.Telemetry.AtsExLegacyApi", true);
+            ILegacyInputApi input = (ILegacyInputApi)Activator.CreateInstance(adapterType, true);
+            LegacyHandleSnapshot h; LegacySpecSnapshot s; LegacyNativePressure n; LegacyStorePressure p;
+            string rh, rs, rn, rp;
+            bool bh = input.TryHandles(out h, out rh);
+            bool bs = input.TryNativeSpec(out s, out rs);
+            bool bn = input.TryNativePressure(out n, out rn);
+            bool bp = input.TryStorePressure(out p, out rp);
+            return new string[] { input.NativeReachable.ToString(), bh + ":" + rh, bs + ":" + rs, bn + ":" + rn, bp + ":" + rp };
+        }
+    }
+
     /// <summary>Drives the core the way the host adapter does: events, Ticks, the heartbeat, Dispose. Time is a number the test moves.</summary>
     public class Harness
     {
         public FakeApi Api = new FakeApi();
         public CollectSink Sink = new CollectSink();
         public CollectDiag Diag = new CollectDiag();
+        public FakeInputApi Input = null;         // Phase LI0: null = no input observation wired (the L3 sessions of the earlier tests)
         public long Now = 1000;
         public long Seed = 5000000000L;
         private LegacyTelemetrySession session;
 
         public Harness()
         {
-            session = new LegacyTelemetrySession(Api, Sink, delegate { return Now; }, delegate { return Seed; }, Diag);
+            session = Make(Diag);
+        }
+
+        /// <summary>withInput: the session is created with the input observation (a FakeInputApi in Input).</summary>
+        public Harness(bool withInput)
+        {
+            if (withInput) { Input = new FakeInputApi(); }
+            session = Make(Diag);
+        }
+
+        private LegacyTelemetrySession Make(ITelemetryDiag d)
+        {
+            return new LegacyTelemetrySession(Api, Sink, delegate { return Now; }, delegate { return Seed; }, d, Input);
         }
 
         /// <summary>Replaces the diagnostic with the REAL file diagnostic of the DLL, writing to a path the test owns.</summary>
         public void UseFileDiag(string path)
         {
-            session = new LegacyTelemetrySession(Api, Sink, delegate { return Now; }, delegate { return Seed; }, new FileTelemetryDiag(path));
+            session = Make(new FileTelemetryDiag(path));
         }
 
         /// <summary>A new extension instance after the previous one was disposed (a new session over the same fake host, a fresh sink).</summary>
         public void Reinitialize()
         {
             Sink = new CollectSink();
-            session = new LegacyTelemetrySession(Api, Sink, delegate { return Now; }, delegate { return Seed; }, Diag);
+            session = Make(Diag);
+        }
+
+        /// <summary>Calls ComposeHeartbeat from a real second thread (the timer thread of the host adapter) the given number of times, and waits for it.</summary>
+        public int HeartbeatOnOtherThread(int times)
+        {
+            int threadId = 0;
+            System.Threading.Thread t = new System.Threading.Thread(delegate ()
+            {
+                threadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
+                for (int i = 0; i < times; i++) { session.ComposeHeartbeat(); }
+            });
+            t.Start();
+            t.Join();
+            return threadId;
         }
 
         public void Tick() { Tick(16.0); }
