@@ -77,6 +77,10 @@ namespace TSScoringPlugin.Handshake
     ///
     /// Phase D1 adds DrivingActive (DrivingActivityState.cs) as an internal, read-only state evaluated by the same monitor thread; it changes
     /// nothing above (the notice, the phases and ScenarioReady are untouched) and nothing consumes it yet.
+    ///
+    /// Phase E1 adds the AppController dry-run (AppController.cs): the monitor thread hands it the DrivingActive result after each evaluation and
+    /// Dispose tells it once. It only decides and logs (APP_START_REQUEST once per ScenarioGeneration, APP_STOP_REQUEST once at Dispose); it starts,
+    /// stops and sends nothing, and BVE's Tick path is unchanged.
     /// </summary>
     internal sealed class HandshakeSession
     {
@@ -158,6 +162,11 @@ namespace TSScoringPlugin.Handshake
         private long drivingOnQpc;
         private DrivingOffReason drivingLastOffReason;
 
+        // Phase E1: the AppController dry-run (see AppController.cs). Decisions only: nothing is started, stopped or sent. Evaluated by the
+        // monitor thread after DrivingActive, and once by End(); BVE's Tick never touches it.
+        private AppController appController = new AppController();
+        private int appExceptionLines;
+
         private bool noticeInFlight;
         private bool timedOutEver;
         private bool missedBridgeTarget;
@@ -223,6 +232,9 @@ namespace TSScoringPlugin.Handshake
         internal int DrivingSoftOffCount { get { lock (gate) { return drivingSoftOffCount; } } }
         internal DrivingOffReason DrivingLastOffReason { get { lock (gate) { return drivingLastOffReason; } } }
         internal long TickSequence { get { return Interlocked.Read(ref tickSeq); } }
+        internal int AppStartRequestCount { get { lock (gate) { return appController == null ? 0 : appController.StartRequestCount; } } }
+        internal int AppStopRequestCount { get { lock (gate) { return appController == null ? 0 : appController.StopRequestCount; } } }
+        internal int AppSuppressedCount { get { lock (gate) { return appController == null ? 0 : appController.SuppressedCount; } } }
 
         private static void DefaultShowNotice(string text)
         {
@@ -295,6 +307,7 @@ namespace TSScoringPlugin.Handshake
                 Obs("CALLER_DISPOSE_BEGIN", "phaseBefore=" + phase + " sinceEnabledMs=" + SinceEnabledMs(Stopwatch.GetTimestamp()));
                 phase = CallerPhase.Disposed;
                 EvaluateDrivingLocked(Stopwatch.GetTimestamp()); // Phase D1: DrivingActive goes OFF (hard, dispose) before anything is released
+                DisposeAppControllerLocked();                    // Phase E1: the one dry-run stop request (Dispose began), before anything is released
 
                 try { if (wake != null) { wake.Set(); } } catch { }
                 try { if (stop != null) { stop.Set(); } } catch { }
@@ -366,6 +379,72 @@ namespace TSScoringPlugin.Handshake
                     drivingExceptionLines++;
                     ObsA("DRIVING_EXCEPTION", "type=" + ex.GetType().Name);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Phase E1: feeds the AppController dry-run with what DrivingActive just decided (monitor thread, gate held, right after
+        /// EvaluateDrivingLocked). Only decisions are logged; nothing is started or sent. Never throws.
+        /// </summary>
+        private void ObserveAppControllerLocked()
+        {
+            try
+            {
+                LogAppStepLocked(appController.Observe(driving.Active, scenarioReadyLevel, scenarioGenerationSeen));
+            }
+            catch (Exception ex)
+            {
+                LogAppExceptionLocked(ex);
+            }
+        }
+
+        /// <summary>Phase E1: Dispose began (gate held). The controller records the one stop request, or notes that there is nothing to stop. Never throws.</summary>
+        private void DisposeAppControllerLocked()
+        {
+            try
+            {
+                LogAppStepLocked(appController.OnDispose());
+            }
+            catch (Exception ex)
+            {
+                LogAppExceptionLocked(ex);
+            }
+        }
+
+        private void LogAppStepLocked(AppStep step)
+        {
+            switch (step.Action)
+            {
+                case AppAction.StartRequested:
+                    ObsA("APP_START_REQUEST", "pid=" + pid + " ScenarioGeneration=" + step.ScenarioGeneration + " requestNo=" + step.RequestNumber + " reason=" + AppRequestReasons.FirstDrivingOn + " dryRun=yes");
+                    break;
+
+                case AppAction.StartSuppressed:
+                    ObsA("APP_START_SUPPRESSED", "pid=" + pid + " ScenarioGeneration=" + step.ScenarioGeneration + " requestNo=" + step.RequestNumber + " reason=" + AppRequestReasons.AlreadyRequestedForGeneration + " dryRun=yes");
+                    break;
+
+                case AppAction.StopRequested:
+                    ObsA("APP_STOP_REQUEST", "pid=" + pid + " requestNo=" + step.RequestNumber + " reason=" + AppRequestReasons.CallerDispose + " startRequests=" + appController.StartRequestCount + " lastScenarioGeneration=" + step.ScenarioGeneration + " dryRun=yes");
+                    break;
+
+                case AppAction.StopNotRequired:
+                    ObsA("APP_STOP_NOT_REQUIRED", "pid=" + pid + " reason=" + AppRequestReasons.NoStartRequest + " dryRun=yes");
+                    break;
+            }
+        }
+
+        private void LogAppExceptionLocked(Exception ex)
+        {
+            try
+            {
+                if (appExceptionLines < 3)
+                {
+                    appExceptionLines++;
+                    ObsA("APP_EXCEPTION", "type=" + ex.GetType().Name);
+                }
+            }
+            catch
+            {
             }
         }
 
@@ -491,6 +570,7 @@ namespace TSScoringPlugin.Handshake
                     JudgeFirstTickLocked(now);
                     ObserveScenarioLocked(now);
                     EvaluateDrivingLocked(now);
+                    ObserveAppControllerLocked();
                 }
             }
             catch (ObjectDisposedException)

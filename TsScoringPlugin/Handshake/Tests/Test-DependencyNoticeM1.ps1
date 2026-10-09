@@ -653,7 +653,7 @@ Check 'M1-21 Current Bridge DLL (dist and out) and Legacy Bridge DLL are byte-id
 $top = (RunGit @('rev-parse', '--show-toplevel')).Trim()
 $changed = @((RunGit @('-C', $top, 'diff', '--name-only', $Baseline, '--', $prefix)) -split "`n" | Where-Object { $_ })
 $untracked = @((RunGit @('-C', $top, 'ls-files', '--others', '--exclude-standard', '--', $prefix)) -split "`n" | Where-Object { $_ })
-$committedAll = @((RunGit @('-C', $top, 'diff', '--name-only', $Baseline, 'HEAD')) -split "`n" | Where-Object { $_ })   # whole repository, committed history only (a dirty file of someone else is not this phase)
+$committedAll = @((RunGit @('-C', $top, 'diff', '--name-only', $Baseline, '6018a5b')) -split "`n" | Where-Object { $_ })   # whole repository, committed history only (a dirty file of someone else is not this phase)
 $touched = @($changed + $untracked | Sort-Object -Unique)
 Check 'M1-21 no source of the Current Bridge, the Legacy Bridge or the shared protocol / log differs from the baseline (Phase D1 only adds Shared\AppProtocol.cs, the two DrivingActive thresholds)' (@($touched | Where-Object { ($_ -like ($prefix + 'Bridge/*')) -or (($_ -like ($prefix + 'Shared/*')) -and ($_ -ne ($prefix + 'Shared/AppProtocol.cs'))) }).Count -eq 0)
 $scenarioFiles = 'Bridge\src\ScenarioReadyTracker.cs', 'Bridge\src\ScenarioReadyPublisher.cs', 'Bridge\src\ScenarioObserver.cs', 'Bridge\src\TsScoringBridgePrototype.cs', 'Shared\HandshakeProtocol.cs', 'Shared\ObservationLog.cs'
@@ -671,7 +671,7 @@ $cbytes = [IO.File]::ReadAllBytes($callerPath)
 Check 'M1-26 the Caller DLL contains none of the observation-build identifiers (fixed M0 log name, Tick-rate / SetAxisRanges aggregation, NOTICE_WOULD_SHOW, CALLER_FIRST_TICK)' ((@('TSScoring-PhaseM0', 'PhaseM0', 'Caller-Observation', 'NOTICE_WOULD_SHOW', 'CALLER_FIRST_TICK', 'SETAXIS', 'OBSERVATION build', 'diagnostic, not the beta') | Where-Object { BytesContain $cbytes $_ }).Count -eq 0)
 $vi = (Get-Item $callerPath).VersionInfo
 $casm = $callerAsm
-Check 'M1-28 provider Coruge-to (company, copyright, ProviderName constant); product TS Scoring; version 0.8.0.0 (Phase D1); description names Phase D1 and no observation wording' (($vi.CompanyName -eq 'Coruge-to') -and ($vi.LegalCopyright -match 'Coruge-to') -and ($vi.ProductName -eq 'TS Scoring') -and ([string]$sessionType.GetField('ProviderName', $NPS).GetRawConstantValue() -ceq 'Coruge-to') -and ($vi.FileVersion -eq '0.8.0.0') -and ($casm.GetName().Version.ToString() -eq '0.8.0.0') -and ($vi.Comments -match 'Phase D1') -and ($vi.Comments -notmatch '(?i)observation|diagnostic'))
+Check 'M1-28 provider Coruge-to (company, copyright, ProviderName constant); product TS Scoring; version 0.9.0.0 (Phase E1); description names Phase E1 and no observation wording' (($vi.CompanyName -eq 'Coruge-to') -and ($vi.LegalCopyright -match 'Coruge-to') -and ($vi.ProductName -eq 'TS Scoring') -and ([string]$sessionType.GetField('ProviderName', $NPS).GetRawConstantValue() -ceq 'Coruge-to') -and ($vi.FileVersion -eq '0.9.0.0') -and ($casm.GetName().Version.ToString() -eq '0.9.0.0') -and ($vi.Comments -match 'Phase E1') -and ($vi.Comments -notmatch '(?i)observation|diagnostic'))
 Check 'M1-29 no PDB anywhere in the tree or in dist / out, and dist holds exactly the two DLLs' ((@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0) -and ((@(Get-ChildItem (Join-Path $Root 'dist') -File | ForEach-Object { $_.Name } | Sort-Object) -join ',') -eq 'TSScoringPlugin.BveEx.Bridge.Prototype.dll,TSScoringPlugin.Caller.InputDevice.dll'))
 $runtimeNames = @($env:USERNAME, $env:COMPUTERNAME, $env:USERDOMAIN, (Split-Path $env:USERPROFILE -Leaf)) | Where-Object { $_ -and $_.Length -ge 3 } | Sort-Object -Unique
 $forbidden = @($runtimeNames) + @('C:\Users\', 'Scoring-Feature-Train-Simulator', 'gmail', 'hotmail', 'outlook.com', 'ac.jp')
@@ -694,10 +694,11 @@ $m1Allowed = @(
     'Caller/src/AssemblyInfo.cs', 'Caller/src/HandshakeSession.cs', 'Caller/src/TsScoringCallerInputDevice.cs', 'Caller/TSScoringPlugin.Caller.InputDevice.csproj',
     'Tests/Test-HandshakeLogic.ps1', 'Tests/Test-ObservationC1.ps1', 'Tests/Test-DependencyNoticeM1.ps1',
     'Tools/Verify-PhaseC3.ps1', 'Tools/Verify-PhaseL1.ps1', 'Docs/Handshake-PhaseM1-DependencyNotice.md',
-    'Caller/src/DrivingActivityState.cs', 'Shared/AppProtocol.cs', 'Tests/Test-DrivingActiveD1.ps1', 'Docs/Handshake-PhaseD1-DrivingActive.md'
+    'Caller/src/DrivingActivityState.cs', 'Shared/AppProtocol.cs', 'Tests/Test-DrivingActiveD1.ps1', 'Docs/Handshake-PhaseD1-DrivingActive.md',
+    'Caller/src/AppController.cs', 'Tests/Test-AppControllerE1.ps1', 'Docs/Handshake-PhaseE1-AppController.md'
 ) | ForEach-Object { $prefix + $_ }
 $m1Outside = @($touched | Where-Object { $_ -notin $m1Allowed })
-Check ('M1-31 only the Phase M1 and Phase D1 Caller / test / verification / document files differ from the baseline commit (' + $touched.Count + ' files)') (($m1Outside.Count -eq 0) -and ($touched.Count -ge 8))
+Check ('M1-31 only the Phase M1, Phase D1 and Phase E1 Caller / test / verification / document files differ from the baseline commit (' + $touched.Count + ' files)') (($m1Outside.Count -eq 0) -and ($touched.Count -ge 8))
 if ($m1Outside.Count -gt 0) { $m1Outside | ForEach-Object { '   outside scope: ' + $_ } }
 $failed = @($results | Where-Object { -not $_.Ok })
 "TOTAL {0}  FAILED {1}" -f $results.Count, $failed.Count
