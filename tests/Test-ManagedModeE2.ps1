@@ -128,7 +128,16 @@ foreach ($bad in @(@('--managed'), @('--managed', '--owner', 'ps-test', '--bve-p
     Check ("main.py invalid arguments -> exit 5 (" + ($bad -join ' ').Substring(0, [Math]::Min(30, ($bad -join ' ').Length)) + ")") ($r.Code -eq 5 -and $r.Err -match 'args-invalid') ("code=" + $r.Code)
 }
 $free = PortFree
-$inst = NewInst; $stop = NewStop $pidFake $inst
+# Phase E4: the Caller's state block is a required part of the managed contract (created before the launch); an all-OFF block of this instance
+function NewStateBlock([int]$bvePid, [string]$inst) {
+    $mmf = [System.IO.MemoryMappedFiles.MemoryMappedFile]::CreateNew((Nm $bvePid $inst 'State'), 64)
+    $acc = $mmf.CreateViewAccessor(0, 64)
+    $acc.Write(0, [uint32]0x53415354); $acc.Write(4, [uint32]1); $acc.Write(8, [uint32]64); $acc.Write(12, [uint32]$bvePid)
+    $bytes = [System.Text.Encoding]::ASCII.GetBytes($inst.Substring(0, 16))
+    for ($i = 0; $i -lt 16; $i++) { $acc.Write(16 + $i, [byte]$bytes[$i]) }
+    return @{ Mmf = $mmf; Acc = $acc }
+}
+$inst = NewInst; $stop = NewStop $pidFake $inst; $blk = NewStateBlock $pidFake $inst
 $run = StartPy $mainPy (ManagedArgs $pidFake $inst) $null
 if ($free) {
     Check 'real main.py managed: Ready published' (WaitReady $pidFake $inst 30000)
@@ -138,6 +147,16 @@ if ($free) {
 } else {
     $r = Finish $run 30000
     Check 'real main.py managed: UDP port busy -> exit 2, no Ready (success path INCONCLUSIVE)' ($r.Code -eq 2 -and (ReadyState $pidFake $inst) -ne 'set') ("code=" + $r.Code)
+}
+$stop.Dispose(); $blk.Acc.Dispose(); $blk.Mmf.Dispose()
+# Phase E4 completion: no state block -> the contract is not met: no AppReady, exit code 4 (the bind check comes first: 2)
+$inst = NewInst; $stop = NewStop $pidFake $inst
+$run = StartPy $mainPy (ManagedArgs $pidFake $inst) $null
+$r = Finish $run 30000
+if ($free) {
+    Check 'real main.py managed without a state block: exit 4, no Ready, one state-contract-failed' ($r.Code -eq 4 -and (ReadyState $pidFake $inst) -ne 'set' -and ([regex]::Matches($r.Err, 'event=state-contract-failed')).Count -eq 1 -and $r.Err -notmatch 'ready-published') ("code=" + $r.Code + " " + $r.Err)
+} else {
+    Check 'real main.py managed without a state block: UDP port busy -> exit 2, no Ready (exit 4 path INCONCLUSIVE)' ($r.Code -eq 2 -and (ReadyState $pidFake $inst) -ne 'set') ("code=" + $r.Code)
 }
 $stop.Dispose()
 

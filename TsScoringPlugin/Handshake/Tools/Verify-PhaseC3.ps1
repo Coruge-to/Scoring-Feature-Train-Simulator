@@ -107,7 +107,7 @@ $outB = @(Inspect $bDll $bridgeAbsent); $outB[0..($outB.Count - 2)]; $bi = $outB
 Write-Host '==== distribution hygiene ===='
 $distFiles = @(Get-ChildItem $dist -File)
 Check 'dist holds exactly the two DLLs (no PDB, no other file)' (($distFiles.Count -eq 2) -and (@($distFiles | Where-Object { $_.Name -in 'TSScoringPlugin.Caller.InputDevice.dll', 'TSScoringPlugin.BveEx.Bridge.Prototype.dll' }).Count -eq 2) -and (@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0))
-Check 'Version: Caller 0.10.0.0 (Phase E3) and Bridge 0.6.0.0 (Phase C3 core, unchanged) in the version resources and assembly versions' (($ci.Version.FileVersion -eq '0.10.0.0') -and ($bi.Version.FileVersion -eq '0.6.0.0') -and ($ci.Asm.GetName().Version.ToString() -eq '0.10.0.0') -and ($bi.Asm.GetName().Version.ToString() -eq '0.6.0.0'))
+Check 'Version: Caller 0.11.0.0 (Phase E4) and Bridge 0.6.0.0 (Phase C3 core, unchanged) in the version resources and assembly versions' (($ci.Version.FileVersion -eq '0.11.0.0') -and ($bi.Version.FileVersion -eq '0.6.0.0') -and ($ci.Asm.GetName().Version.ToString() -eq '0.11.0.0') -and ($bi.Asm.GetName().Version.ToString() -eq '0.6.0.0'))
 Check 'Provider Coruge-to in both DLLs' (($ci.Version.CompanyName -eq 'Coruge-to') -and ($bi.Version.CompanyName -eq 'Coruge-to'))
 Check 'No forbidden dependency token in either DLL' (($ci.Present.Count -eq 0) -and ($bi.Present.Count -eq 0))
 Check 'Caller references only mscorlib, System, System.Core, System.Windows.Forms, Mackoy.IInputDevice' ((($ci.Asm.GetReferencedAssemblies() | ForEach-Object { $_.Name } | Sort-Object) -join ',') -eq 'Mackoy.IInputDevice,mscorlib,System,System.Core,System.Windows.Forms')

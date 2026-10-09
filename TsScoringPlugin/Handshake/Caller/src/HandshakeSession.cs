@@ -85,6 +85,10 @@ namespace TSScoringPlugin.Handshake
     /// Phase E3 lets the production instance act on those two decisions through AppProcessManager.cs: the start request becomes at most ONE managed
     /// application process (launcher.json permitting), Dispose sets its Stop event and waits a finite time for the exit. The decisions, their
     /// log lines and the Tick path are unchanged; nothing but Dispose ever stops the process.
+    ///
+    /// Phase E4 publishes the Session (ScenarioReady) and Driving (DrivingActive) levels, with the ScenarioGeneration, to that process through its
+    /// state block (AppStatePublisher.cs) from the same monitor step. The levels, the phases and every earlier decision are unchanged; the
+    /// publication never starts or stops the process, and it is identical for the Current and the Legacy Bridge.
     /// </summary>
     internal sealed class HandshakeSession
     {
@@ -336,6 +340,7 @@ namespace TSScoringPlugin.Handshake
                 Obs("CALLER_DISPOSE_BEGIN", "phaseBefore=" + phase + " sinceEnabledMs=" + SinceEnabledMs(Stopwatch.GetTimestamp()));
                 phase = CallerPhase.Disposed;
                 EvaluateDrivingLocked(Stopwatch.GetTimestamp()); // Phase D1: DrivingActive goes OFF (hard, dispose) before anything is released
+                PublishAppStateLocked();                         // Phase E4: Session OFF / Driving OFF reach the application (Closed is set by Shutdown, before Stop)
                 DisposeAppControllerLocked();                    // Phase E1: the one dry-run stop request (Dispose began), before anything is released
 
                 try { if (wake != null) { wake.Set(); } } catch { }
@@ -422,6 +427,28 @@ namespace TSScoringPlugin.Handshake
             try
             {
                 LogAppStepLocked(appController.Observe(driving.Active, scenarioReadyLevel, scenarioGenerationSeen));
+            }
+            catch (Exception ex)
+            {
+                LogAppExceptionLocked(ex);
+            }
+        }
+
+        /// <summary>
+        /// Phase E4: hands the two levels the Caller already decided to the managed application (monitor thread, gate held, right after
+        /// EvaluateDrivingLocked; and once from End()). Session = ScenarioReady is published for the current ScenarioGeneration (never while
+        /// Dispose began); Driving = the D1 DrivingActive result, only ever with Session. The manager remembers it and writes it only when it
+        /// changed, so this costs a lock and a compare on an unchanged state. No log here, no I/O, no process action. Never throws.
+        /// </summary>
+        private void PublishAppStateLocked()
+        {
+            try
+            {
+                if (appProcess != null)
+                {
+                    bool session = scenarioReadyLevel && phase != CallerPhase.Disposed;
+                    appProcess.PublishState(session, session && driving.Active, scenarioGenerationSeen);
+                }
             }
             catch (Exception ex)
             {
@@ -642,6 +669,7 @@ namespace TSScoringPlugin.Handshake
                     JudgeFirstTickLocked(now);
                     ObserveScenarioLocked(now);
                     EvaluateDrivingLocked(now);
+                    PublishAppStateLocked();   // Phase E4: BEFORE the controller, so a start request always finds the current state remembered
                     ObserveAppControllerLocked();
                 }
             }

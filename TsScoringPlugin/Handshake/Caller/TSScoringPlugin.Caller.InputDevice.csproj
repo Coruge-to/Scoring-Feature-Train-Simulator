@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  PHASE E3 - input-device Caller (handshake, ScenarioReady reader + log, BveEX dependency notice at scenario use start, DrivingActive state, AppController decisions, managed application process).
+  PHASE E4 - input-device Caller (handshake, ScenarioReady reader + log, BveEX dependency notice at scenario use start, DrivingActive state, AppController decisions, managed application process, Session / Driving state for the application's HUD).
   Mackoy.IInputDevice is referenced read-only from the installed BVE6 (identical to BVE5's copy), never copied or shipped.
   No absolute user paths: the reference path is built from the ProgramW6432 environment property.
 -->
@@ -43,6 +43,7 @@
   <ItemGroup>
     <Compile Include="src\AppController.cs" />
     <Compile Include="src\AppProcessManager.cs" />
+    <Compile Include="src\AppStatePublisher.cs" />
     <Compile Include="src\AssemblyInfo.cs" />
     <Compile Include="src\DrivingActivityState.cs" />
     <Compile Include="src\HandshakeSession.cs" />

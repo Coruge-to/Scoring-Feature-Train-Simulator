@@ -2100,8 +2100,28 @@ class _ManagedShutdownBridge(QObject):
         QApplication.quit()
 
 
-def _release_overlay(overlay):
-    """Managed-mode clean-up of the Overlay: stop its timer, release any key hook it holds, close the UDP socket and the window."""
+def _attach_managed_hud(overlay, hud):
+    """Phase E4: the Overlay's ONE timer now runs the managed HUD controller instead of update_logic (which keeps the key hooks, the Esc quit,
+    the BVE-window quit, Kickstart and the key injection of normal mode). No second timer is created. The timer starts after AppReady.
+    Returns False when the managed contract is not met (the Caller's state block is missing or invalid): AppReady must not be published."""
+    timer = overlay.timer
+    timer.stop()
+    try:
+        timer.timeout.disconnect()
+    except TypeError:
+        pass  # nothing connected
+    timer.timeout.connect(hud.tick)
+    return hud.start() is not False
+
+
+def _release_overlay(overlay, hud=None):
+    """Managed-mode clean-up of the Overlay: end the HUD controller (hidden, state released), stop its timer, release any key hook it holds,
+    close the UDP socket and the window."""
+    if hud is not None:
+        try:
+            hud.shutdown()
+        except Exception:
+            pass
     timer = getattr(overlay, 'timer', None)
     if timer is not None:
         timer.stop()
@@ -2120,9 +2140,15 @@ def _release_overlay(overlay):
     overlay.close()
 
 
-def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_log):
-    """Phase E2 managed mode. Never shows the HUD and never runs the Overlay's update timer (no Esc quit, no key hooks, no BVE window search,
-    no scoring): it only proves the management contract (identity, AppReady, stop request, exit code). Returns the process exit code."""
+def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_log, hud_factory=None):
+    """Managed mode (Phase E2 contract, Phase E4 HUD link). Returns the process exit code.
+
+    E2: identity, AppReady, stop request, exit code. The Overlay's update_logic never runs here (no Esc quit, no key hooks, no BVE-window quit,
+    no Kickstart, no key injection, no scoring session).
+    E4: the Overlay's single timer runs the managed HUD controller (managed_hud.py), which reads the Caller's Session / Driving state
+    (managed_state.py) and shows, updates, hides and resumes the SAME Overlay. hud_factory(overlay, args, log) may return None (a test seam: no
+    HUD link, the Overlay stays hidden and inert as in E2); the default builds the real controller, whose state block is REQUIRED (no valid
+    block at start = no AppReady, exit code 4; a block lost after AppReady = HUD fail-safe until the Stop request)."""
     args, error = managed_mode.parse_managed_args(argv[1:])
     if error is not None:
         log("[MANAGED] event=args-invalid reason=%s" % error)
@@ -2139,6 +2165,7 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
     app = None
     overlay = None
     bridge = None
+    hud = None
 
     def excepthook(exc_type, exc, tb):
         # PyQt6 would abort the process on an unhandled exception in a slot; report it as exit code 1 instead and leave the loop
@@ -2158,19 +2185,31 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
         if not getattr(overlay, 'udp_bind_ok', False):
             life.fail(managed_mode.EXIT_BIND_FAILED, "udp-bind-failed")
         else:
-            overlay.timer.stop()  # never run update_logic in E2; the Overlay stays hidden
-            life.start_stop_watch(bridge.shutdown_requested.emit)
-            if life.publish_ready():
-                app.exec()
+            overlay.timer.stop()  # update_logic never runs in managed mode
+            if hud_factory is None:
+                import managed_hud
+                hud_factory = managed_hud.create_controller
+            hud = hud_factory(overlay, args, log)
+            # opens the state block and takes the first reading BEFORE AppReady is published. The block is a required part of the contract:
+            # without a valid one the process fails its initialisation (exit code 4) and never publishes AppReady.
+            contract_ok = hud is None or _attach_managed_hud(overlay, hud)
+            if not contract_ok:
+                life.fail(managed_mode.EXIT_INIT_FAILED, "state-contract-" + (getattr(hud, 'startup_failure', None) or "unavailable"))
+            else:
+                life.start_stop_watch(bridge.shutdown_requested.emit)
+                if life.publish_ready():
+                    if hud is not None:
+                        overlay.timer.start()
+                    app.exec()
     except Exception as e:
         life.fail(managed_mode.EXIT_INIT_FAILED if not life.ready_published else managed_mode.EXIT_RUNTIME_ERROR,
                   "exception:" + managed_mode.describe_exception(e))
     finally:
         sys.excepthook = previous_hook
-        cleanup = (lambda: _release_overlay(overlay)) if overlay is not None else None
+        cleanup = (lambda: _release_overlay(overlay, hud)) if overlay is not None else None
         result = life.shutdown(cleanup)
         # Qt objects go before the QApplication so that nothing is destroyed in an arbitrary order when the function returns
-        cleanup = overlay = bridge = None
+        cleanup = overlay = bridge = hud = None
         if app is not None:
             app.processEvents()
         app = None

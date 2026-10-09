@@ -7,6 +7,7 @@ objects, (D) real child processes (fake Overlay, plus the real main.py for argum
 No BVE, no BveEX, no Caller is started; no file is written outside a temp directory; the user's running TS Scoring is not touched.
 """
 import ast
+import ctypes
 import importlib.util
 import os
 import py_compile
@@ -19,6 +20,7 @@ import threading
 import time
 import unittest
 import uuid
+from ctypes import wintypes
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -166,6 +168,36 @@ class Owner(object):
 
     def close(self):
         self.sync.close(self.stop)
+
+
+class StateBlockStandIn(object):
+    """Phase E4: what the Caller creates before it launches the application (an all-OFF state block of this instance), written with ctypes."""
+
+    def __init__(self, args):
+        import struct
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        k.CreateFileMappingW.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, wintypes.DWORD, wintypes.LPCWSTR]
+        k.CreateFileMappingW.restype = wintypes.HANDLE
+        k.MapViewOfFile.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD, wintypes.DWORD, ctypes.c_size_t]
+        k.MapViewOfFile.restype = ctypes.c_void_p
+        k.UnmapViewOfFile.argtypes = [ctypes.c_void_p]
+        k.CloseHandle.argtypes = [wintypes.HANDLE]
+        self._k = k
+        name = "Local\\TSScoringPlugin.v1.%d.App.%s.State" % (args.bve_pid, args.instance)
+        self._handle = k.CreateFileMappingW(ctypes.c_void_p(-1).value, None, 0x04, 0, 64, name)
+        self._view = k.MapViewOfFile(self._handle, 0x0002, 0, 0, 64)
+        buf = bytearray(64)
+        struct.pack_into("<IIII", buf, 0, 0x53415354, 1, 64, args.bve_pid)
+        buf[16:32] = args.instance[:16].encode("ascii")
+        ctypes.memmove(self._view, bytes(buf), 64)
+
+    def dispose(self):
+        if self._view:
+            self._k.UnmapViewOfFile(self._view)
+            self._view = None
+        if self._handle:
+            self._k.CloseHandle(self._handle)
+            self._handle = None
 
 
 def wait_until(predicate, seconds=3.0):
@@ -801,20 +833,36 @@ class D_RealProcesses(unittest.TestCase):
         """Real Overlay. If the UDP port is held by a running TS Scoring the correct outcome is exit 2 (and the running one is untouched);
         if the port is free the full Ready -> Stop -> exit 0 path is exercised."""
         free = port_54321_is_free()
+        block = StateBlockStandIn(self.args)      # Phase E4: the Caller's state block is a required part of the contract
+        try:
+            p = subprocess.Popen([sys.executable, os.path.join(ROOT, "main.py")] + argv_for(self.args), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 cwd=ROOT, creationflags=0x08000000)
+            self.procs.append(p)
+            if free:
+                self.assertTrue(wait_until(self.owner.ready, 30), "Ready was not published")
+                self.owner.set_stop()
+                code, err = self.finish(p, 5.0)
+                self.assertEqual(code, 0, err)
+                print("[real main.py managed mode: port free -> Ready/Stop/exit 0]", file=sys.stderr)
+            else:
+                code, err = self.finish(p, 30)
+                self.assertEqual(code, mm.EXIT_BIND_FAILED, err)
+                self.assertFalse(self.owner.ready())
+                print("[real main.py managed mode: port 54321 busy -> exit 2 verified; success path INCONCLUSIVE]", file=sys.stderr)
+        finally:
+            block.dispose()
+
+    def test_real_main_py_managed_mode_without_the_state_block_fails_the_init(self):
+        """Phase E4 completion: no state block = the managed contract is not met -> no AppReady, exit code 4 (the bind check comes first: 2)."""
+        free = port_54321_is_free()
         p = subprocess.Popen([sys.executable, os.path.join(ROOT, "main.py")] + argv_for(self.args), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                              cwd=ROOT, creationflags=0x08000000)
         self.procs.append(p)
+        code, err = self.finish(p, 30)
+        self.assertEqual(code, mm.EXIT_INIT_FAILED if free else mm.EXIT_BIND_FAILED, err)
+        self.assertFalse(self.owner.ready())
         if free:
-            self.assertTrue(wait_until(self.owner.ready, 30), "Ready was not published")
-            self.owner.set_stop()
-            code, err = self.finish(p, 5.0)
-            self.assertEqual(code, 0, err)
-            print("[real main.py managed mode: port free -> Ready/Stop/exit 0]", file=sys.stderr)
-        else:
-            code, err = self.finish(p, 30)
-            self.assertEqual(code, mm.EXIT_BIND_FAILED, err)
-            self.assertFalse(self.owner.ready())
-            print("[real main.py managed mode: port 54321 busy -> exit 2 verified; success path INCONCLUSIVE]", file=sys.stderr)
+            self.assertIn("event=state-contract-failed", err)
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------------
@@ -909,7 +957,7 @@ class E_StaticGuardsAndRegression(unittest.TestCase):
         # the other top-level definitions (outside the new managed-mode block) are untouched
         old_top = [ast.dump(n) for n in ast.parse(old).body if not isinstance(n, (ast.Import, ast.ImportFrom, ast.If)) and getattr(n, "name", "") != "Overlay"]
         new_top = [ast.dump(n) for n in ast.parse(new).body if not isinstance(n, (ast.Import, ast.ImportFrom, ast.If))
-                   and getattr(n, "name", "") not in ("Overlay", "_ManagedShutdownBridge", "_release_overlay", "run_managed", "_run_normal", "main")]
+                   and getattr(n, "name", "") not in ("Overlay", "_ManagedShutdownBridge", "_attach_managed_hud", "_release_overlay", "run_managed", "_run_normal", "main")]
         self.assertEqual(old_top, new_top)
 
     def test_caller_bridge_and_dlls_are_unchanged(self):

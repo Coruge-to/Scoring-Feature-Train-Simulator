@@ -35,6 +35,12 @@ using System.Threading;
 //
 // Names (the E2 contract, mirrored by managed_mode.py): Local\TSScoringPlugin.v1.<BVE PID>.App.<INST>.{Lock,Stop,Ready}; INST = a new
 // 32-digit lower-case hex per attempt. The Caller creates Stop BEFORE the launch; Python creates Lock and Ready.
+//
+// Phase E4 adds one more object of the same family, .State (AppStatePublisher.cs): the Session / Driving / ScenarioGeneration the application
+// shows its HUD from. The Caller creates it right after Stop and BEFORE Process.Start (so the application reads the current value at start-up),
+// PublishState() only remembers / writes a CHANGED state (the monitor thread calls it every 20 ms: an identical state costs one lock and a
+// compare), Shutdown() withdraws it (Session OFF, Driving OFF, Closed) BEFORE the Stop event is set, and the worker releases it at the end.
+// Publishing a state never starts, stops or restarts the process.
 // ============================================================================
 namespace TSScoringPlugin.Handshake
 {
@@ -45,6 +51,9 @@ namespace TSScoringPlugin.Handshake
         public static string Lock(int bveProcessId, string instance) { return Prefix + bveProcessId + ".App." + instance + ".Lock"; }
         public static string Stop(int bveProcessId, string instance) { return Prefix + bveProcessId + ".App." + instance + ".Stop"; }
         public static string Ready(int bveProcessId, string instance) { return Prefix + bveProcessId + ".App." + instance + ".Ready"; }
+
+        /// <summary>Phase E4: the Session / Driving state block of the instance (AppStatePublisher.cs). Created by the Caller before the launch.</summary>
+        public static string State(int bveProcessId, string instance) { return Prefix + bveProcessId + ".App." + instance + ".State"; }
     }
 
     /// <summary>THE single place of the E3 timing values (the production defaults; tests build their own AppProcessOptions).</summary>
@@ -74,8 +83,9 @@ namespace TSScoringPlugin.Handshake
         /// <summary>The owner token of E2's --owner argument (lower-case letters, digits, '-'; first character a letter).</summary>
         public const string Owner = "caller";
 
-        /// <summary>Lines of the application's stderr copied to the shared log per process; the rest is only counted.</summary>
-        public const int MaxStderrLogLines = 20;
+        /// <summary>Lines of the application's stderr copied to the shared log per process; the rest is only counted. (E4: 20 -> 200, because the
+        /// application now also reports each Session / Driving / HUD state CHANGE; the lines are still state changes only.)</summary>
+        public const int MaxStderrLogLines = 200;
 
         /// <summary>Longest copied stderr line (printable ASCII only).</summary>
         public const int MaxStderrLineChars = 160;
@@ -160,6 +170,18 @@ namespace TSScoringPlugin.Handshake
         private bool killed;
         private bool readyAccepted;
 
+        // Phase E4: the Session / Driving state. latest* is the newest state the Caller reported (also while no process exists); the publisher
+        // exists from just before Process.Start until the worker leaves.
+        private AppStatePublisher statePublisher;
+        private bool latestKnown;
+        private bool latestSession;
+        private bool latestDriving;
+        private int latestGeneration;
+        private int statePublishCount;      // writes made into the block (the initial one included)
+        private long stateSuppressedCount;  // identical reports (not written)
+        private bool stateBlockCreated;
+        private bool stateClosed;
+
         // streams (written by thread-pool threads)
         private int stderrLines;
         private int stderrLogged;
@@ -219,6 +241,24 @@ namespace TSScoringPlugin.Handshake
 
         public bool WorkerAlive { get { Thread t; lock (sync) { t = worker; } return t != null && t.IsAlive; } }
 
+        /// <summary>Phase E4: the state block was created for this instance (it exists before Process.Start).</summary>
+        public bool StateBlockCreated { get { lock (sync) { return stateBlockCreated; } } }
+
+        /// <summary>Phase E4: Closed was written (Dispose withdrew the state).</summary>
+        public bool StateClosed { get { lock (sync) { return stateClosed; } } }
+
+        /// <summary>Phase E4: writes made into the block (the initial one included).</summary>
+        public int StatePublishCount { get { lock (sync) { return statePublishCount; } } }
+
+        /// <summary>Phase E4: identical reports that were not written.</summary>
+        public long StateSuppressedCount { get { lock (sync) { return stateSuppressedCount; } } }
+
+        public bool LatestSession { get { lock (sync) { return latestSession; } } }
+
+        public bool LatestDriving { get { lock (sync) { return latestDriving; } } }
+
+        public int LatestGeneration { get { lock (sync) { return latestGeneration; } } }
+
         // ------------------------------------------------------------------------------------------------------------------------------
         // The logical start request (monitor thread; no I/O, no wait)
         // ------------------------------------------------------------------------------------------------------------------------------
@@ -271,6 +311,83 @@ namespace TSScoringPlugin.Handshake
         }
 
         // ------------------------------------------------------------------------------------------------------------------------------
+        // Phase E4: the Session / Driving state (monitor thread every step, and Dispose; no I/O, no wait, no log unless the state changed)
+        // ------------------------------------------------------------------------------------------------------------------------------
+        /// <summary>
+        /// Reports the Caller's current state. Remembered always (so a process that starts later reads the CURRENT value) and written into the
+        /// block when one exists and the state differs from what it already says. Driving is only ever published ON together with Session.
+        /// Never starts or stops anything; after Shutdown began it does nothing.
+        /// </summary>
+        public void PublishState(bool session, bool driving, int scenarioGeneration)
+        {
+            bool drv = session && driving;
+            AppStateWrite w = new AppStateWrite();
+            string inst = null;
+            lock (sync)
+            {
+                if (closed)
+                {
+                    return;
+                }
+
+                if (latestKnown && latestSession == session && latestDriving == drv && latestGeneration == scenarioGeneration)
+                {
+                    stateSuppressedCount++;
+                    return;
+                }
+
+                latestKnown = true;
+                latestSession = session;
+                latestDriving = drv;
+                latestGeneration = scenarioGeneration;
+                if (statePublisher != null && !statePublisher.IsClosed)
+                {
+                    w = statePublisher.Write(session, drv, scenarioGeneration);
+                    if (w.Written)
+                    {
+                        statePublishCount++;
+                        inst = instance;
+                    }
+                }
+            }
+
+            if (w.Written)
+            {
+                Log("APP_STATE_PUBLISH", "instance=" + inst + " session=" + (w.Session ? 1 : 0) + " driving=" + (w.Driving ? 1 : 0) + " ScenarioGeneration=" + w.Generation + " changeNo=" + w.ChangeCount);
+            }
+        }
+
+        /// <summary>Dispose, before Stop: Session OFF, Driving OFF, Closed. Returns without effect when no block exists.</summary>
+        private void WithdrawState()
+        {
+            AppStateWrite w;
+            string inst;
+            int publishes;
+            long suppressed;
+            lock (sync)
+            {
+                if (statePublisher == null)
+                {
+                    return;
+                }
+
+                w = statePublisher.Close();
+                if (!w.Written)
+                {
+                    return;
+                }
+
+                stateClosed = true;
+                statePublishCount++;
+                inst = instance;
+                publishes = statePublishCount;
+                suppressed = stateSuppressedCount;
+            }
+
+            Log("APP_STATE_CLOSED", "instance=" + inst + " session=0 driving=0 closed=yes ScenarioGeneration=" + w.Generation + " changeNo=" + w.ChangeCount + " writes=" + publishes + " suppressedReports=" + suppressed);
+        }
+
+        // ------------------------------------------------------------------------------------------------------------------------------
         // Dispose (BVE's Dispose thread; bounded)
         // ------------------------------------------------------------------------------------------------------------------------------
         /// <summary>Caller Dispose: no new start, Stop is set once, the process gets a finite time to end, every resource is released. Idempotent.</summary>
@@ -301,6 +418,7 @@ namespace TSScoringPlugin.Handshake
             }
 
             Log("APP_SHUTDOWN_BEGIN", "state=" + snapshot + " appPid=" + pidSnapshot);
+            WithdrawState(); // Phase E4: Session / Driving withdrawn and Closed set BEFORE the application is told to end
             SignalStop("caller-dispose");
             shutdownSignal.Set();
             bool joined = false;
@@ -416,6 +534,14 @@ namespace TSScoringPlugin.Handshake
                     stopEvent = stop;
                 }
 
+                // Phase E4: the state block exists BEFORE the application is launched, holding the CURRENT Session / Driving, so the first read
+                // of the application is already the truth. A block that cannot be created ends the attempt (the application could not show a HUD).
+                if (!CreateStateBlock(inst))
+                {
+                    finalState = AppProcessState.Failed;
+                    return;
+                }
+
                 ProcessStartInfo psi = BuildStartInfo(config.Config, bveProcessId, inst);
                 process = new Process();
                 process.StartInfo = psi;
@@ -464,6 +590,61 @@ namespace TSScoringPlugin.Handshake
             {
                 Cleanup(process, stop, finalState);
             }
+        }
+
+        /// <summary>Phase E4 (worker): creates the state block with the newest reported state. False = the attempt cannot go on (logged).</summary>
+        private bool CreateStateBlock(string inst)
+        {
+            AppStatePublisher publisher = null;
+            try
+            {
+                publisher = AppStatePublisher.Create(AppObjectNames.State(bveProcessId, inst), bveProcessId, inst);
+            }
+            catch (Exception ex)
+            {
+                Log("APP_STATE_CREATE_FAILED", "instance=" + inst + " type=" + ex.GetType().Name);
+                Log("APP_LAUNCH_FAILED", "reason=state-block-create-failed instance=" + inst);
+                return false;
+            }
+
+            AppStateWrite first;
+            bool aborted = false;
+            bool s;
+            bool d;
+            int g;
+            lock (sync)
+            {
+                if (closed)
+                {
+                    aborted = true;
+                    first = new AppStateWrite();
+                    s = d = false;
+                    g = 0;
+                }
+                else
+                {
+                    statePublisher = publisher;
+                    stateBlockCreated = true;
+                    s = latestSession;
+                    d = latestDriving;
+                    g = latestGeneration;
+                    first = publisher.Write(s, d, g);   // the current state; an all-OFF / generation 0 state needs no write
+                    if (first.Written)
+                    {
+                        statePublishCount++;
+                    }
+                }
+            }
+
+            if (aborted)
+            {
+                publisher.Dispose();
+                Log("APP_LAUNCH_ABORTED", "reason=caller-disposing-before-state-block instance=" + inst);
+                return false;
+            }
+
+            Log("APP_STATE_OPEN", "instance=" + inst + " session=" + (s ? 1 : 0) + " driving=" + (d ? 1 : 0) + " ScenarioGeneration=" + g + " bytes=" + AppStateLayout.Size);
+            return true;
         }
 
         /// <summary>Ready wait, exit watch and the stop sequence of one started process. Returns the final state.</summary>
@@ -671,6 +852,14 @@ namespace TSScoringPlugin.Handshake
 
                 stopEvent = null;
                 state = finalState;
+
+                // Phase E4: the state block of this instance is released with the Stop event (the application may still hold its own view
+                // of it; the name disappears when it lets go). The latest reported state is kept: this class starts no second process.
+                if (statePublisher != null)
+                {
+                    statePublisher.Dispose();
+                    statePublisher = null;
+                }
             }
         }
 

@@ -46,4 +46,5 @@ def _factory():
 
 
 if __name__ == "__main__":
-    sys.exit(main.run_managed(sys.argv, overlay_factory=_factory))
+    # Phase E4: the fake Overlay has no window and no telemetry, so the managed HUD link is not attached (the E2 contract is what is tested here)
+    sys.exit(main.run_managed(sys.argv, overlay_factory=_factory, hud_factory=lambda overlay, args, log: None))
