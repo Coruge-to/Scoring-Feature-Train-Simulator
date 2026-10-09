@@ -1818,8 +1818,8 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
         self.assertEqual(overlay_guard.problems(old, new), [])
 
     def test_scoring_and_ui_modules_are_unchanged_since_e3(self):
-        out = _git("diff", "--name-only", E3_COMMIT, "--", "scoring_logic.py", "menu_ui.py", "config.py", "utils.py", "network.py",   # hud_ui.py: Phase L3, see test_hud_ui_*
-                   "managed_mode.py")
+        # hud_ui.py: Phase L3, see test_hud_ui_*;  managed_mode.py: the owner-process watch (tests/test_parent_exit_p1.py guards how little of it moved)
+        out = _git("diff", "--name-only", E3_COMMIT, "--", "scoring_logic.py", "menu_ui.py", "config.py", "utils.py", "network.py")
         if out is None:
             self.skipTest("git not available (INCONCLUSIVE)")
         self.assertEqual(out.strip(), "")

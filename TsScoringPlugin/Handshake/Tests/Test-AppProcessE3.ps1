@@ -796,7 +796,8 @@ if ($qtOk -and (Test-Path $e2Child)) {
     SetMode 'ok'
     $env:TSS_E2_FAKE = 'ok'
     WriteCfg (ConfigJson @{ scriptPath = $e2Child; workingDirectory = $repoRoot })
-    $h = NewMgr 960370 (NewOpts 20000 5000 3000)
+    # --owner caller makes the application watch the BVE process it names (parent-exit fix): the stand-in BVE must be a live process, older than the child
+    $h = NewMgr $PID (NewOpts 20000 5000 3000)
     [void](Req $h 1 1)
     $rdy = WaitFor { [string](Mg $h 'State') -eq 'Ready' } 25000
     Track $h
@@ -807,7 +808,7 @@ if ($qtOk -and (Test-Path $e2Child)) {
     $el = EventLines $h.Sink 'APP_STDERR'
     Check 'I02 the E2 diagnostics ([MANAGED] state-change lines on stderr) reached the Caller log through the redirected stderr (start / ready / stop / exit) and carry no path' ((@($el | Where-Object { $_ -match 'event=ready-published' }).Count -eq 1) -and (@($el | Where-Object { $_ -match 'event=stop-received' }).Count -eq 1) -and (@($el | Where-Object { $_ -match 'event=exit ' }).Count -eq 1) -and (@($el | Where-Object { $_ -match '[A-Za-z]:\\' }).Count -eq 0))
     $env:TSS_E2_FAKE = 'bind-fail'
-    $h = NewMgr 960371 (NewOpts 20000 5000 3000)
+    $h = NewMgr $PID (NewOpts 20000 5000 3000)
     [void](Req $h 1 1)
     [void](WaitFor { [string](Mg $h 'State') -eq 'Failed' } 25000)
     Track $h
@@ -825,7 +826,7 @@ if ($qtOk -and (-not $udpBusy) -and (-not $mainRunning) -and (Test-Path $mainPy)
     SetTestPath $cfgPath
     SetMode 'ok'
     WriteCfg (ConfigJson @{ scriptPath = $mainPy; workingDirectory = $repoRoot })
-    $h = NewMgr 960372 (NewOpts 25000 6000 3000)
+    $h = NewMgr $PID (NewOpts 25000 6000 3000)
     [void](Req $h 1 1)
     $rdy = WaitFor { [string](Mg $h 'State') -eq 'Ready' } 30000
     Track $h

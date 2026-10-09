@@ -99,13 +99,15 @@ $allowedExact = @(
     ($prefix + 'Tests/Test-TelemetryL3.ps1'), ($prefix + 'Tests/Test-TelemetryIntegrationL3.ps1'), ($prefix + 'Tests/TelemetryTestFixture.cs'), 'tests/telemetry_gate_check.py',
     ($prefix + 'Tools/Verify-PhaseL3.ps1'), ($prefix + 'Docs/Handshake-PhaseL3-LegacyTelemetry.md'), ($prefix + 'Docs/Handshake-PhaseE4-HudZOrder.md'),
     ($prefix + 'Docs/Handshake-PhaseE4-LegacyTelemetryAudit.md'),
-    ($prefix + 'Tests/Test-HudLinkE4.ps1'), ($prefix + 'Tests/Test-DependencyNoticeM1.ps1'), ($prefix + 'Tools/Verify-PhaseL1.ps1'), ($prefix + 'Tools/Verify-PhaseC3.ps1')
+    ($prefix + 'Tests/Test-HudLinkE4.ps1'), ($prefix + 'Tests/Test-DependencyNoticeM1.ps1'), ($prefix + 'Tools/Verify-PhaseL1.ps1'), ($prefix + 'Tools/Verify-PhaseC3.ps1'),
+    # parent-exit fix (P1): the owner-process watch in the managed lifecycle module, its tests, and the E3 test whose stand-in BVE is now a live process
+    'managed_mode.py', 'tests/parent_exit_child.py', 'tests/test_parent_exit_p1.py', ($prefix + 'Tests/Test-AppProcessE3.ps1')
 )
 $outside = @($touched | Where-Object { -not ($_.StartsWith($prefix + 'Telemetry/') -or ($_ -in $allowedExact)) })
 if ($outside.Count -gt 0) { "outside the allowance: " + ($outside -join ', ') }
 Check 'only the L3 files differ from the E4 commit (telemetry project, telemetry_* modules, the HUD / main.py hooks, tests, one document + a note in the E4 audit)' ($outside.Count -eq 0)
-$frozen = @($touched | Where-Object { $_ -match ('^' + [regex]::Escape($prefix) + '(Caller|Bridge|Shared)/') -or $_ -match 'Class1\.cs$|AtsLoggerPlugin\.cs$|/packages/|\.vcxproj|\.slnx$|^scoring_logic\.py$|^menu_ui\.py$|^config\.py$|^utils\.py$|^network\.py$|^managed_mode\.py$|^managed_state\.py$|launcher\.template\.json$|Handshake-Phase(B|C1|C3|D1|E1|E3|L1|M1|E4-StatePublication)' })
-Check 'the control plane is untouched: Caller, both Bridges, Shared, Class1.cs, packages, project files, managed_mode / managed_state, the scoring / UI modules and the documents of earlier phases' ($frozen.Count -eq 0)
+$frozen = @($touched | Where-Object { $_ -match ('^' + [regex]::Escape($prefix) + '(Caller|Bridge|Shared)/') -or $_ -match 'Class1\.cs$|AtsLoggerPlugin\.cs$|/packages/|\.vcxproj|\.slnx$|^scoring_logic\.py$|^menu_ui\.py$|^config\.py$|^utils\.py$|^network\.py$|^managed_state\.py$|launcher\.template\.json$|Handshake-Phase(B|C1|C3|D1|E1|E3|L1|M1|E4-StatePublication)' })
+Check 'the control plane is untouched: Caller, both Bridges, Shared, Class1.cs, packages, project files, managed_state (managed_mode.py only gained the P1 owner-process watch, allowed above), the scoring / UI modules and the documents of earlier phases' ($frozen.Count -eq 0)
 Check 'no build output, DLL, PDB, log or personal launcher.json among the files of the phase' (@($touched | Where-Object { $_ -match '/out/|/obj/|/dist/|/logs/|build\.log|\.dll$|\.pdb$|\.log$|\.exe$' -or $_ -match '(^|/)launcher\.json$' }).Count -eq 0)
 Check 'no push: the branch is only ahead of its upstream (this script does not push; the upstream still points at the E3 commit)' ((RunGit @('-C', $top, 'rev-parse', 'origin/refactor/state-transitions')).Trim() -eq 'b9611dad47e2c95f8fa1c89a8bd0286896c75cea')
 
