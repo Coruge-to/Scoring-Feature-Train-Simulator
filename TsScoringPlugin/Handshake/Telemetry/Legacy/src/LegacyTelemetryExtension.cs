@@ -263,10 +263,11 @@ namespace TSScoringPlugin.Telemetry
             catch { return false; }
         }
 
-        public bool TryGradientPermille(double location, out double permille)
+        public bool TryGradientRatio(double location, out double ratio)
         {
-            permille = 0;
-            try { permille = current.Route.MyTrack.Gradients.GetValueAt(location); return true; }
+            // the raw API value (a ratio, see ILegacyApi.TryGradientRatio); the conversion to per mille is the session's, in one place
+            ratio = 0;
+            try { ratio = current.Route.MyTrack.Gradients.GetValueAt(location); return true; }
             catch { return false; }
         }
 

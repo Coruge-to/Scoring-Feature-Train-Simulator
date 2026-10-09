@@ -88,7 +88,7 @@ Check 'C09 an empty station name is the contract word for "no name"' ($C.GetMeth
 # U - reads and units (the Legacy API values become the units of the contract)
 # ---------------------------------------------------------------------------------------------------------------------------------------------
 $h = NewH
-$h.Api.SpeedMps = 20.0; $h.Api.Location = 1234.5; $h.Api.TimeMs = 36000000; $h.Api.GradientPermille = -12.5
+$h.Api.SpeedMps = 20.0; $h.Api.Location = 1234.5; $h.Api.TimeMs = 36000000; $h.Api.GradientRatio = -0.0125
 $h.Api.SignalMps = 25.0; $h.Api.ForwardSignalMps = 11.0; $h.Api.NextSectionLoc = 1500.0; $h.Api.GroundMps = 20.0
 $h.Api.DoorsClosed = $false; $h.Api.BrakeKind = 2; $h.Api.BrakeNotches = 5; $h.Api.Holding = $true
 $h.Api.Rates = [double[]]@(0.0, 0.2, 0.4, 0.6, 0.8, 1.0); $h.Api.MaxPa = 490000.0
@@ -99,7 +99,7 @@ Check 'U01 a line was sent for the first Tick' ($line -ne $null)
 Check 'U02 SPEED is km/h (20 m/s = 72)' (Near ([double]$d['SPEED']) 72.0)
 Check 'U03 TIME is the Legacy ms' ($d['TIME'] -eq '36000000')
 Check 'U04 LOCATION is metres' (Near ([double]$d['LOCATION']) 1234.5)
-Check 'U05 GRADIENT is per mille as the map authored it' (Near ([double]$d['GRADIENT']) -12.5)
+Check 'U05 GRADIENT is per mille: the Legacy API ratio -0.0125 is written as -12.5' (Near ([double]$d['GRADIENT']) -12.5)
 Check 'U06 SIGLIMIT is km/h (25 m/s = 90)' (Near ([double]$d['SIGLIMIT']) 90.0)
 Check 'U07 FWDSIGLIMIT is km/h (11 m/s = 39.6) and FWDSIGLOC the next section' ((Near ([double]$d['FWDSIGLIMIT']) 39.6) -and (Near ([double]$d['FWDSIGLOC']) 1500.0))
 Check 'U08 MAPHEAD and MAPTAIL are the ground limit in km/h (20 m/s = 72)' ((Near ([double]$d['MAPHEAD']) 72.0) -and (Near ([double]$d['MAPTAIL']) 72.0))
@@ -168,7 +168,7 @@ Check 'V12 key names are the contract vocabulary' $keysOk
 # F - failures: an unreadable value is left out (and not announced), nothing else is affected
 # ---------------------------------------------------------------------------------------------------------------------------------------------
 $groupOf = @{
-    'TryGradientPermille' = @('grad', @('GRADIENT'));
+    'TryGradientRatio' = @('grad', @('GRADIENT'));
     'TrySignalLimitMps' = @('siglimit', @('SIGLIMIT'));
     'TryForwardSignalLimitMps' = @('siglimit_ahead', @('FWDSIGLIMIT', 'FWDSIGLOC'));
     'TryNextSectionLocation' = @('siglimit_ahead', @('FWDSIGLIMIT', 'FWDSIGLOC'));
@@ -211,7 +211,7 @@ $h = NewH; $h.Api.SpeedMps = [double]::NaN; $h.Tick()
 Check 'F25 a NaN speed is not a reading' ($h.Sink.Lines().Count -eq 0)
 $h = NewH; $h.Api.Location = [double]::PositiveInfinity; $h.Tick()
 Check 'F26 an infinite location is not a reading' ($h.Sink.Lines().Count -eq 0)
-$h = NewH; $h.Api.GradientPermille = [double]::NaN; $h.Tick()
+$h = NewH; $h.Api.GradientRatio = [double]::NaN; $h.Tick()
 Check 'F27 a NaN gradient leaves the gradient out only' ((-not ((Tokens (Last $h)) -contains 'grad')) -and ((Tokens (Last $h)) -contains 'speed'))
 $h = NewH; $h.Api.Rates = [double[]]@(); $h.Tick()
 Check 'F28 no pressure rates (a system without them): no PRATES, not an empty one' (-not ((Tokens (Last $h)) -contains 'prates'))
@@ -350,7 +350,7 @@ Check 'G22 the dedicated log is TSScoring-L3-Telemetry.log in the Downloads fold
 $h = NewH; $h.UseFileDiag($dpath); $h.Api.FreshWrapperEachCall = $true; $h.Run(1000, 16); $h.Opened($true); $h.Created(); $h.Run(10, 16); $h.Dispose()
 $dl = @([IO.File]::ReadAllLines($dpath))
 Check 'G23 the file log starts a fresh file for the run (the previous content is gone)' (($dl.Count -ge 1) -and (-not ($dl -contains 'OLD RUN')))
-Check 'G24 1000 + 10 Ticks produce a handful of lines (state changes only), each HH:mm:ss.fff P=pid I=n EVENT' (($dl.Count -le 8) -and (@($dl | Where-Object { $_ -notmatch '^\d\d:\d\d:\d\d\.\d{3} P=\d+ I=\d+ TEL_[A-Z_]+( |$)' }).Count -eq 0))
+Check 'G24 1000 + 10 Ticks produce a handful of lines (state changes only; 2 instances = 2 gradient unit lines), each HH:mm:ss.fff P=pid I=n EVENT' (($dl.Count -le 10) -and (@($dl | Where-Object { $_ -notmatch '^\d\d:\d\d:\d\d\.\d{3} P=\d+ I=\d+ TEL_[A-Z_]+( |$)' }).Count -eq 0))
 $dj = $dl -join "`n"
 Check 'G25 the log shows instance 1 (first-tick, src-object), its UDP start, its end with 1000 lines, the reload instance and the totals' (($dj -match 'TEL_EPOCH_BEGIN n=1 scenarioId=\d+ reason=first-tick identity=src-object') -and ($dj -match 'TEL_UDP_BEGIN scenarioId=\d+') -and ($dj -match 'TEL_EPOCH_END scenarioId=\d+ lines=1000 reason=scenario-opened-reload') -and ($dj -match 'TEL_EPOCH_BEGIN n=2 .*reason=scenario-opened-reload') -and ($dj -match 'TEL_DISPOSE epochs=2 lines=1010 '))
 Check 'G26 the log holds no path, user name or scenario text' (($dj -notmatch '[A-Za-z]:\\') -and ($dj -notmatch ('(?i)' + [regex]::Escape($env:USERNAME))))
@@ -572,7 +572,7 @@ $qtOk = $false
 try { $qtOk = ((& python -c "import PyQt6.QtWidgets; print('ok')") -eq 'ok') } catch { $qtOk = $false }
 if ((-not $udpBusy) -and $qtOk -and (Test-Path $ovPy)) {
     $h = NewH
-    $h.Api.SpeedMps = 20.0; $h.Api.Location = 900.0; $h.Api.GradientPermille = -12.5; $h.Api.SignalMps = 25.0; $h.Api.ForwardSignalMps = 11.0
+    $h.Api.SpeedMps = 20.0; $h.Api.Location = 900.0; $h.Api.GradientRatio = -0.0125; $h.Api.SignalMps = 25.0; $h.Api.ForwardSignalMps = 11.0
     $h.Api.NextSectionLoc = 1500.0; $h.Api.GroundMps = 20.0; $h.Api.BrakeKind = 2; $h.Api.BrakeNotches = 5; $h.Api.Holding = $true
     $h.Api.Rates = [double[]]@(0.0, 0.2, 0.4, 0.6, 0.8, 1.0); $h.Api.MaxPa = 490000.0
     $h.Api.Stations.Add((NewStation 'A' 0.0)); $h.Api.Stations.Add((NewStation 'B' 1000.0 36100000 36130000)); $h.Api.Stations.Add((NewStation 'C' 2000.0 -1 -1 $true)); $h.Api.Stations.Add((NewStation 'D' 3000.0 36400000 -1 $false $true))
@@ -600,6 +600,74 @@ if ((-not $udpBusy) -and $qtOk -and (Test-Path $ovPy)) {
 else {
     Write-Host ('SKIP (not counted as a pass) I01-I11 C# bytes into the real Overlay: UDP 54321 busy=' + $udpBusy + ' PyQt6=' + $qtOk)
 }
+
+# ---------------------------------------------------------------------------------------------------------------------------------------------
+# Q - the unit of the gradient (L3-live finding: the HUD showed +0.0 / -0.0 because the Legacy API value is a RATIO, not per mille). The API value is read
+#     raw (ILegacyApi.TryGradientRatio) and converted ONCE (x 1000) in the session; the contract key GRADIENT stays per mille.
+# ---------------------------------------------------------------------------------------------------------------------------------------------
+$GU = $fixAsm.GetType('TsScoringLegacyTelemetryTests.GradientUnit')
+function GradLine([double]$ratio) { $x = NewH; $x.Api.GradientRatio = $ratio; $x.Tick(); return (Last $x) }
+$dq = P (GradLine 0.01)
+Check 'Q01 ratio 0.01 is written as GRADIENT 10 (10.0 per mille)' ((Near ([double]$dq['GRADIENT']) 10.0) -and ($dq['GRADIENT'] -eq '10'))
+$dq = P (GradLine -0.0125)
+Check 'Q02 ratio -0.0125 is written as GRADIENT -12.5 (sign and magnitude)' ((Near ([double]$dq['GRADIENT']) -12.5) -and ($dq['GRADIENT'] -eq '-12.5'))
+$lq = GradLine 0.0
+$dq = P $lq
+Check 'Q03 ratio 0 is written as GRADIENT 0, and the group is still announced (a flat section is a real reading)' (($dq['GRADIENT'] -eq '0') -and ((Tokens $lq) -contains 'grad'))
+$fracOk = $true
+foreach ($pair in @(@(0.0003, 0.3), @(0.00125, 1.25), @(0.0000123, 0.0123), @(0.035, 35.0), @(-0.0004, -0.4), @(0.05, 50.0), @(1.0, 1000.0))) {
+    $got = [double]((P (GradLine ([double]$pair[0])))['GRADIENT'])
+    if (-not (Near $got ([double]$pair[1]) 1e-9)) { $fracOk = $false }
+}
+Check 'Q04 fractional ratios keep their precision (0.0003 -> 0.3, 0.00125 -> 1.25, 0.0000123 -> 0.0123, -0.0004 -> -0.4, 0.05 -> 50)' $fracOk
+$ratioOne = [double](P (GradLine 0.01))['GRADIENT']
+Check 'Q05 the per-mille value is what the HUD parser gets: not the raw ratio (0.01) and not 0' (($ratioOne -ne 0.01) -and ($ratioOne -ne 0.0) -and (Near $ratioOne 10.0))
+$badOk = $true
+foreach ($bad in @([double]::NaN, [double]::PositiveInfinity, [double]::NegativeInfinity, 1e306, -1e306)) {
+    $lb = GradLine $bad
+    $db = P $lb
+    if ($db.ContainsKey('GRADIENT') -or ((Tokens $lb) -contains 'grad') -or (-not ((Tokens $lb) -contains 'speed'))) { $badOk = $false }
+    if ($GU.GetMethod('IsValid').Invoke($null, @([double]$bad))) { $badOk = $false }
+}
+Check 'Q06 NaN, +/-Infinity and a ratio whose x1000 overflows leave the gradient out (key and token), the rest of the line intact' $badOk
+$hq = NewH; $hq.Tick(); $hq.Api.Fail.Add('TryGradientRatio') | Out-Null; $hq.Run(1, 16)
+$dq = P (Last $hq)
+Check 'Q07 the API cannot be read: no GRADIENT key, no grad token (no default 0)' ((-not $dq.ContainsKey('GRADIENT')) -and (-not ((Tokens (Last $hq)) -contains 'grad')))
+$hq = NewH; $hq.Tick(); $hq.Api.ThrowIn = 'TryGradientRatio'; $hq.Run(1, 16)
+Check 'Q08 the API throws: nothing escapes, the line goes on without the gradient' ((-not (P (Last $hq)).ContainsKey('GRADIENT')) -and ($hq.Sink.Lines().Count -eq 2) -and ($hq.LinesSkipped -eq 0))
+$conv = $GU.GetMethod('Convert')
+Check 'Q09 the conversion is x 1000 and nothing else (0.01, -0.0125, 0, 0.0003)' ((Near ([double]$conv.Invoke($null, @(0.01))) 10.0 1e-12) -and (Near ([double]$conv.Invoke($null, @(-0.0125))) -12.5 1e-12) -and (([double]$conv.Invoke($null, @(0.0))) -eq 0.0) -and (Near ([double]$conv.Invoke($null, @(0.0003))) 0.3 1e-12))
+# the datagram text: the converted value is in the line, in the invariant culture
+$hq = NewH; $hq.Api.GradientRatio = 0.0125; $hq.Tick()
+Check 'Q10 the UDP datagram carries GRADIENT:12.5 (the converted value), never GRADIENT:0.0125' (((Last $hq) -match ',GRADIENT:12\.5,') -and ((Last $hq) -notmatch 'GRADIENT:0\.0125'))
+# the diagnostic of the unit: first valid gradient of each scenario instance only
+$hq = NewH; $hq.Api.GradientRatio = 0.01; $hq.Tick(); $hq.Run(999, 16)
+$gd = @($hq.Diag.Named('TEL_GRADIENT_FIRST'))
+Check 'Q11 1000 Ticks write exactly one gradient diagnostic: raw API value, value after x 1000, reason' (($gd.Count -eq 1) -and ($gd[0] -ceq 'TEL_GRADIENT_FIRST raw=0.01 permille=10 reason=api-ratio-x1000') -and ($hq.Diag.Named('TEL_GRADIENT_NONZERO').Count -eq 0))
+$hq.Opened($true); $hq.Api.Scenario = New-Object object; $hq.Api.GradientRatio = -0.0125; $hq.Created(); $hq.Run(500, 16)
+$gd = @($hq.Diag.Named('TEL_GRADIENT_FIRST'))
+Check 'Q12 a new scenario instance gets its own (one) diagnostic, with its own first value' (($gd.Count -eq 2) -and ($gd[1] -ceq 'TEL_GRADIENT_FIRST raw=-0.0125 permille=-12.5 reason=api-ratio-x1000'))
+$hq = NewH; $hq.Api.GradientRatio = 0.0; $hq.Tick(); $hq.Run(200, 16); $hq.Api.GradientRatio = 0.02; $hq.Run(200, 16); $hq.Api.GradientRatio = 0.03; $hq.Run(200, 16)
+Check 'Q13 a flat first reading is logged as such, and the first NON-zero one follows once (at most two lines per instance, never per Tick)' ((@($hq.Diag.Named('TEL_GRADIENT_FIRST')).Count -eq 1) -and (@($hq.Diag.Named('TEL_GRADIENT_FIRST'))[0] -ceq 'TEL_GRADIENT_FIRST raw=0 permille=0 reason=api-ratio-x1000') -and (@($hq.Diag.Named('TEL_GRADIENT_NONZERO')).Count -eq 1) -and (@($hq.Diag.Named('TEL_GRADIENT_NONZERO'))[0] -ceq 'TEL_GRADIENT_NONZERO raw=0.02 permille=20 reason=api-ratio-x1000'))
+$hq = NewH; $hq.Api.GradientRatio = [double]::NaN; $hq.Tick(); $hq.Run(5, 16)
+Check 'Q14 no valid gradient yet: no diagnostic' ($hq.Diag.Named('TEL_GRADIENT_FIRST').Count -eq 0)
+$hq.Api.GradientRatio = 0.004; $hq.Run(3, 16)
+Check 'Q15 the first VALID gradient is the one reported (raw 0.004 -> 4)' ((@($hq.Diag.Named('TEL_GRADIENT_FIRST')).Count -eq 1) -and (@($hq.Diag.Named('TEL_GRADIENT_FIRST'))[0] -ceq 'TEL_GRADIENT_FIRST raw=0.004 permille=4 reason=api-ratio-x1000'))
+$hq = NewH; $hq.Diag.Throw = $true; $hq.Api.GradientRatio = 0.01; $hq.Run(5, 16)
+Check 'Q16 a diagnostic that throws does not change the gradient on the line' (((P (Last $hq))['GRADIENT']) -eq '10')
+$hq = NewH; $hq.Api.Meta = @('SecretTitle', 'SecretRoute', 'SecretVehicle', 'SecretAuthor', 'SecretComment'); $hq.Api.GradientRatio = 0.01; $hq.Run(5, 16)
+$gtext = ($hq.Diag.Named('TEL_GRADIENT_FIRST')) -join "`n"
+Check 'Q17 the gradient diagnostic carries numbers and fixed words only (no scenario text, no path)' (($gtext -match '^TEL_GRADIENT_FIRST raw=[-0-9.eE]+ permille=[-0-9.eE]+ reason=api-ratio-x1000$') -and ($gtext -notmatch 'Secret') -and ($gtext -notmatch '[A-Za-z]:\\'))
+$dlq = Join-Path $testDir 'gradient-diag.log'
+$hq = NewH; $hq.UseFileDiag($dlq); $hq.Api.GradientRatio = 0.01; $hq.Run(2000, 16); $hq.Dispose()
+$gfl = @([IO.File]::ReadAllLines($dlq) | Where-Object { $_ -match 'TEL_GRADIENT' })
+Check 'Q18 the file log: 2000 Ticks, exactly one gradient line in the TEL_ format of the log' (($gfl.Count -eq 1) -and ($gfl[0] -match '^\d\d:\d\d:\d\d\.\d{3} P=\d+ I=\d+ TEL_GRADIENT_FIRST raw=0\.01 permille=10 reason=api-ratio-x1000$'))
+# nothing else moved: AVAIL, the other values, the scenario identity
+$hq = NewH; $hq.Api.FreshWrapperEachCall = $true; $hq.Api.GradientRatio = 0.01; $hq.Tick(); $hq.Run(60, 16)
+$qa = @($hq.Sink.Lines())
+Check 'Q19 AVAIL is unchanged by the unit fix (same 14 tokens, calcg from the second line) and one instance / one SCENARIO_ID stays' ((((Tokens $qa[1]) -join ',') -eq 'brake_cab,brake_type,calcg,door,grad,loc,maplimit,meta,prates,siglimit,siglimit_ahead,speed,station,time') -and ($hq.Epochs -eq 1) -and (@($qa | ForEach-Object { (P $_)['SCENARIO_ID'] } | Select-Object -Unique).Count -eq 1))
+$qd = P $qa[1]
+Check 'Q20 the other values of the line are unchanged (speed 36 km/h of 10 m/s, location, time, signal limit 90)' ((Near ([double]$qd['SPEED']) 36.0) -and (Near ([double]$qd['LOCATION']) 1000.0) -and (Near ([double]$qd['SIGLIMIT']) 90.0))
 
 # ---------------------------------------------------------------------------------------------------------------------------------------------
 $fail = @($results | Where-Object { -not $_.Ok }).Count

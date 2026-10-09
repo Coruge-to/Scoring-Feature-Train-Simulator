@@ -23,7 +23,7 @@ Write-Host '==== the built DLL ===='
 $outFiles = @(Get-ChildItem $outDir -File -ErrorAction SilentlyContinue)
 Check 'out holds exactly the one telemetry DLL (no PDB, no third-party DLL, no other file)' (($outFiles.Count -eq 1) -and ($outFiles[0].Name -eq 'TSScoringPlugin.AtsExLegacy.Telemetry.dll') -and (@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0))
 $vi = (Get-Item $dllPath).VersionInfo
-Check 'file version 0.1.1.0 (Phase L3 scenario-identity fix), product TS Scoring, provider Coruge-to, description names Phase L3' (($vi.FileVersion -eq '0.1.1.0') -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.CompanyName -eq 'Coruge-to') -and ($vi.Comments -match 'Phase L3'))
+Check 'file version 0.1.2.0 (Phase L3 gradient unit fix), product TS Scoring, provider Coruge-to, description names Phase L3' (($vi.FileVersion -eq '0.1.2.0') -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.CompanyName -eq 'Coruge-to') -and ($vi.Comments -match 'Phase L3'))
 $proj = [IO.File]::ReadAllText((Join-Path $telDir 'Legacy\TSScoringPlugin.AtsExLegacy.Telemetry.csproj'))
 $projCode = [regex]::Replace($proj, '<!--[\s\S]*?-->', '')      # the comments of the project file may name the Bridge
 Add-Type -TypeDefinition @"
@@ -67,6 +67,13 @@ Check 'one public type (the extension); everything else is internal' (($pub.Coun
 $session = Code ([IO.File]::ReadAllText((Join-Path $telDir 'Legacy\src\LegacyTelemetrySession.cs')))
 $never = @(); foreach ($k in @('REV', 'POW', 'BRK', 'HTYPE', 'ALLTXT', 'BCP', 'BPP', 'TRAINLEN', 'DOORTIME', 'MAPLIMITS', 'CLEARDIST', 'JUMP')) { if ($session -match ('"' + $k + '"')) { $never += $k } }
 Check 'the sender never names a key of data the Legacy API does not provide' ($never.Count -eq 0)
+# the gradient unit (finding of the BVE5 live test): the host adapter reads the RAW API ratio, the session converts it to per mille in exactly one place
+$extCode = Code ([IO.File]::ReadAllText((Join-Path $telDir 'Legacy\src\LegacyTelemetryExtension.cs')))
+$apiCode = Code ([IO.File]::ReadAllText((Join-Path $telDir 'Legacy\src\LegacyApi.cs')))
+$gradRead = [regex]::Match($extCode, 'TryGradientRatio\(double location, out double ratio\)[\s\S]*?\n        \}').Value
+Check 'gradient unit: the adapter returns the raw Legacy API ratio (no scaling, no per-mille name); the interface is TryGradientRatio' (($gradRead -match 'Gradients\.GetValueAt\(location\)') -and ($gradRead -notmatch '1000') -and ($apiCode -match 'bool TryGradientRatio\(') -and ($apiCode -notmatch 'TryGradientPermille') -and ($extCode -notmatch 'TryGradientPermille'))
+Check 'gradient unit: the ONE conversion (x 1000) lives in LegacyTelemetrySession.GradientRatioToPermille and the GRADIENT key is written from its result' (($session -match 'ratio \* 1000\.0') -and ([regex]::Matches($session, '\* 1000\.0')).Count -eq 1 -and ($session -match 'api\.TryGradientRatio\(location, out ratio\) && GradientRatioToPermille\(ratio, out gradient\)') -and ($session -match '"GRADIENT", TelemetryContract\.D\(gradient\)'))
+Check 'gradient unit: the shared contract file and the Python telemetry modules convert nothing (the per-mille contract is the Current one)' (((Code ([IO.File]::ReadAllText((Join-Path $telDir 'Shared\TelemetryContract.cs')))) -notmatch 'RatioToPermille|Gradient|GRADIENT') -and ((Get-Content (Join-Path $top 'telemetry_contract.py') -Raw) -notmatch '(?i)grad[^\r\n]*1000|1000[^\r\n]*grad') -and ((Get-Content (Join-Path $top 'network.py') -Raw) -notmatch 'GRADIENT:.*1000'))
 
 Write-Host '==== C# and Python speak the same vocabulary ===='
 $contractCs = [IO.File]::ReadAllText((Join-Path $telDir 'Shared\TelemetryContract.cs'))
@@ -132,7 +139,7 @@ if (-not $SkipDeployedCheck) {
     function H8([string]$p) { if (Test-Path $p) { return (Get-FileHash $p -Algorithm SHA256).Hash.Substring(0, 8) } else { return 'absent' } }
     $pub = $env:PUBLIC
     Check 'deployed Caller (BVE6 and BVE5) is the E4 Caller 0.11.0.0 (1B2F7C1F) deployed for L3-live - this fix changes no Caller' ((H8 (Join-Path $env:ProgramW6432 'mackoy\BveTs6\Input Devices\TSScoringPlugin.Caller.InputDevice.dll')) -eq '1B2F7C1F' -and (H8 (Join-Path ${env:ProgramFiles(x86)} 'mackoy\BveTs5\Input Devices\TSScoringPlugin.Caller.InputDevice.dll')) -eq '1B2F7C1F')
-    Check 'deployed Current Bridge (247F6724) and Legacy Bridge (C2883E40) are unchanged; the Legacy Extensions folder holds no telemetry DLL, the L3-live 0.1.0.0 (8BFD06AA) or this build, and the Current Extensions folder none' (((H8 (Join-Path $pub 'Documents\BveEx\2.0\Extensions\TSScoringPlugin.BveEx.Bridge.Prototype.dll')) -eq '247F6724') -and ((H8 (Join-Path $pub 'Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll')) -eq 'C2883E40') -and ((H8 (Join-Path $pub 'Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Telemetry.dll')) -in @('8BFD06AA', 'absent', (H8 $dllPath))) -and ((H8 (Join-Path $pub 'Documents\BveEx\2.0\Extensions\TSScoringPlugin.AtsExLegacy.Telemetry.dll')) -eq 'absent'))
+    Check 'deployed Current Bridge (247F6724) and Legacy Bridge (C2883E40) are unchanged; the Legacy Extensions folder holds no telemetry DLL, the L3-live 0.1.0.0 (8BFD06AA) or this build, and the Current Extensions folder none' (((H8 (Join-Path $pub 'Documents\BveEx\2.0\Extensions\TSScoringPlugin.BveEx.Bridge.Prototype.dll')) -eq '247F6724') -and ((H8 (Join-Path $pub 'Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll')) -eq 'C2883E40') -and ((H8 (Join-Path $pub 'Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Telemetry.dll')) -in @('8BFD06AA', '10683A92', 'absent', (H8 $dllPath))) -and ((H8 (Join-Path $pub 'Documents\BveEx\2.0\Extensions\TSScoringPlugin.AtsExLegacy.Telemetry.dll')) -eq 'absent'))
     Check 'launcher.json is the E3 one (91471ACC)' ((H8 (Join-Path $env:LOCALAPPDATA 'Coruge-to\TS Scoring\launcher.json')) -eq '91471ACC')
 }
 

@@ -71,6 +71,8 @@ namespace TSScoringPlugin.Telemetry
         private bool staListSent;
         private long lastMetaMs;
         private bool metaSent;
+        private bool gradientFirstLogged;       // the gradient unit diagnostic of this instance (see ReportGradient)
+        private bool gradientNonZeroLogged;
 
         // diagnostics (tests, and a future log)
         internal int Epochs { get; private set; }
@@ -170,6 +172,8 @@ namespace TSScoringPlugin.Telemetry
             metaSent = false;
             lastStaListMs = 0;
             lastMetaMs = 0;
+            gradientFirstLogged = false;
+            gradientNonZeroLogged = false;
         }
 
         private void StartEpoch(LegacyScenarioIdentity identity)
@@ -203,6 +207,45 @@ namespace TSScoringPlugin.Telemetry
             lastScenarioId = id;
             scenarioActive = true;
             Log("TEL_EPOCH_BEGIN", "n=" + Epochs + " scenarioId=" + id + " reason=" + reason + " identity=" + identityKind);
+        }
+
+        // -- the gradient unit ----------------------------------------------------------------------------------------------------------------
+        /// <summary>The one conversion of the gradient: the Legacy API ratio (0.01) to the per mille of the contract (10). false = no valid value (NaN / Infinity before or after).</summary>
+        internal static bool GradientRatioToPermille(double ratio, out double permille)
+        {
+            permille = 0.0;
+            if (!TelemetryContract.Finite(ratio))
+            {
+                return false;
+            }
+
+            double converted = ratio * 1000.0;
+            if (!TelemetryContract.Finite(converted))
+            {
+                return false;
+            }
+
+            permille = converted;
+            return true;
+        }
+
+        /// <summary>
+        /// Diagnostic for the live check of the unit: per scenario instance, the first valid gradient (raw API value, value after x1000) - and, only if that one
+        /// was exactly 0, the first non-zero one after it. At most two lines per instance, never per Tick; numbers and fixed words only.
+        /// </summary>
+        private void ReportGradient(double raw, double permille)
+        {
+            if (!gradientFirstLogged)
+            {
+                gradientFirstLogged = true;
+                gradientNonZeroLogged = raw != 0.0;
+                Log("TEL_GRADIENT_FIRST", "raw=" + TelemetryContract.D(raw) + " permille=" + TelemetryContract.D(permille) + " reason=api-ratio-x1000");
+            }
+            else if (!gradientNonZeroLogged && raw != 0.0)
+            {
+                gradientNonZeroLogged = true;
+                Log("TEL_GRADIENT_NONZERO", "raw=" + TelemetryContract.D(raw) + " permille=" + TelemetryContract.D(permille) + " reason=api-ratio-x1000");
+            }
         }
 
         // -- the heartbeat (any thread) -------------------------------------------------------------------------------------------------------
@@ -303,13 +346,15 @@ namespace TSScoringPlugin.Telemetry
             // Every optional group below is added ALL OR NOTHING: a value that cannot be read (or an exception) leaves the group out of the line and out
             // of AVAIL, and never affects another group.
 
-            // GRADIENT
+            // GRADIENT: the Legacy API value is a ratio; the contract is per mille. The conversion is here and only here; no value is invented.
             try
             {
+                double ratio;
                 double gradient;
-                if (api.TryGradientPermille(location, out gradient) && TelemetryContract.Finite(gradient))
+                if (api.TryGradientRatio(location, out ratio) && GradientRatioToPermille(ratio, out gradient))
                 {
                     lb.Group(TelemetryContract.TokGrad, "GRADIENT", TelemetryContract.D(gradient));
+                    ReportGradient(ratio, gradient);
                 }
             }
             catch

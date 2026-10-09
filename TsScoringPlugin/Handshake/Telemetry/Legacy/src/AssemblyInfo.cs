@@ -17,6 +17,6 @@ using System.Runtime.CompilerServices;
 // The offline tests (and nothing else) reach the internal core through this.
 [assembly: InternalsVisibleTo("TsScoringLegacyTelemetryTests")]
 
-[assembly: AssemblyVersion("0.1.1.0")]
-[assembly: AssemblyFileVersion("0.1.1.0")]
-[assembly: AssemblyInformationalVersion("0.1.1.0")]
+[assembly: AssemblyVersion("0.1.2.0")]
+[assembly: AssemblyFileVersion("0.1.2.0")]
+[assembly: AssemblyInformationalVersion("0.1.2.0")]

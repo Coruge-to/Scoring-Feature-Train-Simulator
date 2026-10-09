@@ -36,7 +36,7 @@ namespace TsScoringLegacyTelemetryTests
         public double Location = 1000.0;
         public double SpeedMps = 10.0;
         public bool DoorsClosed = true;
-        public double GradientPermille = 12.5;
+        public double GradientRatio = 0.0125;     // what the Legacy API returns: a RATIO (0.0125 = 12.5 per mille); the session converts it
         public double SignalMps = 25.0;
         public double ForwardSignalMps = double.PositiveInfinity;
         public bool NextSectionFound = true;
@@ -119,7 +119,7 @@ namespace TsScoringLegacyTelemetryTests
         bool ILegacyApi.TryLocation(out double meters) { meters = 0; if (Blocked("TryLocation")) { return false; } meters = Location; return true; }
         bool ILegacyApi.TrySpeedMps(out double v) { v = 0; if (Blocked("TrySpeedMps")) { return false; } v = SpeedMps; return true; }
         bool ILegacyApi.TryDoorsClosed(out bool allClosed) { allClosed = false; if (Blocked("TryDoorsClosed")) { return false; } allClosed = DoorsClosed; return true; }
-        bool ILegacyApi.TryGradientPermille(double location, out double permille) { permille = 0; if (Blocked("TryGradientPermille")) { return false; } permille = GradientPermille; return true; }
+        bool ILegacyApi.TryGradientRatio(double location, out double ratio) { ratio = 0; if (Blocked("TryGradientRatio")) { return false; } ratio = GradientRatio; return true; }
         bool ILegacyApi.TryStationCount(out int count) { count = 0; if (Blocked("TryStationCount")) { return false; } count = Stations.Count; return true; }
 
         bool ILegacyApi.TryStations(out IList<LegacyStationRaw> stations)
@@ -415,6 +415,22 @@ namespace TsScoringLegacyTelemetryTests
         public static string Version { get { return FileTelemetryDiag.Version; } }
         public static void Write(string path, string name, string detail) { new FileTelemetryDiag(path).Event(name, detail); }
     }
+    public static class GradientUnit
+    {
+        /// <summary>The session's one conversion (ratio to per mille). Returns NaN when there is no valid value.</summary>
+        public static double Convert(double ratio)
+        {
+            double permille;
+            return LegacyTelemetrySession.GradientRatioToPermille(ratio, out permille) ? permille : double.NaN;
+        }
+
+        public static bool IsValid(double ratio)
+        {
+            double permille;
+            return LegacyTelemetrySession.GradientRatioToPermille(ratio, out permille);
+        }
+    }
+
     public static class Contract
     {
         public static string Avail(string[] tokens) { return TelemetryContract.FormatAvail(tokens); }

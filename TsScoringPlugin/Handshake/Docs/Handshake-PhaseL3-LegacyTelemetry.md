@@ -1,9 +1,9 @@
 # TS Scoring – Phase L3（AtsEX Legacy の HUD テレメトリ）
 
-提供者: **Coruge-to** / 対象: **BVE5 + AtsEX レガシーモード**（BVE6 の Current 経路は無変更）/ バージョン: テレメトリ DLL **0.1.1.0**（0.1.0.0 は L3-live で下記 §9 の不具合が判明したため置換）、Caller は無変更（0.11.0.0）。
+提供者: **Coruge-to** / 対象: **BVE5 + AtsEX レガシーモード**（BVE6 の Current 経路は無変更）/ バージョン: テレメトリ DLL **0.1.2.0**（0.1.0.0 は L3-live で下記 §9 の不具合が判明したため 0.1.1.0 へ置換。0.1.1.0 の実機試験で勾配の単位の不具合が判明したため §10 で 0.1.2.0 へ更新）、Caller は無変更（0.11.0.0）。
 
 この版で、E4 監査（`Handshake-PhaseE4-LegacyTelemetryAudit.md`）が指摘した「Legacy には HUD へ実データを送る経路が無い」を、**オフラインで検証できる範囲で**解消した。
-BVE5 の実機では 0.1.0.0 で L3-live を行い、シナリオ同一性の不具合（§9）が見つかって修正した。0.1.1.0 の L3-B 再試験は未実施。**修正版 DLL の配置、push、実機起動は行っていない。**
+BVE5 の実機では 0.1.0.0 で L3-live を行い、シナリオ同一性の不具合（§9）が見つかって修正した。0.1.1.0 の L3-B 再試験では世代判定・UDP・HUD 更新は成立したが勾配が常に ±0.0‰ で、単位の修正（§10）を 0.1.2.0 に入れた。**0.1.2.0 の DLL の配置、push、実機起動は行っていない。**
 
 ## 1. 構成（制御プレーンとデータプレーンの分離）
 
@@ -121,7 +121,7 @@ SCENARIO_ID:<id>,AVAIL:1:<token>+<token>+...,SPEED:..,TIME:..,LOCATION:..,...
 | 速度 | `Scenario.LocationManager.SpeedMeterPerSecond` | `VehicleLocation.Speed` | m/s → ×3.6 で km/h |
 | BVE 時刻 | `Scenario.TimeManager.TimeMilliseconds` | `TimeManager.Time` | ms（そのまま） |
 | 現在位置 | `Scenario.LocationManager.Location` | `VehicleLocation.Location` | m |
-| 勾配 | `Route.MyTrack.Gradients.GetValueAt(位置)` | `TrackAlignment.Gradient`、0 なら同じ `GetValueAt` | ‰（地図に書かれた値）。Current の代替経路と同一 |
+| 勾配 | `Route.MyTrack.Gradients.GetValueAt(位置)` | `TrackAlignment.Gradient`、0 なら同じ `GetValueAt` | **API の値は比率**（0.01 = 10‰）。Legacy アダプター（`LegacyTelemetrySession.GradientRatioToPermille`）で **×1000 して ‰** にしてから `GRADIENT` へ書く（Current は `TrackAlignment.Gradient` を ×1000 している）。詳細は §10 |
 | 駅情報 | `Route.Stations`（`Name` `Location` `Pass` `IsTerminal` `DoorSide` `Arrival/Departure/Default/StoppageTimeMilliseconds` `MarginMin/Max`） | 同じ内容を動的に読む | ms、m。`MarginMin` は API が負で返すため絶対値（Current と同じ）。駅一覧の整形と「次駅」の状態機械は Current と同じ規則（`LegacyStationTimeline`） |
 | 信号制限 | `SectionManager.CurrentSectionSpeedLimit` / `ForwardSectionSpeedLimit` / `Sections[i].Location` | 同じ | m/s → km/h。無限大・999 m/s 超は 1000（制限なし）。0 は 0 km/h（停止現示） |
 | 地上制限（現在値） | `Route.SpeedLimits.CurrentLimit`（API の定義: 「現在の制限速度 [m/s]」） | `SpeedLimits` の各要素から計算 | m/s → km/h。無限大・999 超・0 以下は 1000。`MAPHEAD` と `MAPTAIL` に**同じ実値**を送る（先行リストは存在しない） |
@@ -242,3 +242,40 @@ L3-B 再試験の合格確認: 1 シナリオに `TEL_EPOCH_BEGIN` が 1 回（�
 ### 9.5 試験
 
 `Tests\Test-TelemetryL3.ps1` の G01〜G27（偽 API が毎 Tick 別ラッパーを返す; 1000 Tick で世代 1、Pause 後も同一、同内容の再読込・別シナリオで新世代、Dispose 後の再初期化、UDP 形式・AVAIL・取得不能項目が不変、診断が状態変化だけ）、R01〜R06（**実際の BveTypes のラッパークラス**を使用）、H01〜H04（C# のデータグラムを実 `TelemetryGate` strict に通し、`sender-ahead` が出ないことと、旧不具合の署名が検出されること）、X15〜X18（静的検査）。旧実装（ラッパー参照比較）へ一時的に戻すと、G02〜G05・G07〜G09・G11・G13〜G17・G24・G25・R05・R06・X15 の 18 件が失敗することを確認済み（実行記録は試験証拠に保存）。
+
+## 10. 実機で判明した勾配の単位の不具合（0.1.2.0）
+
+### 10.1 不具合
+
+BVE5 Legacy の実機試験（0.1.1.0）で、世代判定・UDP・HUD 更新は成立したが、勾配の表示だけが常に `+0.0‰` / `-0.0‰`（符号だけ変わる）だった。
+
+### 10.2 原因（監査結果。生値は実機で未確認のため仮説、0.1.2.0 の診断で確認する）
+
+* `Route.MyTrack.Gradients.GetValueAt(位置)`（`InterpolatableMapObjectList.GetValueAt`: 距離程における線形補間値、戻り型 `double`。公開ドキュメントに単位の記載なし）の値は**比率**（rise / run、無次元。0.01 = 10‰）と見られる。Current の `TrackAlignment.Gradient` も比率で、Current 送信は `× 1000.0` して ‰ にしている。
+* 0.1.1.0 の Legacy 送信は、その値を**そのまま** `GRADIENT`（契約上は ‰）へ書いていた。UDP（`ToString("R")`）と Python（`float()`）は値を縮めない。HUD は `+{v:.1f}` / `{v:.1f}` で表示するため、|v| < 0.05 は符号だけ残って `0.0` になる。
+* オフライン試験が見逃した理由: 偽 API が ‰ を直接返しており、取得点の単位変換が試験経路に存在しなかった。
+
+### 10.3 単位契約
+
+| 場所 | 単位 |
+|---|---|
+| `ILegacyApi.TryGradientRatio`（Legacy 公開 API の生値） | **比率**（無次元。0.01 = 10‰）。変換しない |
+| `LegacyTelemetrySession.GradientRatioToPermille`（唯一の変換点） | `ratio × 1000.0`。入力または結果が NaN / ±Infinity なら「有効な値なし」 |
+| UDP `GRADIENT`（共通契約） | **‰**（Current と同じ意味。変更なし） |
+| Python / HUD | ‰ としてそのまま（変更なし） |
+
+変換は Legacy アダプター層（このプロジェクト）に限る。Python、HUD、既存 UDP キー、Current 送信は変更しない。値を推測・補間・既定値で補うことはしない（読めない／無効な値は `GRADIENT` も `grad`（AVAIL）も出さない従来の契約のまま）。
+
+### 10.4 診断（毎 Tick は書かない）
+
+専用ログ（§9.4）へ、**1 シナリオ（世代）につき最初の有効な勾配**を 1 回だけ書く。数値と固定語だけ（シナリオ名・パスは書かない）。
+
+```
+TEL_GRADIENT_FIRST raw=<API の生値> permille=<×1000 後の値> reason=api-ratio-x1000
+```
+
+最初の有効値がちょうど 0（平坦区間）だった場合に限り、その後の**最初の非 0 値**を `TEL_GRADIENT_NONZERO`（同じ形式）で 1 回だけ追加する（平坦から始まるシナリオでも単位を確認できるようにするため。1 世代あたり最大 2 行）。実機での確認: 既知の勾配区間で `raw` が 0.01 前後（比率）、`permille` がその 1000 倍、HUD の表示が `permille` と一致する。
+
+### 10.5 試験
+
+`Tests\Test-TelemetryL3.ps1` の Q01〜Q20: 0.01 → 10、-0.0125 → -12.5、0 → 0（`grad` は出る）、小数、NaN / ±Infinity / ×1000 のオーバーフロー / 取得失敗 / 例外、UDP 行に変換後の値が入ること、診断が 1 世代 1 回（平坦開始は 2 回まで）で数値と固定語のみ、AVAIL・世代判定・他の値が不変。×1000 を除去する変異で失敗することを確認済み。

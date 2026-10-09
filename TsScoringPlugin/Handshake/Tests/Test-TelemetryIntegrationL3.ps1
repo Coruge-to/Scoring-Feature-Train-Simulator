@@ -233,7 +233,7 @@ try {
         # the pseudo Legacy world: a scenario with four stations, driven by the real sender core, sending through the REAL UDP sink
         $lh = New-Object TsScoringLegacyTelemetryTests.LiveHarness
         $lh.Api.FreshWrapperEachCall = $true      # the real host: IBveHacker.Scenario is a NEW wrapper object on every Tick (the L3-live defect needs this)
-        $lh.Api.SpeedMps = 15.0; $lh.Api.Location = 900.0; $lh.Api.GradientPermille = 8.0
+        $lh.Api.SpeedMps = 15.0; $lh.Api.Location = 900.0; $lh.Api.GradientRatio = 0.008
         $lh.Api.Stations.Add((NewStation 'A' 0.0)); $lh.Api.Stations.Add((NewStation 'B' 1000.0 36100000 36130000)); $lh.Api.Stations.Add((NewStation 'C' 2000.0 -1 -1 $true)); $lh.Api.Stations.Add((NewStation 'D' 3000.0 36400000 -1 $false $true))
 
         # Pump: the host's Tick (Driving stays ON) and, when asked, the sender's Tick (telemetry) for a number of milliseconds

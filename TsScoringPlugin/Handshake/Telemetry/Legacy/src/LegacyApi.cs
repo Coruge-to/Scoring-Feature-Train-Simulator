@@ -91,8 +91,13 @@ namespace TSScoringPlugin.Telemetry
         /// <summary>Scenario.Vehicle.Doors.AreAllClosed.</summary>
         bool TryDoorsClosed(out bool allClosed);
 
-        /// <summary>Scenario.Route.MyTrack.Gradients.GetValueAt(location): the gradient as the map authored it (per mille).</summary>
-        bool TryGradientPermille(double location, out double permille);
+        /// <summary>
+        /// Scenario.Route.MyTrack.Gradients.GetValueAt(location), UNCHANGED. UNIT CONTRACT: the Legacy API gives the gradient as a RATIO (rise over run, dimensionless;
+        /// 0.01 = 10 per mille), the same quantity as TrackAlignment.Gradient of the Current API, which the Current sender multiplies by 1000. This method returns
+        /// that raw ratio and nothing else: the one conversion to per mille (x 1000) is LegacyTelemetrySession.GradientRatioToPermille, so the telemetry contract
+        /// (GRADIENT, per mille) is the only place per mille exists.
+        /// </summary>
+        bool TryGradientRatio(double location, out double ratio);
 
         /// <summary>Scenario.Route.Stations.Count (read every Tick; the stations themselves only when the list has to be built).</summary>
         bool TryStationCount(out int count);
