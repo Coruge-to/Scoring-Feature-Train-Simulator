@@ -3,6 +3,29 @@ from PyQt6.QtGui import QColor, QFontMetrics, QPainterPath, QPen, QLinearGradien
 from config import *
 from utils import draw_text_with_stroke, get_outline_color
 
+def hud_item_available(overlay, key):
+    """Can the sender provide the data of this HUD item? (telemetry_contract AVAIL; a sender without AVAIL provides everything.)"""
+    gate = getattr(overlay, 'telemetry_gate', None)
+    return gate is None or gate.availability.item(key)
+
+
+def hud_data_available(overlay, token):
+    """Is this data group (telemetry_contract token) provided by the sender?"""
+    gate = getattr(overlay, 'telemetry_gate', None)
+    return gate is None or gate.availability.has(token)
+
+
+def hud_item_state(overlay, key):
+    """Why a HUD item is or is not drawn, in fixed words: "unavailable" (the data does not exist on this sender - not a setting), "user-hidden"
+    (the user's own switch in Overlay.disp_settings is off) or "shown"."""
+    if not hud_item_available(overlay, key):
+        return "unavailable"
+    return "shown" if overlay.disp_settings.get(key, True) else "user-hidden"
+
+
+def hud_item_visible(overlay, key):
+    return hud_item_state(overlay, key) == "shown"
+
 def draw_hud(self, painter, logical_width):
     from main import KERNING_OFFSETS
     
@@ -96,13 +119,19 @@ def draw_hud(self, painter, logical_width):
         f"BrakeType: {self.bve_btype} | InitExempt: {IGNORE_INITIAL_BRAKE} | RelExempt: {IGNORE_RELEASE_BRAKE}",
         cushion_str,
         bb_debug_text,
-        f"BCP: {self.bcPressure:.1f} kPa | "
-        f"BPP: {self.bpPressure:.1f} / "
-        f"{self.bve_bp_initial * SMEE_VIRTUAL_EB_BP_RATIO:.1f} kPa | "
-        f"Virtual_EB: {virtual_eb_status}",
-        f"Target_Cap_Val: {round(self.dbg_target_cap, 1)} | ActiveBlue: {round(float(self.dbg_blue), 1) if self.dbg_blue != 'None' else 'None'}  |  ActiveRed: {round(float(self.dbg_red), 1) if self.dbg_red != 'None' else 'None'}",
-        f"CalcG: {self.bve_calc_g:.4f} G | MaxG: {self.max_stop_g:.4f} G | LastStop: {self.last_stop_g:.4f} G"
     ])
+    # Phase L3: a value the sender cannot provide (AVAIL) is left out of the diagnostics too - no placeholder, no default
+    pressure_parts = []
+    if hud_data_available(self, "bcp"):
+        pressure_parts.append(f"BCP: {self.bcPressure:.1f} kPa")
+    if hud_data_available(self, "bpp"):
+        pressure_parts.append(f"BPP: {self.bpPressure:.1f} / {self.bve_bp_initial * SMEE_VIRTUAL_EB_BP_RATIO:.1f} kPa")
+        pressure_parts.append(f"Virtual_EB: {virtual_eb_status}")
+    if pressure_parts:
+        dbg_texts.append(" | ".join(pressure_parts))
+    dbg_texts.append(f"Target_Cap_Val: {round(self.dbg_target_cap, 1)} | ActiveBlue: {round(float(self.dbg_blue), 1) if self.dbg_blue != 'None' else 'None'}  |  ActiveRed: {round(float(self.dbg_red), 1) if self.dbg_red != 'None' else 'None'}")
+    if hud_data_available(self, "calcg"):
+        dbg_texts.append(f"CalcG: {self.bve_calc_g:.4f} G | MaxG: {self.max_stop_g:.4f} G | LastStop: {self.last_stop_g:.4f} G")
     
     if self.show_graph:
         painter.setPen(Qt.PenStyle.NoPen)
@@ -238,13 +267,13 @@ def draw_hud(self, painter, logical_width):
         if label_text and show_label: draw_text_with_stroke(painter, label_text, self.font_ui, label_color, get_outline_color(label_color), pos_x_label, y, "left")
         if value_text and show_value: draw_text_with_stroke(painter, value_text, self.font_ui, value_color, get_outline_color(value_color), pos_x_right, y, "right")
 
-    if self.disp_settings["time"]:
+    if hud_item_visible(self, "time"):
         s = self.bve_time_ms // 1000
         h, m, sec = s // 3600, (s % 3600) // 60, s % 60
         draw_row_local("", COLOR_WHITE, f"{h:02}:{m:02}:{sec:02}", COLOR_WHITE, ui_y)
     ui_y += ui_step
     
-    if self.disp_settings["time_left"]:
+    if hud_item_visible(self, "time_left"):
         if self.bve_next_time > 0:
             current_s = self.bve_time_ms // 1000
             target_s = self.bve_next_time // 1000
@@ -260,11 +289,11 @@ def draw_hud(self, painter, logical_width):
             draw_row_local("", COLOR_WHITE, "--:--", COLOR_WHITE, ui_y)
     ui_y += ui_step
     
-    if self.disp_settings["speed"]:
+    if hud_item_visible(self, "speed"):
         draw_row_local("", COLOR_WHITE, f"{self.bve_speed:.1f} km/h", COLOR_WHITE, ui_y)
     ui_y += ui_step
 
-    if self.disp_settings["limit"]:
+    if hud_item_visible(self, "limit"):
         show_l, show_v = True, True
         if self.blink_active:
             is_type_changed = (self.target_type != self.base_limit_type)
@@ -287,7 +316,7 @@ def draw_hud(self, painter, logical_width):
         draw_row_local(l_text, l_color, v_text, v_color, ui_y, show_label=show_l, show_value=show_v)
     ui_y += ui_step
 
-    if self.disp_settings["dist"]:
+    if hud_item_visible(self, "dist"):
         if self.bve_next_loc >= 0:
             d = self.bve_next_loc - self.bve_location
             abs_d = abs(d) 
@@ -334,7 +363,7 @@ def draw_hud(self, painter, logical_width):
         draw_row_local("得点", COLOR_WHITE, str(self.score), COLOR_B_EMG if self.score < 0 else COLOR_WHITE, ui_y)
     ui_y += ui_step
 
-    if self.disp_settings["handle"]:
+    if hud_item_visible(self, "handle"):
         rev_color = COLOR_P if self.bve_rev_pos == 1 else (COLOR_B_EMG if self.bve_rev_pos == -1 else COLOR_N)
         if "抜取" in self.bve_rev_text: rev_color = COLOR_B_EMG
         pow_color = COLOR_P if self.bve_pow_notch > 0 else (COLOR_B_SVC if self.bve_pow_notch < 0 else COLOR_N)
@@ -389,6 +418,6 @@ def draw_hud(self, painter, logical_width):
     else:
         ui_y += ui_step 
 
-    if self.disp_settings["grad"]:
+    if hud_item_visible(self, "grad"):
         grad_str = f"+{self.bve_gradient:.1f} ‰" if self.bve_gradient > 0 else (f"{self.bve_gradient:.1f} ‰" if self.bve_gradient < 0 else "0.0 ‰")
         draw_row_local("", COLOR_WHITE, grad_str, COLOR_WHITE, ui_y)

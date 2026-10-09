@@ -2,6 +2,8 @@
 
 E4 は「いつHUDを出し、更新し、隠すか」（状態連動）を実装した。この文書は、もう一つの問い「HUD は実データで更新されるか」を、Current と BVE5 Legacy について監査した結果である。**結論: 状態連動は両方で動くが、BVE5 Legacy では HUD に実データを送る経路が存在しない。**
 
+> **Phase L3 追記（この文書は E4 時点の監査として残す）**: §7 の最小アダプター案を Phase L3 で実装した（独立した Legacy テレメトリ DLL、`AVAIL` 契約、Python の項目別表示、実テレメトリ受信までの HUD 非表示）。取得元・単位・取得不能項目の最終的な確定は `Handshake-PhaseL3-LegacyTelemetry.md` を正本とする。BVE5 の実機では未確認のため、下の状態表（NOT live-updating）はこの文書の時点の記録であり、実機での受入は Phase L3-live で行う。
+
 ## 1. Legacy HUD functional status
 
 | 環境 | 状態連動（E4） | HUD の実データ更新 |

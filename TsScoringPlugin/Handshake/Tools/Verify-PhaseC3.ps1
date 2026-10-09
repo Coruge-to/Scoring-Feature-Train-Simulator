@@ -129,7 +129,7 @@ Check 'Caller P/Invoke is user32 MessageBoxW only; Bridge has none' ((($cPinvoke
 
 Write-Host '==== source checks (comment lines are skipped) ===='
 # Phase L1: this script verifies the CURRENT BveEX product only. The AtsEX legacy adapter (Bridge\Legacy\) has its own verification (Tools\Verify-PhaseL1.ps1).
-$srcFiles = @(Get-ChildItem $Root -Recurse -Include *.cs | Where-Object { $_.FullName -notlike '*\obj\*' -and $_.FullName -notlike '*\Bridge\Legacy\*' })
+$srcFiles = @(Get-ChildItem $Root -Recurse -Include *.cs | Where-Object { $_.FullName -notlike '*\obj\*' -and $_.FullName -notlike '*\Bridge\Legacy\*' -and $_.FullName -notlike '*\Telemetry\*' })   # Phase L3: the telemetry project is the DATA plane (the only code with a socket); see Test-TelemetryL3.ps1
 function SrcHits([string]$pattern) {
     $out = @()
     foreach ($f in $srcFiles) {

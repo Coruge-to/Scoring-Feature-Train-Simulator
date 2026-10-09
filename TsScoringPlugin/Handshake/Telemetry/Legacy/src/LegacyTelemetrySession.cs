@@ -1,0 +1,558 @@
+using System;
+using System.Collections.Generic;
+using System.Text;
+using System.Threading;
+
+// ============================================================================
+// PHASE L3 - the AtsEX LEGACY telemetry sender, host independent part.
+//
+// What it does, per Tick, in the order of the Current sender: STALIST (once at the start of a scenario instance, then every second), META (same
+// cadence), then the telemetry line. The line carries ONLY what could be read from the Legacy API in this Tick, expressed in the units and
+// sentinels of the telemetry contract, and an AVAIL part that names exactly those data groups. Nothing is guessed, defaulted or carried over:
+//
+//   * a value that cannot be read is not written, and its token is not in AVAIL;
+//   * data that does not exist in the Legacy API (handle texts, brake cylinder / brake pipe pressure, the ground limit look-ahead, the vehicle
+//     length derivation, the jump) has no token and no key, ever;
+//   * a new scenario instance (ScenarioOpened / ScenarioClosed / ScenarioCreated, a different ORIGINAL Scenario object, IsScenarioCreated false) ends the
+//     old one at once: new SCENARIO_ID, the station state machine, the acceleration reference and the datagram cadence all start from nothing;
+//   * "the same scenario" is decided by the reference identity of the original BVE Scenario object (LegacyScenarioIdentity.Source), NEVER by the wrapper:
+//     the host hands out a new wrapper on every access, so a wrapper comparison would start a new instance (and a new SCENARIO_ID) on every Tick. The
+//     lifecycle events end the instance on their own, so a reload of identical content is a new instance even if an object were ever reused;
+//   * Pause: the host stops calling Tick, so nothing is sent; the heartbeat (STATUS) reports PAUSED from a timer using only the fields below.
+//
+// Threads: OnTick / OnScenario* / Dispose run on the host's Tick thread (the only thread that touches the Legacy API). ComposeHeartbeat is called
+// from a timer thread and reads only the two fields written with Interlocked / volatile below - it never touches a BVE object.
+// No exception leaves any public member.
+// ============================================================================
+namespace TSScoringPlugin.Telemetry
+{
+    /// <summary>
+    /// Where the sender reports its state CHANGES (never per Tick). Implementations must not throw; the session guards every call anyway.
+    /// Only numbers, ids and fixed words are passed: no path, no scenario / vehicle / route text.
+    /// </summary>
+    internal interface ITelemetryDiag
+    {
+        void Event(string name, string detail);
+    }
+
+    internal sealed class LegacyTelemetrySession
+    {
+        private const double JumpToleranceMs = 300.0;
+        private const long StaListIntervalMs = 1000;
+        private const long PausedAfterMs = 100;
+
+        private readonly ILegacyApi api;
+        private readonly ITelemetrySink sink;
+        private readonly Func<long> nowMs;          // monotonic milliseconds
+        private readonly Func<long> idSeed;         // any increasing number (UTC ticks in production); only used to derive a scenario id
+        private readonly LegacyStationTimeline timeline = new LegacyStationTimeline();
+
+        // written on the Tick thread, read by the heartbeat thread
+        private volatile bool scenarioActive;
+        private long lastTickMs;
+        private volatile bool disposed;
+
+        private readonly ITelemetryDiag diag;
+
+        // per scenario instance (Tick thread only)
+        private object scenarioToken;           // LegacyScenarioIdentity.Source of the active instance (compared by reference)
+        private string identityKind = "none";
+        private string endReason = "first-tick";  // why the previous instance ended (the reason the next one begins)
+        private bool identityUnavailable;
+        private int epochLines;
+        private bool epochUdpLogged;
+        private bool epochActive;
+        private int scenarioId;
+        private int lastScenarioId;
+        private int lastTimeMs;
+        private double lastSpeedMps;
+        private bool haveLastSample;
+        private long lastStaListMs;
+        private bool staListSent;
+        private long lastMetaMs;
+        private bool metaSent;
+
+        // diagnostics (tests, and a future log)
+        internal int Epochs { get; private set; }
+        internal int LinesSent { get; private set; }
+        internal int LinesSkipped { get; private set; }
+        internal int Discontinuities { get; private set; }
+        internal string LastAvail { get; private set; }
+
+        internal LegacyTelemetrySession(ILegacyApi api, ITelemetrySink sink, Func<long> nowMs, Func<long> idSeed)
+            : this(api, sink, nowMs, idSeed, null)
+        {
+        }
+
+        internal LegacyTelemetrySession(ILegacyApi api, ITelemetrySink sink, Func<long> nowMs, Func<long> idSeed, ITelemetryDiag diag)
+        {
+            this.api = api;
+            this.sink = sink;
+            this.nowMs = nowMs;
+            this.idSeed = idSeed;
+            this.diag = diag;
+            lastScenarioId = -1;
+        }
+
+        private void Log(string name, string detail)
+        {
+            try
+            {
+                if (diag != null)
+                {
+                    diag.Event(name, detail);
+                }
+            }
+            catch
+            {
+                // a diagnostic can never affect the telemetry or BVE
+            }
+        }
+
+        internal bool ScenarioActive { get { return scenarioActive; } }
+
+        internal int ScenarioId { get { return scenarioId; } }
+
+        internal bool IsDisposed { get { return disposed; } }
+
+        // -- lifecycle events (Tick thread) ---------------------------------------------------------------------------------------------------
+        internal void OnScenarioOpened(bool isReload)
+        {
+            EndEpoch(isReload ? "scenario-opened-reload" : "scenario-opened");
+        }
+
+        internal void OnScenarioClosed()
+        {
+            EndEpoch("scenario-closed");
+        }
+
+        internal void OnScenarioCreated()
+        {
+            // the new scenario instance is recognised by the next Tick; nothing of the old one may continue until then
+            EndEpoch("scenario-created");
+        }
+
+        internal void OnDispose()
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            disposed = true;
+            EndEpoch("dispose");
+            Log("TEL_DISPOSE", "epochs=" + Epochs + " lines=" + LinesSent + " skipped=" + LinesSkipped + " discontinuities=" + Discontinuities);
+            try { sink.Close(); } catch { }
+        }
+
+        /// <summary>Ends the active scenario instance (if any) for the given reason; the reason is what the next instance reports as the reason it began.</summary>
+        private void EndEpoch(string reason)
+        {
+            if (epochActive)
+            {
+                Log("TEL_EPOCH_END", "scenarioId=" + scenarioId + " lines=" + epochLines + " reason=" + reason);
+                endReason = reason;      // the FIRST cause is the reason; later events of the same reload (Opened, then Created) do not overwrite it
+            }
+
+            ResetEpochState();
+        }
+
+        private void ResetEpochState()
+        {
+            scenarioActive = false;
+            epochActive = false;
+            scenarioToken = null;
+            timeline.Reset();
+            lastTimeMs = 0;
+            lastSpeedMps = 0.0;
+            haveLastSample = false;
+            staListSent = false;
+            metaSent = false;
+            lastStaListMs = 0;
+            lastMetaMs = 0;
+        }
+
+        private void StartEpoch(LegacyScenarioIdentity identity)
+        {
+            // an instance still active here means the original Scenario object changed without any lifecycle event
+            string reason = epochActive ? "identity-changed" : endReason;
+            if (epochActive)
+            {
+                Log("TEL_EPOCH_END", "scenarioId=" + scenarioId + " lines=" + epochLines + " reason=" + reason);
+            }
+
+            ResetEpochState();
+            scenarioToken = identity.Source;
+            identityKind = identity.Kind ?? "unknown";
+            epochActive = true;
+            epochLines = 0;
+            epochUdpLogged = false;
+            Epochs++;
+            int id = (int)(idSeed() % 100000000L);
+            if (id < 0)
+            {
+                id = -id;
+            }
+
+            if (id == lastScenarioId)
+            {
+                id = (id + 1) % 100000000;       // two instances never share an id, so the receiver can tell them apart
+            }
+
+            scenarioId = id;
+            lastScenarioId = id;
+            scenarioActive = true;
+            Log("TEL_EPOCH_BEGIN", "n=" + Epochs + " scenarioId=" + id + " reason=" + reason + " identity=" + identityKind);
+        }
+
+        // -- the heartbeat (any thread) -------------------------------------------------------------------------------------------------------
+        /// <summary>STATUS:LOADED:RUNNING / PAUSED while a scenario instance is active, else null. Reads no BVE object.</summary>
+        internal string ComposeHeartbeat()
+        {
+            if (disposed || !scenarioActive)
+            {
+                return null;
+            }
+
+            long age = nowMs() - Interlocked.Read(ref lastTickMs);
+            return age > PausedAfterMs ? "STATUS:LOADED:PAUSED" : "STATUS:LOADED:RUNNING";
+        }
+
+        // -- the Tick -------------------------------------------------------------------------------------------------------------------------
+        internal void OnTick(TimeSpan elapsed)
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            try
+            {
+                Interlocked.Exchange(ref lastTickMs, nowMs());
+                TickCore(elapsed);
+            }
+            catch
+            {
+                // BVE must not be affected; the next Tick starts again from what can be read
+                LinesSkipped++;
+            }
+        }
+
+        private void TickCore(TimeSpan elapsed)
+        {
+            bool created;
+            try { created = api.IsScenarioCreated(); }
+            catch { created = false; }
+            if (!created)
+            {
+                EndEpoch("not-created");
+                return;
+            }
+
+            // the identity of the scenario instance is the ORIGINAL BVE object behind the host's wrapper; the wrapper itself is new on every access and is ignored
+            LegacyScenarioIdentity identity;
+            bool haveIdentity;
+            try { haveIdentity = api.TryScenarioIdentity(out identity); }
+            catch { haveIdentity = false; identity = null; }
+            if (!haveIdentity || identity == null || identity.Source == null)
+            {
+                if (!identityUnavailable)
+                {
+                    identityUnavailable = true;
+                    Log("TEL_IDENTITY_UNAVAILABLE", "kind=" + identityKind);
+                }
+
+                EndEpoch("scenario-unreadable");
+                return;
+            }
+
+            identityUnavailable = false;
+            if (!epochActive || !ReferenceEquals(identity.Source, scenarioToken))
+            {
+                StartEpoch(identity);
+            }
+
+            // the core: without time, position and speed there is no telemetry line at all
+            int timeMs;
+            double location;
+            double speedMps;
+            if (!api.TryTimeMs(out timeMs) || !api.TryLocation(out location) || !api.TrySpeedMps(out speedMps)
+                || !TelemetryContract.Finite(location) || !TelemetryContract.Finite(speedMps))
+            {
+                LinesSkipped++;
+                return;
+            }
+
+            double speedKmh = TelemetryContract.Kmh(speedMps);
+
+            // the simulation time jumped (a jump, a rewind, a hitch): the references of the previous Tick are void
+            bool discontinuity = lastTimeMs != 0 && Math.Abs(timeMs - lastTimeMs - elapsed.TotalMilliseconds) > JumpToleranceMs;
+            if (discontinuity)
+            {
+                Discontinuities++;
+                timeline.MarkDiscontinuity();
+                haveLastSample = false;
+            }
+
+            LineBuilder lb = new LineBuilder();
+            lb.Token(TelemetryContract.TokTime);
+            lb.Token(TelemetryContract.TokSpeed);
+            lb.Token(TelemetryContract.TokLoc);
+            long now = nowMs();
+
+            // Every optional group below is added ALL OR NOTHING: a value that cannot be read (or an exception) leaves the group out of the line and out
+            // of AVAIL, and never affects another group.
+
+            // GRADIENT
+            try
+            {
+                double gradient;
+                if (api.TryGradientPermille(location, out gradient) && TelemetryContract.Finite(gradient))
+                {
+                    lb.Group(TelemetryContract.TokGrad, "GRADIENT", TelemetryContract.D(gradient));
+                }
+            }
+            catch
+            {
+            }
+
+            // stations + doors (the next-station state machine needs the door state: without it neither group is announced)
+            bool doorsClosed = false;
+            bool haveDoors = false;
+            string staList = null;
+            try
+            {
+                haveDoors = api.TryDoorsClosed(out doorsClosed);
+                IList<LegacyStationRaw> stations = null;
+                int stationCount = 0;
+                // the stations themselves are read only when the timeline has to be (re)built; every Tick only their number is checked
+                bool haveStations = haveDoors && api.TryStationCount(out stationCount) && stationCount >= 0
+                    && (!timeline.NeedsBuild(stationCount) || (api.TryStations(out stations) && stations != null && stations.Count == stationCount));
+                if (haveStations)
+                {
+                    StationValues sv = timeline.Step(stations, stationCount, location, speedKmh, timeMs, doorsClosed);
+                    lb.Group(TelemetryContract.TokStation,
+                        "NEXTLOC", TelemetryContract.D(sv.NextLoc),
+                        "NEXTTIME", TelemetryContract.I(sv.NextTime),
+                        "ISPASS", TelemetryContract.I(sv.IsPass),
+                        "ISTIMING", TelemetryContract.I(sv.IsTiming),
+                        "MARGINB", TelemetryContract.D(sv.MarginBack),
+                        "MARGINF", TelemetryContract.D(sv.MarginFront),
+                        "DOORDIR", TelemetryContract.I(sv.DoorDir),
+                        "TERM", TelemetryContract.I(sv.Term),
+                        "STATNAME", sv.Name == null ? TelemetryContract.StationName(null) : sv.Name.Replace(",", string.Empty));
+                    if (!staListSent || now - lastStaListMs >= StaListIntervalMs)
+                    {
+                        staList = timeline.ComposeStaList();
+                    }
+                }
+            }
+            catch
+            {
+                staList = null;
+            }
+
+            if (haveDoors)
+            {
+                lb.Group(TelemetryContract.TokDoor, "DOOR", doorsClosed ? "0" : "1");
+            }
+
+            // signal limits
+            try
+            {
+                double sig;
+                if (api.TrySignalLimitMps(out sig) && !double.IsNaN(sig))
+                {
+                    lb.Group(TelemetryContract.TokSigLimit, "SIGLIMIT", TelemetryContract.D(TelemetryContract.SignalLimitKmh(sig)));
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                double fwd;
+                bool foundSection;
+                double sectionLoc;
+                if (api.TryForwardSignalLimitMps(out fwd) && !double.IsNaN(fwd) && api.TryNextSectionLocation(location, out foundSection, out sectionLoc))
+                {
+                    lb.Group(TelemetryContract.TokSigLimitAhead,
+                        "FWDSIGLIMIT", TelemetryContract.D(TelemetryContract.SignalLimitKmh(fwd)),
+                        "FWDSIGLOC", TelemetryContract.D(foundSection ? sectionLoc : -1.0));
+                }
+            }
+            catch
+            {
+            }
+
+            // ground limit: the limit in force now. HEAD and TAIL are the same real value; the look-ahead list does not exist in the Legacy API
+            try
+            {
+                double ground;
+                if (api.TryGroundLimitMps(out ground) && !double.IsNaN(ground))
+                {
+                    string kmh = TelemetryContract.D(TelemetryContract.GroundLimitKmh(ground));
+                    lb.Group(TelemetryContract.TokMapLimit, "MAPHEAD", kmh, "MAPTAIL", kmh);
+                }
+            }
+            catch
+            {
+            }
+
+            // acceleration from two samples of THIS scenario instance; the first sample has no reference and says nothing
+            if (haveLastSample)
+            {
+                double g = 0.0;
+                if (timeMs > lastTimeMs && timeMs - lastTimeMs < 1000)
+                {
+                    double dt = (timeMs - lastTimeMs) / 1000.0;
+                    g = ((speedMps - lastSpeedMps) / dt) / TelemetryContract.GravityMps2;
+                }
+
+                lb.Group(TelemetryContract.TokCalcG, "CALCG", TelemetryContract.F(g, "F5"));
+            }
+
+            try
+            {
+                LegacyBrakeKind kind;
+                if (api.TryBrakeKind(out kind) && kind != LegacyBrakeKind.None)
+                {
+                    lb.Group(TelemetryContract.TokBrakeType, "BTYPE", kind == LegacyBrakeKind.Smee ? "Smee" : kind == LegacyBrakeKind.Cl ? "Cl" : "Ecb");
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                int notches;
+                bool holding;
+                if (api.TryBrakeNotches(out notches, out holding) && notches > 0)
+                {
+                    lb.Group(TelemetryContract.TokBrakeCab, "CAB", TelemetryContract.I(notches) + ":" + (holding ? "1" : "0"));
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                double[] rates;
+                double maxPa;
+                if (api.TryPressureRates(out rates, out maxPa) && rates != null && rates.Length > 0 && TelemetryContract.Finite(maxPa) && AllFinite(rates))
+                {
+                    StringBuilder r = new StringBuilder();
+                    for (int i = 0; i < rates.Length; i++)
+                    {
+                        if (i > 0)
+                        {
+                            r.Append('_');
+                        }
+
+                        r.Append(TelemetryContract.D(rates[i]));
+                    }
+
+                    lb.Group(TelemetryContract.TokPRates, "PRATES", r.ToString() + ":" + TelemetryContract.F(maxPa / 1000.0, "F1"));
+                }
+            }
+            catch
+            {
+            }
+
+            // META (a datagram of its own, same cadence as STALIST)
+            string metaPacket = null;
+            try
+            {
+                LegacyScenarioMeta meta;
+                if (api.TryScenarioMeta(out meta) && meta != null)
+                {
+                    lb.Token(TelemetryContract.TokMeta);
+                    if (!metaSent || now - lastMetaMs >= StaListIntervalMs)
+                    {
+                        metaPacket = "META:" + TelemetryContract.SanitizeMeta(meta.Title) + ":" + TelemetryContract.SanitizeMeta(meta.RouteTitle) + ":"
+                            + TelemetryContract.SanitizeMeta(meta.VehicleTitle) + ":" + TelemetryContract.SanitizeMeta(meta.Author) + ":"
+                            + TelemetryContract.SanitizeMeta(meta.Comment);
+                    }
+                }
+            }
+            catch
+            {
+                metaPacket = null;
+            }
+            string avail = TelemetryContract.FormatAvail(lb.Tokens);
+            LastAvail = avail;
+            string line = "SCENARIO_ID:" + TelemetryContract.I(scenarioId) + "," + avail + ",SPEED:" + TelemetryContract.D(speedKmh) + ",TIME:"
+                + TelemetryContract.I(timeMs) + ",LOCATION:" + TelemetryContract.D(location) + lb.Body;
+
+            if (staList != null)
+            {
+                sink.Send(staList);
+                staListSent = true;
+                lastStaListMs = now;
+            }
+
+            if (metaPacket != null)
+            {
+                sink.Send(metaPacket);
+                metaSent = true;
+                lastMetaMs = now;
+            }
+
+            sink.Send(line);
+            LinesSent++;
+            epochLines++;
+            if (!epochUdpLogged)
+            {
+                epochUdpLogged = true;
+                Log("TEL_UDP_BEGIN", "scenarioId=" + scenarioId);
+            }
+
+            lastTimeMs = timeMs;
+            lastSpeedMps = speedMps;
+            haveLastSample = true;
+        }
+
+        /// <summary>The telemetry line under construction: tokens and the keys that belong to them, added together or not at all.</summary>
+        private sealed class LineBuilder
+        {
+            private readonly List<string> tokens = new List<string>();
+            private readonly StringBuilder body = new StringBuilder();
+
+            internal IEnumerable<string> Tokens { get { return tokens; } }
+
+            internal string Body { get { return body.ToString(); } }
+
+            internal void Token(string token)
+            {
+                tokens.Add(token);
+            }
+
+            internal void Group(string token, params string[] keyValuePairs)
+            {
+                StringBuilder part = new StringBuilder();
+                for (int i = 0; i + 1 < keyValuePairs.Length; i += 2)
+                {
+                    part.Append(',').Append(keyValuePairs[i]).Append(':').Append(keyValuePairs[i + 1]);
+                }
+
+                tokens.Add(token);
+                body.Append(part.ToString());
+            }
+        }
+        private static bool AllFinite(double[] values)
+        {
+            for (int i = 0; i < values.Length; i++)
+            {
+                if (!TelemetryContract.Finite(values[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
+}

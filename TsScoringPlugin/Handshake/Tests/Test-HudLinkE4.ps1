@@ -606,8 +606,13 @@ if ($qtOk -and (-not $udpBusy) -and (-not $mainRunning) -and (Test-Path $mainPy)
     $rdy = WaitFor { [string](Mg $m 'State') -eq 'Ready' } 40000
     Track $m
     $app = [int](Mg $m 'AppPid')
+    # Phase L3: the HUD is only shown once real telemetry of the generation has arrived, so this chain now feeds a minimal valid telemetry line (the core keys only) to UDP 54321
+    # whenever it looks at the window; a new scenario instance (new SCENARIO_ID) goes with every new generation.
+    $telUdp = New-Object Net.Sockets.UdpClient
+    $script:telSid = 1000
+    function SendTel { $tb = [Text.Encoding]::UTF8.GetBytes(("SCENARIO_ID:" + $script:telSid + ",SPEED:0,TIME:36000000,LOCATION:0")); [void]$telUdp.Send($tb, $tb.Length, '127.0.0.1', 54321) }
     function Overlay { $w = [WinEnum]::OwnedBy($bveHwnd, [uint32]$app); return , $w }
-    function OverlayVisible { $w = Overlay; return ($w.Count -ge 1 -and [WinEnum]::Visible($w[0])) }
+    function OverlayVisible { SendTel; $w = Overlay; return ($w.Count -ge 1 -and [WinEnum]::Visible($w[0])) }
     $vis1 = WaitFor { OverlayVisible } 8000
     $ov = Overlay
     $h1 = if ($ov.Count -ge 1) { $ov[0] } else { 0 }
@@ -624,6 +629,7 @@ if ($qtOk -and (-not $udpBusy) -and (-not $mainRunning) -and (Test-Path $mainPy)
     SetSR $b 1 $false; Step $s
     $hid2 = WaitFor { -not (OverlayVisible) } 6000
     Check 'I05 ScenarioReady withdrawn (Session OFF): the HUD is hidden, the window and the process stay, no Stop was sent' ($hid2 -and [WinEnum]::Exists($h1) -and (PidAlive $app) -and ([int](Mg $m 'StopSignalCount') -eq 0) -and ([string](Mg $m 'State') -eq 'Ready'))
+    $script:telSid++
     SetSR $b 2 $true; Step $s; Step $s; Tick $s; Step $s
     $shown3 = WaitFor { OverlayVisible } 6000
     Check 'I06 reload (generation 2): the HUD is shown again by the SAME process on the SAME window handle; Process.Start was called once in total' ($shown3 -and ((Overlay).Count -eq 1) -and ((Overlay)[0] -eq $h1) -and ([int](Mg $m 'ProcessStartCount') -eq 1) -and ((Mg $m 'AppPid') -eq $app))
@@ -640,6 +646,7 @@ if ($qtOk -and (-not $udpBusy) -and (-not $mainRunning) -and (Test-Path $mainPy)
     Check ('I09 the application reported the HUD changes on stderr (state-change lines only, no path): hud-show=' + $shows + ' hud-hide=' + $hides + ' update-start>=3, one hud-summary, one exit line, lines=' + $el.Count + ' (<=200, none dropped)') (($shows -ge 5) -and ($hides -ge 5) -and ([regex]::Matches($stderrText, 'event=hud-update-start')).Count -ge 3 -and ([regex]::Matches($stderrText, 'event=hud-summary')).Count -eq 1 -and ([regex]::Matches($stderrText, 'event=exit ')).Count -eq 1 -and ($el.Count -le 200) -and ($stderrText -notmatch '[A-Za-z]:\\') -and ((EventLines $m.Sink 'APP_STREAMS')[0] -match 'stderrDropped=0'))
     $udpAfter = @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveUdpListeners() | Where-Object { $_.Port -eq 54321 }).Count -gt 0
     Check 'I10 after Dispose UDP 54321 is free again and the stand-in BVE window is untouched (still alive)' ((-not $udpAfter) -and (PidAlive $bvePid))
+    try { $telUdp.Close() } catch { }
     DisposeBridgeObjs $b
     try { $bveProc.StandardInput.Close() } catch { }
     [void]$bveProc.WaitForExit(5000)
@@ -695,7 +702,9 @@ Check 'S09 the E3 and E1 contracts are intact in the source: E1 decision lines u
 $changed = @((RunGit @('-C', $top, 'diff', '--name-only', $E3Commit)) -split "`n" | Where-Object { $_ })
 $untracked = @((RunGit @('-C', $top, 'ls-files', '--others', '--exclude-standard')) -split "`n" | Where-Object { $_ })
 $touched = @($changed + $untracked | Sort-Object -Unique)
-Check 'S10 both Bridges, the Bridge shared sources, the plugin projects, Class1.cs, the scoring / UI Python modules and the Docs of earlier phases are untouched since the E3 commit' (@($touched | Where-Object { $_ -match '/Bridge/|/Shared/|Class1\.cs|AtsLoggerPlugin|\.vcxproj|\.slnx|^scoring_logic\.py$|^hud_ui\.py$|^menu_ui\.py$|^config\.py$|^utils\.py$|^network\.py$|^managed_mode\.py$|/Docs/Handshake-Phase[A-DL-M]|Handshake-PhaseE[123]|launcher\.template' }).Count -eq 0)
+# Phase L3: hud_ui.py (item visibility by AVAIL) and the independent telemetry project (Handshake/Telemetry: the DATA plane, its own Shared folder) are the L3 changes; their guards are in test_telemetry_l3.py / Test-TelemetryL3.ps1
+$touchedS10 = @($touched | Where-Object { $_ -notmatch '/Telemetry/|Handshake-PhaseL3-' })
+Check 'S10 both Bridges, the Bridge shared sources, the plugin projects, Class1.cs, the scoring / UI Python modules (hud_ui.py excepted: Phase L3) and the Docs of earlier phases are untouched since the E3 commit' (@($touchedS10 | Where-Object { $_ -match '/Bridge/|/Shared/|Class1\.cs|AtsLoggerPlugin|\.vcxproj|\.slnx|^scoring_logic\.py$|^menu_ui\.py$|^config\.py$|^utils\.py$|^network\.py$|^managed_mode\.py$|/Docs/Handshake-Phase[A-DL-M]|Handshake-PhaseE[123]|launcher\.template' }).Count -eq 0)
 Check 'S11 no build output, DLL, PDB, log, personal launcher.json or EXE among the files of this phase' (@($touched | Where-Object { $_ -match '/out/|/obj/|/dist/|/logs/|build\.log|\.dll$|\.pdb$|\.log$|\.exe$|\.spec$' -or $_ -match '(^|/)launcher\.json$' }).Count -eq 0)
 $runtimeNames = @($env:USERNAME, $env:COMPUTERNAME, $env:USERDOMAIN, (Split-Path $env:USERPROFILE -Leaf)) | Where-Object { $_ -and $_.Length -ge 3 } | Sort-Object -Unique
 $forbidden = @($runtimeNames) + @('C:\Users\', 'Scoring-Feature-Train-Simulator', 'gmail', 'hotmail', 'outlook.com', 'ac.jp')

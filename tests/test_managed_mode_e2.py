@@ -940,20 +940,19 @@ class E_StaticGuardsAndRegression(unittest.TestCase):
             tree = ast.parse(src)
             return next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Overlay")
 
+        # Phase L3 added the telemetry gate (tests/overlay_guard.py proves that is all); apart from that, the only difference of E2 is the bind result
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # tests\ is not a package
+        import overlay_guard
+        self.assertEqual(overlay_guard.problems(old, new, allow_other_init_changes=1), [])
         old_c, new_c = overlay_class(old), overlay_class(new)
-        self.assertEqual(len(old_c.body), len(new_c.body))
-        differing = []
-        for a, b in zip(old_c.body, new_c.body):
-            if ast.dump(a) != ast.dump(b):
-                differing.append(a.name)
-                self.assertEqual(a.name, "__init__")
-                self.assertEqual(len(a.body), len(b.body))
-                stmts = [(x, y) for x, y in zip(a.body, b.body) if ast.dump(x) != ast.dump(y)]
-                self.assertEqual(len(stmts), 1)
-                x, y = stmts[0]
-                self.assertIn("self.udp_socket.bind(", ast.unparse(x))
-                self.assertEqual(ast.unparse(y), "self.udp_bind_ok = " + ast.unparse(x))
-        self.assertEqual(differing, ["__init__"])
+        init_old = next(n for n in old_c.body if getattr(n, "name", "") == "__init__")
+        init_new = next(n for n in new_c.body if getattr(n, "name", "") == "__init__")
+        old_dumps = {ast.dump(s) for s in init_old.body}
+        changed_old = [s for s in init_old.body if ast.dump(s) not in {ast.dump(x) for x in init_new.body}]
+        changed_new = [s for s in init_new.body if ast.dump(s) not in old_dumps and "telemetry_gate" not in ast.unparse(s)]
+        self.assertEqual((len(changed_old), len(changed_new)), (1, 1))
+        self.assertIn("self.udp_socket.bind(", ast.unparse(changed_old[0]))
+        self.assertEqual(ast.unparse(changed_new[0]), "self.udp_bind_ok = " + ast.unparse(changed_old[0]))
         # the other top-level definitions (outside the new managed-mode block) are untouched
         old_top = [ast.dump(n) for n in ast.parse(old).body if not isinstance(n, (ast.Import, ast.ImportFrom, ast.If)) and getattr(n, "name", "") != "Overlay"]
         new_top = [ast.dump(n) for n in ast.parse(new).body if not isinstance(n, (ast.Import, ast.ImportFrom, ast.If))

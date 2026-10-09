@@ -73,13 +73,14 @@ def parsed_keys():
 
 
 class A_StaticAudit(unittest.TestCase):
-    def test_the_only_udp_54321_sender_is_the_bveex_current_plugin(self):
+    def test_the_udp_54321_senders_are_the_bveex_current_plugin_and_the_l3_legacy_telemetry_sink(self):
         senders = []
         for path in cs_sources():
             code = code_only(read(path))
             if "54321" in code and "UdpClient" in code:
                 senders.append(os.path.relpath(path, PLUGIN_ROOT).replace("\\", "/"))
-        self.assertEqual(senders, ["TsScoringPlugin/Class1.cs"])
+        # Phase L3 added the AtsEX Legacy sender: its only network code is the sink in the shared telemetry contract file (the DATA plane)
+        self.assertEqual(senders, ["Handshake/Telemetry/Shared/TelemetryContract.cs", "TsScoringPlugin/Class1.cs"])
 
     def test_the_sender_uses_the_current_host_api_only(self):
         code = code_only(read(TELEMETRY_SOURCE))
@@ -106,8 +107,8 @@ class A_StaticAudit(unittest.TestCase):
 
     def test_no_handshake_component_touches_a_socket(self):
         for path in cs_sources():
-            if not path.startswith(HANDSHAKE + os.sep):
-                continue
+            if not path.startswith(HANDSHAKE + os.sep) or path.startswith(os.path.join(HANDSHAKE, "Telemetry") + os.sep):
+                continue          # Phase L3: the telemetry project is the DATA plane, not a Handshake (control plane) component; it links no Handshake source
             code = code_only(read(path))
             for token in ("UdpClient", "System.Net.Sockets", "TcpClient", "54321", "54322"):
                 self.assertNotIn(token, code, (os.path.relpath(path, HANDSHAKE), token))

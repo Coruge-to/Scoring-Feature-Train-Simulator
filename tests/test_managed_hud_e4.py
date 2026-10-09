@@ -1380,18 +1380,20 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
         self.assertTrue(wait_until(port_54321_is_free, 10))
 
     def test_the_overlay_class_and_update_logic_are_byte_identical_to_the_e3_commit(self):
+        # Phase L3 added the telemetry gate to the Overlay; the guard now proves that THAT is all (tests/overlay_guard.py): update_logic, paintEvent
+        # and every other member are AST-identical to the E3 commit, the datagram intake differs only by the accept() line, and the two blocks
+        # that moved (telemetry application, jump completion) moved unchanged.
         old = _git("show", E3_COMMIT + ":main.py")
         if old is None:
             self.skipTest("E3 commit / git not available (INCONCLUSIVE)")
         with open(os.path.join(ROOT, "main.py"), encoding="utf-8") as f:
             new = f.read()
-
-        def overlay_class(src):
-            return next(n for n in ast.parse(src).body if isinstance(n, ast.ClassDef) and n.name == "Overlay")
-        self.assertEqual(ast.dump(overlay_class(old)), ast.dump(overlay_class(new)))   # includes update_logic, paintEvent, read_udp_data, __init__
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # tests\ is not a package
+        import overlay_guard
+        self.assertEqual(overlay_guard.problems(old, new), [])
 
     def test_scoring_and_ui_modules_are_unchanged_since_e3(self):
-        out = _git("diff", "--name-only", E3_COMMIT, "--", "scoring_logic.py", "hud_ui.py", "menu_ui.py", "config.py", "utils.py", "network.py",
+        out = _git("diff", "--name-only", E3_COMMIT, "--", "scoring_logic.py", "menu_ui.py", "config.py", "utils.py", "network.py",   # hud_ui.py: Phase L3, see test_hud_ui_*
                    "managed_mode.py")
         if out is None:
             self.skipTest("git not available (INCONCLUSIVE)")
@@ -1420,10 +1422,10 @@ class H_StaticGuards(unittest.TestCase):
             self.assertFalse(imports & {"PyQt6", "keyboard", "main", "win32api", "subprocess", "socket"}, (name, imports))
         self.assertEqual(self.imports_of("managed_state.py") - {"ctypes", "struct", "time"}, set())
         # pywin32 (window handling only) and scoring_logic are imported lazily, never at module import
-        self.assertEqual(self.imports_of("managed_hud.py") - {"time", "managed_state", "managed_mode", "win32con", "win32gui", "win32process", "scoring_logic"}, set())
+        self.assertEqual(self.imports_of("managed_hud.py") - {"time", "managed_state", "managed_mode", "telemetry_gate", "telemetry_contract", "win32con", "win32gui", "win32process", "scoring_logic"}, set())
         # scoring_logic and the window API are imported lazily, inside the functions that need them
         top = [n for n in ast.parse(self.read("managed_hud.py")).body if isinstance(n, (ast.Import, ast.ImportFrom))]
-        self.assertEqual({a.name for n in top for a in n.names if isinstance(n, ast.Import)}, {"time", "managed_state"})
+        self.assertEqual({a.name for n in top for a in n.names if isinstance(n, ast.Import)}, {"time", "managed_state", "telemetry_gate", "telemetry_contract"})
 
     def test_no_forbidden_operation_in_the_hud_modules(self):
         text = self.read("managed_hud.py") + self.read("managed_state.py")

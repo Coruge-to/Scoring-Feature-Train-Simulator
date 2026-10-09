@@ -699,10 +699,12 @@ $m1Allowed = @(
     'Caller/src/DrivingActivityState.cs', 'Shared/AppProtocol.cs', 'Tests/Test-DrivingActiveD1.ps1', 'Docs/Handshake-PhaseD1-DrivingActive.md',
     'Caller/src/AppController.cs', 'Tests/Test-AppControllerE1.ps1', 'Docs/Handshake-PhaseE1-AppController.md',
     'Caller/src/AppProcessManager.cs', 'Caller/src/LauncherConfig.cs', 'Tests/Test-AppProcessE3.ps1', 'Docs/Handshake-PhaseE3-ProcessStart.md', 'Docs/launcher.template.json',
-    'Caller/src/AppStatePublisher.cs', 'Tests/Test-HudLinkE4.ps1', 'Docs/Handshake-PhaseE4-StatePublication.md', 'Docs/Handshake-PhaseE4-LegacyTelemetryAudit.md'
+    'Caller/src/AppStatePublisher.cs', 'Tests/Test-HudLinkE4.ps1', 'Docs/Handshake-PhaseE4-StatePublication.md', 'Docs/Handshake-PhaseE4-LegacyTelemetryAudit.md',
+    'Tests/Test-TelemetryL3.ps1', 'Tests/Test-TelemetryIntegrationL3.ps1', 'Tests/TelemetryTestFixture.cs', 'Tools/Verify-PhaseL3.ps1', 'Docs/Handshake-PhaseL3-LegacyTelemetry.md'
 ) | ForEach-Object { $prefix + $_ }
-$m1Outside = @($touched | Where-Object { $_ -notin $m1Allowed })
-Check ('M1-31 only the Phase M1, Phase D1, Phase E1, Phase E3 and Phase E4 Caller / test / verification / document files differ from the baseline commit (' + $touched.Count + ' files)') (($m1Outside.Count -eq 0) -and ($touched.Count -ge 8))
+# Phase L3: the independent telemetry project (the DATA plane) is a whole directory of its own
+$m1Outside = @($touched | Where-Object { ($_ -notin $m1Allowed) -and (-not $_.StartsWith($prefix + 'Telemetry/')) })
+Check ('M1-31 only the Phase M1, Phase D1, Phase E1, Phase E3, Phase E4 and Phase L3 Caller / test / verification / document files differ from the baseline commit (' + $touched.Count + ' files)') (($m1Outside.Count -eq 0) -and ($touched.Count -ge 8))
 if ($m1Outside.Count -gt 0) { $m1Outside | ForEach-Object { '   outside scope: ' + $_ } }
 $failed = @($results | Where-Object { -not $_.Ok })
 "TOTAL {0}  FAILED {1}" -f $results.Count, $failed.Count

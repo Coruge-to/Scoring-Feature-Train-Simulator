@@ -27,6 +27,8 @@ from menu_ui import draw_menu
 from hud_ui import draw_hud
 from utils import write_desktop_log, NumericKeyInputRouter
 import managed_mode
+import telemetry_contract
+import telemetry_gate
 
 KERNING_OFFSETS = {
     "メ": 12,
@@ -217,9 +219,13 @@ class Overlay(QWidget):
         self.g_history = []  
 
         self.bve_hwnd = None
-        self.was_bve_found = False 
-        self.is_linked = False 
-        
+        self.was_bve_found = False
+        self.is_linked = False
+
+        # Phase L3: which telemetry may be used and which HUD items it can feed. Normal mode only follows the AVAIL part of the telemetry (a sender
+        # without AVAIL leaves everything available); managed mode replaces it with a strict, generation-aware gate (managed_hud.create_controller).
+        self.telemetry_gate = telemetry_gate.TelemetryGate(strict=False)
+
         self.udp_socket = QUdpSocket(self)
         self.udp_bind_ok = self.udp_socket.bind(QHostAddress.SpecialAddress.LocalHost, 54321)  # normal mode ignores it; managed mode exits with code 2
         self.udp_socket.readyRead.connect(self.read_udp_data)
@@ -405,10 +411,27 @@ class Overlay(QWidget):
                         self.is_bve_loaded = True
                     
                 else:
-                    latest_telemetry = text
+                    if self.telemetry_gate.accept(text):
+                        latest_telemetry = text
             except Exception:
                 pass
 
+        if latest_telemetry:
+            self.apply_telemetry_text(latest_telemetry)
+
+        self._settle_jump_complete()
+
+    def reset_telemetry_state(self):
+        """Phase L3: a NEW scenario instance starts: every value that comes from the telemetry line returns to its construction default, so that a
+        value of the previous scenario is never read as a value of the new one (an unavailable item is never sent, so it is never overwritten)."""
+        for name, value in telemetry_contract.telemetry_state_defaults().items():
+            setattr(self, name, value)
+
+    def apply_telemetry_text(self, latest_telemetry):
+        """Applies one accepted telemetry datagram to the Overlay state (the part of read_udp_data that always was here; Phase L3 only moved it into
+        a method so that a HELD datagram can be applied when the generation catches up, and added the reset at a new scenario instance)."""
+        if self.telemetry_gate.consume_epoch_reset():
+            self.reset_telemetry_state()
         if latest_telemetry:
             parts = latest_telemetry.split(',')
             for part in parts:
@@ -570,8 +593,9 @@ class Overlay(QWidget):
                         if getattr(self, '_debug_door_time_printed', -1) != val:
                             write_desktop_log(f"[UDP] ドア時間(CloseTime)を受信: {val} ms")
                             self._debug_door_time_printed = val
-                except Exception: continue 
+                except Exception: continue
 
+    def _settle_jump_complete(self):
         if self.pending_jump_complete is not None:
             complete = self.pending_jump_complete
             self.pending_jump_complete = None

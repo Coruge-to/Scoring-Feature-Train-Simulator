@@ -4,7 +4,8 @@ What this module is: the managed-mode replacement of the PRESENTATION part of Ov
 of its own: it drives the ONE Overlay and the ONE QTimer that main.run_managed hands over, so the HUD is the same object for the whole life of
 the process (never rebuilt per ScenarioGeneration, per Pause or per soft OFF).
 
-    mode ACTIVE   (Session ON and Driving ON)   the Overlay is linked to THIS BVE process's window, shown, kept on its client area and updated
+    mode ACTIVE   (Session ON and Driving ON)   the Overlay is linked to THIS BVE process's window, shown, kept on its client area and updated -
+                                                (Phase L3: only once real telemetry of the current ScenarioGeneration has been received; until then it stays hidden)
     mode WAITING  (Session ON, Driving OFF)     soft OFF: the Overlay is hidden, nothing is updated, nothing is destroyed; resumes by itself
     mode HIDDEN   (Session OFF / Closed / no block)  hard OFF: the same, until the next Session ON
 
@@ -18,6 +19,8 @@ Diagnostics: one `[MANAGED] ...` line per STATE CHANGE (fixed words and numbers;
 import time
 
 import managed_state
+import telemetry_contract
+import telemetry_gate
 from managed_mode import describe_exception
 
 ACTIVE_INTERVAL_MS = 16          # the interval the Overlay's own timer has always used
@@ -102,10 +105,13 @@ class ManagedHudController(object):
     timer       the Overlay's one QTimer (setInterval only; the controller never creates a timer)
     window_api  find_bve_window / is_window / is_iconic / client_rect_on_screen / owner_of / set_owner
     update_step called once per tick while ACTIVE
+    telemetry   Phase L3: the strict TelemetryGate (telemetry_gate.py) or None. With it the HUD is only shown while real telemetry of the CURRENT
+                ScenarioGeneration has been received (and the sender has not moved on to the next scenario); without it (None) nothing is waited for.
     """
 
-    def __init__(self, overlay, reader, window_api, args, log, update_step=hud_update_step, timer=None, clock=time.monotonic):
+    def __init__(self, overlay, reader, window_api, args, log, update_step=hud_update_step, timer=None, clock=time.monotonic, telemetry=None):
         self._overlay = overlay
+        self._telemetry = telemetry
         self._reader = reader
         self._api = window_api
         self._args = args
@@ -122,6 +128,7 @@ class ManagedHudController(object):
         self._wait_logged = False
         self._shutdown = False
         self._error_lines = 0
+        self._items_reported = None     # the HUD items the sender cannot provide, as last reported (None = not yet)
         self._failsafe = None           # the reason the state block was lost after AppReady (latched until the process ends)
         self._closed_seen = False       # the Caller withdrew the state (Closed flag): the NORMAL end
         self.startup_failure = None     # why start() failed (the managed contract is not met)
@@ -140,6 +147,17 @@ class ManagedHudController(object):
     # -- diagnostics --------------------------------------------------------------------------------------------------------------------
     def _emit(self, event, **fields):
         text = "[MANAGED] event=%s inst=%s owner=%s pid=%d" % (event, self._args.instance, self._args.owner, self._args.bve_pid)
+        for key in sorted(fields):
+            text += " %s=%s" % (key, fields[key])
+        try:
+            self._log(text)
+        except Exception:
+            pass
+
+    def emit_event(self, event, **fields):
+        """The diagnostic line writer for the telemetry gate and the HUD item report: one `[MANAGED] event=...` line per state change, in a COMPACT
+        form (no instance id, no owner): the Caller transcribes at most 160 characters of an application line, and these lines carry lists."""
+        text = "[MANAGED] event=%s pid=%d" % (event, self._args.bve_pid)
         for key in sorted(fields):
             text += " %s=%s" % (key, fields[key])
         try:
@@ -206,6 +224,9 @@ class ManagedHudController(object):
             self._closed_seen = True
             self._emit("state-closed", reason="caller-withdrew", loss="no")     # the normal end, not a loss of the block
 
+        if c.generation_changed:
+            self._on_generation(c.generation)
+
         if c.mode == managed_state.MODE_ACTIVE:
             if c.previous_mode != managed_state.MODE_ACTIVE:
                 self.update_starts += 1
@@ -218,6 +239,17 @@ class ManagedHudController(object):
                 self._emit("hud-update-wait", reason="driving-off" if c.session else "session-off")
             self._set_interval(IDLE_INTERVAL_MS)
             self._hide("driving-off" if c.session else "session-off")
+
+    def _on_generation(self, generation):
+        """Phase L3: a new ScenarioGeneration. The telemetry of the previous one is retired; when the sender had already moved on to the new scenario
+        its newest datagram was held and is applied now (the HUD then needs no further datagram to appear, e.g. while the simulation is paused)."""
+        if self._telemetry is None:
+            return
+        held = self._telemetry.on_generation(generation)
+        if held is not None:
+            apply = getattr(self._overlay, "apply_telemetry_text", None)
+            if apply is not None:
+                apply(held)
 
     def _enter_failsafe(self, reason):
         """The state block was lost after AppReady (the reader already wrote the one `state-lost` line). The HUD is hidden and no longer
@@ -235,6 +267,11 @@ class ManagedHudController(object):
 
     def _tick_active(self):
         overlay, api = self._overlay, self._api
+        if self._telemetry is not None and not self._telemetry.ready:
+            # Session ON and Driving ON are not enough: nothing is shown (and no placeholder HUD) until real telemetry of this generation arrived
+            self._hide("telemetry-wait")
+            return
+        self._report_items()
         linked = self._ensure_window()
         if linked:
             try:
@@ -254,6 +291,16 @@ class ManagedHudController(object):
         if self._update_step is not None:
             self._update_step(overlay)
             self.updates += 1
+
+    def _report_items(self):
+        """Phase L3: which HUD items the sender cannot provide (AVAIL) - one `hud-items` line when that set changes (fixed words, no values)."""
+        if self._telemetry is None:
+            return
+        availability = self._telemetry.availability
+        unavailable = tuple(sorted(item for item in telemetry_contract.HUD_ITEM_REQUIRES if not availability.item(item)))
+        if unavailable != self._items_reported:
+            self._items_reported = unavailable
+            self.emit_event("hud-items", unavailable="+".join(unavailable) or "none")
 
     def _ensure_window(self):
         api = self._api
@@ -360,9 +407,15 @@ class ManagedHudController(object):
         self._emit("hud-summary", end=end, failsafes=self.failsafes, ticks=self.ticks, updates=self.updates, shows=self.shows, hides=self.hides, starts=self.update_starts,
                    waits=self.update_waits, state_changes=self.gate.changes, duplicates=self.gate.suppressed, gen_changes=self.gate.generation_changes,
                    coalesced=self.gate.skipped_changes, links=self.link_count, owner_sets=self.owner_sets, errors=self.errors)
+        if self._telemetry is not None:
+            self.emit_event("telemetry-summary", **self._telemetry.summary_fields())     # a line of its own: hud-summary is already longer than the Caller transcribes
 
 
 def create_controller(overlay, args, log):
     """The production wiring: real mapping source, real window API, the Overlay's own timer."""
     reader = managed_state.StateReader(args, managed_state.Win32StateSource(), log)
-    return ManagedHudController(overlay, reader, Win32WindowApi(), args, log, timer=getattr(overlay, "timer", None))
+    gate = telemetry_gate.TelemetryGate(strict=True)
+    controller = ManagedHudController(overlay, reader, Win32WindowApi(), args, log, timer=getattr(overlay, "timer", None), telemetry=gate)
+    gate.log = controller.emit_event
+    overlay.telemetry_gate = gate           # the Overlay's telemetry intake and its HUD items follow the same gate
+    return controller
