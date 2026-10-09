@@ -93,7 +93,9 @@ function Inspect([string]$dll, [string[]]$mustBeAbsent) {
 
 # File I/O (FileStream, Mutex) is NOT in these lists on purpose: since Phase C1 it exists, but only in Shared\ObservationLog.cs (checked at source level below).
 $common = 'AtsLogger', 'AtsEx', 'Python', 'python', 'UdpClient', 'Sockets', 'System.Net', 'TcpClient', 'HttpClient', 'WebClient', 'Registry', 'Microsoft.Win32', 'StreamWriter', 'StreamReader', 'WriteAllText', 'AppendAllText', 'ReadAllText', 'Preferences', 'InputPlugins', 'SetWindowsHookEx', 'keyboard', 'BveDllInventory', 'RuntimeProfile', 'SHA256', 'HashAlgorithm', 'FindWindow', 'SetWindowLong', 'NamedPipe', 'Global\', 'ProcessStartInfo', 'ShellExecute', 'CreateProcess', 'Launcher', 'main.py'
-$callerAbsent = $common + @('BveEx.', 'BveEX.', 'BveTypes', 'PluginHost')
+# Phase E3: the Caller now starts the application, so these five are allowed in the Caller DLL only (the Bridge list keeps them; the source checks below name the two Caller files that may use them)
+$e3CallerAllowed = 'Python', 'python', 'ProcessStartInfo', 'Launcher', 'main.py', 'ShellExecute' # ShellExecute = the member name UseShellExecute, which the code sets to false
+$callerAbsent = @($common | Where-Object { $_ -notin $e3CallerAllowed }) + @('BveEx.', 'BveEX.', 'BveTypes', 'PluginHost')
 $bridgeAbsent = $common + @('Sleep', 'System.Threading.Timer', 'System.Timers', 'MessageBox', 'user32', 'DllImport', 'GetMethod', 'GetProperty', 'GetField', 'Activator', 'GetTypes', 'BindingFlags', 'System.Reflection.Emit', 'Class1', 'AtsLoggerPlugin')
 
 $dist = Join-Path $Root 'dist'
@@ -105,7 +107,7 @@ $outB = @(Inspect $bDll $bridgeAbsent); $outB[0..($outB.Count - 2)]; $bi = $outB
 Write-Host '==== distribution hygiene ===='
 $distFiles = @(Get-ChildItem $dist -File)
 Check 'dist holds exactly the two DLLs (no PDB, no other file)' (($distFiles.Count -eq 2) -and (@($distFiles | Where-Object { $_.Name -in 'TSScoringPlugin.Caller.InputDevice.dll', 'TSScoringPlugin.BveEx.Bridge.Prototype.dll' }).Count -eq 2) -and (@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0))
-Check 'Version: Caller 0.9.0.0 (Phase E1) and Bridge 0.6.0.0 (Phase C3 core, unchanged) in the version resources and assembly versions' (($ci.Version.FileVersion -eq '0.9.0.0') -and ($bi.Version.FileVersion -eq '0.6.0.0') -and ($ci.Asm.GetName().Version.ToString() -eq '0.9.0.0') -and ($bi.Asm.GetName().Version.ToString() -eq '0.6.0.0'))
+Check 'Version: Caller 0.10.0.0 (Phase E3) and Bridge 0.6.0.0 (Phase C3 core, unchanged) in the version resources and assembly versions' (($ci.Version.FileVersion -eq '0.10.0.0') -and ($bi.Version.FileVersion -eq '0.6.0.0') -and ($ci.Asm.GetName().Version.ToString() -eq '0.10.0.0') -and ($bi.Asm.GetName().Version.ToString() -eq '0.6.0.0'))
 Check 'Provider Coruge-to in both DLLs' (($ci.Version.CompanyName -eq 'Coruge-to') -and ($bi.Version.CompanyName -eq 'Coruge-to'))
 Check 'No forbidden dependency token in either DLL' (($ci.Present.Count -eq 0) -and ($bi.Present.Count -eq 0))
 Check 'Caller references only mscorlib, System, System.Core, System.Windows.Forms, Mackoy.IInputDevice' ((($ci.Asm.GetReferencedAssemblies() | ForEach-Object { $_.Name } | Sort-Object) -join ',') -eq 'Mackoy.IInputDevice,mscorlib,System,System.Core,System.Windows.Forms')
@@ -141,18 +143,24 @@ function OnlyIn([string]$pattern, [string[]]$allowedRelative) {
     $bad = @($hits | Where-Object { $rel = ($_ -split ':')[0]; $rel -notin $allowedRelative })
     return [pscustomobject]@{ Hits = $hits; Bad = $bad }
 }
-foreach ($p in 'Process\.Start', 'ProcessStartInfo', 'UdpClient', 'TcpClient', 'Socket', 'Registry', 'Microsoft\.Win32', 'SetWindowsHookEx', 'Thread\.Sleep', 'System\.Timers', 'NamedPipe', 'Global\\\\', 'Python', 'python', 'main\.py') {
+foreach ($p in 'UdpClient', 'TcpClient', 'Socket', 'Registry', 'Microsoft\.Win32', 'SetWindowsHookEx', 'Thread\.Sleep', 'System\.Timers', 'NamedPipe', 'Global\\\\') {
     $h = SrcHits $p
     Check ("source: '$p' absent from all sources") ($h.Count -eq 0)
 }
-$fio = OnlyIn 'FileStream|FileMode|\bFile\.|StreamWriter|AppendAllText' @('Shared\ObservationLog.cs')
-Check 'file I/O exists ONLY in Shared\ObservationLog.cs (the observation log)' ($fio.Bad.Count -eq 0 -and $fio.Hits.Count -gt 0)
+# Phase E3: starting the application is the job of exactly two Caller files (AppProcessManager.cs, LauncherConfig.cs); the Bridge and every other file stay free of it.
+$e3Files = @('Caller\src\AppProcessManager.cs', 'Caller\src\LauncherConfig.cs')
+foreach ($p in 'Process\.Start', 'ProcessStartInfo', 'Python', 'python', 'main\.py') {
+    $h = OnlyIn $p $e3Files
+    Check ("source: '$p' only in the two Phase E3 Caller files") ($h.Bad.Count -eq 0)
+}
+$fio = OnlyIn 'FileStream|FileMode|\bFile\.|StreamWriter|AppendAllText' @('Shared\ObservationLog.cs', 'Caller\src\LauncherConfig.cs')
+Check 'file I/O exists ONLY in Shared\ObservationLog.cs (the observation log) and, since Phase E3, Caller\src\LauncherConfig.cs (reads the launcher configuration)' ($fio.Bad.Count -eq 0 -and $fio.Hits.Count -gt 0)
 $mtx = OnlyIn 'new Mutex|Mutex ' @('Shared\ObservationLog.cs')
 Check 'Mutex exists ONLY in Shared\ObservationLog.cs' ($mtx.Bad.Count -eq 0)
 $dll = OnlyIn 'DllImport' @('Caller\src\HandshakeSession.cs', 'Caller\src\TsScoringCallerInputDevice.cs')
 Check 'DllImport only in the two Caller files that already had it in Phase B (MessageBoxW)' ($dll.Bad.Count -eq 0)
-$thr = OnlyIn 'new Thread\(' @('Caller\src\HandshakeSession.cs')
-Check 'new Thread only in Caller\src\HandshakeSession.cs (monitor + notice threads, as in Phase B); none in the Bridge or the log' ($thr.Bad.Count -eq 0)
+$thr = OnlyIn 'new Thread\(' @('Caller\src\HandshakeSession.cs', 'Caller\src\AppProcessManager.cs')
+Check 'new Thread only in Caller\src\HandshakeSession.cs (monitor + notice threads, as in Phase B) and Caller\src\AppProcessManager.cs (Phase E3 worker); none in the Bridge or the log' ($thr.Bad.Count -eq 0)
 
 Write-Host '==== Phase B contract unchanged ===='
 $hpFile = Join-Path $Root 'Shared\HandshakeProtocol.cs'
@@ -196,8 +204,8 @@ Check 'Bridge constructor publishes BridgeAvailable BEFORE the observation wirin
 Check 'log failures are swallowed: ObservationLog.Write has try/catch and never rethrows' ((Get-Content (Join-Path $Root 'Shared\ObservationLog.cs') -Raw) -match 'internal static void Write\([\s\S]*?catch\s*\{[\s\S]*?\}')
 Check 'log initialisation: per-PID run marker, FileMode.Create (truncate) only for the first writer of a run' ((Get-Content (Join-Path $Root 'Shared\ObservationLog.cs') -Raw) -match 'createdNew' -and (Get-Content (Join-Path $Root 'Shared\ObservationLog.cs') -Raw) -match 'FileMode\.Create')
 Check 'log path comes from the OS at run time (no user or path text in the source)' ((Get-Content (Join-Path $Root 'Shared\ObservationLog.cs') -Raw) -match 'SpecialFolder\.UserProfile')
-$cnt = SrcHits '\bmain\.py\b|python'
-Check 'Python is neither started nor named in any source line' ($cnt.Count -eq 0)
+$cnt = OnlyIn '\bmain\.py\b|python' $e3Files
+Check 'Python is neither started nor named in any source line outside the two Phase E3 Caller files' ($cnt.Bad.Count -eq 0)
 
 Write-Host '==== Phase C3 ScenarioReady checks ===='
 # the C1 observation contract: the observer and the log writer are byte-identical to Phase C1

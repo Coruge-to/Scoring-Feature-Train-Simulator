@@ -1,9 +1,10 @@
 // ============================================================================
 // PHASE E1 - the AppController DRY-RUN of one Caller instance (a pure state machine).
 //
-// It decides WHEN a future application start / stop would be requested, and nothing else. A request is only a decision: this file (and the
-// whole Caller) starts nothing, holds no handle, opens no kernel object, sends nothing and controls no HUD or scoring. The session writes the
-// decision to the observation log (APP_START_REQUEST / APP_STOP_REQUEST, always dryRun=yes); later phases will act on the same decisions.
+// It decides WHEN an application start / stop is requested, and nothing else. A request is only a decision: this file starts nothing, holds no
+// handle, opens no kernel object, sends nothing and controls no HUD or scoring. The session writes the decision to the observation log
+// (APP_START_REQUEST / APP_STOP_REQUEST; "dryRun=yes" marks the line as the decision record, as it always has). Since Phase E3 the session also
+// forwards the decisions to AppProcessManager.cs, which owns the process; the decisions themselves are exactly what they were in Phase E1.
 //
 // Input: the DrivingActive result of the Caller (Caller\src\DrivingActivityState.cs is read-only here), the published state of the scenario
 // and its ScenarioGeneration. No clock, no I/O, no thread, no lock, no log: every rule is testable offline.

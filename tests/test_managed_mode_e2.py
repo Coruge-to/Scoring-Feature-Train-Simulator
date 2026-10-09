@@ -28,6 +28,8 @@ import managed_mode as mm  # noqa: E402
 HAS_QT = importlib.util.find_spec("PyQt6") is not None
 CHILD = os.path.join(ROOT, "tests", "managed_smoke_child.py")
 BASELINE = "a43f18efca37caf64d33bb7c7d5529efd5b7067b"
+# Phase E3: the Caller-side guards below describe the Phase E2 commit (the last commit with no process start); Phase E3 has its own tests.
+E2_COMMIT = "6d20650395262e62c10916a4bdb0653947149a8a"
 
 
 def read_text(path, encoding="utf-8"):
@@ -832,14 +834,16 @@ class E_StaticGuardsAndRegression(unittest.TestCase):
                 py_compile.compile(os.path.join(ROOT, name), cfile=os.path.join(d, name.replace(os.sep, "_") + "c"), doraise=True)
 
     def test_process_start_and_exe_packaging_are_not_introduced(self):
-        caller = os.path.join(ROOT, "TsScoringPlugin", "Handshake", "Caller", "src")
-        for name in os.listdir(caller):
-            text = read_text(os.path.join(caller, name), "utf-8-sig")
+        listing = _git("ls-tree", "--name-only", E2_COMMIT, "TsScoringPlugin/Handshake/Caller/src/")
+        if listing is None:
+            self.skipTest("E2 commit / git not available (INCONCLUSIVE)")
+        for path in listing.split():
+            text = _git("show", E2_COMMIT + ":" + path)
             for token in ("Process.Start", "ProcessStartInfo", "main.py", "python"):
                 if token == "python":
-                    self.assertIsNone(re.search(r"(?i)\bpython", re.sub(r"//.*", "", text)), name)   # code, not comments
+                    self.assertIsNone(re.search(r"(?i)\bpython", re.sub(r"//.*", "", text)), path)   # code, not comments
                 else:
-                    self.assertNotIn(token, re.sub(r"//.*", "", text), name)
+                    self.assertNotIn(token, re.sub(r"//.*", "", text), path)
         for name in ("main.py", "managed_mode.py"):
             text = read_text(os.path.join(ROOT, name))
             self.assertNotRegex(text, r"(?i)pyinstaller|nuitka|cx_freeze|py2exe")
@@ -911,12 +915,11 @@ class E_StaticGuardsAndRegression(unittest.TestCase):
     def test_caller_bridge_and_dlls_are_unchanged(self):
         if _git("cat-file", "-e", BASELINE) is None and _git("rev-parse", BASELINE) is None:
             self.skipTest("baseline commit / git not available (INCONCLUSIVE)")
-        changed = _git("diff", "--name-only", BASELINE, "--", "TsScoringPlugin")
-        untracked = _git("ls-files", "--others", "--exclude-standard", "--", "TsScoringPlugin")
-        if changed is None or untracked is None:
+        # E2 changed nothing under TsScoringPlugin (the working tree moves on in Phase E3, so the E2 commit itself is compared)
+        changed = _git("diff", "--name-only", BASELINE, E2_COMMIT, "--", "TsScoringPlugin")
+        if changed is None:
             self.skipTest("git not available (INCONCLUSIVE)")
         self.assertEqual(changed.strip(), "")
-        self.assertEqual(untracked.strip(), "")
 
 
 if __name__ == "__main__":

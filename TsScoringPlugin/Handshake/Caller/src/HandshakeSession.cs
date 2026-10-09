@@ -81,6 +81,10 @@ namespace TSScoringPlugin.Handshake
     /// Phase E1 adds the AppController dry-run (AppController.cs): the monitor thread hands it the DrivingActive result after each evaluation and
     /// Dispose tells it once. It only decides and logs (APP_START_REQUEST once per ScenarioGeneration, APP_STOP_REQUEST once at Dispose); it starts,
     /// stops and sends nothing, and BVE's Tick path is unchanged.
+    ///
+    /// Phase E3 lets the production instance act on those two decisions through AppProcessManager.cs: the start request becomes at most ONE managed
+    /// application process (launcher.json permitting), Dispose sets its Stop event and waits a finite time for the exit. The decisions, their
+    /// log lines and the Tick path are unchanged; nothing but Dispose ever stops the process.
     /// </summary>
     internal sealed class HandshakeSession
     {
@@ -167,6 +171,11 @@ namespace TSScoringPlugin.Handshake
         private AppController appController = new AppController();
         private int appExceptionLines;
 
+        // Phase E3: the one managed application process of this Caller instance (AppProcessManager.cs). Null = this instance never starts an
+        // application (every offline-test constructor); the production constructor creates it. Start requests are forwarded from the monitor
+        // thread (cheap); Dispose calls Shutdown outside the gate. Nothing about it runs on BVE's Tick path.
+        private readonly AppProcessManager appProcess;
+
         private bool noticeInFlight;
         private bool timedOutEver;
         private bool missedBridgeTarget;
@@ -190,7 +199,7 @@ namespace TSScoringPlugin.Handshake
 
         /// <summary>Production constructor: this BVE process, real MessageBox.</summary>
         public HandshakeSession()
-            : this(HandshakeProtocol.CurrentProcessId(), DefaultShowNotice)
+            : this(HandshakeProtocol.CurrentProcessId(), DefaultShowNotice, null, true, null)
         {
         }
 
@@ -202,10 +211,29 @@ namespace TSScoringPlugin.Handshake
 
         /// <summary>Test constructor: additionally replaces the direct BridgeAvailable check (to separate it from the cached state).</summary>
         internal HandshakeSession(int pid, Action<string> showNotice, Func<bool> bridgeProbeOverride)
+            : this(pid, showNotice, bridgeProbeOverride, false, null)
+        {
+        }
+
+        /// <summary>Test constructor (Phase E3): additionally injects the application process manager (null = none). The other test constructors never start an application.</summary>
+        internal HandshakeSession(int pid, Action<string> showNotice, Func<bool> bridgeProbeOverride, AppProcessManager appProcessManager)
+            : this(pid, showNotice, bridgeProbeOverride, false, appProcessManager)
+        {
+        }
+
+        private HandshakeSession(int pid, Action<string> showNotice, Func<bool> bridgeProbeOverride, bool startApplication, AppProcessManager appProcessManager)
         {
             this.pid = pid;
             this.showNotice = showNotice ?? DefaultShowNotice;
             this.bridgeProbeOverride = bridgeProbeOverride;
+            if (appProcessManager != null)
+            {
+                appProcess = appProcessManager;
+            }
+            else if (startApplication)
+            {
+                appProcess = new AppProcessManager(pid, LogAppProcess, null, null);
+            }
         }
 
         internal CallerPhase Phase { get { lock (gate) { return phase; } } }
@@ -235,6 +263,7 @@ namespace TSScoringPlugin.Handshake
         internal int AppStartRequestCount { get { lock (gate) { return appController == null ? 0 : appController.StartRequestCount; } } }
         internal int AppStopRequestCount { get { lock (gate) { return appController == null ? 0 : appController.StopRequestCount; } } }
         internal int AppSuppressedCount { get { lock (gate) { return appController == null ? 0 : appController.SuppressedCount; } } }
+        internal AppProcessManager AppProcess { get { return appProcess; } }
 
         private static void DefaultShowNotice(string text)
         {
@@ -327,6 +356,8 @@ namespace TSScoringPlugin.Handshake
                 Release(ref stop);
                 Obs("CALLER_DISPOSE_END", string.Empty);
             }
+
+            ShutdownAppProcess(); // Phase E3: Stop to the managed application, a finite wait for its exit (outside the gate, off the monitor thread)
         }
 
         /// <summary>
@@ -417,6 +448,7 @@ namespace TSScoringPlugin.Handshake
             {
                 case AppAction.StartRequested:
                     ObsA("APP_START_REQUEST", "pid=" + pid + " ScenarioGeneration=" + step.ScenarioGeneration + " requestNo=" + step.RequestNumber + " reason=" + AppRequestReasons.FirstDrivingOn + " dryRun=yes");
+                    RequestAppLaunchLocked(step); // Phase E3: the decision above is acted on by the process manager (its own APP_LAUNCH_* / APP_* lines say what happened)
                     break;
 
                 case AppAction.StartSuppressed:
@@ -431,6 +463,46 @@ namespace TSScoringPlugin.Handshake
                     ObsA("APP_STOP_NOT_REQUIRED", "pid=" + pid + " reason=" + AppRequestReasons.NoStartRequest + " dryRun=yes");
                     break;
             }
+        }
+
+        /// <summary>Phase E3: forwards one start request to the process manager (monitor thread, gate held). Cheap: a lock and one thread start. Never throws.</summary>
+        private void RequestAppLaunchLocked(AppStep step)
+        {
+            try
+            {
+                if (appProcess != null)
+                {
+                    appProcess.RequestStart(step.ScenarioGeneration, step.RequestNumber);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogAppExceptionLocked(ex);
+            }
+        }
+
+        /// <summary>Phase E3: Dispose reached the process manager (called by End() AFTER the gate was released). Bounded; never throws.</summary>
+        private void ShutdownAppProcess()
+        {
+            try
+            {
+                if (appProcess != null)
+                {
+                    appProcess.Shutdown();
+                }
+            }
+            catch (Exception ex)
+            {
+                lock (gate)
+                {
+                    LogAppExceptionLocked(ex);
+                }
+            }
+        }
+
+        private void LogAppProcess(string evt, string detail)
+        {
+            ObsA(evt, detail);
         }
 
         private void LogAppExceptionLocked(Exception ex)

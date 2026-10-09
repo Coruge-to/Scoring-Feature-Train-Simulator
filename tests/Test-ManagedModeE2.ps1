@@ -144,10 +144,12 @@ $stop.Dispose()
 # 7. Caller / Bridge / DLL unchanged against the baseline; no Process.Start in the Caller
 Push-Location $Root
 try {
-    $changed = @(git diff --name-only $Baseline -- TsScoringPlugin)
-    Check 'TsScoringPlugin (Caller, Bridge, DLL) identical to baseline' ($changed.Count -eq 0) ($changed -join ',')
-    $hit = Select-String -Path 'TsScoringPlugin\Handshake\Caller\src\*.cs' -Pattern 'Process\.Start|ProcessStartInfo' -SimpleMatch:$false
-    Check 'Process.Start not introduced in the Caller' ($null -eq $hit)
+    # Phase E3: the working tree moves on, so the Phase E2 COMMIT is what is compared
+    $e2 = '6d20650395262e62c10916a4bdb0653947149a8a'
+    $changed = @(git diff --name-only $Baseline $e2 -- TsScoringPlugin)
+    Check 'TsScoringPlugin (Caller, Bridge, DLL) identical to baseline in the E2 commit' ($changed.Count -eq 0) ($changed -join ',')
+    $hit = @(git grep -n -E 'Process\.Start|ProcessStartInfo' $e2 -- 'TsScoringPlugin/Handshake/Caller/src')
+    Check 'Process.Start not introduced in the Caller (E2 commit)' ($hit.Count -eq 0)
 } finally { Pop-Location }
 
 Write-Host ("RESULT pass=" + $script:pass + " fail=" + $script:fail)

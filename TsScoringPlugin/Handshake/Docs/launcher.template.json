@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "mode": "development",
+  "pythonExecutable": "<ABSOLUTE PATH OF python.exe, e.g. X:\\Path\\To\\Python\\python.exe>",
+  "scriptPath": "<ABSOLUTE PATH OF main.py, e.g. X:\\Path\\To\\Repository\\main.py>",
+  "workingDirectory": "<ABSOLUTE PATH OF THE FOLDER THAT HOLDS main.py>"
+}

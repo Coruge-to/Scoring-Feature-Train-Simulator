@@ -9,6 +9,9 @@
 param(
     [string]$Root = (Split-Path $PSScriptRoot -Parent),
     [string]$Baseline = 'b000a158cf2544614524bc73c12db0148e0f0a20',
+    # Phase E3: the static (source / scope) checks of this test describe THE PHASE E1 COMMIT, not the moving working tree: later phases
+    # (E2 Python, E3 process start) legitimately change files this test used to forbid. Phase E3 has its own scope test.
+    [string]$E1Commit = 'a43f18efca37caf64d33bb7c7d5529efd5b7067b',
     [switch]$Probe32
 )
 
@@ -83,6 +86,8 @@ $ssT = $callerAsm.GetType($NS + 'ScenarioState')
 $logT = $callerAsm.GetType($NS + 'ObservationLog')
 $phaseT = $callerAsm.GetType($NS + 'CallerPhase')
 $deviceT = $callerAsm.GetType($NS + 'TsScoringCallerInputDevice')
+# Phase E3: no test reads the user's real launcher.json (the production constructor would start the application if it existed)
+$callerAsm.GetType($NS + 'LauncherConfigLoader').GetProperty('TestPath', [Reflection.BindingFlags]'NonPublic,Static').SetValue($null, ([IO.Path]::Combine([IO.Path]::GetTempPath(), 'tss-no-launcher-' + [Guid]::NewGuid().ToString('N') + '.json')))
 $npi = [Reflection.BindingFlags]'NonPublic,Public,Instance'
 $nps = [Reflection.BindingFlags]'NonPublic,Public,Static'
 
@@ -169,7 +174,8 @@ function ObjectExists([int]$fakePid, [string]$kind) {
 function Test-BytesContain([byte[]]$bytes, [string]$text) {
     $a = [Text.Encoding]::GetEncoding(28591).GetString($bytes)
     $u = [Text.Encoding]::Unicode.GetString($bytes)
-    return (($a.IndexOf($text, [StringComparison]::Ordinal) -ge 0) -or ($u.IndexOf($text, [StringComparison]::Ordinal) -ge 0))
+    $u2 = [Text.Encoding]::Unicode.GetString($bytes, 1, $bytes.Length - 1) # the #US heap of the metadata can start at an odd offset
+    return (($a.IndexOf($text, [StringComparison]::Ordinal) -ge 0) -or ($u.IndexOf($text, [StringComparison]::Ordinal) -ge 0) -or ($u2.IndexOf($text, [StringComparison]::Ordinal) -ge 0))
 }
 # the Tick of BVE stopped for ms: the last Tick time is moved into the past (the monitor sees a stale Tick)
 function MakeStale($h, [double]$ms) {
@@ -553,7 +559,8 @@ function RunGit([string[]]$gitArgs) {
 $prefix = (RunGit @('rev-parse', '--show-prefix')).Trim()
 $top = (RunGit @('rev-parse', '--show-toplevel')).Trim()
 function BaseText([string]$rel) { return ((RunGit @('show', ($Baseline + ':' + $prefix + $rel.Replace('\', '/')))) -replace "`r`n", "`n") }
-function WorkText([string]$rel) { return (([IO.File]::ReadAllText((Join-Path $Root $rel))) -replace "`r`n", "`n") }
+function WorkText([string]$rel) { return ((RunGit @('show', ($E1Commit + ':' + $prefix + $rel.Replace('\', '/')))) -replace "`r`n", "`n") }
+function E1Names([string]$dir) { return @((RunGit @('ls-tree', '--name-only', $E1Commit, ($prefix + $dir + '/'))) -split "`n" | Where-Object { $_ } | ForEach-Object { Split-Path $_ -Leaf }) }
 function NoComments([string]$s) { return [regex]::Replace($s, '//[^\n]*', '') }
 function BodyOf([string]$text, [string]$sig) {
     $mm = [regex]::Match($text, [regex]::Escape($sig) + '\s*\{(?<b>[\s\S]*?)\n        \}')
@@ -561,7 +568,7 @@ function BodyOf([string]$text, [string]$sig) {
     return $null
 }
 function MethodText([string]$text, [string]$name) { $mm = [regex]::Match($text, '(?ms)^        (private|internal|public) [^\n]*\b' + $name + '\([^\n]*\)\s*\n        \{.*?\n        \}\n'); return $mm.Value }
-function NumStat([string[]]$paths) { return @((RunGit (@('-C', $top, 'diff', '--numstat', $Baseline, '--') + $paths)) -split "`n" | Where-Object { $_ }) }
+function NumStat([string[]]$paths) { return @((RunGit (@('-C', $top, 'diff', '--numstat', $Baseline, $E1Commit, '--') + $paths)) -split "`n" | Where-Object { $_ }) }
 
 $hsNow = WorkText 'Caller\src\HandshakeSession.cs'
 $hsBase = BaseText 'Caller\src\HandshakeSession.cs'
@@ -587,12 +594,13 @@ Check ('E06 no new thread: HandshakeSession creates ' + $thrNow + ' thread sites
 Check 'E07 AppController.cs is pure: no clock, no I/O, no thread, no lock, no Interlocked, no kernel object, no log call, no dialog, no using of System.Diagnostics / IO / Threading' ($acCode -notmatch 'Stopwatch|DateTime|Environment|File|Stream|Directory|lock\s*\(|Monitor\.|Interlocked|EventWaitHandle|Mutex|Semaphore|MemoryMapped|Obs\(|ObsA\(|ObservationLog|MessageBox|using System\.(Diagnostics|IO|Threading|Net|Runtime)|DllImport')
 $procLinesNow = @(((WorkText 'Caller\src\HandshakeSession.cs') + "`n" + (WorkText 'Shared\HandshakeProtocol.cs') + "`n" + (WorkText 'Shared\ObservationLog.cs') + "`n" + $devNow) -split "`n" | Where-Object { $_.TrimStart() -notmatch '^//' -and $_ -match '\bProcess\b' } | ForEach-Object { $_.Trim() })
 $procLinesBase = @(((BaseText 'Caller\src\HandshakeSession.cs') + "`n" + (BaseText 'Shared\HandshakeProtocol.cs') + "`n" + (BaseText 'Shared\ObservationLog.cs') + "`n" + (BaseText 'Caller\src\TsScoringCallerInputDevice.cs')) -split "`n" | Where-Object { $_.TrimStart() -notmatch '^//' -and $_ -match '\bProcess\b' } | ForEach-Object { $_.Trim() })
-$allCs = @(Get-ChildItem (Join-Path $Root 'Caller\src') -Filter *.cs) + @(Get-ChildItem (Join-Path $Root 'Shared') -Filter *.cs)
+$e1CallerNames = E1Names 'Caller/src'
+$allCs = @(Get-ChildItem (Join-Path $Root 'Caller\src') -Filter *.cs | Where-Object { $_.Name -in $e1CallerNames }) + @(Get-ChildItem (Join-Path $Root 'Shared') -Filter *.cs)
 $procHits = @($allCs | Where-Object { (NoComments (WorkText $_.FullName.Substring($Root.Length + 1))) -match 'Process\.Start|ProcessStartInfo|CreateProcess|ShellExecute|WinExec|UseShellExecute|\bProcess\s+\w+\s*[=;]' -and $_.Name -ne 'HandshakeProtocol.cs' })
-Check ('E08 no Process.Start / ProcessStartInfo / CreateProcess / ShellExecute and no Process-typed field or variable in any Caller source (the one existing Process.GetCurrentProcess() line of HandshakeProtocol is unchanged: ' + $procLinesBase.Count + ' line), nor a reference in the DLL') ((($procLinesNow -join "`n") -ceq ($procLinesBase -join "`n")) -and ($procHits.Count -eq 0) -and (-not (Test-BytesContain $callerBytes 'ProcessStartInfo')) -and (-not (Test-BytesContain $callerBytes 'CreateProcess')) -and (-not (Test-BytesContain $callerBytes 'ShellExecute')) -and (-not (Test-BytesContain $callerBytes 'WaitForExit')) -and (-not (Test-BytesContain $callerBytes 'Kill')))
-$tokenFiles = @(Get-ChildItem (Join-Path $Root 'Caller\src') -Filter *.cs | Where-Object { (NoComments (WorkText ('Caller\src\' + $_.Name))) -match '(?i)python|\.py\b|main\.py|\.exe\b|AppReady|StopEvent|SessionEvent|DrivingEvent|JobObject|Backoff|Restart|Respawn|Launch|HUD|Overlay|UdpClient|Socket|SetWindowsHookEx|RegisterHotKey|Registry|Kickstart|Mutex' })
+Check ('E08 no Process.Start / ProcessStartInfo / CreateProcess / ShellExecute and no Process-typed field or variable in any Caller source (the one existing Process.GetCurrentProcess() line of HandshakeProtocol is unchanged: ' + $procLinesBase.Count + ' line), nor a reference in the DLL') ((($procLinesNow -join "`n") -ceq ($procLinesBase -join "`n")) -and ($procHits.Count -eq 0))
+$tokenFiles = @(Get-ChildItem (Join-Path $Root 'Caller\src') -Filter *.cs | Where-Object { $_.Name -in $e1CallerNames } | Where-Object { (NoComments (WorkText ('Caller\src\' + $_.Name))) -match '(?i)python|\.py\b|main\.py|\.exe\b|AppReady|StopEvent|SessionEvent|DrivingEvent|JobObject|Backoff|Restart|Respawn|Launch|HUD|Overlay|UdpClient|Socket|SetWindowsHookEx|RegisterHotKey|Registry|Kickstart|Mutex' })
 Check 'E09 no application, Event, HUD, scoring, UDP, hook, restart or back-off vocabulary in any Caller source (code lines)' ($tokenFiles.Count -eq 0)
-Check 'E10 the DLL contains no application / interpreter / Event / job vocabulary (python, main.py, .exe, AppReady, StopEvent, SessionEvent, DrivingEvent, JobObject, UdpClient, Registry) and has the dry-run log events' ((@('python', 'Python', 'main.py', '.exe', 'AppReady', 'StopEvent', 'SessionEvent', 'DrivingEvent', 'JobObject', 'UdpClient', 'Registry', 'Launcher' | Where-Object { Test-BytesContain $callerBytes $_ }).Count -eq 0) -and (Test-BytesContain $callerBytes 'APP_START_REQUEST') -and (Test-BytesContain $callerBytes 'APP_STOP_REQUEST') -and (Test-BytesContain $callerBytes 'APP_START_SUPPRESSED') -and (Test-BytesContain $callerBytes 'APP_STOP_NOT_REQUIRED') -and (Test-BytesContain $callerBytes 'first-driving-on') -and (Test-BytesContain $callerBytes 'caller-dispose'))
+Check 'E10 the DLL still has the dry-run log events and reasons (the E1 "no application vocabulary" rule is pinned to the Phase E1 sources above; E3 has its own DLL checks)' ((Test-BytesContain $callerBytes 'APP_START_REQUEST') -and (Test-BytesContain $callerBytes 'APP_STOP_REQUEST') -and (Test-BytesContain $callerBytes 'APP_START_SUPPRESSED') -and (Test-BytesContain $callerBytes 'APP_STOP_NOT_REQUIRED') -and (Test-BytesContain $callerBytes 'first-driving-on') -and (Test-BytesContain $callerBytes 'caller-dispose'))
 Check 'E11 every logged request line carries dryRun=yes (source) and the reasons are exactly first-driving-on / caller-dispose' ((@([regex]::Matches((WorkText 'Caller\src\HandshakeSession.cs'), 'ObsA\("APP_(START_REQUEST|START_SUPPRESSED|STOP_REQUEST|STOP_NOT_REQUIRED)", [^\n]*dryRun=yes"\)')).Count -eq 4) -and ($acSrc -match 'FirstDrivingOn = "first-driving-on"') -and ($acSrc -match 'CallerDispose = "caller-dispose"'))
 
 # unchanged contracts, compared with the baseline commit
@@ -613,9 +621,8 @@ $legSha = (Get-FileHash (Join-Path $Root 'Bridge\Legacy\out\TSScoringPlugin.AtsE
 Check 'E16 both Bridge DLLs are the formal ones (Current 247F6724..., Legacy C2883E40...)' (($curSha -eq '247F67243253E5AD3C98D1B04BF8C4C8F19399C8B91317A7744D5E12A901A5AA') -and ($curOutSha -eq $curSha) -and ($legSha -eq 'C2883E400B1DCC1E0720392B90EAAED7CD770F6EB8DC6CF4CBA06FF80598EB48'))
 
 # scope: python, HUD, scoring, UDP, hooks, installer
-$changedAll = @((RunGit @('-C', $top, 'diff', '--name-only', $Baseline)) -split "`n" | Where-Object { $_ })
-$untrackedAll = @((RunGit @('-C', $top, 'ls-files', '--others', '--exclude-standard')) -split "`n" | Where-Object { $_ })
-$touchedAll = @($changedAll + $untrackedAll | Sort-Object -Unique)
+$changedAll = @((RunGit @('-C', $top, 'diff', '--name-only', $Baseline, $E1Commit)) -split "`n" | Where-Object { $_ })
+$touchedAll = @($changedAll | Sort-Object -Unique)
 $planned = @(
     'Caller/src/AppController.cs', 'Caller/src/HandshakeSession.cs', 'Caller/src/AssemblyInfo.cs', 'Caller/TSScoringPlugin.Caller.InputDevice.csproj',
     'Tests/Test-AppControllerE1.ps1', 'Docs/Handshake-PhaseE1-AppController.md',
@@ -624,16 +631,17 @@ $planned = @(
 $extra = @($touchedAll | Where-Object { $_ -notin $planned }); $missing = @($planned | Where-Object { $_ -notin $touchedAll })
 Check ('E17 only the planned Phase E1 files differ from the baseline commit in the WHOLE repository (' + $touchedAll.Count + ' files; unexpected: [' + ($extra -join ', ') + '], missing: [' + ($missing -join ', ') + '])') (($extra.Count -eq 0) -and ($missing.Count -eq 0))
 $mainBlob = (RunGit @('-C', $top, 'rev-parse', ($Baseline + ':main.py'))).Trim()
-$mainNow = (RunGit @('-C', $top, 'hash-object', 'main.py')).Trim()
+$mainNow = (RunGit @('-C', $top, 'rev-parse', ($E1Commit + ':main.py'))).Trim()
 Check 'E18 main.py is byte-identical to the baseline commit (git blob hash), and no .py file, HUD / UDP / scoring / hook / installer / Class1 / project file changed' (($mainBlob -eq $mainNow) -and (@($touchedAll | Where-Object { $_ -match '\.py$|Class1\.cs|AtsLoggerPlugin\.cs|installer|\.iss$|\.vcxproj|\.slnx$|scoring_logic|menu_ui|config\.py|utils\.py' }).Count -eq 0))
 Check 'E19 no build output, DLL, PDB or log among the files of this phase (obj / out / dist / logs stay ignored)' (@($touchedAll | Where-Object { $_ -match '/out/|/obj/|/dist/|/logs/|build\.log|\.dll$|\.pdb$|\.log$' }).Count -eq 0)
 
 # metadata
 $vi = (Get-Item $callerPath).VersionInfo
-Check 'E20 provider Coruge-to; product TS Scoring; version 0.9.0.0 (file and assembly); description names Phase E1 and no observation / diagnostic wording; DLL name unchanged' (($vi.CompanyName -eq 'Coruge-to') -and ($vi.LegalCopyright -match 'Coruge-to') -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.FileVersion -eq '0.9.0.0') -and ($callerAsm.GetName().Version.ToString() -eq '0.9.0.0') -and ($vi.Comments -match 'Phase E1') -and ($vi.Comments -notmatch '(?i)observation|diagnostic') -and ($callerAsm.GetName().Name -ceq 'TSScoringPlugin.Caller.InputDevice'))
+$e1Info = WorkText 'Caller\src\AssemblyInfo.cs'
+Check 'E20 (Phase E1 commit) provider Coruge-to; product TS Scoring; version 0.9.0.0 (file and assembly); description names Phase E1 and no observation / diagnostic wording; DLL name unchanged' (($e1Info -match 'AssemblyCompany\("Coruge-to"\)') -and ($e1Info -match 'AssemblyProduct\("TS Scoring"\)') -and ($e1Info -match 'AssemblyVersion\("0\.9\.0\.0"\)') -and ($e1Info -match 'AssemblyFileVersion\("0\.9\.0\.0"\)') -and ($e1Info -match 'AssemblyDescription\("Phase E1') -and ($e1Info -notmatch '(?i)observation build|diagnostic build') -and ($vi.CompanyName -eq 'Coruge-to') -and ($vi.ProductName -eq 'TS Scoring') -and ($callerAsm.GetName().Name -ceq 'TSScoringPlugin.Caller.InputDevice'))
 Check 'E21 no PDB anywhere in the tree, dist holds exactly the Caller and the Current Bridge DLL, and the Caller references only mscorlib, System, System.Core, System.Windows.Forms, Mackoy.IInputDevice' ((@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0) -and ((@(Get-ChildItem (Join-Path $Root 'dist') -File | ForEach-Object { $_.Name } | Sort-Object) -join ',') -eq 'TSScoringPlugin.BveEx.Bridge.Prototype.dll,TSScoringPlugin.Caller.InputDevice.dll') -and ((($callerAsm.GetReferencedAssemblies() | ForEach-Object { $_.Name } | Sort-Object) -join ',') -eq 'Mackoy.IInputDevice,mscorlib,System,System.Core,System.Windows.Forms'))
-$proj = [IO.File]::ReadAllText((Join-Path $Root 'Caller\TSScoringPlugin.Caller.InputDevice.csproj'))
-Check 'E22 the project compiles AppController.cs and nothing else new (Compile items: AppController, AssemblyInfo, DrivingActivityState, HandshakeSession, TsScoringCallerInputDevice + the three Shared files)' ((@([regex]::Matches($proj, '<Compile Include="([^"]+)"') | ForEach-Object { $_.Groups[1].Value } | Sort-Object) -join ',') -ceq ((@('src\AppController.cs', 'src\AssemblyInfo.cs', 'src\DrivingActivityState.cs', 'src\HandshakeSession.cs', 'src\TsScoringCallerInputDevice.cs', '..\Shared\AppProtocol.cs', '..\Shared\HandshakeProtocol.cs', '..\Shared\ObservationLog.cs') | Sort-Object) -join ','))
+$proj = WorkText 'Caller\TSScoringPlugin.Caller.InputDevice.csproj'
+Check 'E22 (Phase E1 commit) the project compiles AppController.cs and nothing else new (Compile items: AppController, AssemblyInfo, DrivingActivityState, HandshakeSession, TsScoringCallerInputDevice + the three Shared files)' ((@([regex]::Matches($proj, '<Compile Include="([^"]+)"') | ForEach-Object { $_.Groups[1].Value } | Sort-Object) -join ',') -ceq ((@('src\AppController.cs', 'src\AssemblyInfo.cs', 'src\DrivingActivityState.cs', 'src\HandshakeSession.cs', 'src\TsScoringCallerInputDevice.cs', '..\Shared\AppProtocol.cs', '..\Shared\HandshakeProtocol.cs', '..\Shared\ObservationLog.cs') | Sort-Object) -join ','))
 $docPath = Join-Path $Root 'Docs\Handshake-PhaseE1-AppController.md'
 Check 'E23 the Phase E1 document exists and states the dry-run (start once per ScenarioGeneration, stop once at Dispose, nothing started)' ((Test-Path $docPath) -and (([IO.File]::ReadAllText($docPath, [Text.Encoding]::UTF8)) -match 'dry-run') -and (([IO.File]::ReadAllText($docPath, [Text.Encoding]::UTF8)) -match 'APP_START_REQUEST') -and (([IO.File]::ReadAllText($docPath, [Text.Encoding]::UTF8)) -match 'APP_STOP_REQUEST'))
 
