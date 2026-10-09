@@ -1123,7 +1123,7 @@ class Overlay(QWidget):
                 
                 while len(getattr(self, 'penalty_init_rules', [])) < len(getattr(self, 'brake_rules', [])):
                     idx = len(getattr(self, 'penalty_init_rules', []))
-                    default_apply = "OFF" if getattr(self, 'brake_rules', [])[idx].get("apply", "") == "1段" else "ON①"
+                    default_apply = "OFF" if getattr(self, 'brake_rules', [])[idx].get("apply", "") in ("1段", "2段") else "ON①"
                     getattr(self, 'penalty_init_rules', []).append({"apply": default_apply, "release": "ON①"})
                 if len(getattr(self, 'penalty_init_rules', [])) > len(getattr(self, 'brake_rules', [])):
                     self.penalty_init_rules = getattr(self, 'penalty_init_rules', [])[:len(getattr(self, 'brake_rules', []))]
@@ -1134,7 +1134,7 @@ class Overlay(QWidget):
 
                 for i, p_rule in enumerate(getattr(self, 'penalty_init_rules', [])):
                     if i < len(getattr(self, 'brake_rules', [])):
-                        if getattr(self, 'brake_rules', [])[i].get("apply", "") == "1段" and p_rule.get("apply", "") == "ON①":
+                        if getattr(self, 'brake_rules', [])[i].get("apply", "") in ("1段", "2段") and p_rule.get("apply", "") == "ON①":
                             p_rule["apply"] = "OFF"
 
         elif self.menu_state == 6:
@@ -1246,7 +1246,7 @@ class Overlay(QWidget):
                         self.dropdown_target = "sub_apply" if self.menu_state == 7 else "init_sub_apply"
                         if self.menu_state == 7: self.dropdown_options = [{"idx": 0, "name": "階段"}, {"idx": 1, "name": "1段"}, {"idx": 2, "name": "2段"}, {"idx": 3, "name": "3段"}, {"idx": 4, "name": "OFF"}]
                         else: 
-                            if getattr(self, 'brake_rules', [])[sub_c].get("apply", "") == "1段":
+                            if getattr(self, 'brake_rules', [])[sub_c].get("apply", "") in ("1段", "2段"):
                                 self.dropdown_options = [{"idx": 0, "name": "ON②"}, {"idx": 1, "name": "OFF"}]
                             else:
                                 self.dropdown_options = [{"idx": 0, "name": "ON①"}, {"idx": 1, "name": "ON②"}, {"idx": 2, "name": "OFF"}]
@@ -1430,13 +1430,14 @@ class Overlay(QWidget):
             old_val = getattr(self, 'brake_rules', [])[idx].get("apply", "")
             getattr(self, 'brake_rules', [])[idx]["apply"] = val_name
             
-            # 1段制動の設定に応じて初動ブレーキ設定を切り替える
+            # 1段・2段制動の設定に応じて初動ブレーキ設定を切り替える
             if len(getattr(self, 'penalty_init_rules', [])) > idx:
-                if val_name == "1段":
+                limited_initial_brake_modes = ("1段", "2段")
+                if val_name in limited_initial_brake_modes:
                     if getattr(self, 'penalty_init_rules', [])[idx].get("apply") == "ON①":
                         getattr(self, 'penalty_init_rules', [])[idx]["apply"] = "OFF"
-                elif old_val == "1段" and val_name != "1段":
-                    # 1段制動からそれ以外に戻した場合は ON① に復帰させる
+                elif old_val in limited_initial_brake_modes:
+                    # 1段・2段制動からそれ以外に戻した場合は ON① に復帰させる
                     getattr(self, 'penalty_init_rules', [])[idx]["apply"] = "ON①"
 
             if val_name == "OFF": self.sub_cursor_x = 0
