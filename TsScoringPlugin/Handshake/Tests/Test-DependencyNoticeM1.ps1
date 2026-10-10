@@ -702,11 +702,12 @@ $m1Allowed = @(
     'Caller/src/AppStatePublisher.cs', 'Tests/Test-HudLinkE4.ps1', 'Docs/Handshake-PhaseE4-StatePublication.md', 'Docs/Handshake-PhaseE4-LegacyTelemetryAudit.md',
     'Tests/Test-TelemetryL3.ps1', 'Tests/Test-TelemetryIntegrationL3.ps1', 'Tests/TelemetryTestFixture.cs', 'Tools/Verify-PhaseL3.ps1', 'Docs/Handshake-PhaseL3-LegacyTelemetry.md',
     'Docs/Handshake-PhaseE4-HudZOrder.md', 'Tests/Test-LegacyInputLI0.ps1', 'Docs/Handshake-PhaseLI0-LegacyInputObservation.md',
-    'Tests/Test-LegacyInputLI1.ps1', 'Tests/MainProcessGuard.ps1', 'Docs/Handshake-PhaseLI1-LegacyInputTelemetry.md'
+    'Tests/Test-LegacyInputLI1.ps1', 'Tests/MainProcessGuard.ps1', 'Docs/Handshake-PhaseLI1-LegacyInputTelemetry.md',
+    'Tests/Test-LegacyInputLI2.ps1', 'Docs/Handshake-PhaseLI2-LegacyHoldingSpeedAndOneLeverCl.md'
 ) | ForEach-Object { $prefix + $_ }
 # Phase L3: the independent telemetry project (the DATA plane) is a whole directory of its own
 $m1Outside = @($touched | Where-Object { ($_ -notin $m1Allowed) -and (-not $_.StartsWith($prefix + 'Telemetry/')) })
-Check ('M1-31 only the Phase M1, Phase D1, Phase E1, Phase E3, Phase E4, Phase L3, Phase LI0 and Phase LI1 Caller / test / verification / document files differ from the baseline commit (' + $touched.Count + ' files)') (($m1Outside.Count -eq 0) -and ($touched.Count -ge 8))
+Check ('M1-31 only the Phase M1, Phase D1, Phase E1, Phase E3, Phase E4, Phase L3, Phase LI0, Phase LI1 and Phase LI2 Caller / test / verification / document files differ from the baseline commit (' + $touched.Count + ' files)') (($m1Outside.Count -eq 0) -and ($touched.Count -ge 8))
 if ($m1Outside.Count -gt 0) { $m1Outside | ForEach-Object { '   outside scope: ' + $_ } }
 $failed = @($results | Where-Object { -not $_.Ok })
 "TOTAL {0}  FAILED {1}" -f $results.Count, $failed.Count

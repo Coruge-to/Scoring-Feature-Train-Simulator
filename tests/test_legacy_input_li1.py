@@ -101,7 +101,7 @@ class A_DisplayContract(unittest.TestCase):
         self.assertEqual(ref.expected_handle(1, ECB, 1, 0, 3, 4, 5, 6, False)[3], "B3:3:6")         # service brake -> B<n>
         self.assertEqual(ref.expected_handle(1, ECB, 1, 0, 5, 4, 5, 6, False)[3], "B5:5:6")         # last service notch
         self.assertEqual(ref.expected_handle(1, ECB, 1, 0, 6, 4, 5, 6, False)[3], "EB:6:6")         # the emergency notch of the host -> EB
-        self.assertEqual(ref.expected_handle(1, ECB, 1, 0, 7, 4, 5, 6, False)[3], "EB:7:6")         # at or above it
+        self.assertEqual(ref.expected_handle(1, ECB, 1, 0, 7, 4, 5, 6, False), ["drop", "brk-range"])   # beyond it is not a position (LI2 final)
 
     def test_one_lever_smee_is_the_same_shape(self):
         out = ref.expected_handle(1, SMEE, 0, 0, 10, 4, 9, 10, False)
@@ -114,16 +114,21 @@ class A_DisplayContract(unittest.TestCase):
         self.assertEqual(ref.expected_handle(2, ECB, 0, 0, 0, 6, 8, 9, False)[2:4], ["P0:0", "B0:0:9"])
 
     def test_two_lever_cl(self):
-        texts = [ref.expected_handle(2, CL, 1, 0, b, 5, 2, 3, False)[3] for b in (0, 1, 2, 3, 4)]
-        self.assertEqual(texts, ["運転:0:3", "重なり:1:3", "常用:2:3", "非常:3:3", "非常:4:3"])
+        texts = [ref.expected_handle(2, CL, 1, 0, b, 5, 2, 3, False)[3] for b in (0, 1, 2, 3)]
+        self.assertEqual(texts, ["運転:0:3", "重なり:1:3", "常用:2:3", "非常:3:3"])
+        self.assertEqual(ref.expected_handle(2, CL, 1, 0, 4, 5, 2, 3, False), ["drop", "brk-range"])      # beyond the emergency notch (LI2 final)
         self.assertEqual(ref.expected_handle(2, CL, 1, 5, 0, 5, 2, 3, False)[2], "P5:5")
         self.assertEqual(ref.expected_handle(2, CL, 1, 0, 0, 5, 2, 3, False)[5], "後_切_前:P0_P1_P2_P3_P4_P5:運転_重なり_常用_非常:")
 
-    def test_one_lever_cl_is_not_supported(self):
-        self.assertEqual(ref.expected_handle(1, CL, 1, 0, 0, 5, 2, 3, False), ["drop", "one-lever-cl"])
+    def test_one_lever_cl_is_built_since_li2(self):
+        # LI1 left the one-lever Cl cab unavailable; LI2 (tests\test_legacy_input_li2.py has the full table) builds it
+        self.assertEqual(ref.expected_handle(1, CL, 1, 0, 0, 5, 2, 3, False),
+                         ["ok", "前:1", "運転:0", "運転:0:3", "1", "後_切_前:運転_P1_P2_P3_P4_P5:運転_重なり_常用_非常:"])      # LI2 final: the RUN word at rest (it was the off word)
 
-    def test_holding_speed_brake_is_not_built(self):
-        self.assertEqual(ref.expected_handle(2, ECB, 1, 0, 0, 4, 7, 8, True), ["drop", "holding-unconfirmed"])
+    def test_holding_speed_brake_cases_are_built_since_the_li2_final(self):
+        # LI1 refused every holding speed brake; the LI2 final builds all of them (only an unreadable flag is refused)
+        self.assertEqual(ref.expected_handle(1, ECB, 1, 0, 1, 4, 7, 8, True)[3], "抑速:1:8")
+        self.assertEqual(ref.expected_handle(2, CL, 1, 0, 1, 5, 2, 3, True)[3], "抑速:1:3")
         self.assertEqual(ref.expected_handle(2, ECB, 1, 0, 0, 4, 7, 8, None), ["drop", "hold-missing"])
 
     def test_emergency_boundary_is_the_host_value(self):
@@ -141,11 +146,12 @@ class A_DisplayContract(unittest.TestCase):
             self.assertEqual(len(rev.split(":")), 2, c)
             self.assertEqual(len(pow_.split(":")), 2, c)
             self.assertEqual(len(brk.split(":")), 3, c)
-            self.assertEqual(len(alltxt.split(":")), 4, c)           # rev : power : brake : (holding speed, empty)
-            self.assertEqual(alltxt.split(":")[3], "", c)
+            self.assertEqual(len(alltxt.split(":")), 4, c)           # rev : power : brake : holding speed texts (empty unless the cab has independent holding speed notches)
+            self.assertRegex(alltxt.split(":")[3], r"^(H[0-9]+(_H[0-9]+)*)?$", c)
         reasons = {c["out"][1] for c in cases if c["out"][0] == "drop"}
-        self.assertEqual(reasons, {"type-unknown", "brake-unknown", "one-lever-cl", "rev-missing", "pow-missing", "brk-missing", "layout-missing",
-                                   "hold-missing", "holding-unconfirmed", "layout-range", "cl-layout", "eb-layout", "rev-range", "pow-range", "brk-range"})
+        self.assertEqual(reasons, {"type-unknown", "brake-unknown", "rev-missing", "pow-missing", "brk-missing", "layout-missing",
+                                   "hold-missing", "layout-range", "cl-layout", "eb-layout", "rev-range",
+                                   "holdn-missing", "hold-range", "pow-range", "brk-range", "pow-brk-both"})
 
     def test_the_wire_vocabulary_is_the_current_one(self):
         self.assertEqual(tc.TOKEN_KEYS["handle"], ("REV", "POW", "BRK", "HTYPE", "ALLTXT"))

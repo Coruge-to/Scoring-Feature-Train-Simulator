@@ -60,7 +60,7 @@ function FindPython {
 # the Japanese words of the generic display, from code points
 function U([int[]]$cp) { return (-join ($cp | ForEach-Object { [string][char]$_ })) }
 $W_BACK = U @(0x5F8C); $W_REVOFF = U @(0x5207); $W_FWD = U @(0x524D)
-$W_RUN = U @(0x904B, 0x8EE2); $W_LAP = U @(0x91CD, 0x306A, 0x308A); $W_SVC = U @(0x5E38, 0x7528); $W_EMG = U @(0x975E, 0x5E38)
+$W_HOLD = U @(0x6291, 0x901F); $W_RUN = U @(0x904B, 0x8EE2); $W_LAP = U @(0x91CD, 0x306A, 0x308A); $W_SVC = U @(0x5E38, 0x7528); $W_EMG = U @(0x975E, 0x5E38)
 
 function NewH([bool]$withInput) { return (New-Object TsScoringLegacyTelemetryTests.Harness -ArgumentList $withInput) }
 function NewIn { return (NewH $true) }
@@ -101,8 +101,8 @@ $table = @{}
 $mismatch = 0; $firstBad = ''
 foreach ($c in $cases) {
     $in = @($c.PSObject.Properties['in'].Value)
-    $args9 = @($in[0], $in[1], $in[2], $in[3], $in[4], $in[5], $in[6], $in[7], $in[8])
-    $got = $build.Invoke($null, $args9)
+    $args10 = @($in[0], $in[1], $in[2], $in[3], $in[4], $in[5], $in[6], $in[7], $in[8], $in[9])
+    $got = $build.Invoke($null, $args10)
     $want = @($c.out)
     $key = ($in -join ',')
     $table[$key] = $want
@@ -110,23 +110,24 @@ foreach ($c in $cases) {
 }
 Check ('A01 the C# handle contract equals the independent reference for all ' + $cases.Count + ' cases (' + $mismatch + ' differ) ' + $firstBad) (($cases.Count -gt 800) -and ($mismatch -eq 0))
 $reasons = @($cases | Where-Object { $_.out[0] -eq 'drop' } | ForEach-Object { $_.out[1] } | Sort-Object -Unique)
-Check 'A02 every reason word is exercised (15 fixed reason words)' ($reasons.Count -eq 15)
+Check 'A02 every reason word is exercised (16 fixed reason words since the LI2 final: one-lever-cl, holding-cl and holding-unconfirmed are gone because all 24 cab / brake / holding speed combinations are built; holdn-missing, hold-range and pow-brk-both are new)' ($reasons.Count -eq 16)
 Check 'A03 the keys are written in the order of the Current line: REV POW BRK HTYPE ALLTXT (HTYPE before ALLTXT: the reader sizes the brake texts by the handle type)' ((J ($hi.GetMethod('Keys').Invoke($null, @()))) -ceq 'REV|POW|BRK|HTYPE|ALLTXT')
-$one = $build.Invoke($null, @(1, 1, 1, 0, 0, 4, 5, 6, $false))
+$one = $build.Invoke($null, @(1, 1, 1, 0, 0, 4, 5, 6, $false, 0))
 Check 'A04 literal: one-lever Ecb 4/5/6 at rest is REV forward, POW N, BRK N with emergency notch 6, HTYPE 1, and the generic ALLTXT' ((J $one) -ceq (J @('ok', ($W_FWD + ':1'), 'N:0', 'N:0:6', '1', ($W_BACK + '_' + $W_REVOFF + '_' + $W_FWD + ':N_P1_P2_P3_P4:N_B1_B2_B3_B4_B5_EB:'))))
-$cl = $build.Invoke($null, @(2, 3, 0, 0, 1, 5, 2, 3, $false))
+$cl = $build.Invoke($null, @(2, 3, 0, 0, 1, 5, 2, 3, $false, 0))
 Check 'A05 literal: two-lever Cl brake position 1 is the lap word with emergency notch 3, position 0 is the run word; ALLTXT lists run / lap / service / emergency' ((J $cl) -ceq (J @('ok', ($W_REVOFF + ':0'), 'P0:0', ($W_LAP + ':1:3'), '2', ($W_BACK + '_' + $W_REVOFF + '_' + $W_FWD + ':P0_P1_P2_P3_P4_P5:' + $W_RUN + '_' + $W_LAP + '_' + $W_SVC + '_' + $W_EMG + ':'))))
-Check 'A06 literal: one-lever Cl is not built (one-lever-cl); a holding speed brake is not built (holding-unconfirmed); an unreadable hold flag is not built (hold-missing)' (((J ($build.Invoke($null, @(1, 3, 1, 0, 0, 5, 2, 3, $false)))) -ceq 'drop|one-lever-cl') -and ((J ($build.Invoke($null, @(2, 1, 1, 0, 0, 4, 7, 8, $true)))) -ceq 'drop|holding-unconfirmed') -and ((J ($build.Invoke($null, @(2, 1, 1, 0, 0, 4, 7, 8, $null)))) -ceq 'drop|hold-missing'))
-Check 'A07 the emergency boundary is the host value: 2-lever Ecb 7/8 is EB at 8 and above, never derived (8 -> EB:8:8, 9 -> EB:9:8); an emergency notch that is not brake notches + 1 builds nothing (eb-layout)' (((J ($build.Invoke($null, @(2, 1, 1, 0, 8, 4, 7, 8, $false)))) -match 'EB:8:8') -and ((J ($build.Invoke($null, @(2, 1, 1, 0, 9, 4, 7, 8, $false)))) -match 'EB:9:8') -and ((J ($build.Invoke($null, @(2, 1, 1, 0, 0, 4, 7, 9, $false)))) -ceq 'drop|eb-layout'))
-$revTexts = New-Object System.Collections.Generic.List[string]; foreach ($rv in @(-1, 0, 1)) { $revTexts.Add([string](($build.Invoke($null, @(2, 1, $rv, 0, 0, 4, 7, 8, $false)))[1])) }
+$hb = $build.Invoke($null, @(2, 1, 1, 0, 1, 5, 8, 9, $true, 0))
+Check 'A06 literal (LI2): a holding speed BRAKE on a two-lever Ecb car is built - brake position 1 is the holding speed brake word (not H1); one-lever + holding speed brake and Cl + holding speed brake are built too (LI2 final: N / hold word / B1.. / EB and run / hold word / service / emergency), an unreadable hold flag is hold-missing' (((J $hb) -ceq (J @('ok', ($W_FWD + ':1'), 'P0:0', ($W_HOLD + ':1:9'), '2', ($W_BACK + '_' + $W_REVOFF + '_' + $W_FWD + ':P0_P1_P2_P3_P4_P5:B0_' + $W_HOLD + '_B1_B2_B3_B4_B5_B6_B7_EB:')))) -and ((J ($build.Invoke($null, @(1, 1, 1, 0, 1, 5, 8, 9, $true, 0)))) -ceq (J @('ok', ($W_FWD + ':1'), 'N:0', ($W_HOLD + ':1:9'), '1', ($W_BACK + '_' + $W_REVOFF + '_' + $W_FWD + ':N_P1_P2_P3_P4_P5:N_' + $W_HOLD + '_B1_B2_B3_B4_B5_B6_B7_EB:')))) -and ((J ($build.Invoke($null, @(2, 3, 1, 0, 1, 5, 2, 3, $true, 0)))) -ceq (J @('ok', ($W_FWD + ':1'), 'P0:0', ($W_HOLD + ':1:3'), '2', ($W_BACK + '_' + $W_REVOFF + '_' + $W_FWD + ':P0_P1_P2_P3_P4_P5:' + $W_RUN + '_' + $W_HOLD + '_' + $W_SVC + '_' + $W_EMG + ':')))) -and ((J ($build.Invoke($null, @(2, 1, 1, 0, 0, 4, 7, 8, $null, 0)))) -ceq 'drop|hold-missing'))
+Check 'A07 the emergency boundary is the host value: 2-lever Ecb 7/8 is EB at 8, never derived (8 -> EB:8:8), and a position beyond it is not a position (9 -> brk-range); an emergency notch that is not brake notches + 1 builds nothing (eb-layout)' (((J ($build.Invoke($null, @(2, 1, 1, 0, 8, 4, 7, 8, $false, 0)))) -match 'EB:8:8') -and ((J ($build.Invoke($null, @(2, 1, 1, 0, 9, 4, 7, 8, $false, 0)))) -ceq 'drop|brk-range') -and ((J ($build.Invoke($null, @(2, 1, 1, 0, 0, 4, 7, 9, $false, 0)))) -ceq 'drop|eb-layout'))
+$revTexts = New-Object System.Collections.Generic.List[string]; foreach ($rv in @(-1, 0, 1)) { $revTexts.Add([string](($build.Invoke($null, @(2, 1, $rv, 0, 0, 4, 7, 8, $false, 0)))[1])) }
 Check 'A08 the reverser words are the same for every cab type: -1 back, 0 off (not the old neutral word), 1 forward' ((J $revTexts) -ceq (J @(($W_BACK + ':-1'), ($W_REVOFF + ':0'), ($W_FWD + ':1'))))
-$oneN = $build.Invoke($null, @(1, 1, 1, 0, 0, 4, 5, 6, $false)); $oneP = $build.Invoke($null, @(1, 1, 1, 2, 0, 4, 5, 6, $false)); $oneB = $build.Invoke($null, @(1, 1, 1, 0, 3, 4, 5, 6, $false)); $oneE = $build.Invoke($null, @(1, 1, 1, 0, 6, 4, 5, 6, $false))
+$oneN = $build.Invoke($null, @(1, 1, 1, 0, 0, 4, 5, 6, $false, 0)); $oneP = $build.Invoke($null, @(1, 1, 1, 2, 0, 4, 5, 6, $false, 0)); $oneB = $build.Invoke($null, @(1, 1, 1, 0, 3, 4, 5, 6, $false, 0)); $oneE = $build.Invoke($null, @(1, 1, 1, 0, 6, 4, 5, 6, $false, 0))
 Check 'A09 one-lever Ecb keeps N at the neutral: neutral N / P2 / B3 / EB, ALLTXT power N_P1..P4 and brake N_B1..B5_EB (the neutral N is not B0)' (($oneN[2] -ceq 'N:0') -and ($oneN[3] -ceq 'N:0:6') -and ($oneP[2] -ceq 'P2:2') -and ($oneB[3] -ceq 'B3:3:6') -and ($oneE[3] -ceq 'EB:6:6') -and ($oneN[5] -cmatch ':N_P1_P2_P3_P4:N_B1_B2_B3_B4_B5_EB:$'))
-$twoE = $build.Invoke($null, @(2, 1, 1, 0, 0, 4, 7, 8, $false)); $twoS = $build.Invoke($null, @(2, 2, 1, 0, 0, 4, 9, 10, $false)); $twoS3 = $build.Invoke($null, @(2, 2, 1, 2, 3, 4, 9, 10, $false)); $twoSE = $build.Invoke($null, @(2, 2, 1, 0, 10, 4, 9, 10, $false))
+$twoE = $build.Invoke($null, @(2, 1, 1, 0, 0, 4, 7, 8, $false, 0)); $twoS = $build.Invoke($null, @(2, 2, 1, 0, 0, 4, 9, 10, $false, 0)); $twoS3 = $build.Invoke($null, @(2, 2, 1, 2, 3, 4, 9, 10, $false, 0)); $twoSE = $build.Invoke($null, @(2, 2, 1, 0, 10, 4, 9, 10, $false, 0))
 Check 'A10 two-lever Ecb and Smee show B0 at brake position 0 (not N): BRK B0:0:e, ALLTXT brake B0_B1..B(e-1)_EB, power P0..Pn; B3 and EB as before' (($twoE[3] -ceq 'B0:0:8') -and ($twoS[3] -ceq 'B0:0:10') -and ($twoS3[2] -ceq 'P2:2') -and ($twoS3[3] -ceq 'B3:3:10') -and ($twoSE[3] -ceq 'EB:10:10') -and ($twoE[5] -cmatch ':P0_P1_P2_P3_P4:B0_B1_B2_B3_B4_B5_B6_B7_EB:$') -and ($twoS[5] -cmatch ':P0_P1_P2_P3_P4:B0_B1_B2_B3_B4_B5_B6_B7_B8_B9_EB:$'))
-$clT = New-Object System.Collections.Generic.List[string]; foreach ($bk in @(0, 1, 2, 3, 4)) { $clT.Add([string](($build.Invoke($null, @(2, 3, 1, 0, $bk, 5, 2, 3, $false)))[3])) }
-Check 'A11 two-lever Cl: brake 0 run, 1 lap, 2 service, 3 and above emergency (the reverser off word and the Cl run word are different words)' (((J $clT) -ceq (J @(($W_RUN + ':0:3'), ($W_LAP + ':1:3'), ($W_SVC + ':2:3'), ($W_EMG + ':3:3'), ($W_EMG + ':4:3')))) -and ($W_RUN -cne $W_REVOFF))
-Check 'A12 one-lever Cl and a holding speed brake still build no handle group (unavailable, nothing guessed)' (((J ($build.Invoke($null, @(1, 3, 1, 0, 0, 5, 2, 3, $false)))) -ceq 'drop|one-lever-cl') -and ((J ($build.Invoke($null, @(2, 2, 1, 0, 0, 4, 9, 10, $true)))) -ceq 'drop|holding-unconfirmed'))
+$clT = New-Object System.Collections.Generic.List[string]; foreach ($bk in @(0, 1, 2, 3)) { $clT.Add([string](($build.Invoke($null, @(2, 3, 1, 0, $bk, 5, 2, 3, $false, 0)))[3])) }
+Check 'A11 two-lever Cl: brake 0 run, 1 lap, 2 service, 3 emergency, 4 is beyond the emergency notch (brk-range) (the reverser off word and the Cl run word are different words)' (((J $clT) -ceq (J @(($W_RUN + ':0:3'), ($W_LAP + ':1:3'), ($W_SVC + ':2:3'), ($W_EMG + ':3:3')))) -and ((J ($build.Invoke($null, @(2, 3, 1, 0, 4, 5, 2, 3, $false, 0)))) -ceq 'drop|brk-range') -and ($W_RUN -cne $W_REVOFF))
+Check 'A12 (LI2 final) the one-lever Cl cab is built (the RUN word at rest, like the two-lever Cl brake position 0 - it used to be the off word); one-lever Cl + holding speed brake and two-lever Cl + holding speed brake are built too (position 1 is the holding speed word)' (((J ($build.Invoke($null, @(1, 3, 1, 0, 0, 5, 2, 3, $false, 0)))) -ceq (J @('ok', ($W_FWD + ':1'), ($W_RUN + ':0'), ($W_RUN + ':0:3'), '1', ($W_BACK + '_' + $W_REVOFF + '_' + $W_FWD + ':' + $W_RUN + '_P1_P2_P3_P4_P5:' + $W_RUN + '_' + $W_LAP + '_' + $W_SVC + '_' + $W_EMG + ':')))) -and ((J ($build.Invoke($null, @(1, 3, 1, 0, 1, 5, 2, 3, $true, 0)))) -ceq (J @('ok', ($W_FWD + ':1'), ($W_RUN + ':0'), ($W_HOLD + ':1:3'), '1', ($W_BACK + '_' + $W_REVOFF + '_' + $W_FWD + ':' + $W_RUN + '_P1_P2_P3_P4_P5:' + $W_RUN + '_' + $W_HOLD + '_' + $W_SVC + '_' + $W_EMG + ':')))) -and ((J ($build.Invoke($null, @(2, 3, 1, 0, 0, 5, 2, 3, $true, 0)))) -ceq (J @('ok', ($W_FWD + ':1'), 'P0:0', ($W_RUN + ':0:3'), '2', ($W_BACK + '_' + $W_REVOFF + '_' + $W_FWD + ':P0_P1_P2_P3_P4_P5:' + $W_RUN + '_' + $W_HOLD + '_' + $W_SVC + '_' + $W_EMG + ':')))))
 
 # ---------------------------------------------------------------------------------------------------------------------------------------------
 # B - the pressure contract
@@ -148,7 +149,7 @@ $allToks = 'bcp+bpp+brake_cab+brake_type+calcg+door+grad+handle+loc+maplimit+met
 Check 'C01 default fake (one-lever Ecb 5/8/9 at rest, store 0 / 490): the line carries REV POW BRK HTYPE ALLTXT BCP BPP with the generic texts' (($line -match ('(^|,)REV:' + $W_FWD + ':1,')) -and ((Part $line 'POW') -ceq 'N:0') -and ((Part $line 'BRK') -ceq 'N:0:9') -and ((Part $line 'HTYPE') -ceq '1') -and ((Part $line 'ALLTXT') -ceq ($W_BACK + '_' + $W_REVOFF + '_' + $W_FWD + ':N_P1_P2_P3_P4_P5:N_B1_B2_B3_B4_B5_B6_B7_B8_EB:')) -and ((Part $line 'BCP') -ceq '0.0') -and ((Part $line 'BPP') -ceq '490.0'))
 Check 'C02 AVAIL names exactly the 14 tokens of Phase L3 plus handle, bcp, bpp (17), sorted; the first line (no acceleration reference yet) lacks calcg only' (((Part (Last $h) 'AVAIL') -ceq ('1:' + $allToks)) -and ((@(Toks ($h.Sink.Lines()[0]))).Count -eq 16) -and (-not (HasTok ($h.Sink.Lines()[0]) 'calcg')))
 # every supported combination, every position: the line carries what the table says
-$combos = @(@(1, 1, 4, 5, 6), @(1, 2, 4, 9, 10), @(2, 1, 4, 7, 8), @(2, 1, 6, 8, 9), @(2, 2, 4, 9, 10), @(2, 3, 5, 2, 3))
+$combos = @(@(1, 1, 4, 5, 6), @(1, 2, 4, 9, 10), @(1, 3, 5, 2, 3), @(2, 1, 4, 7, 8), @(2, 1, 6, 8, 9), @(2, 2, 4, 9, 10), @(2, 3, 5, 2, 3))
 $bad = 0; $n = 0; $firstBad2 = ''
 foreach ($cb in $combos) {
     $hh = NewIn
@@ -158,20 +159,22 @@ foreach ($cb in $combos) {
                 Setup $hh $cb[0] $cb[1] $rev $pow $brk $cb[2] $cb[3] $cb[4]
                 $hh.Run(1, 16)
                 $l = Last $hh
-                $want = $table[(@($cb[0], $cb[1], $rev, $pow, $brk, $cb[2], $cb[3], $cb[4], 'False') -join ',')]
+                $want = $table[(@($cb[0], $cb[1], $rev, $pow, $brk, $cb[2], $cb[3], $cb[4], 'False', 0) -join ',')]
                 $got = @((Part $l 'REV'), (Part $l 'POW'), (Part $l 'BRK'), (Part $l 'HTYPE'), (Part $l 'ALLTXT'))
                 $n++
-                if ((J $got) -cne (J @($want[1..5]))) { $bad++; if (-not $firstBad2) { $firstBad2 = ((@($cb) -join '/') + ' r' + $rev + ' p' + $pow + ' b' + $brk + ' got=' + (J $got)) } }
+                if ($want[0] -ceq 'drop') { if (-not ((NoHandleKeys $l) -and (-not (HasTok $l 'handle')))) { $bad++; if (-not $firstBad2) { $firstBad2 = ((@($cb) -join '/') + ' r' + $rev + ' p' + $pow + ' b' + $brk + ' should be dropped (' + $want[1] + ')') } } }
+                elseif ((J $got) -cne (J @($want[1..5]))) { $bad++; if (-not $firstBad2) { $firstBad2 = ((@($cb) -join '/') + ' r' + $rev + ' p' + $pow + ' b' + $brk + ' got=' + (J $got)) } }
             }
         }
     }
 }
-Check ('C03 the line the SESSION writes equals the reference for ' + $n + ' (layout x reverser x power x brake) states of the six real layouts: one-lever Ecb / Smee, two-lever Ecb x2 / Smee / Cl (' + $bad + ' differ) ' + $firstBad2) (($n -gt 400) -and ($bad -eq 0))
-$h = NewIn; Setup $h 1 3 1 0 0 5 2 3; $h.Run(5, 16)
+Check ('C03 the line the SESSION writes equals the reference for ' + $n + ' (layout x reverser x power x brake) states of the seven real layouts: one-lever Ecb / Smee / Cl, two-lever Ecb x2 / Smee / Cl (' + $bad + ' differ) ' + $firstBad2) (($n -gt 400) -and ($bad -eq 0))
+$h = NewIn; Setup $h 1 1 1 0 0 5 8 9; $h.Input.Hold = $true; $h.Run(5, 16)
 $ls = @($h.Sink.Lines()); $l = $ls[$ls.Count - 1]
-Check 'C04 one-lever Cl (outside the supported set): no REV POW BRK HTYPE ALLTXT on any line and no handle token; the pressures are independent of it and still go out' ((@($ls | Where-Object { -not (NoHandleKeys $_) }).Count -eq 0) -and (@($ls | Where-Object { HasTok $_ 'handle' }).Count -eq 0) -and (HasTok $l 'bcp') -and (HasTok $l 'bpp') -and ((Part $l 'BTYPE') -ceq 'Cl'))
-$h = NewIn; Setup $h 2 1 1 0 0 4 7 8; $h.Input.Hold = $true; $h.Run(3, 16)
-Check 'C05 a vehicle with a holding speed brake: the handle group is not written (holding speed texts are not known on this host), AVAIL has no handle' ((NoHandleKeys (Last $h)) -and (-not (HasTok (Last $h) 'handle')))
+Check 'C04 (LI2 final) a one-lever cab with the holding speed brake is built: N at rest, the holding speed word at brake position 1, HTYPE 1, handle announced; the pressures go out as before' ((@($ls | Where-Object { HasTok $_ 'handle' }).Count -eq $ls.Count) -and ((Part $l 'POW') -ceq 'N:0') -and ((Part $l 'BRK') -ceq 'N:0:9') -and ((Part $l 'HTYPE') -ceq '1') -and (HasTok $l 'bcp') -and (HasTok $l 'bpp') -and ((Part $l 'BTYPE') -ceq 'Ecb'))
+$h = NewIn; Setup $h 2 1 1 0 1 5 8 9; $h.Input.Hold = $true; $h.Run(3, 16)
+$hc = NewIn; Setup $hc 2 3 1 0 0 5 2 3; $hc.Input.Hold = $true; $hc.Run(3, 16); $clBuilt = (HasTok (Last $hc) 'handle') -and ((Part (Last $hc) 'BRK') -ceq ($W_RUN + ':0:3')) -and ((Part (Last $hc) 'HTYPE') -ceq '2')
+Check 'C05 (LI2) a two-lever vehicle with the holding speed brake: the handle group IS written (brake position 1 is the holding speed brake word) and AVAIL announces handle; a Cl car with the holding speed brake is written too (run word at brake 0; LI2 final)' ((HasTok (Last $h) 'handle') -and ((Part (Last $h) 'BRK') -ceq ($W_HOLD + ':1:9')) -and ((Part (Last $h) 'POW') -ceq 'P0:0') -and ((Part (Last $h) 'HTYPE') -ceq '2') -and ((Part (Last $h) 'ALLTXT') -cmatch ('P0_P1_P2_P3_P4_P5:B0_' + $W_HOLD + '_B1_B2_B3_B4_B5_B6_B7_EB:$')) -and $clBuilt)
 $h = NewIn; $h.Input.Hold = $null; $h.Run(3, 16)
 Check 'C06 an unreadable hold flag: no handle group' ((NoHandleKeys (Last $h)) -and (-not (HasTok (Last $h) 'handle')))
 foreach ($tc in @(@('HandleType unknown', { param($x) $x.Input.HandleTypeValue = 0 }), @('BrakeKind unknown', { param($x) $x.Input.BrakeKindValue = 0 }), @('Reverser unreadable', { param($x) $x.Input.Rev = $null }),
@@ -282,9 +285,10 @@ Check 'D05 the handle log line states the layout in fixed words and numbers' (($
 $h = NewIn; $h.Input.StoreBc = [double[]]@(1, 2, 3); $h.Run(3, 16)
 $pd = Ev $h 'TEL_PRESSURE_DROP'
 Check 'D06 a pressure array of 3 elements is logged once as array-multi with its length (the meaning of such an array is not guessed)' (($pd.Count -eq 1) -and ($pd[0] -ceq 'TEL_PRESSURE_DROP gen=0 group=bcp reason=array-multi len=3'))
-$h = NewIn; $h.Input.HandleTypeValue = 1; $h.Input.BrakeKindValue = 3; $h.Run(3, 16)
-$hd = Ev $h 'TEL_HANDLE_DROP'
-Check 'D07 one-lever Cl is logged once as reason=one-lever-cl; the LI0 observation line (combo=unexpected) is still written' (($hd.Count -eq 1) -and ($hd[0] -ceq 'TEL_HANDLE_DROP gen=0 reason=one-lever-cl') -and ((Ev $h 'TEL_HANDLE_FIRST')[0] -match 'combo=unexpected'))
+$h = NewIn; $h.Input.HandleTypeValue = 1; $h.Input.BrakeKindValue = 3; $h.Input.BrkN = 2; $h.Input.EbN = 3; $h.Run(3, 16)
+$hd = Ev $h 'TEL_HANDLE_SEND'
+$h2d = NewIn; $h2d.Input.HandleTypeValue = 1; $h2d.Input.BrakeKindValue = 3; $h2d.Run(3, 16); $hdd = Ev $h2d 'TEL_HANDLE_DROP'
+Check 'D07 (LI2) the one-lever Cl cab is logged once as layout=one-lever-cl (sent); a Cl layout that is not 2 / 3 is logged once as reason=cl-layout; the LI0 observation line (combo=unexpected) is still written' (($hd.Count -eq 1) -and ($hd[0] -ceq 'TEL_HANDLE_SEND gen=0 layout=one-lever-cl powN=5 brkN=2 ebN=3') -and ($hdd.Count -eq 1) -and ($hdd[0] -ceq 'TEL_HANDLE_DROP gen=0 reason=cl-layout') -and ((Ev $h 'TEL_HANDLE_FIRST')[0] -match 'combo=unexpected'))
 $h = NewIn; $h.Run(5, 16)
 Check 'D08 the LI0 observation is unchanged (CAPABILITY / HANDLE_FIRST / SPEC_FIRST / PRESSURE_FIRST x2 still written once)' (((Ev $h 'TEL_INPUT_CAPABILITY').Count -eq 1) -and ((Ev $h 'TEL_HANDLE_FIRST').Count -eq 1) -and ((Ev $h 'TEL_SPEC_FIRST').Count -eq 1) -and ((Ev $h 'TEL_PRESSURE_FIRST').Count -eq 2))
 
@@ -309,12 +313,12 @@ else { Skip 'E01-E02 (python or tests\telemetry_xcheck.py missing)' }
 if ($qtOk -and (-not $udpBusy) -and (Test-Path $ovPy)) {
     $expect = @(
         @('one-lever Ecb', @(1, 1, 1, 3, 0, 4, 5, 6)), @('one-lever Smee', @(1, 2, 0, 0, 9, 4, 9, 10)), @('two-lever Ecb', @(2, 1, 1, 2, 4, 6, 8, 9)),
-        @('two-lever Smee', @(2, 2, -1, 0, 10, 4, 9, 10)), @('two-lever Cl', @(2, 3, 1, 5, 3, 5, 2, 3))
+        @('two-lever Smee', @(2, 2, -1, 0, 10, 4, 9, 10)), @('two-lever Cl', @(2, 3, 1, 5, 3, 5, 2, 3)), @('one-lever Cl', @(1, 3, 1, 0, 2, 5, 2, 3))
     )
     foreach ($e in $expect) {
         $v = $e[1]
         $hh = NewIn; Setup $hh $v[0] $v[1] $v[2] $v[3] $v[4] $v[5] $v[6] $v[7]; $hh.Api.BrakeKind = $v[1]; $hh.Input.StoreBc = [double[]]@(321.5); $hh.Input.StoreBp = [double[]]@(12.3); $hh.Run(4, 16)
-        $want = $table[(@($v[0], $v[1], $v[2], $v[3], $v[4], $v[5], $v[6], $v[7], 'False') -join ',')]
+        $want = $table[(@($v[0], $v[1], $v[2], $v[3], $v[4], $v[5], $v[6], $v[7], 'False', 0) -join ',')]
         $dump = Dump $hh ('o-' + ($e[0] -replace '\W', '') + '.txt')
         $o = (& $py $ovPy $dump | Out-String) | ConvertFrom-Json
         $wantRev = $want[1].Split(':')[0]; $wantPow = $want[2].Split(':')[0]; $wantBrk = $want[3].Split(':')[0]
@@ -323,9 +327,12 @@ if ($qtOk -and (-not $udpBusy) -and (Test-Path $ovPy)) {
         $drawnOk = ($drawn -ccontains $wantRev) -and (($v[0] -eq 1) -or (($drawn -ccontains $wantPow) -and ($drawn -ccontains $wantBrk))) -and (($v[0] -eq 2) -or (($drawn -ccontains $wantPow) -or ($drawn -ccontains $wantBrk)))
         Check ('E03 ' + $e[0] + ': the REAL Overlay holds ' + $wantRev + ' / ' + $wantPow + ' / ' + $wantBrk + ' and 321.5 / 12.3 kPa, the handle row is shown and these texts are drawn') ($stateOk -and $drawnOk -and ($o.stats.tel_invalid -eq 0))
     }
+    $hh = NewIn; Setup $hh 1 1 1 0 1 5 8 9; $hh.Input.Hold = $true; $hh.Run(4, 16)
+    $o = (& $py $ovPy (Dump $hh 'o-onecl.txt') | Out-String) | ConvertFrom-Json
+    Check 'E04 (LI2 final) a one-lever cab with the holding speed brake (brake position 1): the REAL Overlay holds the handle row as shown and draws the holding speed word' (($o.states.handle -eq 'shown') -and ($o.values.bve_brk_text -ceq $W_HOLD) -and (@($o.drawn | Where-Object { $_ -ceq $W_HOLD }).Count -ge 1) -and ($o.values.bcPressure -eq 0))
     $hh = NewIn; Setup $hh 1 3 1 0 0 5 2 3; $hh.Run(4, 16)
     $o = (& $py $ovPy (Dump $hh 'o-onecl.txt') | Out-String) | ConvertFrom-Json
-    Check 'E04 one-lever Cl: the REAL Overlay reports the handle row unavailable and draws none of the Overlay''s default handle texts' (($o.states.handle -eq 'unavailable') -and (@($o.drawn | Where-Object { $_ -ceq $W_REVOFF }).Count -eq 0) -and ($o.values.bcPressure -eq 0))
+    Check 'E05 (LI2 final) one-lever Cl: the REAL Overlay holds the handle row as shown, the single handle shows the RUN word at rest and the reverser word, bve_pow_text is the run word' (($o.states.handle -eq 'shown') -and ($o.values.bve_pow_text -ceq $W_RUN) -and ($o.values.bve_rev_text -ceq $W_FWD) -and (@($o.drawn | Where-Object { $_ -ceq $W_RUN }).Count -ge 1))
 }
 else { Skip ('E03-E04 real Overlay chain: not run (PyQt6=' + $qtOk + ', UDP 54321 busy=' + $udpBusy + ')') }
 
@@ -339,7 +346,7 @@ Add-Type -TypeDefinition ([IO.File]::ReadAllText($Fixture)) -ReferencedAssemblie
 [void][Reflection.Assembly]::LoadFrom($Dll)
 [void][Reflection.Assembly]::LoadFrom((Join-Path (Split-Path $Out) 'TsScoringLegacyTelemetryTests.dll'))
 $lines = New-Object System.Collections.Generic.List[string]
-$combos = @(@(1, 1, 4, 5, 6), @(1, 2, 4, 9, 10), @(2, 1, 6, 8, 9), @(2, 2, 4, 9, 10), @(2, 3, 5, 2, 3))
+$combos = @(@(1, 1, 4, 5, 6), @(1, 2, 4, 9, 10), @(2, 1, 6, 8, 9), @(2, 2, 4, 9, 10), @(2, 3, 5, 2, 3), @(1, 3, 5, 2, 3))
 foreach ($c in $combos) {
     $h = New-Object TsScoringLegacyTelemetryTests.Harness -ArgumentList $true
     $h.Input.HandleTypeValue = $c[0]; $h.Input.BrakeKindValue = $c[1]; $h.Api.BrakeKind = $c[1]
@@ -380,7 +387,7 @@ Check 'G01 the new files are host independent (no AtsEx / BveTypes name) and use
 Check 'G02 the session names no handle / pressure key as a literal (the keys live in the handle contract only) and never reduces an array itself' (($seCode -notmatch '"(REV|POW|BRK|HTYPE|ALLTXT|BCP|BPP)"') -and ($seCode -notmatch 'StoreBc|StoreBp|\.Bc\b|\.Bp\b'))
 Check 'G03 only the Tick thread reaches the input surface: the heartbeat method of the session does not mention the input classes' (([regex]::Match($seCode, 'internal string ComposeHeartbeat\(\)[\s\S]*?\n        \}').Value) -notmatch 'input|Input')
 $vi = (Get-Item $dllPath).VersionInfo
-Check 'G04 the DLL is 0.2.0.0 (assembly and file version), product TS Scoring, provider Coruge-to; the description still names Phase L3' (([TsScoringLegacyTelemetryTests.DiagInfo]::Version -eq '0.2.0.0') -and ($vi.FileVersion -eq '0.2.0.0') -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.CompanyName -eq 'Coruge-to') -and ($vi.Comments -match 'Phase L3') -and ($vi.Comments -match 'LI1'))
+Check 'G04 the DLL is 0.3.0.0 (Phase LI2: assembly and file version), product TS Scoring, provider Coruge-to; the description still names Phase L3 and LI1' (([TsScoringLegacyTelemetryTests.DiagInfo]::Version -eq '0.3.0.0') -and ($vi.FileVersion -eq '0.3.0.0') -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.CompanyName -eq 'Coruge-to') -and ($vi.Comments -match 'Phase L3') -and ($vi.Comments -match 'LI1') -and ($vi.Comments -match 'LI2'))
 $csproj = [IO.File]::ReadAllText((Join-Path $Root 'Telemetry\Legacy\TSScoringPlugin.AtsExLegacy.Telemetry.csproj'))
 Check 'G05 the project compiles the two new files and still references only the read-only legacy host assemblies (Private=False)' (($csproj -match 'src\\LegacyHandleContract\.cs') -and ($csproj -match 'src\\LegacyInputTelemetry\.cs') -and (([regex]::Matches($csproj, '<Private>False</Private>')).Count -eq 5))
 function RunGit([string[]]$gitArgs) { $out = & git @gitArgs 2>$null; if ($LASTEXITCODE -ne 0) { return '' }; return ($out -join "`n") }
@@ -388,7 +395,7 @@ $top = (RunGit @('-C', $Root, 'rev-parse', '--show-toplevel')).Trim() -replace '
 $frozen = @(
     'TsScoringPlugin/TsScoringPlugin/Class1.cs', 'TsScoringPlugin/TsScoringPlugin/AtsLoggerPlugin.cs', 'TsScoringPlugin/Handshake/Caller', 'TsScoringPlugin/Handshake/Bridge', 'TsScoringPlugin/Handshake/Shared',
     'telemetry_contract.py', 'telemetry_gate.py', 'network.py', 'main.py', 'hud_ui.py', 'scoring_logic.py', 'managed_hud.py', 'managed_mode.py', 'managed_state.py', 'menu_ui.py', 'config.py', 'utils.py',
-    'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyApi.cs', 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyInputProbe.cs', 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs',
+    'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyApi.cs', 
     'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs'
 )
 $changedFrozen = @((RunGit (@('-C', $top, 'diff', '--name-only', 'HEAD', '--') + $frozen)) -split "`n" | Where-Object { $_ })
@@ -396,11 +403,11 @@ Check ('G06 the Current contract and everything the brief freezes are byte-ident
 $tcDiff = RunGit @('-C', $top, 'diff', '-U0', 'HEAD', '--', 'TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryContract.cs')
 $tcPlus = @($tcDiff -split "`n" | Where-Object { $_ -match '^\+[^+]' })
 $tcMinus = @($tcDiff -split "`n" | Where-Object { $_ -match '^-[^-]' })
-Check 'G07 the shared telemetry contract changed by exactly three added token constants (handle, bcp, bpp) and nothing else' (($tcPlus.Count -eq 3) -and ($tcMinus.Count -eq 0) -and (@($tcPlus | Where-Object { $_ -match 'TokHandle|TokBcp|TokBpp' }).Count -eq 3))
+Check 'G07 the shared telemetry contract is byte-identical to HEAD (LI1 added the three token constants handle, bcp, bpp; LI2 changes nothing in it) and defines them' ((-not $tcDiff) -and ([IO.File]::ReadAllText((Join-Path $Root 'Telemetry\Shared\TelemetryContract.cs')) -match 'TokHandle[\s\S]*TokBcp[\s\S]*TokBpp'))
 $changed = @((RunGit @('-C', $top, 'diff', '--name-only', 'HEAD')) -split "`n" | Where-Object { $_ })
 $untracked = @((RunGit @('-C', $top, 'ls-files', '--others', '--exclude-standard')) -split "`n" | Where-Object { $_ })
 $touched = @($changed + $untracked | Sort-Object -Unique)
-$li1Allowed = @($touched | Where-Object { $_ -match '^TsScoringPlugin/Handshake/(Telemetry/(Legacy/|Shared/TelemetryContract\.cs)|Tests/|Tools/|Docs/Handshake-PhaseLI1|Docs/Handshake-PhaseL3-LegacyTelemetry\.md)|^tests/(test_legacy_input_li1|legacy_input_reference)\.py$' })
+$li1Allowed = @($touched | Where-Object { $_ -match '^TsScoringPlugin/Handshake/(Telemetry/(Legacy/|Shared/TelemetryContract\.cs)|Tests/|Tools/|Docs/Handshake-PhaseLI[12]|Docs/Handshake-PhaseL3-LegacyTelemetry\.md)|^tests/(test_legacy_input_li[12]|legacy_input_reference)\.py$|^tests/legacy_input_matrix24\.json$' })
 $outside = @($touched | Where-Object { $_ -notin $li1Allowed })
 Check ('G08 scope: only the Legacy telemetry project, the shared contract constants, tests, verifiers, the LI1 document and the one-section note in the L3 document changed (' + $touched.Count + ' files; outside: ' + ($outside -join ',') + ')') ($outside.Count -eq 0)
 $newBinary = @($untracked | Where-Object { $_ -match '\.(dll|pdb|log|exe)$' })

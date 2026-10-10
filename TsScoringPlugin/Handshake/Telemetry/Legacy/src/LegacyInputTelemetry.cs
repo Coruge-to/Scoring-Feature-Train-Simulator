@@ -269,14 +269,41 @@ namespace TSScoringPlugin.Telemetry
             string why;
             if (!LegacyHandleContract.TryBuild(snapshot, out line, out why))
             {
-                Dropped(GroupHandle, SafeWord(why, LegacyInputReason.ReadException), -1);
+                Dropped(GroupHandle, SafeWord(why, LegacyInputReason.ReadException), -1, HoldDetail(snapshot, why));
                 return;
             }
 
             group(TelemetryContract.TokHandle, line.Pairs());
             handleSent++;
-            Changed(GroupHandle, "sent:" + line.Layout, NameHandleSend, "layout=" + line.Layout + " powN=" + TelemetryContract.I(PowerCount(snapshot))
-                + " brkN=" + TelemetryContract.I(BrakeCount(snapshot)) + " ebN=" + TelemetryContract.I(line.BrkMax));
+            // LI2: the independent holding speed notches (two-lever cab: holdN = the value the host reports, negated count, and holdPos=1 while the power handle is below zero)
+            // are named in the same line; a layout without them writes exactly the LI1 line. The state includes holdPos, so entering / leaving a holding speed notch is one line each.
+            // A value that is not a count (holdValidity != ok) is named too, whatever the layout.
+            bool holdUsable = line.HoldRaw.HasValue && line.HoldRaw.Value != 0 && line.HoldValidity == LegacyHandleContract.HoldValidityOk;
+            string extra = (holdUsable ? " holdN=" + TelemetryContract.I(line.HoldRaw.Value) : string.Empty) + (line.HoldPosition ? " holdPos=1" : string.Empty)
+                + (line.HoldValidity != LegacyHandleContract.HoldValidityOk ? " holdN=" + HoldRawText(line.HoldRaw) + " holdValidity=" + line.HoldValidity : string.Empty);
+            Changed(GroupHandle, "sent:" + line.Layout + (line.HoldPosition ? ":h" : string.Empty) + ":" + line.HoldValidity, NameHandleSend, "layout=" + line.Layout + " powN=" + TelemetryContract.I(PowerCount(snapshot))
+                + " brkN=" + TelemetryContract.I(BrakeCount(snapshot)) + " ebN=" + TelemetryContract.I(line.BrkMax) + extra);
+        }
+
+        /// <summary>The raw value the host reported for HoldingSpeedNotchCount, or the word missing.</summary>
+        internal static string HoldRawText(int? raw)
+        {
+            return raw.HasValue ? TelemetryContract.I(raw.Value) : "missing";
+        }
+
+        /// <summary>
+        /// The detail of a handle drop whose reason is the holding speed count (holdn-missing / hold-range): the value, where it is read from and its validity, as fixed words and a number.
+        /// Any other reason adds nothing.
+        /// </summary>
+        private static string HoldDetail(LegacyHandleSnapshot s, string why)
+        {
+            if (why != LegacyHandleContract.ReasonHoldNMissing && why != LegacyHandleContract.ReasonHoldNRange)
+            {
+                return string.Empty;
+            }
+
+            int? raw = s == null ? (int?)null : s.HoldingSpeedNotchCount;
+            return " holdN=" + HoldRawText(raw) + " holdSource=" + LegacyHandleContract.HoldSource + " holdValidity=" + LegacyHandleContract.HoldValidity(raw);
         }
 
         private static int PowerCount(LegacyHandleSnapshot s) { return s.PowerNotchCount.HasValue ? s.PowerNotchCount.Value : -1; }
@@ -330,13 +357,19 @@ namespace TSScoringPlugin.Telemetry
         // -- diagnostics ----------------------------------------------------------------------------------------------------------------------
         private void Dropped(string groupName, string reason, int length)
         {
+            Dropped(groupName, reason, length, string.Empty);
+        }
+
+        /// <summary>extra = fixed " key=value" words appended to the line (and part of the state, so a different value is a different line).</summary>
+        private void Dropped(string groupName, string reason, int length, string extra)
+        {
             if (groupName == GroupHandle) { handleDropped++; }
             else if (groupName == GroupBcp) { bcpDropped++; }
             else { bppDropped++; }
 
             string word = SafeWord(reason, LegacyInputReason.ReadException);
-            string state = "drop:" + word + (length >= 0 ? ":" + TelemetryContract.I(length) : string.Empty);
-            string detail = (groupName == GroupHandle ? "reason=" : "group=" + groupName + " reason=") + word + (length >= 0 ? " len=" + TelemetryContract.I(length) : string.Empty);
+            string state = "drop:" + word + (length >= 0 ? ":" + TelemetryContract.I(length) : string.Empty) + extra;
+            string detail = (groupName == GroupHandle ? "reason=" : "group=" + groupName + " reason=") + word + (length >= 0 ? " len=" + TelemetryContract.I(length) : string.Empty) + extra;
             Changed(groupName, state, groupName == GroupHandle ? NameHandleDrop : NamePressureDrop, detail);
         }
 

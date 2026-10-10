@@ -63,7 +63,8 @@ namespace TSScoringPlugin.Telemetry
         internal int? PowerNotchCount;
         internal int? BrakeNotchCount;
         internal int? EmergencyBrakeNotch;            // NotchInfo.EmergencyBrakeNotch as the host reports it (NEVER BrakeNotchCount + 1)
-        internal bool? HasHoldingSpeedBrake;
+        internal bool? HasHoldingSpeedBrake;          // NotchInfo.HasHoldingSpeedBrake: the FIRST BRAKE position is the holding speed brake (NOT the independent holding speed notches)
+        internal int? HoldingSpeedNotchCount;         // NotchInfo.HoldingSpeedNotchCount EXACTLY as the host reports it: the independent holding speed notches H1..Hn of a two-lever cab are -n (NOT HasHoldingSpeedBrake)
         internal int? B67Notch;
     }
 
@@ -452,7 +453,9 @@ namespace TSScoringPlugin.Telemetry
             return "cab=" + SafeToken(h.CabTypeName, "na") + " htype=" + HandleTypeText(h.HandleType) + " brake=" + BrakeText(h.BrakeKind)
                 + " combo=" + ComboText(h.HandleType, h.BrakeKind)
                 + " powN=" + Num(h.PowerNotchCount) + " brkN=" + Num(h.BrakeNotchCount) + " ebN=" + Num(h.EmergencyBrakeNotch)
-                + " hold=" + Num(h.HasHoldingSpeedBrake) + " b67=" + Num(h.B67Notch);
+                + " hold=" + Num(h.HasHoldingSpeedBrake) + " b67=" + Num(h.B67Notch)
+                + " holdN=" + (h.HoldingSpeedNotchCount.HasValue ? TelemetryContract.I(h.HoldingSpeedNotchCount.Value) : "missing") + " holdBrake=" + Num(h.HasHoldingSpeedBrake)
+                + " holdSource=" + LegacyHandleContract.HoldSource + " holdValidity=" + LegacyHandleContract.HoldValidity(h.HoldingSpeedNotchCount);
         }
 
         private static string DynamicText(LegacyHandleSnapshot h)

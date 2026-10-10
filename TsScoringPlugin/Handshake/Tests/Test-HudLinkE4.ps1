@@ -704,7 +704,7 @@ $untracked = @((RunGit @('-C', $top, 'ls-files', '--others', '--exclude-standard
 $touched = @($changed + $untracked | Sort-Object -Unique)
 # Phase L3: hud_ui.py (item visibility by AVAIL) and the independent telemetry project (Handshake/Telemetry: the DATA plane, its own Shared folder) are the L3 changes; their guards are in test_telemetry_l3.py / Test-TelemetryL3.ps1
 # Parent-exit fix: managed_mode.py gained the owner-process watch (additive; its guard is tests/test_parent_exit_p1.py), so it is no longer in the list below
-$touchedS10 = @($touched | Where-Object { $_ -notmatch '/Telemetry/|Handshake-PhaseL3-|Handshake-PhaseLI0-|Handshake-PhaseLI1-' })
+$touchedS10 = @($touched | Where-Object { $_ -notmatch '/Telemetry/|Handshake-PhaseL3-|Handshake-PhaseLI0-|Handshake-PhaseLI1-|Handshake-PhaseLI2-' })
 Check 'S10 both Bridges, the Bridge shared sources, the plugin projects, Class1.cs, the scoring / UI Python modules (hud_ui.py excepted: Phase L3) and the Docs of earlier phases are untouched since the E3 commit' (@($touchedS10 | Where-Object { $_ -match '/Bridge/|/Shared/|Class1\.cs|AtsLoggerPlugin|\.vcxproj|\.slnx|^scoring_logic\.py$|^menu_ui\.py$|^config\.py$|^utils\.py$|^network\.py$|/Docs/Handshake-Phase[A-DL-M]|Handshake-PhaseE[123]|launcher\.template' }).Count -eq 0)
 Check 'S11 no build output, DLL, PDB, log, personal launcher.json or EXE among the files of this phase' (@($touched | Where-Object { $_ -match '/out/|/obj/|/dist/|/logs/|build\.log|\.dll$|\.pdb$|\.log$|\.exe$|\.spec$' -or $_ -match '(^|/)launcher\.json$' }).Count -eq 0)
 $runtimeNames = @($env:USERNAME, $env:COMPUTERNAME, $env:USERDOMAIN, (Split-Path $env:USERPROFILE -Leaf)) | Where-Object { $_ -and $_.Length -ge 3 } | Sort-Object -Unique

@@ -497,6 +497,7 @@ namespace TSScoringPlugin.Telemetry
                     try { s.BrakeNotchCount = info.BrakeNotchCount; } catch { }
                     try { s.EmergencyBrakeNotch = info.EmergencyBrakeNotch; } catch { }
                     try { s.HasHoldingSpeedBrake = info.HasHoldingSpeedBrake; } catch { }
+                    try { s.HoldingSpeedNotchCount = info.HoldingSpeedNotchCount; } catch { }
                     try { s.B67Notch = info.B67Notch; } catch { }
                 }
 

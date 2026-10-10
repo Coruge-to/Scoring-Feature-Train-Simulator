@@ -4,6 +4,8 @@
 
 LI1 は、LI0 の実機観測で確定した入力（ハンドル位置、ハンドル形式、ノッチ構成、ブレーキ管圧力）を、**Current（BveEX）の既存テレメトリ契約**でそのまま送信し、既存の Python 受信と HUD まで成立させる。**採点ロジックには接続しない。**
 
+> **Phase LI2（DLL 0.3.0.0）で更新:** 本書 §3 の「1 ハンドル Cl は作らない（`one-lever-cl`）」「抑速ブレーキ車は作らない」は LI2 で対応済み。抑速ブレーキ（2 ハンドル Ecb / Smee）・独立抑速 H1〜Hn・1 ハンドル Cl の表示契約は `Handshake-PhaseLI2-LegacyHoldingSpeedAndOneLeverCl.md` を正とする。以下は 0.2.0.0 の記録。
+
 ## 1. 方針
 
 * Current の行名（`REV` `POW` `BRK` `HTYPE` `ALLTXT` `BCP` `BPP`）、Python の parser、`telemetry_contract`、HUD、AVAIL、世代ゲート、Session / Driving、ハンドル表示ロジックを**そのまま**使う。Legacy 専用の HUD・Python 処理は作らない。Python（本番ファイル）は 1 行も変更していない。

@@ -294,6 +294,7 @@ namespace TsScoringLegacyTelemetryTests
         public int? BrkN = 8;
         public int? EbN = 9;
         public bool? Hold = false;
+        public int? HoldN = 0;                 // NotchInfo.HoldingSpeedNotchCount (LI2)
         public int? B67 = -1;
 
         // native
@@ -361,6 +362,7 @@ namespace TsScoringLegacyTelemetryTests
             s.BrakeNotchCount = BrkN;
             s.EmergencyBrakeNotch = EbN;
             s.HasHoldingSpeedBrake = Hold;
+            s.HoldingSpeedNotchCount = HoldN;
             s.B67Notch = B67;
             snapshot = s;
             return true;
@@ -430,7 +432,7 @@ namespace TsScoringLegacyTelemetryTests
     /// <summary>The pure handle contract. Returns { "ok", REV, POW, BRK, HTYPE, ALLTXT } (the values after the key) or { "drop", reason }.</summary>
     public static class HandleInfo
     {
-        public static string[] Build(int handleType, int brakeKind, int? rev, int? pow, int? brk, int? powN, int? brkN, int? ebN, bool? hold)
+        public static string[] Build(int handleType, int brakeKind, int? rev, int? pow, int? brk, int? powN, int? brkN, int? ebN, bool? hold, int? holdN)
         {
             LegacyHandleSnapshot s = new LegacyHandleSnapshot();
             s.CabTypeName = "x";
@@ -443,6 +445,7 @@ namespace TsScoringLegacyTelemetryTests
             s.BrakeNotchCount = brkN;
             s.EmergencyBrakeNotch = ebN;
             s.HasHoldingSpeedBrake = hold;
+            s.HoldingSpeedNotchCount = holdN;
             LegacyHandleLine line;
             string reason;
             if (!LegacyHandleContract.TryBuild(s, out line, out reason))

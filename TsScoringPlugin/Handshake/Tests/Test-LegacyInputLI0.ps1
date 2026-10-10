@@ -80,10 +80,10 @@ Check 'A05 the class name written to the log is letters / digits / underscore on
 
 $h = NewIn; $h.Input.CabName = 'OneLeverCab'; $h.Input.HandleTypeValue = 1; $h.Input.BrakeKindValue = 1; $h.Run(3, 16)
 $f1 = Ev $h 'TEL_HANDLE_FIRST'
-Check 'A06 one-lever Ecb: one HANDLE_FIRST line with cab, htype=one-lever, brake=Ecb, the layout and the positions' (($f1.Count -eq 1) -and ($f1[0] -eq 'TEL_HANDLE_FIRST gen=0 cab=OneLeverCab htype=one-lever brake=Ecb combo=supported powN=5 brkN=8 ebN=9 hold=0 b67=-1 rev=1 pow=0 brk=0'))
+Check 'A06 one-lever Ecb: one HANDLE_FIRST line with cab, htype=one-lever, brake=Ecb, the layout and the positions' (($f1.Count -eq 1) -and ($f1[0] -eq 'TEL_HANDLE_FIRST gen=0 cab=OneLeverCab htype=one-lever brake=Ecb combo=supported powN=5 brkN=8 ebN=9 hold=0 b67=-1 holdN=0 holdBrake=0 holdSource=notchinfo holdValidity=ok rev=1 pow=0 brk=0'))
 $h = NewIn; $h.Input.CabName = 'TwoLeverCab'; $h.Input.HandleTypeValue = 2; $h.Input.BrakeKindValue = 2; $h.Input.Rev = -1; $h.Input.Pow = 4; $h.Input.Brk = 2; $h.Input.PowN = 14; $h.Input.BrkN = 7; $h.Input.EbN = 8; $h.Run(3, 16)
 $f2 = Ev $h 'TEL_HANDLE_FIRST'
-Check 'A07 two-lever Smee: htype=two-lever, brake=Smee, power / brake / reverser positions and the layout are logged as read' (($f2.Count -eq 1) -and ($f2[0] -eq 'TEL_HANDLE_FIRST gen=0 cab=TwoLeverCab htype=two-lever brake=Smee combo=supported powN=14 brkN=7 ebN=8 hold=0 b67=-1 rev=-1 pow=4 brk=2'))
+Check 'A07 two-lever Smee: htype=two-lever, brake=Smee, power / brake / reverser positions and the layout are logged as read' (($f2.Count -eq 1) -and ($f2[0] -eq 'TEL_HANDLE_FIRST gen=0 cab=TwoLeverCab htype=two-lever brake=Smee combo=supported powN=14 brkN=7 ebN=8 hold=0 b67=-1 holdN=0 holdBrake=0 holdSource=notchinfo holdValidity=ok rev=-1 pow=4 brk=2'))
 $h = NewIn; $h.Input.CabName = 'UnrelatedCab'; $h.Input.HandleTypeValue = 0; $h.Input.BrakeKindValue = 0; $h.Run(3, 16)
 $f3 = Ev $h 'TEL_HANDLE_FIRST'
 Check 'A08 unknown cab and unknown brake: htype=unknown, brake=unknown, combo=unknown (diagnosable, nothing derived)' (($f3.Count -eq 1) -and ($f3[0] -match ' htype=unknown brake=unknown combo=unknown '))
@@ -274,7 +274,7 @@ $hf = NewIn; $hf.Api.Meta = @('SecretTitle', 'SecretRoute', 'SecretVehicle', 'Se
 $fl = @([IO.File]::ReadAllLines($fileLog))
 $fi = @($fl | Where-Object { ($_ -match ' TEL_(INPUT|HANDLE|SPEC|PRESSURE)_') -and ($_ -notmatch ' TEL_(HANDLE_SEND|HANDLE_DROP|PRESSURE_SEND|PRESSURE_DROP|INPUT_PUBLISH) ') })     # (the Phase LI1 lines are tested by Test-LegacyInputLI1.ps1)
 Check 'H02 the real file log carries the input lines in the TEL_ log format (HH:mm:ss.fff P= I= NAME gen=...), no scenario text, no path' (($fi.Count -eq 5 + 1) -and (@($fi | Where-Object { $_ -notmatch '^\d\d:\d\d:\d\d\.\d{3} P=\d+ I=\d+ TEL_[A-Z_]+ gen=\d+ ' }).Count -eq 0) -and (($fl -join "`n") -notmatch 'Secret') -and (($fi -join "`n") -notmatch '[A-Za-z]:\\'))
-Check 'H03 the DLL is 0.2.0.0 (assembly and file version; Phase LI1 builds on the LI0 observation, which this test still covers), product TS Scoring, provider Coruge-to' (([TsScoringLegacyTelemetryTests.DiagInfo]::Version -eq '0.2.0.0') -and ((Get-Item $dllPath).VersionInfo.FileVersion -eq '0.2.0.0') -and ((Get-Item $dllPath).VersionInfo.ProductName -eq 'TS Scoring') -and ((Get-Item $dllPath).VersionInfo.CompanyName -eq 'Coruge-to'))
+Check 'H03 the DLL is 0.3.0.0 (assembly and file version; Phase LI1 / LI2 build on the LI0 observation, which this test still covers), product TS Scoring, provider Coruge-to' (([TsScoringLegacyTelemetryTests.DiagInfo]::Version -eq '0.3.0.0') -and ((Get-Item $dllPath).VersionInfo.FileVersion -eq '0.3.0.0') -and ((Get-Item $dllPath).VersionInfo.ProductName -eq 'TS Scoring') -and ((Get-Item $dllPath).VersionInfo.CompanyName -eq 'Coruge-to'))
 Check 'H04 the probe file names no AtsEx / BveTypes type (host independent); the adapter file is still the only one that does' (($probeCode -cnotmatch 'AtsEx|BveTypes') -and ($extCode -cmatch 'AtsEx\.PluginHost') -and ((Code ([IO.File]::ReadAllText((Join-Path $Root 'Telemetry\Legacy\src\LegacyTelemetrySession.cs')))) -cnotmatch 'AtsEx|BveTypes'))
 function RunGit([string[]]$gitArgs) { $out = & git @gitArgs 2>$null; if ($LASTEXITCODE -ne 0) { return '' }; return ($out -join "`n") }
 $top = (RunGit @('-C', $Root, 'rev-parse', '--show-toplevel')).Trim() -replace '/', '\'
@@ -282,10 +282,11 @@ $changed = @((RunGit @('-C', $top, 'diff', '--name-only', 'HEAD')) -split "`n" |
 $untracked = @((RunGit @('-C', $top, 'ls-files', '--others', '--exclude-standard')) -split "`n" | Where-Object { $_ })
 $touched = @($changed + $untracked | Sort-Object -Unique)
 # (Phase LI1 builds on top of this phase. The LI0 commit is HEAD now, so the guard says what must NOT move: the observation itself and everything the observation never touched.)
-$li0Frozen = @('TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyApi.cs', 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyInputProbe.cs', 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs')
+# (Phase LI2 added ONE snapshot member to LegacyInputProbe.cs and ONE read line to the host adapter; Test-LegacyInputLI2.ps1 G05 / G06 pin those diffs exactly, so only the API seam stays frozen here)
+$li0Frozen = @('TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyApi.cs')
 $li0Moved = @($touched | Where-Object { $_ -in $li0Frozen })
 $productMoved = @($touched | Where-Object { $_ -match '^(main|hud_ui|network|scoring_logic|menu_ui|config|utils|managed_[a-z]+|telemetry_[a-z]+)\.py$|/Caller/|/Bridge/|/Handshake/Shared/|Class1\.cs$|AtsLoggerPlugin\.cs$' })
-Check ('H05 scope: the observation (LegacyInputProbe.cs), the Legacy API seam (LegacyApi.cs) and the host adapter are unchanged since the LI0 commit; no production Python, HUD, Caller, Bridge, Current sender or Handshake shared file changed (' + $touched.Count + ' files touched by the working tree)') (($li0Moved.Count -eq 0) -and ($productMoved.Count -eq 0))
+Check ('H05 scope: the Legacy API seam (LegacyApi.cs) is unchanged since the LI0 commit (the observation and the host adapter grew by one member / one line in LI2, pinned by Test-LegacyInputLI2.ps1); no production Python, HUD, Caller, Bridge, Current sender or Handshake shared file changed (' + $touched.Count + ' files touched by the working tree)') (($li0Moved.Count -eq 0) -and ($productMoved.Count -eq 0))
 
 # ---------------------------------------------------------------------------------------------------------------------------------------------
 $fail = @($results | Where-Object { -not $_.Ok }).Count
