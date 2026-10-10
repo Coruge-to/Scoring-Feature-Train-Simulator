@@ -369,11 +369,44 @@ src.close()
     $vl = (Get-Item (Join-Path $Root 'Bridge\Legacy\out\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll')).VersionInfo
     Check 'G2 versions: Caller 0.12.0.0, Current Bridge 0.7.0.0, Legacy Bridge 0.7.0.0 (the shared core is the same in both Bridges)' (($vi.FileVersion -eq '0.12.0.0') -and ($vb.FileVersion -eq '0.7.0.0') -and ($vl.FileVersion -eq '0.7.0.0'))
     # (only the lines this phase ADDED are judged: the files hold older text that names BVE types in comments)
+    # (Phase SI-A6 is committed: the added lines are judged on this fixed commit chain, never on HEAD or the working tree. Every object must exist as a commit and each must be the child of the one before; any git failure reads as "not proven" = FAIL.)
+    function Test-SiaChain([string]$Repo, [string[]]$Chain) {
+        try {
+            for ($i = 0; $i -lt $Chain.Count; $i++) {
+                if ($Chain[$i] -cnotmatch '^[0-9a-f]{40}$') { return $false }
+                $null = & git -C $Repo cat-file -e ($Chain[$i] + '^{commit}') 2>$null
+                if ($LASTEXITCODE -ne 0) { return $false }
+                if ($i -gt 0) {
+                    $par = @(& git -C $Repo rev-parse ($Chain[$i] + '^') 2>$null)
+                    if (($LASTEXITCODE -ne 0) -or ($par.Count -ne 1) -or ($par[0] -cne $Chain[$i - 1])) { return $false }
+                }
+            }
+            return $true
+        }
+        catch { return $false }
+    }
+    function Get-SiaGitLines([string]$Repo, [string[]]$GitArgs) {
+        try {
+            $o = @(& git -C $Repo @GitArgs 2>$null)
+            if ($LASTEXITCODE -ne 0) { return $null }
+            return , $o
+        }
+        catch { return $null }
+    }
+    $siaChain = @('9f25a26c6bc4a578767c7f306672811bf7bf341c', '0aa3fa6b5d35dd0e23cfc305213057f05b01677b', 'eec43e3c1a901e414c4a7b69894c634eb80d618f', '71744d6483a772e5f26a7b03675c18285aac71b5')   # SI-1 head -> load marker (C#) -> Python / pause recovery -> docs
+    $markerSources = @('Bridge/src/ScenarioReadyTracker.cs', 'Bridge/src/ScenarioReadyPublisher.cs', 'Shared/HandshakeProtocol.cs', 'Caller/src/AppStatePublisher.cs', 'Caller/src/AppProcessManager.cs', 'Caller/src/HandshakeSession.cs')
+    $siaChainOk = Test-SiaChain $Root $siaChain
     $added = ''
-    $gitCmd = Get-Command git -ErrorAction SilentlyContinue
-    if ($gitCmd) { $added = ((& git -C $Root diff HEAD -U0 -- 'Bridge/src/ScenarioReadyTracker.cs' 'Bridge/src/ScenarioReadyPublisher.cs' 'Shared/HandshakeProtocol.cs' 'Caller/src/AppStatePublisher.cs' 'Caller/src/AppProcessManager.cs' 'Caller/src/HandshakeSession.cs' 2>$null) | Where-Object { $_ -match '^\+[^+]' }) -join "`n" }
+    $addedLines = $null
+    $laterQuiet = $false
+    if ($siaChainOk) {
+        $addedLines = Get-SiaGitLines $Root (@('diff', '-U0', $siaChain[0], $siaChain[1], '--') + $markerSources)
+        $laterLines = Get-SiaGitLines $Root (@('diff', '--name-only', $siaChain[1], $siaChain[3], '--') + $markerSources)
+        $laterQuiet = ($null -ne $laterLines) -and (@($laterLines | Where-Object { $_ }).Count -eq 0)   # the Python and docs commits do not touch the marker sources
+    }
+    if ($null -ne $addedLines) { $added = (@($addedLines) | Where-Object { $_ -match '^\+[^+]' }) -join "`n" }
     $allText = $added
-    Check 'G3 the lines added for the marker read nothing from BVE: no BveTypes / BveEx member, no reflection, no thread, no file' (($added.Length -gt 1000) -and ($added -notmatch 'BveTypes|BveEx\.PluginHost|GetType\(\)|Activator|new Thread|ThreadPool|\bFile\.(WriteAll|Open|Append|Create)'))
+    Check 'G3 the lines added for the marker read nothing from BVE: no BveTypes / BveEx member, no reflection, no thread, no file' ($siaChainOk -and $laterQuiet -and ($added.Length -gt 1000) -and ($added -notmatch 'BveTypes|BveEx\.PluginHost|GetType\(\)|Activator|new Thread|ThreadPool|\bFile\.(WriteAll|Open|Append|Create)'))
     $trkText = [IO.File]::ReadAllText((Join-Path $Root 'Bridge\src\ScenarioReadyTracker.cs'))
     Check 'G4 the tracker still does not take isReload (OnScenarioOpened has no parameter): F5 is told by the application watching the key, not by the Bridge' (@($trkType.GetMethod('OnScenarioOpened').GetParameters()).Count -eq 0)
     Check 'G5 TS Scoring official jump, timetable jump and TS Scoring ON have no signal in the Bridge or the Caller: no JUMP / timetable / ScoringOn member was added' (($allText -notmatch '(?i)jump|timetable|scoringon'))

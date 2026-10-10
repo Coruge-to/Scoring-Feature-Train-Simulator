@@ -455,7 +455,35 @@ $vi = (Get-Item $dllPath).VersionInfo
 Check 'L06 the product version is 0.4.0.0 in AssemblyInfo and in the built DLL (file, product), and the description names Phase SI-1' (($infoCs -match 'AssemblyVersion\("0\.4\.0\.0"\)') -and ($infoCs -match 'AssemblyFileVersion\("0\.4\.0\.0"\)') -and ($infoCs -match 'AssemblyInformationalVersion\("0\.4\.0\.0"\)') -and ($vi.FileVersion -eq '0.4.0.0') -and ($vi.ProductVersion -eq '0.4.0.0') -and ($vi.Comments -match 'Phase SI-1'))
 $git = Get-Command git -ErrorAction SilentlyContinue
 if ($git) {
-    $changed = @((& git -C $repo diff --name-only HEAD) + (& git -C $repo ls-files --others --exclude-standard) | Where-Object { $_ })
+    # (Phase SI-A / SI-A6 are committed: the immutables are judged on this fixed commit chain, never on the working tree or on HEAD. Every object must exist as a commit and each must be the child of the one before; any git failure reads as "not proven" = FAIL.)
+    function Test-SiaChain([string]$Repo, [string[]]$Chain) {
+        try {
+            for ($i = 0; $i -lt $Chain.Count; $i++) {
+                if ($Chain[$i] -cnotmatch '^[0-9a-f]{40}$') { return $false }
+                $null = & git -C $Repo cat-file -e ($Chain[$i] + '^{commit}') 2>$null
+                if ($LASTEXITCODE -ne 0) { return $false }
+                if ($i -gt 0) {
+                    $par = @(& git -C $Repo rev-parse ($Chain[$i] + '^') 2>$null)
+                    if (($LASTEXITCODE -ne 0) -or ($par.Count -ne 1) -or ($par[0] -cne $Chain[$i - 1])) { return $false }
+                }
+            }
+            return $true
+        }
+        catch { return $false }
+    }
+    function Get-SiaGitLines([string]$Repo, [string[]]$GitArgs) {
+        try {
+            $o = @(& git -C $Repo @GitArgs 2>$null)
+            if ($LASTEXITCODE -ne 0) { return $null }
+            return , $o
+        }
+        catch { return $null }
+    }
+    $siaChain = @('9f25a26c6bc4a578767c7f306672811bf7bf341c', '0aa3fa6b5d35dd0e23cfc305213057f05b01677b', 'eec43e3c1a901e414c4a7b69894c634eb80d618f', '71744d6483a772e5f26a7b03675c18285aac71b5')   # SI-1 head -> load marker (C#) -> Python / pause recovery -> docs
+    $siaChainOk = Test-SiaChain $repo $siaChain
+    $changedLines = $null
+    if ($siaChainOk) { $changedLines = Get-SiaGitLines $repo @('diff', '--name-only', $siaChain[0], $siaChain[3]) }
+    $changed = @($changedLines | Where-Object { $_ })
     $tracked = @(& git -C $repo ls-files)
     $pyProduction = @($tracked | Where-Object { $_ -like '*.py' -and $_ -notlike 'tests/*' })
     # (Phase SI-1 is committed: its scope is the commit pair after the SI-0 commit, not the working tree. Phase SI-A changes the Python production files on purpose; its own tests pin that.)
@@ -467,7 +495,7 @@ if ($git) {
                   'TsScoringPlugin/Handshake/Bridge/src/AssemblyInfo.cs', 'TsScoringPlugin/Handshake/Bridge/Legacy/src/AssemblyInfo.cs', 'TsScoringPlugin/Handshake/Caller/src/AppProcessManager.cs',
                   'TsScoringPlugin/Handshake/Caller/src/AppStatePublisher.cs', 'TsScoringPlugin/Handshake/Caller/src/HandshakeSession.cs', 'TsScoringPlugin/Handshake/Caller/src/AssemblyInfo.cs')
     $immutable = @($changed | Where-Object { $_ -notin $si6Files } | Where-Object { $_ -like 'TsScoringPlugin/Handshake/Caller/*' -or $_ -like 'TsScoringPlugin/Handshake/Bridge/*' -or $_ -like 'TsScoringPlugin/TsScoringPlugin/*' -or $_ -like 'TsScoringPlugin/Handshake/Shared/*' -or $_ -like 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyApi.cs' -or $_ -like 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyHandleContract.cs' -or $_ -like 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyInput*.cs' -or $_ -like 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs' -or $_ -like 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyScoringProbe.cs' })
-    Check ('L08 untouched: the Caller, both Bridges, the Current sender, the Handshake shared files (the nine Phase SI-A6 load-marker files excepted), and the Legacy API / handle / input / station / SI-0 observation sources (' + $immutable.Count + ' changed)') (($immutable.Count -eq 0) -and (@($si6Files | Where-Object { $_ -in $changed }).Count -eq 9))
+    Check ('L08 untouched: the Caller, both Bridges, the Current sender, the Handshake shared files (the nine Phase SI-A6 load-marker files excepted), and the Legacy API / handle / input / station / SI-0 observation sources (' + $immutable.Count + ' changed between the SI-1 commit and the SI-A docs commit)') ($siaChainOk -and ($null -ne $changedLines) -and ($immutable.Count -eq 0) -and (@($si6Files | Where-Object { $_ -in $changed }).Count -eq 9))
     $contractDiff = @(& git -C $repo diff -U0 f9b2ed5d7a3c0c7479d5798e2826b58bbdd9180b 9f25a26c6bc4a578767c7f306672811bf7bf341c -- TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryContract.cs | Where-Object { $_ -match '^[+-][^+-]' })
     Check 'L09 the shared telemetry contract only gained the two token names (trainlen, maplimit_ahead): nothing removed, nothing else added' ((@($contractDiff | Where-Object { $_ -match '^-' }).Count -eq 0) -and (@($contractDiff | Where-Object { $_ -match '^\+' }).Count -eq 2) -and (($contractDiff -join "`n") -match 'TokMapLimitAhead = "maplimit_ahead"') -and (($contractDiff -join "`n") -match 'TokTrainLen = "trainlen"'))
 }
