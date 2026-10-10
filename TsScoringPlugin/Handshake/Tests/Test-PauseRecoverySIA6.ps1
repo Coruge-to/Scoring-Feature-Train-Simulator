@@ -155,7 +155,7 @@ $results.Clear()
 try {
     Write-Host '--- A: the state block layout (Bridge side) and the reader (Caller side)'
     $a1 = $stateType.GetFields([Reflection.BindingFlags]'Public,Instance') | ForEach-Object { $_.Name }
-    Check 'A1 ScenarioState: the three marker fields exist next to the six of Phase C3; size and version unchanged (64 / 1)' ((($a1 -join ',') -eq 'ProtocolVersion,BveProcessId,ScenarioGeneration,IsScenarioReady,Sequence,Check,LoadMagic,LoadInfo,LoadCheck') -and ([int]$stateType.GetField('Size').GetRawConstantValue() -eq 64) -and ([int]$stateType.GetField('StateVersion').GetRawConstantValue() -eq 1))
+    Check 'A1 ScenarioState: the three marker fields exist next to the six of Phase C3 (and, Phase SI-A7, the four epoch fields after them); size and version unchanged (64 / 1)' ((($a1 -join ',') -eq 'ProtocolVersion,BveProcessId,ScenarioGeneration,IsScenarioReady,Sequence,Check,LoadMagic,LoadInfo,LoadCheck,EpochMagic,ReadyEpoch,EpochFlags,EpochCheck') -and ([int]$stateType.GetField('Size').GetRawConstantValue() -eq 64) -and ([int]$stateType.GetField('StateVersion').GetRawConstantValue() -eq 1))
     Check 'A2 the marker constants: LoadMagic "LOD1" (0x4C4F4431), bit0 Created = 1, bit1 TickSeen = 2, known bits 3' (([int]$stateType.GetField('LoadMagicValue').GetRawConstantValue() -eq 0x4C4F4431) -and ([int]$stateType.GetField('LoadCreated').GetRawConstantValue() -eq 1) -and ([int]$stateType.GetField('LoadTickSeen').GetRawConstantValue() -eq 2) -and ([int]$stateType.GetField('LoadKnownBits').GetRawConstantValue() -eq 3))
     $p1 = 981001; RegPid $p1
     $mm = [IO.MemoryMappedFiles.MemoryMappedFile]::CreateOrOpen("Local\TSScoringPlugin.v1.$p1.ScenarioState", 64, [IO.MemoryMappedFiles.MemoryMappedFileAccess]::ReadWrite)
@@ -367,7 +367,7 @@ src.close()
     $vi = (Get-Item (Join-Path $Root 'dist\TSScoringPlugin.Caller.InputDevice.dll')).VersionInfo
     $vb = (Get-Item (Join-Path $Root 'dist\TSScoringPlugin.BveEx.Bridge.Prototype.dll')).VersionInfo
     $vl = (Get-Item (Join-Path $Root 'Bridge\Legacy\out\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll')).VersionInfo
-    Check 'G2 versions: Caller 0.12.0.0, Current Bridge 0.7.0.0, Legacy Bridge 0.7.0.0 (the shared core is the same in both Bridges)' (($vi.FileVersion -eq '0.12.0.0') -and ($vb.FileVersion -eq '0.7.0.0') -and ($vl.FileVersion -eq '0.7.0.0'))
+    Check 'G2 versions: Caller 0.13.0.0, Current Bridge 0.8.0.0, Legacy Bridge 0.8.0.0 (Phase SI-A7 M1a; the shared core is the same in both Bridges)' (($vi.FileVersion -eq '0.13.0.0') -and ($vb.FileVersion -eq '0.8.0.0') -and ($vl.FileVersion -eq '0.8.0.0'))
     # (only the lines this phase ADDED are judged: the files hold older text that names BVE types in comments)
     # (Phase SI-A6 is committed: the added lines are judged on this fixed commit chain, never on HEAD or the working tree. Every object must exist as a commit and each must be the child of the one before; any git failure reads as "not proven" = FAIL.)
     function Test-SiaChain([string]$Repo, [string[]]$Chain) {

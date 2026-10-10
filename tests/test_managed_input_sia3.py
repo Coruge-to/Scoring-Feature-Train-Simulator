@@ -1510,9 +1510,17 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
         allowed = {h + "Shared/HandshakeProtocol.cs", h + "Bridge/src/ScenarioReadyTracker.cs", h + "Bridge/src/ScenarioReadyPublisher.cs", h + "Bridge/src/AssemblyInfo.cs",
                    h + "Bridge/Legacy/src/AssemblyInfo.cs", h + "Caller/src/AppProcessManager.cs", h + "Caller/src/AppStatePublisher.cs",
                    h + "Caller/src/HandshakeSession.cs", h + "Caller/src/AssemblyInfo.cs"}
-        self.assertEqual(set(out.split()), allowed, "SI-A (+ SI-A6) must not change anything else under TsScoringPlugin: %s" % out)
+        # Phase SI-A7 (M1a) adds exactly these, in the working tree (they stop being a difference once SI-A7 is committed on top of a baseline that already holds them): the control plane
+        # moved to the shared Bridge/src (the Legacy copy is gone), the two adapters and the two Bridge projects. Nothing of the senders, the telemetry or the launcher.
+        sia7 = {h + "Bridge/src/TsScoringBridgePrototype.cs", h + "Bridge/Legacy/src/TsScoringLegacyBridge.cs", h + "Bridge/Legacy/src/HandshakeControlPlane.cs",
+                h + "Bridge/TSScoringPlugin.BveEx.Bridge.Prototype.csproj", h + "Bridge/Legacy/TSScoringPlugin.AtsExLegacy.Bridge.Prototype.csproj",
+                h + "Tools/Verify-PhaseC3.ps1", h + "Tools/Verify-PhaseL1.ps1",      # (the verification scripts whose Bridge pins moved with the control plane)
+                h + "Tools/Verify-PhaseL3.ps1",      # (re-pinned at the acceptance of M1a: its scope / deployed-hash pins described the history up to Phase SI-1)
+                # the two new files of M1a: untracked in the working tree before the commit (then not part of `git diff`), tracked and part of the diff against this baseline after it
+                h + "Bridge/src/HandshakeControlPlane.cs", h + "Tools/Verify-PhaseSIA7.ps1"}
+        self.assertEqual(set(out.split()) - sia7, allowed, "SI-A (+ SI-A6, + SI-A7 M1a) must not change anything else under TsScoringPlugin: %s" % out)
         untracked = git("ls-files", "--others", "--exclude-standard", "--", "TsScoringPlugin", ":(exclude)TsScoringPlugin/Handshake/Docs", ":(exclude)TsScoringPlugin/Handshake/Tests")
-        self.assertEqual((untracked or "").strip(), "")
+        self.assertLessEqual(set((untracked or "").split()), {h + "Bridge/src/HandshakeControlPlane.cs", h + "Tools/Verify-PhaseSIA7.ps1"})     # (untracked while SI-A7 is uncommitted; empty once it is committed)
 
     def test_the_c_plus_plus_ddenGo_and_launcher_files_are_unchanged(self):
         out = git("diff", "--name-only", BASELINE, "--", ".", ":(exclude)tests", ":(exclude)*.py", ":(exclude)TsScoringPlugin")

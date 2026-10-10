@@ -112,7 +112,7 @@ function SetLog([string]$file, [int]$fakePid, [long]$maxBytes = 0) {
 }
 function Lines([string]$p) { if (Test-Path $p) { return @(Get-Content $p -Encoding UTF8) } else { return @() } }
 function EventLines([string]$p, [string]$evt) { return @(Lines $p | Where-Object { $_ -match (' ' + [regex]::Escape($evt) + ' ') }) }
-function AppLines([string]$p) { return @(Lines $p | Where-Object { $_ -match ' APP_[A-Z_]+ ' }) }
+function AppLines([string]$p) { return @(Lines $p | Where-Object { ($_ -match ' APP_[A-Z_]+ ') -and ($_ -notmatch ' APP_[A-Z_]+_EPOCH ') }) }     # Phase SI-A7: the epoch companion lines (APP_START_REQUEST_EPOCH ...) are not E1 decision lines
 function Field([string]$line, [string]$name) { $m = [regex]::Match($line, '\b' + [regex]::Escape($name) + '=(\S+)'); if ($m.Success) { return $m.Groups[1].Value } else { return $null } }
 function IndexOfLine([string[]]$all, [string]$evt, [string]$extra = '') {
     for ($i = 0; $i -lt $all.Count; $i++) { if (($all[$i] -match (' ' + [regex]::Escape($evt) + ' ')) -and ($all[$i] -match $extra)) { return $i } }
@@ -618,7 +618,7 @@ Check ('E15 every MessageBox line of the dependency notice (text, title, flags, 
 $curSha = (Get-FileHash (Join-Path $Root 'dist\TSScoringPlugin.BveEx.Bridge.Prototype.dll')).Hash
 $curOutSha = (Get-FileHash (Join-Path $Root 'Bridge\out\TSScoringPlugin.BveEx.Bridge.Prototype.dll')).Hash
 $legSha = (Get-FileHash (Join-Path $Root 'Bridge\Legacy\out\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll')).Hash
-Check 'E16 both Bridge DLLs are the formal ones (Phase SI-A6 build: Current 40376B11..., Legacy E4F3F556...; before SI-A6: 247F6724... / C2883E40...)' (($curSha -eq '40376B1118DB2504EE369297C8964AD3EEBDB4A6942D37ED17ABEB8B82CF2919') -and ($curOutSha -eq $curSha) -and ($legSha -eq 'E4F3F55640CB3506002983A00850394802068F9E010C747AB3EB5025FB87EB0C'))
+Check 'E16 both Bridge DLLs are the formal ones (Phase SI-A7 M1a build: Current A310AB03..., Legacy CC084CED...; Phase SI-A6 build was 40376B11... / E4F3F556...; before SI-A6: 247F6724... / C2883E40...)' (($curSha -eq 'A310AB0372C4493A1AED990CDAB0850DE44D5F9367BA630603D39763F452E5A3') -and ($curOutSha -eq $curSha) -and ($legSha -eq 'CC084CED0F6715E9584FF8323F03396B26581B2CF9F9CDE8DE9D76CD5762F3BF'))
 
 # scope: python, HUD, scoring, UDP, hooks, installer
 $changedAll = @((RunGit @('-C', $top, 'diff', '--name-only', $Baseline, $E1Commit)) -split "`n" | Where-Object { $_ })

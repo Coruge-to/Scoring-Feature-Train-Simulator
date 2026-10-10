@@ -370,9 +370,11 @@ try {
     $ms = WaitFor { [bool](CtlProp $bp 'HandshakeUp') -and (NamedEvent $idP 'Ready').Set } 1500
     Check ("C9 TS Scoring ON again during the pause: Ready is restored by the control plane at once ({0} ms), Tick still silent" -f $ms) (($ms -ge 0) -and ($script:TickCount -eq $ticksBefore))
     Wait 400
-    Check 'C10 ... but BVE data (ScenarioReady) is NOT published until the next Tick (still no Event, no block)' ((OutsideNone $idP) -and (Lvl $bp) -and ($script:TickCount -eq $ticksBefore))
+    # Phase SI-A7 (M1a): this line said "NOT published until the next Tick". The kept level is made visible again by the control thread itself (plain numbers only, no BVE read), because
+    # "ScenarioReady comes back only with a Tick" was an unnecessary limit. What is NOT done without a Tick is ESTABLISHING a level (checked in section D / the SIA7 tests).
+    Check 'C10 ... and (Phase SI-A7) the HELD ScenarioReady is published again by the control thread without any Tick (generation 1, level 1), no BVE read happened' ((OutsideIs $idP 1 1) -and (Lvl $bp) -and ($script:TickCount -eq $ticksBefore) -and ((Est $bp) -eq 1))
     [void](LTick $bp)
-    Check 'C11 the first Tick after the pause republishes the SAME generation 1 as ScenarioReady (no re-establishment)' ((OutsideIs $idP 1 1) -and (Est $bp) -eq 1 -and (Gen $bp) -eq 1)
+    Check 'C11 the first Tick after the pause continues from there: the SAME generation 1 stays ScenarioReady (no re-establishment, no second publication needed)' ((OutsideIs $idP 1 1) -and (Est $bp) -eq 1 -and (Gen $bp) -eq 1)
     $ms = WaitFor { [bool](SProp $cp 'ScenarioReadyLevel') } 800
     Check 'C12 the new Caller cycle sees generation 1 ScenarioReady' (($ms -ge 0) -and ((SProp $cp 'ScenarioGenerationSeen') -eq 1))
     LTicks $bp 3
@@ -419,7 +421,8 @@ try {
     Check 'D1 TS Scoring off while the scenario loads: not ScenarioReady, nothing published, exactly one SR_WAIT' ((-not (Lvl $bw)) -and (OutsideNone $idW) -and ((EvtLines $lg 'SR_WAIT').Count -eq 1))
     $cw = NewSession $idW; StartSession $cw
     [void](WaitFor { [bool](CtlProp $bw 'HandshakeUp') } 1500)
-    Check 'D2 TS Scoring switched on: still not published before the next Tick' ((OutsideNone $idW) -and (-not (Lvl $bw)))
+    # Phase SI-A7 (M1a): the control thread makes the generation visible at once (level 0: nothing was ever established), but it never ESTABLISHES a level - that needs the Tick's BVE read
+    Check 'D2 TS Scoring switched on: generation 1 becomes visible at level 0 (control thread, no Tick), but nothing is established before the next Tick' ((OutsideIs $idW 1 0) -and (-not (Lvl $bw)))
     LTick $bw | Out-Null
     $lg = ReadLog $pW
     Check 'D3 the next Tick establishes (candidate E) for the already open generation 1' ((Lvl $bw) -and (OutsideIs $idW 1 1) -and ((EvtLines $lg 'SR_ESTABLISHED').Count -eq 1))

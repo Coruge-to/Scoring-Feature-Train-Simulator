@@ -651,7 +651,7 @@ Check ('M1-19/20 every MessageBox line (notice text, title, flags, P/Invoke, the
 $curSha = (Get-FileHash (Join-Path $Root 'dist\TSScoringPlugin.BveEx.Bridge.Prototype.dll') -Algorithm SHA256).Hash
 $curOutSha = (Get-FileHash (Join-Path $Root 'Bridge\out\TSScoringPlugin.BveEx.Bridge.Prototype.dll') -Algorithm SHA256).Hash
 $legSha = (Get-FileHash (Join-Path $Root 'Bridge\Legacy\out\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll') -Algorithm SHA256).Hash
-Check 'M1-21 Current Bridge DLL (dist and out) and Legacy Bridge DLL are byte-identical to the formal artifacts of Phase SI-A6 (SHA-256; before SI-A6: 247F6724... / C2883E40...)' (($curSha -eq '40376B1118DB2504EE369297C8964AD3EEBDB4A6942D37ED17ABEB8B82CF2919') -and ($curOutSha -eq $curSha) -and ($legSha -eq 'E4F3F55640CB3506002983A00850394802068F9E010C747AB3EB5025FB87EB0C'))
+Check 'M1-21 Current Bridge DLL (dist and out) and Legacy Bridge DLL are byte-identical to the formal artifacts of Phase SI-A7 M1a (SHA-256; Phase SI-A6 build was 40376B11... / E4F3F556...; before SI-A6: 247F6724... / C2883E40...)' (($curSha -eq 'A310AB0372C4493A1AED990CDAB0850DE44D5F9367BA630603D39763F452E5A3') -and ($curOutSha -eq $curSha) -and ($legSha -eq 'CC084CED0F6715E9584FF8323F03396B26581B2CF9F9CDE8DE9D76CD5762F3BF'))
 $top = (RunGit @('rev-parse', '--show-toplevel')).Trim()
 $changed = @((RunGit @('-C', $top, 'diff', '--name-only', $Baseline, '--', $prefix)) -split "`n" | Where-Object { $_ })
 $untracked = @((RunGit @('-C', $top, 'ls-files', '--others', '--exclude-standard', '--', $prefix)) -split "`n" | Where-Object { $_ })
@@ -659,8 +659,11 @@ $committedAll = @((RunGit @('-C', $top, 'diff', '--name-only', $Baseline, '6018a
 $touched = @($changed + $untracked | Sort-Object -Unique)
 # Phase SI-A6 changes exactly these core sources (the load marker next to ScenarioReady); every other Bridge / shared source is still the baseline
 $si6Core = @('Bridge/src/ScenarioReadyTracker.cs', 'Bridge/src/ScenarioReadyPublisher.cs', 'Bridge/src/AssemblyInfo.cs', 'Bridge/Legacy/src/AssemblyInfo.cs', 'Shared/HandshakeProtocol.cs') | ForEach-Object { $prefix + $_ }
-Check 'M1-21 no source of the Current Bridge, the Legacy Bridge or the shared protocol / log differs from the baseline except the five Phase SI-A6 files (Phase D1 only adds Shared\AppProtocol.cs, the two DrivingActive thresholds)' ((@($touched | Where-Object { (($_ -like ($prefix + 'Bridge/*')) -or (($_ -like ($prefix + 'Shared/*')) -and ($_ -ne ($prefix + 'Shared/AppProtocol.cs')))) -and ($_ -notin $si6Core) }).Count -eq 0) -and (@($si6Core | Where-Object { $_ -in $touched }).Count -eq 5))
-$scenarioFiles = 'Bridge\src\ScenarioReadyTracker.cs', 'Bridge\src\ScenarioReadyPublisher.cs', 'Bridge\src\ScenarioObserver.cs', 'Bridge\src\TsScoringBridgePrototype.cs', 'Shared\HandshakeProtocol.cs', 'Shared\ObservationLog.cs'
+# Phase SI-A7 (M1a) moves the Legacy control plane to the shared Bridge\src (one source for both adapters) and puts the Current adapter on it: these files change too (decision D1 of SI-A7 M0)
+$si7Core = @('Bridge/src/HandshakeControlPlane.cs', 'Bridge/src/TsScoringBridgePrototype.cs', 'Bridge/Legacy/src/HandshakeControlPlane.cs', 'Bridge/Legacy/src/TsScoringLegacyBridge.cs', 'Bridge/TSScoringPlugin.BveEx.Bridge.Prototype.csproj', 'Bridge/Legacy/TSScoringPlugin.AtsExLegacy.Bridge.Prototype.csproj') | ForEach-Object { $prefix + $_ }
+Check 'M1-21 no source of the Current Bridge, the Legacy Bridge or the shared protocol / log differs from the baseline except the five Phase SI-A6 files and the six Phase SI-A7 M1a control-plane files (Phase D1 only adds Shared\AppProtocol.cs, the two DrivingActive thresholds)' ((@($touched | Where-Object { (($_ -like ($prefix + 'Bridge/*')) -or (($_ -like ($prefix + 'Shared/*')) -and ($_ -ne ($prefix + 'Shared/AppProtocol.cs')))) -and ($_ -notin $si6Core) -and ($_ -notin $si7Core) }).Count -eq 0) -and (@($si6Core | Where-Object { $_ -in $touched }).Count -eq 5))
+# Phase SI-A7 (M1a): Bridge\src\TsScoringBridgePrototype.cs (the Current adapter) leaves this list - it now runs the handshake on the shared control plane instead of inside Tick (D1); its guards are Test-ExtensionControlPlaneSIA7.ps1 / Verify-PhaseSIA7.ps1
+$scenarioFiles = 'Bridge\src\ScenarioReadyTracker.cs', 'Bridge\src\ScenarioReadyPublisher.cs', 'Bridge\src\ScenarioObserver.cs', 'Shared\HandshakeProtocol.cs', 'Shared\ObservationLog.cs'
 # Phase SI-A6: the observer, the Bridge entry and the log stay byte-identical; the tracker, the publisher and the protocol only GROW (the load marker). Of the baseline lines only
 # the listed ones may be gone (each is replaced by a form that carries the marker, with the old form kept as the fallback for a publisher without it).
 $scenarioAdditive = 'Bridge\src\ScenarioReadyTracker.cs', 'Bridge\src\ScenarioReadyPublisher.cs', 'Shared\HandshakeProtocol.cs'
@@ -698,7 +701,7 @@ $cbytes = [IO.File]::ReadAllBytes($callerPath)
 Check 'M1-26 the Caller DLL contains none of the observation-build identifiers (fixed M0 log name, Tick-rate / SetAxisRanges aggregation, NOTICE_WOULD_SHOW, CALLER_FIRST_TICK)' ((@('TSScoring-PhaseM0', 'PhaseM0', 'Caller-Observation', 'NOTICE_WOULD_SHOW', 'CALLER_FIRST_TICK', 'SETAXIS', 'OBSERVATION build', 'diagnostic, not the beta') | Where-Object { BytesContain $cbytes $_ }).Count -eq 0)
 $vi = (Get-Item $callerPath).VersionInfo
 $casm = $callerAsm
-Check 'M1-28 provider Coruge-to (company, copyright, ProviderName constant); product TS Scoring; version 0.12.0.0 (Phase SI-A6 on the Phase E4 Caller); description names Phase E4 and no observation wording' (($vi.CompanyName -eq 'Coruge-to') -and ($vi.LegalCopyright -match 'Coruge-to') -and ($vi.ProductName -eq 'TS Scoring') -and ([string]$sessionType.GetField('ProviderName', $NPS).GetRawConstantValue() -ceq 'Coruge-to') -and ($vi.FileVersion -eq '0.12.0.0') -and ($casm.GetName().Version.ToString() -eq '0.12.0.0') -and ($vi.Comments -match 'Phase E4') -and ($vi.Comments -notmatch '(?i)observation|diagnostic'))
+Check 'M1-28 provider Coruge-to (company, copyright, ProviderName constant); product TS Scoring; version 0.13.0.0 (Phase SI-A7 M1a on the Phase E4 Caller); description names Phase E4 and no observation wording' (($vi.CompanyName -eq 'Coruge-to') -and ($vi.LegalCopyright -match 'Coruge-to') -and ($vi.ProductName -eq 'TS Scoring') -and ([string]$sessionType.GetField('ProviderName', $NPS).GetRawConstantValue() -ceq 'Coruge-to') -and ($vi.FileVersion -eq '0.13.0.0') -and ($casm.GetName().Version.ToString() -eq '0.13.0.0') -and ($vi.Comments -match 'Phase E4') -and ($vi.Comments -notmatch '(?i)observation|diagnostic'))
 Check 'M1-29 no PDB anywhere in the tree or in dist / out, and dist holds exactly the two DLLs' ((@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0) -and ((@(Get-ChildItem (Join-Path $Root 'dist') -File | ForEach-Object { $_.Name } | Sort-Object) -join ',') -eq 'TSScoringPlugin.BveEx.Bridge.Prototype.dll,TSScoringPlugin.Caller.InputDevice.dll'))
 $runtimeNames = @($env:USERNAME, $env:COMPUTERNAME, $env:USERDOMAIN, (Split-Path $env:USERPROFILE -Leaf)) | Where-Object { $_ -and $_.Length -ge 3 } | Sort-Object -Unique
 $forbidden = @($runtimeNames) + @('C:\Users\', 'Scoring-Feature-Train-Simulator', 'gmail', 'hotmail', 'outlook.com', 'ac.jp')
@@ -733,11 +736,15 @@ $m1Allowed = @(
     'Tests/Test-GroundLimitsSI1.ps1', 'Docs/Handshake-PhaseSI1-GroundLimits.md',
     'Docs/Handshake-PhaseSIA-ManagedScoring.md',
     'Bridge/src/ScenarioReadyTracker.cs', 'Bridge/src/ScenarioReadyPublisher.cs', 'Bridge/src/AssemblyInfo.cs', 'Bridge/Legacy/src/AssemblyInfo.cs', 'Shared/HandshakeProtocol.cs',
-    'Tests/Test-ScenarioReadyC3.ps1', 'Tests/Test-PauseRecoverySIA6.ps1', 'Docs/Handshake-PhaseSIA6-PauseRecovery.md'
+    'Tests/Test-ScenarioReadyC3.ps1', 'Tests/Test-PauseRecoverySIA6.ps1', 'Docs/Handshake-PhaseSIA6-PauseRecovery.md',
+    # Phase SI-A7 (M1a): the shared control plane, the two adapters and their projects, the new test / verification / document, the L1 test whose pause contract moved
+    'Bridge/src/HandshakeControlPlane.cs', 'Bridge/src/TsScoringBridgePrototype.cs', 'Bridge/Legacy/src/HandshakeControlPlane.cs', 'Bridge/Legacy/src/TsScoringLegacyBridge.cs',
+    'Bridge/TSScoringPlugin.BveEx.Bridge.Prototype.csproj', 'Bridge/Legacy/TSScoringPlugin.AtsExLegacy.Bridge.Prototype.csproj',
+    'Tests/Test-ExtensionControlPlaneSIA7.ps1', 'Tools/Verify-PhaseSIA7.ps1', 'Tests/Test-LegacyL1.ps1', 'Docs/Handshake-PhaseSIA7-ControlPlane.md'
 ) | ForEach-Object { $prefix + $_ }
 # Phase L3: the independent telemetry project (the DATA plane) is a whole directory of its own
 $m1Outside = @($touched | Where-Object { ($_ -notin $m1Allowed) -and (-not $_.StartsWith($prefix + 'Telemetry/')) })
-Check ('M1-31 only the Phase M1, Phase D1, Phase E1, Phase E3, Phase E4, Phase L3, Phase LI0, Phase LI1, Phase LI2, Phase SI-0, Phase SI-1, Phase SI-A (its document only) and Phase SI-A6 (the load marker: five Bridge / shared sources and its test and document) Caller / test / verification / document files differ from the baseline commit (' + $touched.Count + ' files)') (($m1Outside.Count -eq 0) -and ($touched.Count -ge 8))
+Check ('M1-31 only the Phase M1, Phase D1, Phase E1, Phase E3, Phase E4, Phase L3, Phase LI0, Phase LI1, Phase LI2, Phase SI-0, Phase SI-1, Phase SI-A (its document only) Phase SI-A6 (the load marker: five Bridge / shared sources and its test and document) and Phase SI-A7 M1a (the shared control plane, the two adapters, their projects, its test, verification and document) Caller / test / verification / document files differ from the baseline commit (' + $touched.Count + ' files)') (($m1Outside.Count -eq 0) -and ($touched.Count -ge 8))
 if ($m1Outside.Count -gt 0) { $m1Outside | ForEach-Object { '   outside scope: ' + $_ } }
 $failed = @($results | Where-Object { -not $_.Ok })
 "TOTAL {0}  FAILED {1}" -f $results.Count, $failed.Count

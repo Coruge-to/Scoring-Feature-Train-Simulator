@@ -60,8 +60,9 @@ class Log(object):
 
 
 def make_block(pid, inst, session=False, driving=False, closed=False, generation=0, count=0, head=None, tail=None, magic=ms.STATE_MAGIC,
-               version=ms.STATE_VERSION, size=ms.STATE_SIZE, flags=None, load_info=0, load_magic=0):
-    """Builds the 64 bytes exactly as AppStatePublisher.cs lays them out (Phase SI-A6: load_info / load_magic are the bytes 48..55; 0 / 0 = an older Caller)."""
+               version=ms.STATE_VERSION, size=ms.STATE_SIZE, flags=None, load_info=0, load_magic=0, epoch_info=0):
+    """Builds the 64 bytes exactly as AppStatePublisher.cs lays them out (Phase SI-A6: load_info / load_magic are the bytes 48..55; 0 / 0 = an older Caller;
+    Phase SI-A7: epoch_info is the uint32 at byte 56, 0 = an older Caller / Bridge)."""
     import struct
     buf = bytearray(64)
     head = 2 * count if head is None else head
@@ -72,6 +73,7 @@ def make_block(pid, inst, session=False, driving=False, closed=False, generation
     buf[16:32] = inst[:16].encode("ascii")
     struct.pack_into("<IIiI", buf, 32, head, flags, generation, count)
     struct.pack_into("<II", buf, 48, load_info, load_magic)
+    struct.pack_into("<I", buf, 56, epoch_info)
     struct.pack_into("<I", buf, 60, tail)
     return bytes(buf)
 
@@ -166,11 +168,14 @@ class A_StateBlock(unittest.TestCase):
                  ("OffInstance", ms.OFF_INSTANCE), ("OffHead", ms.OFF_HEAD), ("OffFlags", ms.OFF_FLAGS), ("OffGeneration", ms.OFF_GENERATION),
                  ("OffChangeCount", ms.OFF_CHANGE_COUNT), ("OffTail", ms.OFF_TAIL), ("FlagSession", ms.FLAG_SESSION),
                  ("FlagDriving", ms.FLAG_DRIVING), ("FlagClosed", ms.FLAG_CLOSED),
-                 ("OffLoadInfo", ms.OFF_LOAD_INFO), ("OffLoadMagic", ms.OFF_LOAD_MAGIC), ("LoadMagic", ms.LOAD_MAGIC), ("LoadKnownBits", ms._KNOWN_LOAD_BITS)]
+                 ("OffLoadInfo", ms.OFF_LOAD_INFO), ("OffLoadMagic", ms.OFF_LOAD_MAGIC), ("LoadMagic", ms.LOAD_MAGIC), ("LoadKnownBits", ms._KNOWN_LOAD_BITS),
+                 ("OffEpochInfo", ms.OFF_EPOCH_INFO), ("EpochSupported", ms.EPOCH_SUPPORTED), ("EpochTickSeen", ms.EPOCH_TICK_SEEN),
+                 ("EpochNumberShift", ms.EPOCH_NUMBER_SHIFT), ("EpochNumberMask", ms.EPOCH_NUMBER_MASK)]
         for name, value in pairs:
             self.assertEqual(const(name), value, name)
         self.assertEqual(ms.LOAD_MAGIC.to_bytes(4, "little"), b"1DOL")                   # "LOD1" as a number
-        self.assertEqual(ms.OFF_LOAD_INFO + ms._LOAD.size, 56)                          # the marker fills 48..55; 56..59 stay reserved
+        self.assertEqual(ms.OFF_LOAD_INFO + ms._LOAD.size, 56)                          # the marker fills 48..55; 56..59 hold the Phase SI-A7 EpochInfo
+        self.assertEqual(ms.OFF_EPOCH_INFO + ms._EPOCH.size, 60)                        # EpochInfo fills 56..59; 60..63 is the tail
         self.assertEqual(ms.STATE_MAGIC.to_bytes(4, "little"), b"TSAS")
         # the Python struct formats cover exactly the documented offsets
         self.assertEqual(ms._HEADER.size, 32)

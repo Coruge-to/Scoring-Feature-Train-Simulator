@@ -74,6 +74,7 @@ class ManagedRig(object):
         self.gate.log = self.hud.emit_event
         self.keys = RigKeys(self.args.bve_pid)
         self.load = None                    # Phase SI-A6: None = a Bridge / Caller from before the load marker; otherwise the LoadInfo bits every publish() carries
+        self.epoch = None                   # Phase SI-A7: None = a Bridge / Caller from before the Ready epoch; otherwise (ready_epoch, tick_seen_in_epoch) every publish() carries
         self.attached = m._attach_managed_hud(self.o, self.hud, recovery_keys=self.keys)
         self.recovery = self.hud.recovery
         self.input = self.hud._input
@@ -89,14 +90,25 @@ class ManagedRig(object):
         self.rig.close()
 
     # -- the Caller's state block -------------------------------------------------------------------------------------------------------------
-    def publish(self, session=False, driving=False, generation=None, closed=False, load=_KEEP):
+    @staticmethod
+    def epoch_info(epoch):
+        """The EpochInfo word the Caller writes at byte 56 for (ready_epoch, tick_seen_in_epoch); None = no information (0)."""
+        if epoch is None:
+            return 0
+        number, tick = epoch
+        return ms.EPOCH_SUPPORTED | (ms.EPOCH_TICK_SEEN if tick else 0) | ((number & ms.EPOCH_NUMBER_MASK) << ms.EPOCH_NUMBER_SHIFT)
+
+    def publish(self, session=False, driving=False, generation=None, closed=False, load=_KEEP, epoch=_KEEP):
         if generation is not None:
             self.generation = generation
         if load is not _KEEP:
             self.load = load
+        if epoch is not _KEEP:
+            self.epoch = epoch
         self.count += 1
         self.source.data = E4.make_block(self.args.bve_pid, self.args.instance, session, driving, closed, self.generation, self.count,
-                                         load_info=0 if self.load is None else self.load, load_magic=0 if self.load is None else ms.LOAD_MAGIC)
+                                         load_info=0 if self.load is None else self.load, load_magic=0 if self.load is None else ms.LOAD_MAGIC,
+                                         epoch_info=self.epoch_info(self.epoch))
 
     def tick(self, n=1, seconds=0.02):
         for _ in range(n):

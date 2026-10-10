@@ -107,7 +107,8 @@ $outB = @(Inspect $bDll $bridgeAbsent); $outB[0..($outB.Count - 2)]; $bi = $outB
 Write-Host '==== distribution hygiene ===='
 $distFiles = @(Get-ChildItem $dist -File)
 Check 'dist holds exactly the two DLLs (no PDB, no other file)' (($distFiles.Count -eq 2) -and (@($distFiles | Where-Object { $_.Name -in 'TSScoringPlugin.Caller.InputDevice.dll', 'TSScoringPlugin.BveEx.Bridge.Prototype.dll' }).Count -eq 2) -and (@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0))
-Check 'Version: Caller 0.11.0.0 (Phase E4) and Bridge 0.6.0.0 (Phase C3 core, unchanged) in the version resources and assembly versions' (($ci.Version.FileVersion -eq '0.11.0.0') -and ($bi.Version.FileVersion -eq '0.6.0.0') -and ($ci.Asm.GetName().Version.ToString() -eq '0.11.0.0') -and ($bi.Asm.GetName().Version.ToString() -eq '0.6.0.0'))
+# (brought up to date in Phase SI-A7 M1a: this pin had been left at the E4 / C3 versions since Phase SI-A6)
+Check 'Version: Caller 0.13.0.0 (Phase SI-A7 M1a on the Phase E4 Caller) and Bridge 0.8.0.0 (Phase SI-A7 M1a) in the version resources and assembly versions' (($ci.Version.FileVersion -eq '0.13.0.0') -and ($bi.Version.FileVersion -eq '0.8.0.0') -and ($ci.Asm.GetName().Version.ToString() -eq '0.13.0.0') -and ($bi.Asm.GetName().Version.ToString() -eq '0.8.0.0'))
 Check 'Provider Coruge-to in both DLLs' (($ci.Version.CompanyName -eq 'Coruge-to') -and ($bi.Version.CompanyName -eq 'Coruge-to'))
 Check 'No forbidden dependency token in either DLL' (($ci.Present.Count -eq 0) -and ($bi.Present.Count -eq 0))
 Check 'Caller references only mscorlib, System, System.Core, System.Windows.Forms, Mackoy.IInputDevice' ((($ci.Asm.GetReferencedAssemblies() | ForEach-Object { $_.Name } | Sort-Object) -join ',') -eq 'Mackoy.IInputDevice,mscorlib,System,System.Core,System.Windows.Forms')
@@ -159,8 +160,9 @@ $mtx = OnlyIn 'new Mutex|Mutex ' @('Shared\ObservationLog.cs')
 Check 'Mutex exists ONLY in Shared\ObservationLog.cs' ($mtx.Bad.Count -eq 0)
 $dll = OnlyIn 'DllImport' @('Caller\src\HandshakeSession.cs', 'Caller\src\TsScoringCallerInputDevice.cs')
 Check 'DllImport only in the two Caller files that already had it in Phase B (MessageBoxW)' ($dll.Bad.Count -eq 0)
-$thr = OnlyIn 'new Thread\(' @('Caller\src\HandshakeSession.cs', 'Caller\src\AppProcessManager.cs')
-Check 'new Thread only in Caller\src\HandshakeSession.cs (monitor + notice threads, as in Phase B) and Caller\src\AppProcessManager.cs (Phase E3 worker); none in the Bridge or the log' ($thr.Bad.Count -eq 0)
+# Phase SI-A7 (M1a): the Bridge's one background thread is the shared control plane (Bridge\src\HandshakeControlPlane.cs, moved from the Legacy folder); Verify-PhaseSIA7.ps1 pins it
+$thr = OnlyIn 'new Thread\(' @('Caller\src\HandshakeSession.cs', 'Caller\src\AppProcessManager.cs', 'Bridge\src\HandshakeControlPlane.cs')
+Check 'new Thread only in Caller\src\HandshakeSession.cs (monitor + notice threads, as in Phase B), Caller\src\AppProcessManager.cs (Phase E3 worker) and (Phase SI-A7) Bridge\src\HandshakeControlPlane.cs (the control plane thread); none in the adapter or the log' ($thr.Bad.Count -eq 0)
 
 Write-Host '==== Phase B contract unchanged ===='
 $hpFile = Join-Path $Root 'Shared\HandshakeProtocol.cs'
@@ -191,7 +193,7 @@ Check 'HandshakeSession.cs: no timeout / state-machine line was removed (only th
 
 Write-Host '==== Phase C1 observation checks ===='
 $obs = [IO.File]::ReadAllText((Join-Path $Root 'Bridge\src\ScenarioObserver.cs'))
-$bridgeSrc = [IO.File]::ReadAllText((Join-Path $Root 'Bridge\src\TsScoringBridgePrototype.cs'))
+$bridgeSrc = [IO.File]::ReadAllText((Join-Path $Root 'Bridge\src\TsScoringBridgePrototype.cs')) + [IO.File]::ReadAllText((Join-Path $Root 'Bridge\src\HandshakeControlPlane.cs'))   # Phase SI-A7: the handshake lives in the control plane now
 $callerSrc = [IO.File]::ReadAllText((Join-Path $Root 'Caller\src\HandshakeSession.cs')) + [IO.File]::ReadAllText((Join-Path $Root 'Caller\src\TsScoringCallerInputDevice.cs'))
 Check 'ScenarioGeneration exists (counter, in every Track A line)' (($obs -match 'scenarioGeneration') -and ($obs -match '"ScenarioGeneration="'))
 Check 'candidates A to F all defined and all logged (CAND_<id>)' (($obs -match 'const string A') -and ($obs -match 'const string B') -and ($obs -match 'const string C') -and ($obs -match 'const string D') -and ($obs -match 'const string E') -and ($obs -match 'const string F') -and ($obs -match '"CAND_" \+ id'))
@@ -200,7 +202,7 @@ Check 'Caller Track B points present: ctor, Enabled, monitor, first check, first
 Check 'Bridge Track B points present: ctor, AvailableCreate begin/ok, ReadyCreate begin/ok, subscriptions, first Tick, Dispose, Ready / Available disposed' (@('BRIDGE_CTOR_BEGIN', 'BRIDGE_CTOR_END', 'AVAIL_CREATE_BEGIN', 'AVAIL_CREATE_OK', 'READY_CREATE_BEGIN', 'READY_CREATE_OK', 'SUBSCRIBE_DONE', 'BRIDGE_FIRST_TICK', 'BRIDGE_DISPOSE_BEGIN', 'BRIDGE_DISPOSE_END', 'READY_DISPOSED', 'AVAIL_DISPOSED' | Where-Object { $bridgeSrc -notmatch $_ }).Count -eq 0)
 Check 'only real BveEX events are subscribed (ScenarioOpened, ScenarioClosed, PreviewScenarioCreated, ScenarioCreated, PreviewTick, PostTick, AllExtensionsLoaded)' (@('h.ScenarioOpened +=', 'h.ScenarioClosed +=', 'h.PreviewScenarioCreated +=', 'h.ScenarioCreated +=', 'h.PreviewTick +=', 'h.PostTick +=', 'Extensions.AllExtensionsLoaded +=' | Where-Object { $bridgeSrc -notmatch [regex]::Escape($_) }).Count -eq 0)
 Check 'ScenarioObserver creates no named object, thread, timer, file or notification (still a log-only observer)' (($obs -notmatch 'EventWaitHandle|new Thread|Timer|FileStream|MemoryMappedFile|Mutex|ThreadPool|Task\.'))
-Check 'Bridge constructor publishes BridgeAvailable BEFORE the observation wiring (observation can not delay it)' ($bridgeSrc.IndexOf('PublishAvailability();') -lt $bridgeSrc.IndexOf('SubscribeObservers();'))
+Check 'Bridge constructor publishes BridgeAvailable BEFORE the observation wiring (observation can not delay it)' ($bridgeSrc.IndexOf('BeginControl(false);') -lt $bridgeSrc.IndexOf('SubscribeObservers();'))
 Check 'log failures are swallowed: ObservationLog.Write has try/catch and never rethrows' ((Get-Content (Join-Path $Root 'Shared\ObservationLog.cs') -Raw) -match 'internal static void Write\([\s\S]*?catch\s*\{[\s\S]*?\}')
 Check 'log initialisation: per-PID run marker, FileMode.Create (truncate) only for the first writer of a run' ((Get-Content (Join-Path $Root 'Shared\ObservationLog.cs') -Raw) -match 'createdNew' -and (Get-Content (Join-Path $Root 'Shared\ObservationLog.cs') -Raw) -match 'FileMode\.Create')
 Check 'log path comes from the OS at run time (no user or path text in the source)' ((Get-Content (Join-Path $Root 'Shared\ObservationLog.cs') -Raw) -match 'SpecialFolder\.UserProfile')
@@ -244,10 +246,12 @@ Check 'tracker: the reset happens BEFORE the generation number moves (ClearLocke
 $st = [regex]::Match($hp, 'internal struct ScenarioState[\s\S]*?public bool Ready').Value
 $stFields = @([regex]::Matches($st, 'public (\w+) (\w+);') | ForEach-Object { $_.Groups[1].Value + ' ' + $_.Groups[2].Value })
 "ScenarioState fields: " + ($stFields -join ', ')
-Check 'shared state block holds int32 numbers only (ProtocolVersion, BveProcessId, ScenarioGeneration, IsScenarioReady, Sequence, Check): no string, path, scenario or vehicle name' (($stFields -join ',') -eq 'int ProtocolVersion,int BveProcessId,int ScenarioGeneration,int IsScenarioReady,int Sequence,int Check')
+# (brought up to date: Phase SI-A6 added the load marker, Phase SI-A7 the Ready epoch - all int32 numbers)
+Check 'shared state block holds int32 numbers only (ProtocolVersion, BveProcessId, ScenarioGeneration, IsScenarioReady, Sequence, Check, LoadMagic, LoadInfo, LoadCheck, EpochMagic, ReadyEpoch, EpochFlags, EpochCheck): no string, path, scenario or vehicle name' (($stFields -join ',') -eq 'int ProtocolVersion,int BveProcessId,int ScenarioGeneration,int IsScenarioReady,int Sequence,int Check,int LoadMagic,int LoadInfo,int LoadCheck,int EpochMagic,int ReadyEpoch,int EpochFlags,int EpochCheck')
 Check 'generation overflow policy is explicit (wrap to 1, never 0 / negative) and documented in the shared protocol' (($hp -match 'Overflow policy') -and ($hp -match 'return First;') -and ($hp -match 'current == int\.MaxValue'))
 $bridgeSrc2 = [IO.File]::ReadAllText((Join-Path $Root 'Bridge\src\TsScoringBridgePrototype.cs'))
-Check 'Bridge: Release() withdraws ScenarioReady first (handshake lost) and Dispose clears ScenarioReady before Release; tracker runs AFTER the Phase B handshake step in Tick' (($bridgeSrc2.IndexOf('tracker.OnHandshakeLost(reason)') -ge 0) -and ($bridgeSrc2.IndexOf('tracker.OnDispose()') -lt $bridgeSrc2.IndexOf('Release("bridge-dispose")')) -and ($bridgeSrc2.IndexOf('HandshakeStep();') -lt $bridgeSrc2.IndexOf('tracker.OnTick()')))
+# Phase SI-A7: ReleaseLocked (control plane) calls the handshake-lost callback first; the adapter forwards it to tracker.OnHandshakeLost; Dispose clears ScenarioReady before the control plane releases Ready; Tick no longer runs a handshake step
+Check 'Bridge: the control plane withdraws ScenarioReady first (handshake lost) and Dispose clears ScenarioReady before the control plane releases Ready (Shutdown); Tick runs no handshake step, the tracker runs on Tick' (($bridgeSrc2.IndexOf('t.OnHandshakeLost(reason)') -ge 0) -and ($bridgeSrc2.IndexOf('t.OnDispose()') -lt $bridgeSrc2.IndexOf('c.Shutdown("bridge-dispose")')) -and ($bridgeSrc2 -notmatch 'HandshakeStep') -and ($bridgeSrc2 -match 't\.OnTick\(\)') -and (($bridgeSrc.IndexOf('try { handshakeLost(reason); } catch { }') -ge 0)))
 Check 'Bridge: the PostTick handler only calls the diagnostic tracker.OnPostTick (no direct state change)' ($bridgeSrc2 -match 'tracker\.OnPostTick\(\)')
 # Phase B / C1 files: what changed in the Caller vs Phase C1
 $hsC1Text = GitText 'Bridge\src\ScenarioObserver.cs' 'Caller\src\HandshakeSession.cs'
