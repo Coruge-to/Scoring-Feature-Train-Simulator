@@ -23,7 +23,7 @@ Write-Host '==== the built DLL ===='
 $outFiles = @(Get-ChildItem $outDir -File -ErrorAction SilentlyContinue)
 Check 'out holds exactly the one telemetry DLL (no PDB, no third-party DLL, no other file)' (($outFiles.Count -eq 1) -and ($outFiles[0].Name -eq 'TSScoringPlugin.AtsExLegacy.Telemetry.dll') -and (@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0))
 $vi = (Get-Item $dllPath).VersionInfo
-Check 'file version 0.3.0.0 (Phase LI2 holding speed handles and one-lever Cl on top of the LI1 handle / pressure sending, the Phase L3 sender and the LI0 observation) or 0.3.1.0 (the Phase SI-0 observation build), product TS Scoring, provider Coruge-to, description names Phase L3' (($vi.FileVersion -in @('0.3.0.0', '0.3.1.0')) -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.CompanyName -eq 'Coruge-to') -and ($vi.Comments -match 'Phase L3'))
+Check 'file version 0.3.0.0 (Phase LI2 holding speed handles and one-lever Cl on top of the LI1 handle / pressure sending, the Phase L3 sender and the LI0 observation) or 0.3.1.0 (the Phase SI-0 observation build) or 0.4.0.0 (Phase SI-1: TRAINLEN, MAPLIMITS, CLEARDIST and the head limit of MAPHEAD), product TS Scoring, provider Coruge-to, description names Phase L3' (($vi.FileVersion -in @('0.3.0.0', '0.3.1.0', '0.4.0.0')) -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.CompanyName -eq 'Coruge-to') -and ($vi.Comments -match 'Phase L3'))
 $proj = [IO.File]::ReadAllText((Join-Path $telDir 'Legacy\TSScoringPlugin.AtsExLegacy.Telemetry.csproj'))
 $projCode = [regex]::Replace($proj, '<!--[\s\S]*?-->', '')      # the comments of the project file may name the Bridge
 Add-Type -TypeDefinition @"
@@ -84,7 +84,7 @@ $unknown = @($csTokens | Where-Object { $_ -notin $pyTokens })
 Check ('every token the C# sender can announce is in the Python vocabulary (' + $csTokens.Count + ' tokens)') (($unknown.Count -eq 0) -and ($csTokens.Count -ge 10))
 Check 'protocol version 1 in both languages' (($contractCs -match 'ProtocolVersion = 1;') -and ((Get-Content (Join-Path $top 'telemetry_contract.py') -Raw) -match 'PROTOCOL_VERSION = 1'))
 $notSent = @($pyTokens | Where-Object { $_ -notin $csTokens })
-Check ('the tokens the Legacy sender never announces are exactly: ' + ($notSent -join ' ')) ((($notSent | Sort-Object) -join ',') -eq 'doortime,jump,maplimit_ahead,trainlen')
+Check ('the tokens the Legacy sender never announces are exactly: ' + ($notSent -join ' ') + ' (Phase SI-1 added trainlen and maplimit_ahead to what it announces)') ((($notSent | Sort-Object) -join ',') -eq 'doortime,jump')
 
 Write-Host '==== repository scope ===='
 $changed = @((RunGit @('-C', $top, 'diff', '--name-only', $Baseline)) -split "`n" | Where-Object { $_ })
@@ -109,7 +109,9 @@ $allowedExact = @(
     # Phase LI2 (Legacy holding speed handles / one-lever Cl): its tests, the Python test, its document
     'tests/test_legacy_input_li2.py', 'tests/legacy_input_matrix24.json', ($prefix + 'Tests/Test-LegacyInputLI2.ps1'), ($prefix + 'Docs/Handshake-PhaseLI2-LegacyHoldingSpeedAndOneLeverCl.md'),
     # Phase SI-0 (read-only scoring-integration observation of the Legacy host): its test, the Python characterization test, its document; the Telemetry project itself is covered by the Telemetry/ prefix
-    ($prefix + 'Tests/Test-ScoringObservationSI0.ps1'), 'tests/test_scoring_observation_si0.py', ($prefix + 'Docs/Handshake-PhaseSI0-ScoringObservation.md')
+    ($prefix + 'Tests/Test-ScoringObservationSI0.ps1'), 'tests/test_scoring_observation_si0.py', ($prefix + 'Docs/Handshake-PhaseSI0-ScoringObservation.md'),
+    # Phase SI-1 (Legacy ground limit contract: TRAINLEN, MAPLIMITS, CLEARDIST, the head limit): its test, the Python test and probe, its document; the Telemetry project itself is covered by the Telemetry/ prefix
+    ($prefix + 'Tests/Test-GroundLimitsSI1.ps1'), 'tests/test_ground_limits_si1.py', 'tests/si1_flash_probe.py', ($prefix + 'Docs/Handshake-PhaseSI1-GroundLimits.md')
 )
 $outside = @($touched | Where-Object { -not ($_.StartsWith($prefix + 'Telemetry/') -or ($_ -in $allowedExact)) })
 if ($outside.Count -gt 0) { "outside the allowance: " + ($outside -join ', ') }

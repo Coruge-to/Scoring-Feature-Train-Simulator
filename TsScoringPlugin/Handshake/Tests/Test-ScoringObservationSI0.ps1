@@ -308,7 +308,7 @@ $hbRegion = if (($cb -ge 0) -and ($ce -gt $cb)) { $sessCode.Substring($cb, $ce -
 Check 'G05 the heartbeat path (ComposeHeartbeat and NoteHeartbeat) uses no api, input, probe or cache member: it can only read its own fields and write a counter and a log line' (($hbRegion.Length -gt 300) -and ($hbRegion -notmatch 'api\.|inputCache|inputProbe|scoringProbe|inputTelemetry|timeline') -and ($hbRegion -match 'order\.Note'))
 Check 'G06 no exception text can reach a log line (the probe and the order recorder never use a caught exception: no .Message, no ex.ToString, no catch (Exception e))' (($probeCode -notmatch '\.Message|catch\s*\(\s*Exception') -and ($sessCode -notmatch 'order\.Note\([^;]*\.Message'))
 $vi = (Get-Item $dllPath).VersionInfo
-Check 'G07 the DLL is 0.3.1.0 (assembly and file version), product TS Scoring, provider Coruge-to; the description names Phase L3, LI1, LI2 and SI-0 and says it is an observation build' (([TsScoringLegacyTelemetryTests.DiagInfo]::Version -eq '0.3.1.0') -and ($vi.FileVersion -eq '0.3.1.0') -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.CompanyName -eq 'Coruge-to') -and ($vi.Comments -match 'Phase L3') -and ($vi.Comments -match 'LI1') -and ($vi.Comments -match 'LI2') -and ($vi.Comments -match 'SI-0') -and ($vi.Comments -match 'OBSERVATION'))
+Check 'G07 the DLL is 0.3.1.0 (the SI-0 observation build) or 0.4.0.0 (Phase SI-1 builds on it; the description still names Phase L3, LI1, LI2 and SI-0 and the observation build) - assembly and file version, product TS Scoring, provider Coruge-to' (([TsScoringLegacyTelemetryTests.DiagInfo]::Version -in @('0.3.1.0', '0.4.0.0')) -and ($vi.FileVersion -in @('0.3.1.0', '0.4.0.0')) -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.CompanyName -eq 'Coruge-to') -and ($vi.Comments -match 'Phase L3') -and ($vi.Comments -match 'LI1') -and ($vi.Comments -match 'LI2') -and ($vi.Comments -match 'SI-0') -and ($vi.Comments -match 'OBSERVATION'))
 $cs = [IO.File]::ReadAllText((Join-Path $Root 'Telemetry\Legacy\TSScoringPlugin.AtsExLegacy.Telemetry.csproj'))
 Check 'G08 the project compiles the new source and adds no reference (the same five host assemblies as before)' (($cs -match 'src\\LegacyScoringProbe\.cs') -and ([regex]::Matches($cs, '<Reference Include=').Count -eq 7))
 function RunGit([string[]]$gitArgs) { $out = & git @gitArgs 2>$null; if ($LASTEXITCODE -ne 0) { return '' }; return ($out -join "`n") }
@@ -319,14 +319,16 @@ $frozen = @(
     'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyApi.cs', 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs', 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyInputProbe.cs',
     'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyHandleContract.cs', 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyInputTelemetry.cs', 'tests/legacy_input_matrix24.json', 'tests/legacy_input_reference.py'
 )
-$changedFrozen = @((RunGit (@('-C', $top, 'diff', '--name-only', 'HEAD', '--') + $frozen)) -split "`n" | Where-Object { $_ })
-Check ('G09 frozen and byte-identical to HEAD: the Current sender, the Caller, both Bridges, the Handshake protocol and shared contract, every production Python file (no Legacy branch, no update_logic change), the Legacy API seam, the station timeline, the input probe, the handle contract and the input telemetry (' + $changedFrozen.Count + ' changed) ' + ($changedFrozen -join ',')) ($changedFrozen.Count -eq 0)
-$changed = @((RunGit @('-C', $top, 'diff', '--name-only', 'HEAD')) -split "`n" | Where-Object { $_ })
+# G09 / G10 describe what THIS phase changed: the SI-0 work is committed (f9b2ed5, parent 3158ce2), so they are pinned to that commit pair in history (the same assertion as while the work was uncommitted, no longer dependent on a LATER phase's working tree).
+$si0Commit = 'f9b2ed5d7a3c0c7479d5798e2826b58bbdd9180b'; $si0Parent = '3158ce2fc073b4ef6232ab398733b82ecd73c896'
+$changedFrozen = @((RunGit (@('-C', $top, 'diff', '--name-only', $si0Parent, $si0Commit, '--') + $frozen)) -split "`n" | Where-Object { $_ })
+Check ('G09 frozen and byte-identical between the SI-0 parent commit and the SI-0 commit (history): the Current sender, the Caller, both Bridges, the Handshake protocol and shared contract, every production Python file (no Legacy branch, no update_logic change), the Legacy API seam, the station timeline, the input probe, the handle contract and the input telemetry (' + $changedFrozen.Count + ' changed) ' + ($changedFrozen -join ',')) ($changedFrozen.Count -eq 0)
+$changed = @((RunGit @('-C', $top, 'diff', '--name-only', $si0Parent, $si0Commit)) -split "`n" | Where-Object { $_ })
 $untracked = @((RunGit @('-C', $top, 'ls-files', '--others', '--exclude-standard')) -split "`n" | Where-Object { $_ })
-$touched = @($changed + $untracked | Sort-Object -Unique)
+$touched = @($changed | Sort-Object -Unique)
 $allowed = @($touched | Where-Object { $_ -match '^TsScoringPlugin/Handshake/(Telemetry/Legacy/(src/|TSScoringPlugin\.AtsExLegacy\.Telemetry\.csproj$)|Tests/|Tools/|Docs/Handshake-PhaseSI0)|^tests/test_scoring_observation_si0\.py$' })
 $outside = @($touched | Where-Object { $_ -notin $allowed })
-Check ('G10 scope: only the Legacy telemetry sources and project, the tests, the verifiers and the SI-0 document / test changed (' + $touched.Count + ' files; outside: ' + ($outside -join ',') + ')') ($outside.Count -eq 0)
+Check ('G10 scope (the SI-0 commit in history): only the Legacy telemetry sources and project, the tests, the verifiers and the SI-0 document / test changed (' + $touched.Count + ' files; outside: ' + ($outside -join ',') + ')') ($outside.Count -eq 0)
 $newBinary = @($untracked | Where-Object { $_ -match '\.(dll|pdb|log|exe|zip)$' })
 Check 'G11 no DLL, PDB, log, executable or archive is added to Git by this phase (generated output stays ignored)' ($newBinary.Count -eq 0)
 Check 'G12 nothing of the later phases is implemented: no bp_initial / vehicle length / limit list / jump / 54322 / TRAINLEN / MAPLIMITS key in any sender source (comments excluded)' ((($probeCode + $sessCode + $extCode) -cnotmatch '54322|JUMP_|TRAINLEN|"MAPLIMITS"|"CLEARDIST"|"BPP"|"JUMP"|UdpClient\(54322'))
