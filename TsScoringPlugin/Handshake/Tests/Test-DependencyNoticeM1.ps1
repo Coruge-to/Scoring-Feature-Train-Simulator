@@ -636,7 +636,7 @@ $timing = $callerAsm.GetType($NS + 'HandshakeTiming')
 $ctim = $callerAsm.GetType($NS + 'CallerNoticeTiming')
 $hsCode = [regex]::Replace((WorkText 'Caller\src\HandshakeSession.cs'), '//[^\n]*', '')
 Check 'M1-18b separate constants: StartupBridgeDiagnosticMs = 1000 and ConnectionLostNoticeMs = 500 (DLL), ConnectionLostNoticeMs equals the kept Shared BridgeMissingTimeoutMs, and the Caller code no longer decides with BridgeMissingTimeoutMs' (($ctim.GetField('StartupBridgeDiagnosticMs').GetRawConstantValue() -eq 1000) -and ($ctim.GetField('ConnectionLostNoticeMs').GetRawConstantValue() -eq 500) -and ($ctim.GetField('ConnectionLostNoticeMs').GetRawConstantValue() -eq [int]$timing.GetField('BridgeMissingTimeoutMs').GetValue($null)) -and ($hsCode -notmatch 'BridgeMissingTimeoutMs') -and ($hsCode -match 'StartupBridgeDiagnosticMs : CallerNoticeTiming\.ConnectionLostNoticeMs'))
-Check 'M1-18 BridgeMissingTimeoutMs is 500 (value in the built DLL and in the source), TargetBridgeAvailableMs 500, CallerPollMs 20' (([int]$timing.GetField('BridgeMissingTimeoutMs').GetValue($null) -eq 500) -and ($hp -match 'BridgeMissingTimeoutMs = 500;') -and ($hp -match 'TargetBridgeAvailableMs = 500;') -and ($hp -match 'CallerPollMs = 20;') -and ((BaseText 'Shared\HandshakeProtocol.cs') -ceq $hp))
+Check 'M1-18 BridgeMissingTimeoutMs is 500 (value in the built DLL and in the source), TargetBridgeAvailableMs 500, CallerPollMs 20' (([int]$timing.GetField('BridgeMissingTimeoutMs').GetValue($null) -eq 500) -and ($hp -match 'BridgeMissingTimeoutMs = 500;') -and ($hp -match 'TargetBridgeAvailableMs = 500;') -and ($hp -match 'CallerPollMs = 20;') -and (([regex]::Match((BaseText 'Shared\HandshakeProtocol.cs'), '(?s)internal static class HandshakeTiming.*?\n    \}\n').Value.Length -gt 200) -and ([regex]::Match((BaseText 'Shared\HandshakeProtocol.cs'), '(?s)internal static class HandshakeTiming.*?\n    \}\n').Value -ceq [regex]::Match($hp, '(?s)internal static class HandshakeTiming.*?\n    \}\n').Value)))
 $noticeField = $sessionType.GetField('NoticeText', $NPS).GetRawConstantValue()
 Check 'M1-19 MessageBox text is the unchanged agreed text (two lines, DLL constant and source identical to the baseline)' (($noticeField -ceq $expectedNotice) -and ($noticeField -notmatch 'TSScoringPlugin'))
 $titleOk = ([string]$sessionType.GetField('ProductDisplayName', $NPS).GetRawConstantValue() -ceq 'TS Scoring')
@@ -651,21 +651,46 @@ Check ('M1-19/20 every MessageBox line (notice text, title, flags, P/Invoke, the
 $curSha = (Get-FileHash (Join-Path $Root 'dist\TSScoringPlugin.BveEx.Bridge.Prototype.dll') -Algorithm SHA256).Hash
 $curOutSha = (Get-FileHash (Join-Path $Root 'Bridge\out\TSScoringPlugin.BveEx.Bridge.Prototype.dll') -Algorithm SHA256).Hash
 $legSha = (Get-FileHash (Join-Path $Root 'Bridge\Legacy\out\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll') -Algorithm SHA256).Hash
-Check 'M1-21 Current Bridge DLL (dist and out) and Legacy Bridge DLL are byte-identical to the formal artifacts (SHA-256)' (($curSha -eq '247F67243253E5AD3C98D1B04BF8C4C8F19399C8B91317A7744D5E12A901A5AA') -and ($curOutSha -eq $curSha) -and ($legSha -eq 'C2883E400B1DCC1E0720392B90EAAED7CD770F6EB8DC6CF4CBA06FF80598EB48'))
+Check 'M1-21 Current Bridge DLL (dist and out) and Legacy Bridge DLL are byte-identical to the formal artifacts of Phase SI-A6 (SHA-256; before SI-A6: 247F6724... / C2883E40...)' (($curSha -eq '40376B1118DB2504EE369297C8964AD3EEBDB4A6942D37ED17ABEB8B82CF2919') -and ($curOutSha -eq $curSha) -and ($legSha -eq 'E4F3F55640CB3506002983A00850394802068F9E010C747AB3EB5025FB87EB0C'))
 $top = (RunGit @('rev-parse', '--show-toplevel')).Trim()
 $changed = @((RunGit @('-C', $top, 'diff', '--name-only', $Baseline, '--', $prefix)) -split "`n" | Where-Object { $_ })
 $untracked = @((RunGit @('-C', $top, 'ls-files', '--others', '--exclude-standard', '--', $prefix)) -split "`n" | Where-Object { $_ })
 $committedAll = @((RunGit @('-C', $top, 'diff', '--name-only', $Baseline, '6018a5b')) -split "`n" | Where-Object { $_ })   # whole repository, committed history only (a dirty file of someone else is not this phase)
 $touched = @($changed + $untracked | Sort-Object -Unique)
-Check 'M1-21 no source of the Current Bridge, the Legacy Bridge or the shared protocol / log differs from the baseline (Phase D1 only adds Shared\AppProtocol.cs, the two DrivingActive thresholds)' (@($touched | Where-Object { ($_ -like ($prefix + 'Bridge/*')) -or (($_ -like ($prefix + 'Shared/*')) -and ($_ -ne ($prefix + 'Shared/AppProtocol.cs'))) }).Count -eq 0)
+# Phase SI-A6 changes exactly these core sources (the load marker next to ScenarioReady); every other Bridge / shared source is still the baseline
+$si6Core = @('Bridge/src/ScenarioReadyTracker.cs', 'Bridge/src/ScenarioReadyPublisher.cs', 'Bridge/src/AssemblyInfo.cs', 'Bridge/Legacy/src/AssemblyInfo.cs', 'Shared/HandshakeProtocol.cs') | ForEach-Object { $prefix + $_ }
+Check 'M1-21 no source of the Current Bridge, the Legacy Bridge or the shared protocol / log differs from the baseline except the five Phase SI-A6 files (Phase D1 only adds Shared\AppProtocol.cs, the two DrivingActive thresholds)' ((@($touched | Where-Object { (($_ -like ($prefix + 'Bridge/*')) -or (($_ -like ($prefix + 'Shared/*')) -and ($_ -ne ($prefix + 'Shared/AppProtocol.cs')))) -and ($_ -notin $si6Core) }).Count -eq 0) -and (@($si6Core | Where-Object { $_ -in $touched }).Count -eq 5))
 $scenarioFiles = 'Bridge\src\ScenarioReadyTracker.cs', 'Bridge\src\ScenarioReadyPublisher.cs', 'Bridge\src\ScenarioObserver.cs', 'Bridge\src\TsScoringBridgePrototype.cs', 'Shared\HandshakeProtocol.cs', 'Shared\ObservationLog.cs'
-$scenarioSame = @($scenarioFiles | Where-Object { (BaseText $_) -cne (WorkText $_) })
-Check 'M1-22 ScenarioReady contract unchanged: tracker, publisher, observer, Bridge entry and protocol sources are identical to the baseline' ($scenarioSame.Count -eq 0)
+# Phase SI-A6: the observer, the Bridge entry and the log stay byte-identical; the tracker, the publisher and the protocol only GROW (the load marker). Of the baseline lines only
+# the listed ones may be gone (each is replaced by a form that carries the marker, with the old form kept as the fallback for a publisher without it).
+$scenarioAdditive = 'Bridge\src\ScenarioReadyTracker.cs', 'Bridge\src\ScenarioReadyPublisher.cs', 'Shared\HandshakeProtocol.cs'
+function RemovedLines([string]$rel) {
+    $have = @{}
+    foreach ($x in ((WorkText $rel) -split "`n")) { $have[$x.Trim()] = 1 }
+    return @(((BaseText $rel) -split "`n") | ForEach-Object { $_.Trim() } | Where-Object { $_ -and (-not $have.ContainsKey($_)) })
+}
+$removedAllowed = @(
+    'publisher.Update(generation, false);', 'publisher.Update(generation, level);', 'internal sealed class ScenarioReadyPublisher : IScenarioReadyPublisher', 'Update(generation, ready);',
+    'ScenarioState.Write(view, pid, generation, true);', 'ScenarioState.Write(view, pid, generation, false);',
+    'public int Check;                // 20  (24..63 reserved, zero)', '/// <summary>Writes one consistent state (Bridge side). The sequence continues from the value already in the block.</summary>')
+$scenarioSame = @($scenarioFiles | Where-Object { $scenarioAdditive -notcontains $_ } | Where-Object { (BaseText $_) -cne (WorkText $_) })
+$scenarioGone = @($scenarioAdditive | ForEach-Object { RemovedLines $_ } | Where-Object { $removedAllowed -notcontains $_ })
+Check 'M1-22 ScenarioReady contract unchanged: observer, Bridge entry and log sources are identical to the baseline; tracker, publisher and protocol only grew by the Phase SI-A6 load marker (no baseline line gone but the listed replaced calls)' (($scenarioSame.Count -eq 0) -and ($scenarioGone.Count -eq 0))
 function MethodText([string]$text, [string]$name) { $mm = [regex]::Match($text, '(?ms)^        (private|internal|public) [^\n]*\b' + $name + '\([^\n]*\)\s*\n        \{.*?\n        \}\n'); return $mm.Value }
 function CodeOf([string]$s) { return [regex]::Replace($s, '//[^\n]*', '') }
 $srMethods = 'ObserveScenarioLocked', 'OpenScenarioObjectsLocked', 'ReleaseScenarioObjectsLocked'
-$srSame = @($srMethods | Where-Object { $b0 = MethodText $hsBase $_; ($b0.Length -gt 200) -and ($b0 -ceq (MethodText $hsNow $_)) })
-Check 'M1-23 ScenarioGeneration / ScenarioReady reading in the Caller (ObserveScenarioLocked, OpenScenarioObjectsLocked, ReleaseScenarioObjectsLocked) is byte-identical to the baseline, and nothing in the notice code reads them' (($srSame.Count -eq 3) -and ((CodeOf (MethodText $hsNow 'JudgeFirstTickLocked')) -notmatch 'scenario|Scenario') -and ((CodeOf (MethodText $hsNow 'ShowNoticeIfStillNeeded')) -notmatch 'scenario|Scenario') -and ((CodeOf (MethodText $hsNow 'CheckBridgeTimeoutLocked')) -notmatch 'scenario|Scenario'))
+# Phase SI-A6: OpenScenarioObjectsLocked / ReleaseScenarioObjectsLocked stay byte-identical; ObserveScenarioLocked only GROWS (it now also takes the load marker of the SAME reading): every baseline line is still in it
+$srSame = @($srMethods | Where-Object {
+    $b0 = MethodText $hsBase $_
+    if ($b0.Length -le 200) { return $false }
+    if ($_ -eq 'ObserveScenarioLocked') {
+        $haveLines = @{}
+        foreach ($x in ((MethodText $hsNow $_) -split "`n")) { $haveLines[$x.Trim()] = 1 }
+        return (@(($b0 -split "`n") | ForEach-Object { $_.Trim() } | Where-Object { $_ -and (-not $haveLines.ContainsKey($_)) }).Count -eq 0)
+    }
+    return ($b0 -ceq (MethodText $hsNow $_))
+})
+Check 'M1-23 ScenarioGeneration / ScenarioReady reading in the Caller (ObserveScenarioLocked, OpenScenarioObjectsLocked, ReleaseScenarioObjectsLocked) is byte-identical to the baseline (ObserveScenarioLocked: only grown by the SI-A6 load marker), and nothing in the notice code reads them' (($srSame.Count -eq 3) -and ((CodeOf (MethodText $hsNow 'JudgeFirstTickLocked')) -notmatch 'scenario|Scenario') -and ((CodeOf (MethodText $hsNow 'ShowNoticeIfStillNeeded')) -notmatch 'scenario|Scenario') -and ((CodeOf (MethodText $hsNow 'CheckBridgeTimeoutLocked')) -notmatch 'scenario|Scenario'))
 Check 'M1-24 no Python file and no UDP / HUD / scoring / updater file is touched' (@($touched + $committedAll | Where-Object { $_ -match '\.py$|menu_ui|config\.py|utils\.py|Class1\.cs|AtsLoggerPlugin\.cs|installer|\.iss$|\.vcxproj|\.slnx$' }).Count -eq 0)
 $proj = [IO.File]::ReadAllText((Join-Path $Root 'Caller\TSScoringPlugin.Caller.InputDevice.csproj'))
 Check 'M1-25 no observation source in the product: no M0Observation.cs in the tree, the project, or the Caller DLL' ((-not (Test-Path (Join-Path $Root 'Caller\src\M0Observation.cs'))) -and ($proj -notmatch 'M0') -and (-not (BytesContain ([IO.File]::ReadAllBytes($callerPath)) 'M0Observ')) -and (@(Get-ChildItem $Root -Recurse -Include *.cs | Where-Object { $_.FullName -notlike '*\obj\*' -and ([IO.File]::ReadAllText($_.FullName) -match 'M0Observ|class M0') }).Count -eq 0))
@@ -673,7 +698,7 @@ $cbytes = [IO.File]::ReadAllBytes($callerPath)
 Check 'M1-26 the Caller DLL contains none of the observation-build identifiers (fixed M0 log name, Tick-rate / SetAxisRanges aggregation, NOTICE_WOULD_SHOW, CALLER_FIRST_TICK)' ((@('TSScoring-PhaseM0', 'PhaseM0', 'Caller-Observation', 'NOTICE_WOULD_SHOW', 'CALLER_FIRST_TICK', 'SETAXIS', 'OBSERVATION build', 'diagnostic, not the beta') | Where-Object { BytesContain $cbytes $_ }).Count -eq 0)
 $vi = (Get-Item $callerPath).VersionInfo
 $casm = $callerAsm
-Check 'M1-28 provider Coruge-to (company, copyright, ProviderName constant); product TS Scoring; version 0.11.0.0 (Phase E4); description names Phase E4 and no observation wording' (($vi.CompanyName -eq 'Coruge-to') -and ($vi.LegalCopyright -match 'Coruge-to') -and ($vi.ProductName -eq 'TS Scoring') -and ([string]$sessionType.GetField('ProviderName', $NPS).GetRawConstantValue() -ceq 'Coruge-to') -and ($vi.FileVersion -eq '0.11.0.0') -and ($casm.GetName().Version.ToString() -eq '0.11.0.0') -and ($vi.Comments -match 'Phase E4') -and ($vi.Comments -notmatch '(?i)observation|diagnostic'))
+Check 'M1-28 provider Coruge-to (company, copyright, ProviderName constant); product TS Scoring; version 0.12.0.0 (Phase SI-A6 on the Phase E4 Caller); description names Phase E4 and no observation wording' (($vi.CompanyName -eq 'Coruge-to') -and ($vi.LegalCopyright -match 'Coruge-to') -and ($vi.ProductName -eq 'TS Scoring') -and ([string]$sessionType.GetField('ProviderName', $NPS).GetRawConstantValue() -ceq 'Coruge-to') -and ($vi.FileVersion -eq '0.12.0.0') -and ($casm.GetName().Version.ToString() -eq '0.12.0.0') -and ($vi.Comments -match 'Phase E4') -and ($vi.Comments -notmatch '(?i)observation|diagnostic'))
 Check 'M1-29 no PDB anywhere in the tree or in dist / out, and dist holds exactly the two DLLs' ((@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0) -and ((@(Get-ChildItem (Join-Path $Root 'dist') -File | ForEach-Object { $_.Name } | Sort-Object) -join ',') -eq 'TSScoringPlugin.BveEx.Bridge.Prototype.dll,TSScoringPlugin.Caller.InputDevice.dll'))
 $runtimeNames = @($env:USERNAME, $env:COMPUTERNAME, $env:USERDOMAIN, (Split-Path $env:USERPROFILE -Leaf)) | Where-Object { $_ -and $_.Length -ge 3 } | Sort-Object -Unique
 $forbidden = @($runtimeNames) + @('C:\Users\', 'Scoring-Feature-Train-Simulator', 'gmail', 'hotmail', 'outlook.com', 'ac.jp')
@@ -705,11 +730,14 @@ $m1Allowed = @(
     'Tests/Test-LegacyInputLI1.ps1', 'Tests/MainProcessGuard.ps1', 'Docs/Handshake-PhaseLI1-LegacyInputTelemetry.md',
     'Tests/Test-LegacyInputLI2.ps1', 'Docs/Handshake-PhaseLI2-LegacyHoldingSpeedAndOneLeverCl.md',
     'Tests/Test-ScoringObservationSI0.ps1', 'Docs/Handshake-PhaseSI0-ScoringObservation.md',
-    'Tests/Test-GroundLimitsSI1.ps1', 'Docs/Handshake-PhaseSI1-GroundLimits.md'
+    'Tests/Test-GroundLimitsSI1.ps1', 'Docs/Handshake-PhaseSI1-GroundLimits.md',
+    'Docs/Handshake-PhaseSIA-ManagedScoring.md',
+    'Bridge/src/ScenarioReadyTracker.cs', 'Bridge/src/ScenarioReadyPublisher.cs', 'Bridge/src/AssemblyInfo.cs', 'Bridge/Legacy/src/AssemblyInfo.cs', 'Shared/HandshakeProtocol.cs',
+    'Tests/Test-ScenarioReadyC3.ps1', 'Tests/Test-PauseRecoverySIA6.ps1', 'Docs/Handshake-PhaseSIA6-PauseRecovery.md'
 ) | ForEach-Object { $prefix + $_ }
 # Phase L3: the independent telemetry project (the DATA plane) is a whole directory of its own
 $m1Outside = @($touched | Where-Object { ($_ -notin $m1Allowed) -and (-not $_.StartsWith($prefix + 'Telemetry/')) })
-Check ('M1-31 only the Phase M1, Phase D1, Phase E1, Phase E3, Phase E4, Phase L3, Phase LI0, Phase LI1, Phase LI2, Phase SI-0 and Phase SI-1 Caller / test / verification / document files differ from the baseline commit (' + $touched.Count + ' files)') (($m1Outside.Count -eq 0) -and ($touched.Count -ge 8))
+Check ('M1-31 only the Phase M1, Phase D1, Phase E1, Phase E3, Phase E4, Phase L3, Phase LI0, Phase LI1, Phase LI2, Phase SI-0, Phase SI-1, Phase SI-A (its document only) and Phase SI-A6 (the load marker: five Bridge / shared sources and its test and document) Caller / test / verification / document files differ from the baseline commit (' + $touched.Count + ' files)') (($m1Outside.Count -eq 0) -and ($touched.Count -ge 8))
 if ($m1Outside.Count -gt 0) { $m1Outside | ForEach-Object { '   outside scope: ' + $_ } }
 $failed = @($results | Where-Object { -not $_.Ok })
 "TOTAL {0}  FAILED {1}" -f $results.Count, $failed.Count

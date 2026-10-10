@@ -14,6 +14,10 @@ using System.Diagnostics;
 //   references readable, VehicleLocation a finite number, Bridge not disposed, TS Scoring enabled and the Phase B handshake (Ready) up.
 //   PostTick is NOT a condition (AtsEX Legacy has none). Candidate F is diagnostics only and never sets ScenarioReady.
 //
+// Phase SI-A6 adds a LOAD MARKER next to the level (ScenarioState.LoadInfo, same seqlock write): bit0 "ScenarioCreated of this generation was received"
+// (set by the event itself, so it is published without any Tick - a Pause that inherits a reload never ticks), bit1 "the first Tick of this generation after
+// ScenarioCreated was received". Both are 0 right after ScenarioOpened / ScenarioClosed. The marker never influences ScenarioReady, its establishment or its clearing.
+//
 // Clearing: ScenarioClosed, the safe reset at the next ScenarioOpened (BEFORE the generation number is increased), Bridge Dispose.
 // Publication (named Event + state block) additionally stops while the handshake is down (TS Scoring OFF / Caller stopped) and is
 // published again at once when the handshake is back (ScenarioReady is a LEVEL, not an edge); the level itself is not cleared by that.
@@ -134,6 +138,16 @@ namespace TSScoringPlugin.Handshake
         void Close();
     }
 
+    /// <summary>
+    /// Phase SI-A6: a publisher that also carries the load marker of the generation (ScenarioState.LoadInfo). The tracker uses it when the publisher offers it
+    /// (the real publisher does) and falls back to the two-argument form otherwise, so every fake publisher of the earlier phases keeps working unchanged.
+    /// </summary>
+    internal interface IScenarioLoadPublisher : IScenarioReadyPublisher
+    {
+        void OpenWithLoad(int generation, bool ready, int loadInfo);
+        void UpdateWithLoad(int generation, bool ready, int loadInfo);
+    }
+
     internal sealed class ScenarioReadyTracker
     {
         /// <summary>Ticks (with the handshake up, after ScenarioCreated) without establishment before the stall diagnostics are written.</summary>
@@ -156,6 +170,11 @@ namespace TSScoringPlugin.Handshake
         private bool publishFailLogged;        // one SR_PUBLISH_FAIL line per failing stretch (the Tick retries silently)
         private long ticksTotal;
         private long openedAtMs;
+
+        // Phase SI-A6: the load marker of the CURRENT generation (ScenarioState.LoadCreated / LoadTickSeen). Reset by ScenarioOpened and ScenarioClosed, set by
+        // ScenarioCreated (an event, so it needs no Tick) and by the first Tick after it. publishedLoad is what the outside currently shows.
+        private int loadInfo;
+        private int publishedLoad;
 
         // per generation diagnostics
         private int waitingTicks;
@@ -200,6 +219,7 @@ namespace TSScoringPlugin.Handshake
 
                     bool hadLevel = level;
                     bool wasOpen = generationOpen;
+                    loadInfo = 0;                    // the load marker never outlives its generation (it goes with the reset below)
                     if (hadLevel)
                     {
                         ClearLocked("opened-reset"); // 1. reset: the previous generation can no longer be seen as ScenarioReady
@@ -246,6 +266,8 @@ namespace TSScoringPlugin.Handshake
                     }
 
                     createdSeen = true;
+                    loadInfo |= ScenarioState.LoadCreated;   // Phase SI-A6: published at once (BVE's own event thread; no Tick is needed for this)
+                    SyncLoadLocked();
                     Emit("SR_CREATED", Gen() + " handshake=" + Handshake());
                 }
             });
@@ -264,6 +286,7 @@ namespace TSScoringPlugin.Handshake
                     }
 
                     bool hadLevel = level;
+                    loadInfo = 0;
                     if (hadLevel)
                     {
                         ClearLocked("closed");
@@ -306,6 +329,13 @@ namespace TSScoringPlugin.Handshake
                     {
                         WithdrawLocked("handshake-down");
                     }
+
+                    if (generationOpen && createdSeen && (loadInfo & ScenarioState.LoadTickSeen) == 0)
+                    {
+                        loadInfo |= ScenarioState.LoadTickSeen;  // Phase SI-A6: the first Tick of this generation after ScenarioCreated
+                    }
+
+                    SyncLoadLocked();
 
                     if (level)
                     {
@@ -441,7 +471,7 @@ namespace TSScoringPlugin.Handshake
             {
                 try
                 {
-                    publisher.Update(generation, false);
+                    UpdatePublisherLocked(false);
                     publishedLevel = false;
                 }
                 catch (Exception ex)
@@ -465,12 +495,22 @@ namespace TSScoringPlugin.Handshake
             {
                 if (!publishing)
                 {
-                    publisher.Open(generation, level);
+                    IScenarioLoadPublisher withLoad = publisher as IScenarioLoadPublisher;
+                    if (withLoad != null)
+                    {
+                        withLoad.OpenWithLoad(generation, level, loadInfo);
+                        publishedLoad = loadInfo;
+                    }
+                    else
+                    {
+                        publisher.Open(generation, level);
+                    }
+
                     publishing = true;
                 }
                 else
                 {
-                    publisher.Update(generation, level);
+                    UpdatePublisherLocked(level);
                 }
 
                 publishedLevel = level;
@@ -511,12 +551,36 @@ namespace TSScoringPlugin.Handshake
 
             try
             {
-                publisher.Update(generation, level);
+                UpdatePublisherLocked(level);
                 publishedLevel = level;
             }
             catch (Exception ex)
             {
                 Emit("SR_PUBLISH_FAIL", Gen() + " step=push type=" + ex.GetType().Name);
+            }
+        }
+
+        /// <summary>One publisher update with the current generation, the given level and (when the publisher carries it) the load marker.</summary>
+        private void UpdatePublisherLocked(bool ready)
+        {
+            IScenarioLoadPublisher withLoad = publisher as IScenarioLoadPublisher;
+            if (withLoad != null)
+            {
+                withLoad.UpdateWithLoad(generation, ready, loadInfo);
+                publishedLoad = loadInfo;
+            }
+            else
+            {
+                publisher.Update(generation, ready);
+            }
+        }
+
+        /// <summary>Phase SI-A6: writes the state again when only the load marker changed since the last write (ScenarioCreated, the first Tick). No write otherwise.</summary>
+        private void SyncLoadLocked()
+        {
+            if (publishing && publisher is IScenarioLoadPublisher && publishedLoad != loadInfo)
+            {
+                PushStateLocked();      // a publisher without the marker (every fake of the earlier phases) is never written to because of it
             }
         }
 

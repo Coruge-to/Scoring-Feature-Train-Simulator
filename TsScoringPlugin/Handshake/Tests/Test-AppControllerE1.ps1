@@ -618,7 +618,7 @@ Check ('E15 every MessageBox line of the dependency notice (text, title, flags, 
 $curSha = (Get-FileHash (Join-Path $Root 'dist\TSScoringPlugin.BveEx.Bridge.Prototype.dll')).Hash
 $curOutSha = (Get-FileHash (Join-Path $Root 'Bridge\out\TSScoringPlugin.BveEx.Bridge.Prototype.dll')).Hash
 $legSha = (Get-FileHash (Join-Path $Root 'Bridge\Legacy\out\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll')).Hash
-Check 'E16 both Bridge DLLs are the formal ones (Current 247F6724..., Legacy C2883E40...)' (($curSha -eq '247F67243253E5AD3C98D1B04BF8C4C8F19399C8B91317A7744D5E12A901A5AA') -and ($curOutSha -eq $curSha) -and ($legSha -eq 'C2883E400B1DCC1E0720392B90EAAED7CD770F6EB8DC6CF4CBA06FF80598EB48'))
+Check 'E16 both Bridge DLLs are the formal ones (Phase SI-A6 build: Current 40376B11..., Legacy E4F3F556...; before SI-A6: 247F6724... / C2883E40...)' (($curSha -eq '40376B1118DB2504EE369297C8964AD3EEBDB4A6942D37ED17ABEB8B82CF2919') -and ($curOutSha -eq $curSha) -and ($legSha -eq 'E4F3F55640CB3506002983A00850394802068F9E010C747AB3EB5025FB87EB0C'))
 
 # scope: python, HUD, scoring, UDP, hooks, installer
 $changedAll = @((RunGit @('-C', $top, 'diff', '--name-only', $Baseline, $E1Commit)) -split "`n" | Where-Object { $_ })

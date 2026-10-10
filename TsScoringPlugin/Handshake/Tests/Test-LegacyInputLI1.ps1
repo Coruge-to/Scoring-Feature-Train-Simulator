@@ -398,7 +398,8 @@ $frozen = @(
     'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyApi.cs', 
     'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs'
 )
-$changedFrozen = @((RunGit (@('-C', $top, 'diff', '--name-only', 'HEAD', '--') + $frozen)) -split "`n" | Where-Object { $_ })
+# (Phase LI1 is committed: the guard compares the LI1 commit with its parent, like G08. Phase SI-A changes the Python files in the working tree on purpose; its own tests pin that.)
+$changedFrozen = @((RunGit (@('-C', $top, 'diff', '--name-only', '0010a8b^', '0010a8b', '--') + $frozen)) -split "`n" | Where-Object { $_ })
 Check ('G06 the Current contract and everything the brief freezes are byte-identical to HEAD: Current sender Class1.cs, Caller, both Bridges, the Handshake shared protocol, telemetry_contract / telemetry_gate / network / main / hud_ui / scoring_logic / managed_* (' + $changedFrozen.Count + ' changed) ' + ($changedFrozen -join ',')) ($changedFrozen.Count -eq 0)
 $tcDiff = RunGit @('-C', $top, 'diff', '-U0', 'HEAD', '--', 'TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryContract.cs')
 $tcPlus = @($tcDiff -split "`n" | Where-Object { $_ -match '^\+[^+]' })

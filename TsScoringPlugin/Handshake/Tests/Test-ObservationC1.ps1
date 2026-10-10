@@ -197,7 +197,7 @@ try {
     LogW $cLog 'AB' 'L1_AGAIN' 'k=3'
     $l1 = ReadLog $pL1
     Check 'L1 file starts with the diagnostic header and exactly one run header' ((@($l1 | Where-Object { $_ -like '# TS Scoring Phase C1 observation log*' }).Count -eq 1) -and ($l1[0] -like '# TS Scoring Phase C1 observation log*'))
-    Check 'L1 header names the initialising DLL and the version 0.11.0.0 (Phase E4 Caller; the log format is the unchanged C1 contract)' (($l1 -join "`n") -match 'initializedBy=Caller ver=0\.11\.0\.0')
+    Check 'L1 header names the initialising DLL and the version 0.12.0.0 (Phase SI-A6 Caller; the log format is the unchanged C1 contract)' (($l1 -join "`n") -match 'initializedBy=Caller ver=0\.12\.0\.0')
     Check 'L1 second DLL appended (no second truncation): 3 event lines, sources Caller / Bridge / Caller' ((@($l1 | Where-Object { $_ -match '^\d\d:\d\d' }).Count -eq 3) -and (@($l1 | Where-Object { $_ -match '^\d' })[1] -match ' S=Bridge T=A ') -and (@($l1 | Where-Object { $_ -match '^\d' })[0] -match ' S=Caller T=B '))
     Check 'L1 line format: clock, q, P, S, T, th, EVENT' (@($l1 | Where-Object { $_ -match '^\d\d:\d\d:\d\d\.\d{3} q=\d+\.\d P=930001 S=(Caller|Bridge) T=(A|B|AB) th=\d+ [A-Z0-9_]+( .*)?$' }).Count -eq 3)
 

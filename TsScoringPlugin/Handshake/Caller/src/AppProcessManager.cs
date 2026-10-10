@@ -177,6 +177,8 @@ namespace TSScoringPlugin.Handshake
         private bool latestSession;
         private bool latestDriving;
         private int latestGeneration;
+        private bool latestLoadSupported;   // Phase SI-A6: the load marker of the generation (ScenarioCreated / first Tick), as the Bridge published it
+        private uint latestLoadInfo;
         private int statePublishCount;      // writes made into the block (the initial one included)
         private long stateSuppressedCount;  // identical reports (not written)
         private bool stateBlockCreated;
@@ -320,7 +322,14 @@ namespace TSScoringPlugin.Handshake
         /// </summary>
         public void PublishState(bool session, bool driving, int scenarioGeneration)
         {
+            PublishStateWithLoad(session, driving, scenarioGeneration, 0u, false);
+        }
+
+        /// <summary>Phase SI-A6: the same with the load marker of the generation. loadSupported false = the Bridge gave none (an older Bridge, or no valid block).</summary>
+        public void PublishStateWithLoad(bool session, bool driving, int scenarioGeneration, uint loadInfo, bool loadSupported)
+        {
             bool drv = session && driving;
+            uint info = loadSupported ? loadInfo : 0u;
             AppStateWrite w = new AppStateWrite();
             string inst = null;
             lock (sync)
@@ -330,7 +339,7 @@ namespace TSScoringPlugin.Handshake
                     return;
                 }
 
-                if (latestKnown && latestSession == session && latestDriving == drv && latestGeneration == scenarioGeneration)
+                if (latestKnown && latestSession == session && latestDriving == drv && latestGeneration == scenarioGeneration && latestLoadSupported == loadSupported && latestLoadInfo == info)
                 {
                     stateSuppressedCount++;
                     return;
@@ -340,9 +349,11 @@ namespace TSScoringPlugin.Handshake
                 latestSession = session;
                 latestDriving = drv;
                 latestGeneration = scenarioGeneration;
+                latestLoadSupported = loadSupported;
+                latestLoadInfo = info;
                 if (statePublisher != null && !statePublisher.IsClosed)
                 {
-                    w = statePublisher.Write(session, drv, scenarioGeneration);
+                    w = statePublisher.WriteWithLoad(session, drv, scenarioGeneration, info, loadSupported);
                     if (w.Written)
                     {
                         statePublishCount++;
@@ -353,7 +364,7 @@ namespace TSScoringPlugin.Handshake
 
             if (w.Written)
             {
-                Log("APP_STATE_PUBLISH", "instance=" + inst + " session=" + (w.Session ? 1 : 0) + " driving=" + (w.Driving ? 1 : 0) + " ScenarioGeneration=" + w.Generation + " changeNo=" + w.ChangeCount);
+                Log("APP_STATE_PUBLISH", "instance=" + inst + " session=" + (w.Session ? 1 : 0) + " driving=" + (w.Driving ? 1 : 0) + " ScenarioGeneration=" + w.Generation + " changeNo=" + w.ChangeCount + (w.LoadSupported ? " load=" + w.LoadInfo : string.Empty));
             }
         }
 
@@ -628,7 +639,7 @@ namespace TSScoringPlugin.Handshake
                     s = latestSession;
                     d = latestDriving;
                     g = latestGeneration;
-                    first = publisher.Write(s, d, g);   // the current state; an all-OFF / generation 0 state needs no write
+                    first = publisher.WriteWithLoad(s, d, g, latestLoadInfo, latestLoadSupported);   // the current state (load marker included); an all-OFF / generation 0 / no-marker state needs no write
                     if (first.Written)
                     {
                         statePublishCount++;

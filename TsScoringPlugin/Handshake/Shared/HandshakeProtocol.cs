@@ -222,9 +222,47 @@ namespace TSScoringPlugin.Handshake
         public int ScenarioGeneration;   // 8   generation the level below belongs to (0 = nothing opened yet)
         public int IsScenarioReady;      // 12  1 = that generation is ScenarioReady, 0 = not
         public int Sequence;             // 16  seqlock, even = stable
-        public int Check;                // 20  (24..63 reserved, zero)
+        public int Check;                // 20  covers offsets 0..16 only (unchanged since Phase C3: a Caller of that time still validates every block)
+
+        // Phase SI-A6 - the load marker of the CURRENT ScenarioGeneration, inside the same seqlock (offsets 24..35; they were reserved zero before).
+        // A Bridge of the time before SI-A6 leaves them zero (LoadMagic 0 = "no information"), a Caller of the time before SI-A6 never reads them.
+        public int LoadMagic;            // 24  LoadMagicValue when the Bridge provides the marker, else 0
+        public int LoadInfo;             // 28  bit0 CreatedSeen, bit1 TickSeen (both about ScenarioGeneration above; both 0 right after ScenarioOpened / ScenarioClosed)
+        public int LoadCheck;            // 32  derived from LoadInfo, ScenarioGeneration and Sequence (a foreign or torn marker reads as "no information")
+
+        public const int LoadMagicValue = 0x4C4F4431;    // "LOD1"
+        public const int LoadCreated = 1;                // ScenarioCreated of this generation was received (on BVE's own thread, no Tick needed)
+        public const int LoadTickSeen = 2;               // the first Tick of this generation, after ScenarioCreated, was received
+        public const int LoadKnownBits = LoadCreated | LoadTickSeen;
 
         public bool Ready { get { return IsScenarioReady == 1; } }
+
+        /// <summary>True when the Bridge wrote a valid load marker for this block (an older Bridge, or a damaged marker, reads as false = no information).</summary>
+        public bool LoadSupported
+        {
+            get
+            {
+                return LoadMagic == LoadMagicValue
+                    && (LoadInfo & ~LoadKnownBits) == 0
+                    && LoadCheck == ComputeLoadCheck(LoadInfo, ScenarioGeneration, Sequence);
+            }
+        }
+
+        public bool CreatedSeen { get { return LoadSupported && (LoadInfo & LoadCreated) != 0; } }
+
+        public bool TickSeen { get { return LoadSupported && (LoadInfo & LoadTickSeen) != 0; } }
+
+        internal static int ComputeLoadCheck(int loadInfo, int generation, int sequence)
+        {
+            unchecked
+            {
+                int h = 0x4C4F4443; // "LODC"
+                h = (h * 31) ^ loadInfo;
+                h = (h * 31) ^ generation;
+                h = (h * 31) ^ sequence;
+                return h;
+            }
+        }
 
         internal static int ComputeCheck(int version, int pid, int generation, int ready, int sequence)
         {
@@ -240,8 +278,23 @@ namespace TSScoringPlugin.Handshake
             }
         }
 
-        /// <summary>Writes one consistent state (Bridge side). The sequence continues from the value already in the block.</summary>
+        /// <summary>Writes one consistent state without a load marker (the form of Phase C3; bytes 24..35 are written as zero = "no information").</summary>
         public static void Write(MemoryMappedViewAccessor view, int pid, int generation, bool ready)
+        {
+            WriteCore(view, pid, generation, ready, false, 0);
+        }
+
+        /// <summary>
+        /// Phase SI-A6: writes one consistent state WITH the load marker of the generation. Order: the sequence goes odd, then (after a barrier) every
+        /// field including LoadMagic / LoadInfo / LoadCheck, then (after a barrier) the sequence goes even and different. A reader that sees an even,
+        /// unchanged sequence around its reads therefore sees the level, the generation and the marker of ONE write.
+        /// </summary>
+        public static void WriteWithLoad(MemoryMappedViewAccessor view, int pid, int generation, bool ready, int loadInfo)
+        {
+            WriteCore(view, pid, generation, ready, true, loadInfo & LoadKnownBits);
+        }
+
+        private static void WriteCore(MemoryMappedViewAccessor view, int pid, int generation, bool ready, bool withLoad, int loadInfo)
         {
             int current = view.ReadInt32(16);
             if ((current & 1) != 0)
@@ -260,6 +313,9 @@ namespace TSScoringPlugin.Handshake
             view.Write(8, generation);
             view.Write(12, readyValue);
             view.Write(20, ComputeCheck(StateVersion, pid, generation, readyValue, finalSeq));
+            view.Write(24, withLoad ? LoadMagicValue : 0);
+            view.Write(28, withLoad ? loadInfo : 0);
+            view.Write(32, withLoad ? ComputeLoadCheck(loadInfo, generation, finalSeq) : 0);
             Thread.MemoryBarrier();
             view.Write(16, finalSeq);         // even: stable
         }
@@ -282,6 +338,9 @@ namespace TSScoringPlugin.Handshake
                 read.ScenarioGeneration = view.ReadInt32(8);
                 read.IsScenarioReady = view.ReadInt32(12);
                 read.Check = view.ReadInt32(20);
+                read.LoadMagic = view.ReadInt32(24);
+                read.LoadInfo = view.ReadInt32(28);
+                read.LoadCheck = view.ReadInt32(32);
                 Thread.MemoryBarrier();
                 int s2 = view.ReadInt32(16);
                 if (s1 != s2)

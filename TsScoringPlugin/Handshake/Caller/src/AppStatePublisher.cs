@@ -30,7 +30,9 @@ using System.Threading;
 //   36 uint32  Flags  bit0 Session, bit1 Driving, bit2 Closed
 //   40 int32   ScenarioGeneration (0 = none seen yet)
 //   44 uint32  ChangeCount: number of completed state writes (the initial state is write 0)
-//   48..59     reserved, zero
+//   48 uint32  LoadInfo   (Phase SI-A6) bit0 ScenarioCreated of ScenarioGeneration was received, bit1 the first Tick of it was received; 0 when LoadMagic is 0
+//   52 uint32  LoadMagic  (Phase SI-A6) 0x4C4F4431 ("LOD1") when the Bridge provided the marker for this generation, else 0 = "no information" (an older Bridge)
+//   56..59     reserved, zero
 //   60 uint32  Tail   equals Head after a completed write (a reader accepts a copy only when Head == Tail and Head is even)
 // ============================================================================
 namespace TSScoringPlugin.Handshake
@@ -52,11 +54,16 @@ namespace TSScoringPlugin.Handshake
         public const int OffFlags = 36;
         public const int OffGeneration = 40;
         public const int OffChangeCount = 44;
+        public const int OffLoadInfo = 48;
+        public const int OffLoadMagic = 52;
         public const int OffTail = 60;
 
         public const uint FlagSession = 1;
         public const uint FlagDriving = 2;
         public const uint FlagClosed = 4;
+
+        public const uint LoadMagic = 0x4C4F4431;
+        public const uint LoadKnownBits = 3;
 
         public static string InstancePrefix(string instance)
         {
@@ -73,6 +80,8 @@ namespace TSScoringPlugin.Handshake
         public int Generation;
         public uint ChangeCount;
         public uint Head;
+        public bool LoadSupported;
+        public uint LoadInfo;
     }
 
     /// <summary>
@@ -88,6 +97,8 @@ namespace TSScoringPlugin.Handshake
         private bool session;
         private bool driving;
         private int generation;
+        private bool loadSupported;
+        private uint loadInfo;
         private bool closed;
 
         private AppStatePublisher()
@@ -117,6 +128,8 @@ namespace TSScoringPlugin.Handshake
                 v.Write(AppStateLayout.OffFlags, 0u);
                 v.Write(AppStateLayout.OffGeneration, 0);
                 v.Write(AppStateLayout.OffChangeCount, 0u);
+                v.Write(AppStateLayout.OffLoadInfo, 0u);
+                v.Write(AppStateLayout.OffLoadMagic, 0u);
                 Thread.MemoryBarrier();
                 v.Write(AppStateLayout.OffTail, 0u);
                 v.Write(AppStateLayout.OffHead, 0u);
@@ -143,6 +156,16 @@ namespace TSScoringPlugin.Handshake
         /// <summary>Publishes the state if it differs from the one in the block. Session OFF forces Driving OFF. After Close nothing is written.</summary>
         public AppStateWrite Write(bool newSession, bool newDriving, int newGeneration)
         {
+            return WriteWithLoad(newSession, newDriving, newGeneration, 0u, false);
+        }
+
+        /// <summary>
+        /// Phase SI-A6: the same with the load marker of the generation (copied from the Bridge's ScenarioState: the same reading as the generation). loadSupported
+        /// false = the Bridge gave no marker: LoadInfo and LoadMagic are written as zero. The marker is part of "what the block already says": it is written
+        /// when it changes, in the same seqlock write as Session / Driving / ScenarioGeneration.
+        /// </summary>
+        public AppStateWrite WriteWithLoad(bool newSession, bool newDriving, int newGeneration, uint newLoadInfo, bool newLoadSupported)
+        {
             AppStateWrite r = new AppStateWrite();
             if (closed || view == null)
             {
@@ -150,18 +173,21 @@ namespace TSScoringPlugin.Handshake
             }
 
             bool drv = newSession && newDriving;
-            if (session == newSession && driving == drv && generation == newGeneration)
+            uint info = newLoadSupported ? (newLoadInfo & AppStateLayout.LoadKnownBits) : 0u;
+            if (session == newSession && driving == drv && generation == newGeneration && loadSupported == newLoadSupported && loadInfo == info)
             {
-                return r; // the block already says exactly this (the fresh header says all OFF / generation 0)
+                return r; // the block already says exactly this (the fresh header says all OFF / generation 0 / no marker)
             }
 
-            WriteBlock(newSession, drv, newGeneration, false);
+            WriteBlock(newSession, drv, newGeneration, false, info, newLoadSupported);
             r.Written = true;
             r.Session = session;
             r.Driving = driving;
             r.Generation = generation;
             r.ChangeCount = changeCount;
             r.Head = head;
+            r.LoadSupported = loadSupported;
+            r.LoadInfo = loadInfo;
             return r;
         }
 
@@ -174,7 +200,7 @@ namespace TSScoringPlugin.Handshake
                 return r;
             }
 
-            WriteBlock(false, false, generation, true);
+            WriteBlock(false, false, generation, true, 0u, false);
             closed = true;
             r.Written = true;
             r.Session = false;
@@ -203,7 +229,7 @@ namespace TSScoringPlugin.Handshake
             }
         }
 
-        private void WriteBlock(bool newSession, bool newDriving, int newGeneration, bool close)
+        private void WriteBlock(bool newSession, bool newDriving, int newGeneration, bool close, uint newLoadInfo, bool newLoadSupported)
         {
             uint writing = unchecked(head + 1);
             uint finalHead = unchecked(head + 2);
@@ -215,6 +241,8 @@ namespace TSScoringPlugin.Handshake
             view.Write(AppStateLayout.OffFlags, flags);
             view.Write(AppStateLayout.OffGeneration, newGeneration);
             view.Write(AppStateLayout.OffChangeCount, next);
+            view.Write(AppStateLayout.OffLoadInfo, newLoadSupported ? newLoadInfo : 0u);
+            view.Write(AppStateLayout.OffLoadMagic, newLoadSupported ? AppStateLayout.LoadMagic : 0u);
             Thread.MemoryBarrier();
             view.Write(AppStateLayout.OffTail, finalHead);
             Thread.MemoryBarrier();
@@ -225,6 +253,8 @@ namespace TSScoringPlugin.Handshake
             session = newSession;
             driving = newDriving;
             generation = newGeneration;
+            loadSupported = newLoadSupported;
+            loadInfo = newLoadSupported ? newLoadInfo : 0u;
         }
     }
 }

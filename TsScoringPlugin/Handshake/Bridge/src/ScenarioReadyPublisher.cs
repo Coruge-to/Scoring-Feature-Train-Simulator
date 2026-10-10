@@ -10,10 +10,12 @@ using System.Threading;
 // Order: for "ready" the block is written BEFORE the event is set; for "not ready" the event is reset BEFORE the block is written, so a
 // reader that sees the event set always finds a block that agrees.
 // Close(): event reset, block written with level 0, then both released. No file, registry, pipe or socket; default access rules.
+// Phase SI-A6: the block also carries the load marker of the generation (ScenarioState.LoadInfo, bytes 24..35, written in the same seqlock write as the
+// level), so that a reader learns "ScenarioCreated was received" without any Tick. The tracker writes it on BVE's own event / Tick thread; nothing here reads BVE.
 // ============================================================================
 namespace TSScoringPlugin.Handshake
 {
-    internal sealed class ScenarioReadyPublisher : IScenarioReadyPublisher
+    internal sealed class ScenarioReadyPublisher : IScenarioLoadPublisher
     {
         private readonly int pid;
         private EventWaitHandle readyEvent;
@@ -29,9 +31,20 @@ namespace TSScoringPlugin.Handshake
 
         public void Open(int generation, bool ready)
         {
+            OpenCore(generation, ready, 0, false);
+        }
+
+        /// <summary>Phase SI-A6: the same, with the load marker of the generation (bit0 ScenarioCreated, bit1 first Tick).</summary>
+        public void OpenWithLoad(int generation, bool ready, int loadInfo)
+        {
+            OpenCore(generation, ready, loadInfo, true);
+        }
+
+        private void OpenCore(int generation, bool ready, int loadInfo, bool withLoad)
+        {
             if (IsOpen)
             {
-                Update(generation, ready);
+                UpdateCore(generation, ready, loadInfo, withLoad);
                 return;
             }
 
@@ -42,7 +55,7 @@ namespace TSScoringPlugin.Handshake
                 bool created;
                 readyEvent = new EventWaitHandle(false, EventResetMode.ManualReset, HandshakeProtocol.ScenarioReadyName(pid), out created);
                 readyEvent.Reset();
-                Update(generation, ready);
+                UpdateCore(generation, ready, loadInfo, withLoad);
             }
             catch
             {
@@ -53,6 +66,17 @@ namespace TSScoringPlugin.Handshake
 
         public void Update(int generation, bool ready)
         {
+            UpdateCore(generation, ready, 0, false);
+        }
+
+        /// <summary>Phase SI-A6: the same, with the load marker of the generation (written in the same seqlock write as the level).</summary>
+        public void UpdateWithLoad(int generation, bool ready, int loadInfo)
+        {
+            UpdateCore(generation, ready, loadInfo, true);
+        }
+
+        private void UpdateCore(int generation, bool ready, int loadInfo, bool withLoad)
+        {
             if (!IsOpen)
             {
                 throw new InvalidOperationException("closed");
@@ -60,13 +84,25 @@ namespace TSScoringPlugin.Handshake
 
             if (ready)
             {
-                ScenarioState.Write(view, pid, generation, true);
+                WriteState(generation, true, loadInfo, withLoad);
                 readyEvent.Set();
             }
             else
             {
                 readyEvent.Reset();
-                ScenarioState.Write(view, pid, generation, false);
+                WriteState(generation, false, loadInfo, withLoad);
+            }
+        }
+
+        private void WriteState(int generation, bool ready, int loadInfo, bool withLoad)
+        {
+            if (withLoad)
+            {
+                ScenarioState.WriteWithLoad(view, pid, generation, ready, loadInfo);
+            }
+            else
+            {
+                ScenarioState.Write(view, pid, generation, ready);
             }
         }
 

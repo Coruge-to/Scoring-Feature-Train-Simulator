@@ -239,7 +239,7 @@ try {
     Check 'N3 generation rule: 0 -> 1, +1 each step' ((($next.Invoke($null, @(0))) -eq 1) -and (($next.Invoke($null, @(1))) -eq 2) -and (($next.Invoke($null, @(1000))) -eq 1001))
     Check 'N4 generation overflow: int.MaxValue wraps to 1 (never 0, never negative); a negative input is treated as nothing opened yet' ((($next.Invoke($null, @([int]::MaxValue))) -eq 1) -and (($next.Invoke($null, @([int]::MaxValue - 1))) -eq [int]::MaxValue) -and (($next.Invoke($null, @(-5))) -eq 1))
     $sz = [int]$stateType.GetField('Size').GetRawConstantValue()
-    Check 'N5 state block is 64 bytes and holds ProtocolVersion, BveProcessId, ScenarioGeneration, IsScenarioReady, Sequence, Check only' (($sz -eq 64) -and ((@($stateType.GetFields([Reflection.BindingFlags]'Public,Instance') | ForEach-Object { $_.Name }) -join ',') -eq 'ProtocolVersion,BveProcessId,ScenarioGeneration,IsScenarioReady,Sequence,Check'))
+    Check 'N5 state block is 64 bytes and holds ProtocolVersion, BveProcessId, ScenarioGeneration, IsScenarioReady, Sequence, Check and (Phase SI-A6) the load marker LoadMagic, LoadInfo, LoadCheck only' (($sz -eq 64) -and ((@($stateType.GetFields([Reflection.BindingFlags]'Public,Instance') | ForEach-Object { $_.Name }) -join ',') -eq 'ProtocolVersion,BveProcessId,ScenarioGeneration,IsScenarioReady,Sequence,Check,LoadMagic,LoadInfo,LoadCheck'))
 
     # state block write / read / corruption
     $pB = 960001; RegPid $pB

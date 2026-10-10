@@ -144,6 +144,8 @@ namespace TSScoringPlugin.Handshake
         private MemoryMappedViewAccessor scenarioView;
         private bool scenarioReadyLevel;
         private int scenarioGenerationSeen;      // last valid ScenarioGeneration read (0 = none yet)
+        private bool scenarioLoadSupported;      // Phase SI-A6: the Bridge published a valid load marker in the last valid reading
+        private uint scenarioLoadInfo;           // Phase SI-A6: its bits (ScenarioState.LoadCreated / LoadTickSeen) - they belong to scenarioGenerationSeen (one reading)
         private int scenarioReadyOnCount;
         private int scenarioReadyOffCount;
         private int scenarioGenerationChanges;
@@ -447,7 +449,8 @@ namespace TSScoringPlugin.Handshake
                 if (appProcess != null)
                 {
                     bool session = scenarioReadyLevel && phase != CallerPhase.Disposed;
-                    appProcess.PublishState(session, session && driving.Active, scenarioGenerationSeen);
+                    bool load = scenarioLoadSupported && phase != CallerPhase.Disposed;   // Phase SI-A6: a withdrawn state carries no marker
+                    appProcess.PublishStateWithLoad(session, session && driving.Active, scenarioGenerationSeen, load ? scenarioLoadInfo : 0u, load);
                 }
             }
             catch (Exception ex)
@@ -928,6 +931,10 @@ namespace TSScoringPlugin.Handshake
             {
                 ReleaseScenarioObjectsLocked();
             }
+
+            // Phase SI-A6: the load marker of the SAME reading as the generation (one seqlock read); no valid reading = no information
+            scenarioLoadSupported = valid && state.LoadSupported;
+            scenarioLoadInfo = scenarioLoadSupported ? (uint)state.LoadInfo : 0u;
 
             if (valid && state.ScenarioGeneration != scenarioGenerationSeen)
             {

@@ -2,7 +2,7 @@ using System;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
-// Public metadata (Phase L1 build). Human-facing product name: TS Scoring. No personal information.
+// Public metadata (Phase SI-A6 build: L1 + the load marker of the generation, ScenarioCreated / first Tick, published next to ScenarioReady). Human-facing product name: TS Scoring. No personal information.
 // The version is the version of the shared core (same as the Current Bridge): the core is byte-identical in both DLLs.
 [assembly: AssemblyTitle("TS Scoring AtsEX Legacy Bridge Prototype")]
 [assembly: AssemblyDescription("Phase L1: Ready handshake, ScenarioReady life-cycle (AtsEX legacy mode) and scenario life-cycle logging.")]
@@ -14,6 +14,6 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyCulture("")]
 [assembly: ComVisible(false)]
 
-[assembly: AssemblyVersion("0.6.0.0")]
-[assembly: AssemblyFileVersion("0.6.0.0")]
-[assembly: AssemblyInformationalVersion("0.6.0.0")]
+[assembly: AssemblyVersion("0.7.0.0")]
+[assembly: AssemblyFileVersion("0.7.0.0")]
+[assembly: AssemblyInformationalVersion("0.7.0.0")]
