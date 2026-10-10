@@ -87,7 +87,7 @@ $notSent = @($pyTokens | Where-Object { $_ -notin $csTokens })
 Check ('the tokens the Legacy sender never announces are exactly: ' + ($notSent -join ' ') + ' (Phase SI-1 added trainlen and maplimit_ahead to what it announces)') ((($notSent | Sort-Object) -join ',') -eq 'doortime,jump')
 
 Write-Host '==== repository scope ===='
-$changed = @((RunGit @('-C', $top, 'diff', '--name-only', $Baseline)) -split "`n" | Where-Object { $_ })
+$changed = @((RunGit @('-C', $top, 'diff', '--no-renames', '--name-only', $Baseline)) -split "`n" | Where-Object { $_ })      # (no rename detection: the control plane moved from Bridge\Legacy\src to Bridge\src; both paths are files of the change)
 $untracked = @((RunGit @('-C', $top, 'ls-files', '--others', '--exclude-standard')) -split "`n" | Where-Object { $_ })
 $touched = @($changed + $untracked | Sort-Object -Unique)
 "files touched relative to the E4 commit (tracked changes + untracked): " + $touched.Count
