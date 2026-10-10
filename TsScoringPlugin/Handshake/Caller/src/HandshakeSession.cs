@@ -150,6 +150,29 @@ namespace TSScoringPlugin.Handshake
         private int scenarioReadyOffCount;
         private int scenarioGenerationChanges;
 
+        // Phase SI-A7 (M1a): the Ready epoch of the Bridge, read from the SAME ScenarioState reading as the generation. DIAGNOSTIC ONLY: it is logged and copied to the
+        // managed application (state block EpochInfo); nothing in the Caller decides anything from it (no start condition, no stop, no key).
+        private bool scenarioEpochSupported;     // the Bridge published a valid epoch in the last valid reading
+        private int scenarioReadyEpoch;          // its ReadyEpoch (0 while unsupported)
+        private bool scenarioTickSeenInEpoch;    // its TickSeenInEpoch flag (false while unsupported)
+        private int epochLogged;                 // ReadyEpoch of the last EPOCH_OBSERVED line (0 = none yet in this instance)
+        private bool epochTickLogged;            // EPOCH_TICK_SEEN was written for epochLogged
+        private bool epochNoTickSessionLogged;   // EPOCH_SESSION_WITHOUT_TICK was written for epochLogged
+        private long epochObservedQpc;           // when epochLogged was first observed by this instance
+        private int epochObservedCount;
+        private int epochWithdrawnCount;
+
+        // Phase SI-A7 (M1a) - observations O4 / O5: does the Caller's OWN Tick (BVE's input-device Tick) go on while the simulation is paused? The monitor thread watches the Tick count
+        // that Tick already maintains (no new work on BVE's thread, nothing in NotifyTick) and writes ONE line per change: flowing -> silent (no new Tick for TickProbeSilentMs) and
+        // silent -> flowing. DIAGNOSTIC ONLY: nothing reads it back (DrivingActive keeps its own 2 s rule).
+        internal const int TickProbeSilentMs = 500;
+        private long tickProbeSeq;               // the Tick count as of the last advance the monitor saw
+        private long tickProbeAdvancedQpc;       // when the monitor last saw the Tick count advance
+        private long tickProbeStateQpc;          // when the current state began
+        private int tickProbeState;              // 0 = no Tick seen yet, 1 = flowing, 2 = silent
+        private int tickProbeSilentCount;
+        private int tickProbeFlowingCount;
+
         // Phase M1: the single notice latch (per Caller instance) and the first-Tick hand-over from BVE's thread to the monitor thread.
         private enum NoticeTrigger { FirstUse, ConnectionLost }
 
@@ -260,6 +283,14 @@ namespace TSScoringPlugin.Handshake
         internal int ScenarioReadyOnCount { get { lock (gate) { return scenarioReadyOnCount; } } }
         internal int ScenarioReadyOffCount { get { lock (gate) { return scenarioReadyOffCount; } } }
         internal int ScenarioGenerationChanges { get { lock (gate) { return scenarioGenerationChanges; } } }
+        internal bool ScenarioEpochSupported { get { lock (gate) { return scenarioEpochSupported; } } }
+        internal int ScenarioReadyEpoch { get { lock (gate) { return scenarioReadyEpoch; } } }
+        internal bool ScenarioTickSeenInEpoch { get { lock (gate) { return scenarioTickSeenInEpoch; } } }
+        internal int EpochObservedCount { get { lock (gate) { return epochObservedCount; } } }
+        internal int EpochWithdrawnCount { get { lock (gate) { return epochWithdrawnCount; } } }
+        internal string CallerTickState { get { lock (gate) { return tickProbeState == 1 ? "flowing" : tickProbeState == 2 ? "silent" : "none"; } } }
+        internal int CallerTickSilentCount { get { lock (gate) { return tickProbeSilentCount; } } }
+        internal int CallerTickFlowingCount { get { lock (gate) { return tickProbeFlowingCount; } } }
         internal bool DrivingActive { get { lock (gate) { return driving.Active; } } }
         internal int DrivingActiveOnCount { get { lock (gate) { return drivingOnCount; } } }
         internal int DrivingHardOffCount { get { lock (gate) { return drivingHardOffCount; } } }
@@ -339,7 +370,8 @@ namespace TSScoringPlugin.Handshake
                     return;
                 }
 
-                Obs("CALLER_DISPOSE_BEGIN", "phaseBefore=" + phase + " sinceEnabledMs=" + SinceEnabledMs(Stopwatch.GetTimestamp()));
+                Obs("CALLER_DISPOSE_BEGIN", "phaseBefore=" + phase + " sinceEnabledMs=" + SinceEnabledMs(Stopwatch.GetTimestamp()) + " " + EpochTextLocked());
+                NoteEpochWithdrawnLocked("caller-dispose");      // Phase SI-A7: the epoch ends with this instance (TS Scoring OFF / BVE ending)
                 phase = CallerPhase.Disposed;
                 EvaluateDrivingLocked(Stopwatch.GetTimestamp()); // Phase D1: DrivingActive goes OFF (hard, dispose) before anything is released
                 PublishAppStateLocked();                         // Phase E4: Session OFF / Driving OFF reach the application (Closed is set by Shutdown, before Stop)
@@ -450,7 +482,8 @@ namespace TSScoringPlugin.Handshake
                 {
                     bool session = scenarioReadyLevel && phase != CallerPhase.Disposed;
                     bool load = scenarioLoadSupported && phase != CallerPhase.Disposed;   // Phase SI-A6: a withdrawn state carries no marker
-                    appProcess.PublishStateWithLoad(session, session && driving.Active, scenarioGenerationSeen, load ? scenarioLoadInfo : 0u, load);
+                    bool epoch = scenarioEpochSupported && phase != CallerPhase.Disposed; // Phase SI-A7: nor an epoch (Dispose / an older Bridge / no valid reading = 0 = no information)
+                    appProcess.PublishStateWithEpoch(session, session && driving.Active, scenarioGenerationSeen, load ? scenarioLoadInfo : 0u, load, AppStateLayout.PackEpochInfo(epoch, scenarioReadyEpoch, scenarioTickSeenInEpoch));
                 }
             }
             catch (Exception ex)
@@ -478,11 +511,13 @@ namespace TSScoringPlugin.Handshake
             {
                 case AppAction.StartRequested:
                     ObsA("APP_START_REQUEST", "pid=" + pid + " ScenarioGeneration=" + step.ScenarioGeneration + " requestNo=" + step.RequestNumber + " reason=" + AppRequestReasons.FirstDrivingOn + " dryRun=yes");
+                    ObsA("APP_START_REQUEST_EPOCH", "requestNo=" + step.RequestNumber + " ScenarioGeneration=" + step.ScenarioGeneration + " " + EpochTextLocked());   // Phase SI-A7: the epoch the request was made in (a companion line: the E1 line above is unchanged)
                     RequestAppLaunchLocked(step); // Phase E3: the decision above is acted on by the process manager (its own APP_LAUNCH_* / APP_* lines say what happened)
                     break;
 
                 case AppAction.StartSuppressed:
                     ObsA("APP_START_SUPPRESSED", "pid=" + pid + " ScenarioGeneration=" + step.ScenarioGeneration + " requestNo=" + step.RequestNumber + " reason=" + AppRequestReasons.AlreadyRequestedForGeneration + " dryRun=yes");
+                    ObsA("APP_START_SUPPRESSED_EPOCH", "requestNo=" + step.RequestNumber + " ScenarioGeneration=" + step.ScenarioGeneration + " " + EpochTextLocked());   // Phase SI-A7 (companion line)
                     break;
 
                 case AppAction.StopRequested:
@@ -502,7 +537,12 @@ namespace TSScoringPlugin.Handshake
             {
                 if (appProcess != null)
                 {
-                    appProcess.RequestStart(step.ScenarioGeneration, step.RequestNumber);
+                    AppLaunchDecision decision = appProcess.RequestStart(step.ScenarioGeneration, step.RequestNumber);
+                    if (decision != AppLaunchDecision.Started)
+                    {
+                        // Phase SI-A7: the manager's own APP_LAUNCH_SUPPRESSED line (or none, when closed) says why; this companion line adds the epoch the request was made in
+                        ObsA("APP_LAUNCH_SUPPRESSED_EPOCH", "decision=" + decision + " ScenarioGeneration=" + step.ScenarioGeneration + " requestNo=" + step.RequestNumber + " " + EpochTextLocked());
+                    }
                 }
             }
             catch (Exception ex)
@@ -672,6 +712,7 @@ namespace TSScoringPlugin.Handshake
                     JudgeFirstTickLocked(now);
                     ObserveScenarioLocked(now);
                     EvaluateDrivingLocked(now);
+                    ObserveCallerTickLocked(now);   // Phase SI-A7 M1a (O4 / O5): log only
                     PublishAppStateLocked();   // Phase E4: BEFORE the controller, so a start request always finds the current state remembered
                     ObserveAppControllerLocked();
                 }
@@ -959,6 +1000,129 @@ namespace TSScoringPlugin.Handshake
                     ObsA("SCN_READY_OFF", "ScenarioGeneration=" + scenarioGenerationSeen + " reason=" + why + " sinceEnabledMs=" + SinceEnabledMs(now) + " offCount=" + scenarioReadyOffCount);
                 }
             }
+
+            ObserveEpochLocked(now, valid, valid && state.EpochSupported, valid && state.EpochSupported ? state.ReadyEpoch : 0, valid && state.TickSeenInEpoch, level);
+        }
+
+        /// <summary>
+        /// Phase SI-A7 (M1a): the Ready epoch of the Bridge from the same ScenarioState reading. DIAGNOSTIC ONLY - it is remembered (and copied to the managed application by
+        /// PublishAppStateLocked), logged when it changes, and nothing is decided from it. A reading that is not valid (a torn copy, or the objects not yet there) changes
+        /// nothing; the epoch is withdrawn only when Ready itself is gone (TS Scoring OFF, the Bridge ended) or the Bridge stops providing it. Gate must be held.
+        /// Log vocabulary (all Track A, one line per change):
+        ///   EPOCH_OBSERVED            the first reading of an epoch by this instance: kind=first-ready-epoch (ReadyEpoch 1: the Bridge's first Ready) /
+        ///                             resume-ready-epoch (ReadyEpoch &gt;= 2: this Ready is a later one, the Bridge survived an OFF) / epoch-advanced
+        ///   EPOCH_SESSION_WITHOUT_TICK  ScenarioReady is ON while TickSeenInEpoch = 0: a held level published again without any Tick (the Pause re-ON signature)
+        ///   EPOCH_TICK_SEEN           TickSeenInEpoch went 0 -> 1 (sinceEpochObservedMs says how long the epoch had no Tick)
+        ///   EPOCH_WITHDRAWN           the epoch is gone: reason=ready-lost / bridge-lost / epoch-field-invalid / caller-dispose
+        /// </summary>
+        private void ObserveEpochLocked(long now, bool valid, bool supported, int epochNumber, bool tickSeen, bool level)
+        {
+            if (!valid)
+            {
+                if (!readyPresent && scenarioEpochSupported)
+                {
+                    NoteEpochWithdrawnLocked(!bridgePresent ? "bridge-lost" : "ready-lost");
+                }
+
+                return;
+            }
+
+            if (!supported)
+            {
+                if (scenarioEpochSupported)
+                {
+                    NoteEpochWithdrawnLocked("epoch-field-invalid");
+                }
+
+                return;
+            }
+
+            scenarioEpochSupported = true;
+            scenarioReadyEpoch = epochNumber;
+            scenarioTickSeenInEpoch = tickSeen;
+
+            if (epochNumber != epochLogged)
+            {
+                string kind = epochLogged == 0 ? (epochNumber == 1 ? "first-ready-epoch" : "resume-ready-epoch") : "epoch-advanced";
+                epochLogged = epochNumber;
+                epochObservedQpc = now;
+                epochTickLogged = false;
+                epochNoTickSessionLogged = false;
+                epochObservedCount++;
+                ObsA("EPOCH_OBSERVED", "kind=" + kind + " ready_epoch=" + epochNumber + " tickSeenInEpoch=" + (tickSeen ? "1" : "0") + " session=" + (level ? "Y" : "N") + " ScenarioGeneration=" + scenarioGenerationSeen + " sinceEnabledMs=" + SinceEnabledMs(now) + " observedCount=" + epochObservedCount);
+            }
+
+            double sinceEpochMs = Math.Round(HandshakeProtocol.QpcToMs(now - epochObservedQpc), 1);
+            if (level && !tickSeen && !epochNoTickSessionLogged)
+            {
+                epochNoTickSessionLogged = true;
+                ObsA("EPOCH_SESSION_WITHOUT_TICK", "ready_epoch=" + epochNumber + " epochKind=" + (epochNumber >= 2 ? "resume" : "first") + " ScenarioGeneration=" + scenarioGenerationSeen + " sinceEpochObservedMs=" + sinceEpochMs.ToString(System.Globalization.CultureInfo.InvariantCulture) + " (ScenarioReady is ON but the extension has not ticked in this epoch: a held level published again without a Tick)");
+            }
+
+            if (tickSeen && !epochTickLogged)
+            {
+                epochTickLogged = true;
+                ObsA("EPOCH_TICK_SEEN", "ready_epoch=" + epochNumber + " ScenarioGeneration=" + scenarioGenerationSeen + " sinceEpochObservedMs=" + sinceEpochMs.ToString(System.Globalization.CultureInfo.InvariantCulture) + " sessionWithoutTickSeen=" + (epochNoTickSessionLogged ? "yes" : "no") + " session=" + (level ? "Y" : "N"));
+            }
+        }
+
+        /// <summary>
+        /// Phase SI-A7 (M1a, O4 / O5): the state of the Caller's OWN Tick, seen by the monitor thread from the Tick count that BVE's Tick already maintains. One line per change, and
+        /// nothing in between: CALLER_TICK_STATE state=flowing was=none|silent (the first Tick, or the Tick came back) / state=silent (no new Tick for TickProbeSilentMs). Gate must be held.
+        /// Never throws; nothing reads the state back.
+        /// </summary>
+        private void ObserveCallerTickLocked(long now)
+        {
+            try
+            {
+                long seq = Interlocked.Read(ref tickSeq);
+                if (seq != tickProbeSeq)
+                {
+                    tickProbeSeq = seq;
+                    tickProbeAdvancedQpc = now;
+                    if (tickProbeState != 1)
+                    {
+                        string was = tickProbeState == 2 ? "silent" : "none";
+                        string silentMs = tickProbeState == 2 ? Math.Round(HandshakeProtocol.QpcToMs(now - tickProbeStateQpc), 1).ToString(System.Globalization.CultureInfo.InvariantCulture) : "0";
+                        tickProbeState = 1;
+                        tickProbeStateQpc = now;
+                        tickProbeFlowingCount++;
+                        ObsA("CALLER_TICK_STATE", "state=flowing was=" + was + " silentMs=" + silentMs + " tickSeq=" + seq + " flowingCount=" + tickProbeFlowingCount + " (the Caller's own Tick; " + (was == "silent" ? "it had stopped and is back" : "first Tick of this cycle") + ")");
+                    }
+                }
+                else if (tickProbeState == 1 && HandshakeProtocol.QpcToMs(now - tickProbeAdvancedQpc) >= TickProbeSilentMs)
+                {
+                    long flowingFor = now - tickProbeStateQpc;
+                    tickProbeState = 2;
+                    tickProbeStateQpc = now;
+                    tickProbeSilentCount++;
+                    ObsA("CALLER_TICK_STATE", "state=silent was=flowing flowingMs=" + Math.Round(HandshakeProtocol.QpcToMs(flowingFor), 1).ToString(System.Globalization.CultureInfo.InvariantCulture) + " tickSeq=" + seq + " silentAfterMs=" + TickProbeSilentMs + " silentCount=" + tickProbeSilentCount + " (no new Tick of the Caller's own for that long)");
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        /// <summary>Phase SI-A7: the epoch ends (one line per epoch). Gate must be held. No effect when no epoch is known.</summary>
+        private void NoteEpochWithdrawnLocked(string reason)
+        {
+            if (!scenarioEpochSupported)
+            {
+                return;
+            }
+
+            epochWithdrawnCount++;
+            ObsA("EPOCH_WITHDRAWN", "reason=" + reason + " ready_epoch=" + scenarioReadyEpoch + " tickSeenInEpoch=" + (scenarioTickSeenInEpoch ? "1" : "0") + " ScenarioGeneration=" + scenarioGenerationSeen + " sinceEpochObservedMs=" + Math.Round(HandshakeProtocol.QpcToMs(Stopwatch.GetTimestamp() - epochObservedQpc), 1).ToString(System.Globalization.CultureInfo.InvariantCulture) + " withdrawnCount=" + epochWithdrawnCount);
+            scenarioEpochSupported = false;
+            scenarioReadyEpoch = 0;
+            scenarioTickSeenInEpoch = false;
+        }
+
+        /// <summary>Phase SI-A7: the epoch as one log fragment (also on the Python start request / suppression lines). Gate must be held.</summary>
+        private string EpochTextLocked()
+        {
+            return "epochSupported=" + (scenarioEpochSupported ? "Y" : "N") + " ready_epoch=" + scenarioReadyEpoch + " tickSeenInEpoch=" + (scenarioTickSeenInEpoch ? "1" : "0");
         }
 
         /// <summary>Opens the ScenarioReady event and the state block when they exist. False while either is missing. Gate must be held.</summary>

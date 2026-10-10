@@ -148,6 +148,16 @@ namespace TSScoringPlugin.Handshake
         void UpdateWithLoad(int generation, bool ready, int loadInfo);
     }
 
+    /// <summary>
+    /// Phase SI-A7: a publisher that also carries the Ready epoch (ScenarioState bytes 36..51: ReadyEpoch and the TickSeenInEpoch flag), in the same write as the level
+    /// and the load marker. The tracker uses it when the publisher offers it and the epoch is known; every earlier fake publisher keeps working unchanged.
+    /// </summary>
+    internal interface IScenarioEpochPublisher : IScenarioLoadPublisher
+    {
+        void OpenWithEpoch(int generation, bool ready, int loadInfo, int readyEpoch, int epochFlags);
+        void UpdateWithEpoch(int generation, bool ready, int loadInfo, int readyEpoch, int epochFlags);
+    }
+
     internal sealed class ScenarioReadyTracker
     {
         /// <summary>Ticks (with the handshake up, after ScenarioCreated) without establishment before the stall diagnostics are written.</summary>
@@ -159,6 +169,7 @@ namespace TSScoringPlugin.Handshake
         private readonly Func<bool> handshakeUp;
         private readonly IScenarioReadyPublisher publisher;
         private readonly Func<long> nowMs;
+        private readonly Func<int> readEpoch;  // Phase SI-A7: the control plane's current ReadyEpoch (a lock free volatile read; null = not wired)
 
         private int generation;                // 0 = nothing opened yet
         private bool disposed;
@@ -176,6 +187,15 @@ namespace TSScoringPlugin.Handshake
         private int loadInfo;
         private int publishedLoad;
 
+        // Phase SI-A7: the READY EPOCH. epoch = ReadyEpoch of the current Ready (0 = unknown: nothing about the epoch is published). tickInEpoch = an extension Tick ran
+        // since that Ready appeared; it is raised FIRST in OnTick, before anything is published or established, so "level 1 with tickInEpoch 0" can only come from a
+        // held level that was published again without a Tick. These are plain ints / bools: the control thread reads and writes them under the gate and touches no BVE object.
+        private int epoch;
+        private bool tickInEpoch;
+        private int publishedEpoch;            // what the block shows (0 = no epoch written)
+        private bool publishedTickInEpoch;
+        private bool epochTickLogged;          // one SR_EPOCH_TICK line per epoch
+
         // per generation diagnostics
         private int waitingTicks;
         private string lastPending;
@@ -188,7 +208,13 @@ namespace TSScoringPlugin.Handshake
         private int clearedCount;
 
         internal ScenarioReadyTracker(Action<string, string, string> log, Func<BveSnapshot> read, Func<bool> handshakeUp, IScenarioReadyPublisher publisher, Func<long> nowMs)
+            : this(log, read, handshakeUp, publisher, nowMs, null)
         {
+        }
+
+        internal ScenarioReadyTracker(Action<string, string, string> log, Func<BveSnapshot> read, Func<bool> handshakeUp, IScenarioReadyPublisher publisher, Func<long> nowMs, Func<int> readEpoch)
+        {
+            this.readEpoch = readEpoch;
             this.log = log ?? delegate { };
             this.read = read ?? delegate { BveSnapshot none = new BveSnapshot(); none.IsScenarioCreated = -1; none.Failure = "no-reader"; return none; };
             this.handshakeUp = handshakeUp ?? delegate { return false; };
@@ -202,6 +228,8 @@ namespace TSScoringPlugin.Handshake
         internal bool IsPublishing { get { lock (gate) { return publishing; } } }
         internal int EstablishedCount { get { lock (gate) { return establishedCount; } } }
         internal int ClearedCount { get { lock (gate) { return clearedCount; } } }
+        internal int ReadyEpoch { get { lock (gate) { return epoch; } } }
+        internal bool TickSeenInEpoch { get { lock (gate) { return tickInEpoch; } } }
 
         // ---- host events ----
 
@@ -319,6 +347,10 @@ namespace TSScoringPlugin.Handshake
                     ticksTotal++;
                     bool up = SafeHandshake();
 
+                    // Phase SI-A7: this Tick is recorded in the epoch FIRST - before anything below can publish or establish ScenarioReady - so that a block which
+                    // says "ScenarioReady 1" together with "no Tick in this epoch" can only be a held level that was published again without a Tick.
+                    NoteTickInEpochLocked(up);
+
                     // The publication follows the handshake: it opens as soon as Ready is up (generation visible, level 0 or the kept level),
                     // is retried when a publish failed, and is withdrawn while the handshake is down.
                     if (up && (!publishing || (level && !publishedLevel)))
@@ -416,6 +448,49 @@ namespace TSScoringPlugin.Handshake
             });
         }
 
+        /// <summary>
+        /// Phase SI-A7: the control plane created Ready (epoch = its ReadyEpoch; TS Scoring was switched ON, or the Caller came back). Called on the CONTROL THREAD, not on a
+        /// BVE thread, and possibly while the simulation is paused and no Tick runs. It starts the epoch with TickSeenInEpoch = 0 and publishes the HELD generation, level
+        /// and load marker again at once. It reads nothing of BVE: only the plain numbers this tracker already keeps. If a Tick adopted this epoch a moment earlier
+        /// (it saw Ready before this call arrived) that Tick already counts for the epoch and the flag is left as it is.
+        /// </summary>
+        public void OnHandshakeUp(int readyEpoch)
+        {
+            Safe(delegate
+            {
+                lock (gate)
+                {
+                    if (disposed || readyEpoch < 1)
+                    {
+                        return;
+                    }
+
+                    bool adoptedByTick = epoch == readyEpoch;
+                    if (!adoptedByTick)
+                    {
+                        epoch = readyEpoch;
+                        tickInEpoch = false;
+                        epochTickLogged = false;
+                        Emit("SR_EPOCH", Gen() + " ready_epoch=" + epoch + " tickSeenInEpoch=0 why=handshake-up level=" + (level ? "1" : "0") + " (no Tick yet in this epoch)");
+                    }
+
+                    if (!SafeHandshake())
+                    {
+                        return; // the handshake went away again before we got here: the next OnHandshakeUp (or the Tick) decides
+                    }
+
+                    if (!publishing)
+                    {
+                        PublishLocked(level ? "handshake-back-control" : "handshake-up-control");
+                    }
+                    else if (!adoptedByTick)
+                    {
+                        PushStateLocked(); // already open (a retry left it open): only the epoch changed
+                    }
+                }
+            });
+        }
+
         /// <summary>Bridge Dispose (BveEX off / BVE ending): clear, close everything, ignore every later call.</summary>
         public void OnDispose()
         {
@@ -448,6 +523,45 @@ namespace TSScoringPlugin.Handshake
         }
 
         // ---- internals (gate held) ----
+
+        /// <summary>
+        /// Phase SI-A7 (Tick thread, gate held): records that an extension Tick ran in the current epoch. A Ready the control thread created but whose OnHandshakeUp call has
+        /// not arrived yet is adopted here (the epoch number comes from the control plane's volatile ReadyEpoch); this Tick then belongs to that epoch.
+        /// </summary>
+        private void NoteTickInEpochLocked(bool up)
+        {
+            if (up && readEpoch != null)
+            {
+                int current = 0;
+                try { current = readEpoch(); }
+                catch { }
+
+                if (current >= 1 && current != epoch)
+                {
+                    epoch = current;
+                    epochTickLogged = false;
+                    Emit("SR_EPOCH", Gen() + " ready_epoch=" + epoch + " tickSeenInEpoch=1 why=adopted-at-tick level=" + (level ? "1" : "0"));
+                }
+            }
+
+            tickInEpoch = true;
+            if (epoch >= 1 && !epochTickLogged)
+            {
+                epochTickLogged = true;
+                Emit("SR_EPOCH_TICK", Gen() + " ready_epoch=" + epoch + " tickSeenInEpoch=1 level=" + (level ? "1" : "0"));
+            }
+        }
+
+        private int EpochFlagsLocked()
+        {
+            return tickInEpoch ? ScenarioState.EpochTickSeen : 0;
+        }
+
+        /// <summary>True when the epoch is carried by the publisher and what the block shows differs from the tracker's epoch.</summary>
+        private bool EpochDirtyLocked()
+        {
+            return epoch >= 1 && publisher is IScenarioEpochPublisher && (publishedEpoch != epoch || publishedTickInEpoch != tickInEpoch);
+        }
 
         private void EstablishLocked(BveSnapshot s)
         {
@@ -495,11 +609,21 @@ namespace TSScoringPlugin.Handshake
             {
                 if (!publishing)
                 {
+                    IScenarioEpochPublisher withEpoch = publisher as IScenarioEpochPublisher;
                     IScenarioLoadPublisher withLoad = publisher as IScenarioLoadPublisher;
-                    if (withLoad != null)
+                    if (withEpoch != null && epoch >= 1)
+                    {
+                        withEpoch.OpenWithEpoch(generation, level, loadInfo, epoch, EpochFlagsLocked());
+                        publishedLoad = loadInfo;
+                        publishedEpoch = epoch;
+                        publishedTickInEpoch = tickInEpoch;
+                    }
+                    else if (withLoad != null)
                     {
                         withLoad.OpenWithLoad(generation, level, loadInfo);
                         publishedLoad = loadInfo;
+                        publishedEpoch = 0;
+                        publishedTickInEpoch = false;
                     }
                     else
                     {
@@ -538,6 +662,8 @@ namespace TSScoringPlugin.Handshake
 
             publishing = false;
             publishedLevel = false;
+            publishedEpoch = 0;
+            publishedTickInEpoch = false;
             Emit("SR_WITHDRAWN", Gen() + " reason=" + reason + " levelKept=" + (level ? "yes" : "no"));
         }
 
@@ -563,11 +689,21 @@ namespace TSScoringPlugin.Handshake
         /// <summary>One publisher update with the current generation, the given level and (when the publisher carries it) the load marker.</summary>
         private void UpdatePublisherLocked(bool ready)
         {
+            IScenarioEpochPublisher withEpoch = publisher as IScenarioEpochPublisher;
             IScenarioLoadPublisher withLoad = publisher as IScenarioLoadPublisher;
-            if (withLoad != null)
+            if (withEpoch != null && epoch >= 1)
+            {
+                withEpoch.UpdateWithEpoch(generation, ready, loadInfo, epoch, EpochFlagsLocked());
+                publishedLoad = loadInfo;
+                publishedEpoch = epoch;
+                publishedTickInEpoch = tickInEpoch;
+            }
+            else if (withLoad != null)
             {
                 withLoad.UpdateWithLoad(generation, ready, loadInfo);
                 publishedLoad = loadInfo;
+                publishedEpoch = 0;
+                publishedTickInEpoch = false;
             }
             else
             {
@@ -578,9 +714,9 @@ namespace TSScoringPlugin.Handshake
         /// <summary>Phase SI-A6: writes the state again when only the load marker changed since the last write (ScenarioCreated, the first Tick). No write otherwise.</summary>
         private void SyncLoadLocked()
         {
-            if (publishing && publisher is IScenarioLoadPublisher && publishedLoad != loadInfo)
+            if (publishing && publisher is IScenarioLoadPublisher && (publishedLoad != loadInfo || EpochDirtyLocked()))
             {
-                PushStateLocked();      // a publisher without the marker (every fake of the earlier phases) is never written to because of it
+                PushStateLocked();      // a publisher without the marker (every fake of the earlier phases) is never written to because of it; Phase SI-A7: the epoch / its Tick flag count too
             }
         }
 

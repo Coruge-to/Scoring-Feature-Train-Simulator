@@ -1,7 +1,5 @@
 using System;
 using System.Diagnostics;
-using System.IO.MemoryMappedFiles;
-using System.Security.AccessControl;
 using System.Threading;
 using BveEx.PluginHost;
 using BveTypes.ClassWrappers;
@@ -10,7 +8,11 @@ using BveEx.PluginHost.Plugins.Extensions;
 
 // ============================================================================
 // PHASE C1 OBSERVATION BUILD - BveEX Bridge (a minimal BveEX extension), human-facing name: "TS Scoring".
-// Phase B behaviour is unchanged (BridgeAvailable at load, Ready from Tick, same event names, same timings).
+// Phase SI-A7 (M1a): the Phase B handshake no longer runs inside Tick. It is driven by the host independent control plane (HandshakeControlPlane.cs, the same
+// source the Legacy adapter uses): one background thread that owns only named kernel objects and plain numbers. Names, rules and the external contract
+// (BridgeAvailable at load, Ready while the Caller is enabled and Stop is not set, ScenarioReady only while Ready exists) are unchanged; what changes is WHEN:
+// Ready appears within one control poll (20 ms) of Enabled instead of at the next Tick, and it is withdrawn / created again while the simulation is paused.
+//
 // Phase C1 only ADDS log lines (Shared\ObservationLog.cs) and read-only event subscriptions (Bridge\src\ScenarioObserver.cs):
 //   Track B: constructor begin / end, BridgeAvailable create begin / ok, Ready create begin / ok, subscription done, first Tick, Dispose,
 //            Ready and BridgeAvailable disposal.
@@ -21,21 +23,24 @@ using BveEx.PluginHost.Plugins.Extensions;
 //
 // Lifecycle facts this prototype is built on (BveEX public documentation):
 //   * The constructor runs when BveEX loads the extension.
-//   * Tick runs "every frame while driving" - i.e. only while a scenario is being run, NOT at BVE start-up and NOT in the menus.
+//   * Tick runs "every frame while driving" - i.e. only while a scenario is being run, NOT at BVE start-up and NOT in the menus, and NOT while paused.
 //
 // Therefore the Bridge announces itself in two steps:
 //   1. BridgeAvailable - created and set when BveEX loads the Bridge (constructor, one named event, nothing else).
 //      It only means "BveEX and the Bridge exist". It does NOT mean a scenario is loaded or anything is scored.
-//   2. Ready - the Caller<->Bridge handshake, created from Tick while BridgeAvailable is valid, Enabled is set and Stop is not.
+//   2. Ready - the Caller<->Bridge handshake, created by the control plane while BridgeAvailable is valid, Enabled is set and Stop is not.
 //      Ready is NOT ScenarioReady (a future event) and NOT "the scoring app is up".
 //
 // Behaviour:
-//  * Constructor: stores two timestamps and publishes BridgeAvailable (no thread, timer, socket, reflection, window, hook).
-//    Afterwards (so BridgeAvailable is never delayed by it) the observation subscriptions are made.
-//  * Tick (BveEX's, cheap): at most every HandshakeTiming.BridgePollMs it peeks for the Caller's Enabled event while "Searching".
-//    While "Connected" it only watches Enabled/Stop; when the Caller stops (Stop set, or Enabled lost) it withdraws Ready and
-//    goes back to Searching, so a later enabled cycle is picked up without restarting BVE.
-//  * Dispose (BveEX switched off / ending): Ready, BridgeInfo and BridgeAvailable are reset and released.
+//  * Constructor: stores two timestamps and publishes BridgeAvailable (no timer, socket, reflection, window, hook). Afterwards (so BridgeAvailable is never
+//    delayed by it) the observation subscriptions are made, and LAST the control thread starts.
+//  * Control thread (HandshakeControlPlane): peeks for the Caller's Enabled event while "Searching"; while "Connected" it only watches Enabled / Stop; when the
+//    Caller stops (Stop set, or Enabled lost) it withdraws the external ScenarioReady and Ready, and a later enabled cycle is picked up without restarting
+//    BVE - also during a pause. When Ready is created again the held ScenarioReady level is published again by that thread (Phase SI-A7), with a new Ready epoch
+//    and TickSeenInEpoch = 0. The thread never touches BveHacker, Scenario, Vehicle, TimeManager, the position, the time or the station list.
+//  * Tick (BveEX's, cheap): restarts the control thread if it ever ended, feeds the observer and the ScenarioReady tracker (the ONLY place that reads BVE
+//    objects and that establishes ScenarioReady).
+//  * Dispose (BveEX switched off / ending): ScenarioReady, the control thread, Ready, BridgeInfo and BridgeAvailable are reset and released.
 //  * No exception ever leaves the constructor, Tick, Dispose or an event handler.
 // BridgeInfo is a PHASE B MEASUREMENT block (removal candidate after Phase B); it exists only while Ready is published.
 // It does not contain the current ScoringPlugin, AtsLoggerPlugin, any ATS data, or any code of this repository.
@@ -45,39 +50,12 @@ namespace TSScoringPlugin.Handshake
     [Plugin(PluginType.Extension)]
     public class TsScoringBridgePrototype : AssemblyPluginBase, IExtension
     {
-        private enum BridgeState
-        {
-            Searching,
-            Connected,
-        }
-
         private static int instances;
 
         private readonly long loadQpc;
         private readonly long loadUtcTicks;
 
-        private BridgeState state = BridgeState.Searching;
         private int pid;
-        private int lastCheckTick;
-        private bool firstCheckDone;
-
-        private EventWaitHandle available;
-        private EventWaitHandle enabled;
-        private EventWaitHandle stop;
-        private EventWaitHandle ready;
-        private MemoryMappedFile infoSection;
-
-        // Instrumentation counters (kept across cycles while this instance lives).
-        private BridgeInfo info;
-        private long availableCreatedQpc;
-        private long availableDestroyedQpc;
-        private int availableCreateCount;
-        private int availableDestroyCount;
-        private long lastEnabledSeenQpc;
-        private long lastStopSeenQpc;
-        private long readyDestroyedQpc;
-        private int readyCreateCount;
-        private int readyDestroyCount;
 
         // Phase C1 observation (log only)
         private int instNo;
@@ -87,7 +65,14 @@ namespace TSScoringPlugin.Handshake
         private bool subscribedExtensions;
 
         // Phase C3 ScenarioReady (the host independent core lives in ScenarioReadyTracker; this class is the Current BveEX adapter)
-        private ScenarioReadyTracker tracker;
+        private volatile ScenarioReadyTracker tracker;
+
+        // Phase SI-A7: the control plane (shared with the Legacy adapter)
+        private volatile HandshakeControlPlane control;
+
+        // diagnostics: the control plane restored Ready (thread) -> the held ScenarioReady was published again by that thread; the first Tick afterwards is noted
+        private long handshakeUpQpc;
+        private int handshakeUpPending;
 
         public TsScoringBridgePrototype(PluginBuilder builder)
             : base(builder)
@@ -97,13 +82,16 @@ namespace TSScoringPlugin.Handshake
             instNo = Interlocked.Increment(ref instances);
             Obs("AB", "BRIDGE_CTOR_BEGIN", "ver=" + ObservationLog.Version + " bitness=" + (Environment.Is64BitProcess ? 64 : 32));
 
-            // The ONLY side effect of loading: one named event that says "the Bridge exists". Never throws.
-            PublishAvailability();
+            // The ONLY side effect of loading before the observation wiring: one named event that says "the Bridge exists". Never throws.
+            BeginControl(false);
 
             // Read-only observation wiring, AFTER BridgeAvailable so it can never delay it.
             try { SubscribeObservers(); } catch { }
 
-            Obs("AB", "BRIDGE_CTOR_END", "sinceCtorBeginMs=" + SinceLoadMs() + " availablePublished=" + (available != null ? "Y" : "N") + " observer=" + (observer != null ? "Y" : "N"));
+            // The control thread starts last: the tracker (and its handshake callbacks' target) exists before Ready can appear.
+            try { if (control != null) { control.Start(); } } catch { }
+
+            Obs("AB", "BRIDGE_CTOR_END", "sinceCtorBeginMs=" + SinceLoadMs() + " availablePublished=" + AvailableFlag() + " observer=" + (observer != null ? "Y" : "N"));
         }
 
         public override void Tick(TimeSpan elapsed)
@@ -113,7 +101,13 @@ namespace TSScoringPlugin.Handshake
                 if (!firstTickSeen)
                 {
                     firstTickSeen = true;
-                    Obs("AB", "BRIDGE_FIRST_TICK", "sinceCtorBeginMs=" + SinceLoadMs() + " availablePublished=" + (available != null ? "Y" : "N") + " ready=" + ReadyFlag() + " isCreated=" + ReadIsCreatedText());
+                    Obs("AB", "BRIDGE_FIRST_TICK", "sinceCtorBeginMs=" + SinceLoadMs() + " availablePublished=" + AvailableFlag() + " ready=" + ReadyFlag() + " isCreated=" + ReadIsCreatedText());
+                }
+
+                HandshakeControlPlane c = control;
+                if (c != null && !c.IsWorkerAlive)
+                {
+                    c.Start(); // the control thread ended unexpectedly: restart it (no effect after Dispose)
                 }
 
                 if (observer != null)
@@ -125,271 +119,123 @@ namespace TSScoringPlugin.Handshake
             {
             }
 
-            // Phase B handshake first (Ready may be created in this very Tick), then the ScenarioReady decision which needs it.
-            HandshakeStep();
-
             try
             {
-                if (tracker != null)
+                NoteTickAfterHandshakeUp();
+                ScenarioReadyTracker t = tracker;
+                if (t != null)
                 {
-                    tracker.OnTick();
+                    t.OnTick();
                 }
             }
             catch
             {
-            }
-        }
-
-        /// <summary>The Phase B part of Tick (unchanged logic): cheap poll for Enabled / Stop, Ready create and withdraw.</summary>
-        private void HandshakeStep()
-        {
-            try
-            {
-                int now = Environment.TickCount;
-                if (firstCheckDone && unchecked(now - lastCheckTick) < HandshakeTiming.BridgePollMs)
-                {
-                    return;
-                }
-
-                firstCheckDone = true;
-                lastCheckTick = now;
-
-                if (available == null)
-                {
-                    PublishAvailability(); // the constructor attempt failed: retry cheaply
-                }
-
-                if (state == BridgeState.Searching)
-                {
-                    if (available != null)
-                    {
-                        TryConnect();
-                    }
-                }
-                else if (!StillEnabled())
-                {
-                    Release("caller-stopped-or-disabled");
-                    state = BridgeState.Searching;
-                }
-            }
-            catch (Exception ex)
-            {
-                // An extension must never take BVE down; on any problem withdraw Ready and keep searching.
-                try { Release("tick-exception-" + ex.GetType().Name); } catch { }
-                state = BridgeState.Searching;
             }
         }
 
         public override void Dispose()
         {
-            Obs("AB", "BRIDGE_DISPOSE_BEGIN", "sinceCtorBeginMs=" + SinceLoadMs() + " ready=" + ReadyFlag() + " availablePublished=" + (available != null ? "Y" : "N"));
+            Obs("AB", "BRIDGE_DISPOSE_BEGIN", "sinceCtorBeginMs=" + SinceLoadMs() + " ready=" + ReadyFlag() + " availablePublished=" + AvailableFlag());
             try { UnsubscribeObservers(); } catch { }
             try { if (observer != null) { observer.OnDispose(); } } catch { }
-            try { if (tracker != null) { tracker.OnDispose(); } } catch { } // ScenarioReady is cleared and withdrawn before Ready
-            try { Release("bridge-dispose"); } catch { }
-            try { WithdrawAvailability(); } catch { }
+            try { ScenarioReadyTracker t = tracker; if (t != null) { t.OnDispose(); } } catch { } // ScenarioReady is cleared and withdrawn before Ready
+            try { HandshakeControlPlane c = control; if (c != null) { c.Shutdown("bridge-dispose"); } } catch { }
+            try { HandshakeControlPlane c = control; if (c != null) { c.WithdrawAvailability(); } } catch { }
             Obs("AB", "BRIDGE_DISPOSE_END", string.Empty);
         }
 
-        /// <summary>Creates and sets the BridgeAvailable event once. Internal so the offline tests can run it without BveEX's PluginBuilder.</summary>
+        // ------------------------------------------------------------------------------------------------------------------
+        // Control plane wiring (internal so the offline tests can run it without BveEX's PluginBuilder)
+        // ------------------------------------------------------------------------------------------------------------------
+
+        /// <summary>Creates and sets the BridgeAvailable event once (what the constructor does first). Internal so the offline tests can run it without BveEX's PluginBuilder.</summary>
         internal void PublishAvailability()
+        {
+            BeginControl(false);
+        }
+
+        /// <summary>Creates the control plane and publishes BridgeAvailable. The thread is started by the constructor (or the test).</summary>
+        internal void BeginControl(bool startThread)
         {
             try
             {
-                if (available != null)
-                {
-                    return;
-                }
-
                 if (pid == 0)
                 {
                     pid = HandshakeProtocol.CurrentProcessId();
                 }
 
-                Obs("B", "AVAIL_CREATE_BEGIN", "sinceCtorBeginMs=" + SinceLoadMs());
-                bool created;
-                EventWaitHandle handle = new EventWaitHandle(false, EventResetMode.ManualReset, HandshakeProtocol.BridgeAvailableName(pid), out created);
-                handle.Set();
-                available = handle;
-                availableCreatedQpc = Stopwatch.GetTimestamp();
-                availableCreateCount++;
-                Obs("B", "AVAIL_CREATE_OK", "sinceCtorBeginMs=" + SinceLoadMs() + " createdNew=" + (created ? "Y" : "N") + " createCount=" + availableCreateCount);
-            }
-            catch (Exception ex)
-            {
-                // creation failed: BVE must not be affected; Tick retries
-                Obs("B", "AVAIL_CREATE_FAIL", "type=" + ex.GetType().Name);
-            }
-        }
-
-        private void WithdrawAvailability()
-        {
-            EventWaitHandle toRelease = available;
-            available = null;
-            if (toRelease != null)
-            {
-                availableDestroyedQpc = Stopwatch.GetTimestamp();
-                availableDestroyCount++;
-                try { toRelease.Reset(); } catch { }
-                try { toRelease.Dispose(); } catch { }
-                Obs("B", "AVAIL_DISPOSED", "destroyCount=" + availableDestroyCount);
-            }
-        }
-
-        private void TryConnect()
-        {
-            EventWaitHandle foundEnabled;
-            if (!EventWaitHandle.TryOpenExisting(HandshakeProtocol.EnabledName(pid), EventWaitHandleRights.Synchronize, out foundEnabled))
-            {
-                return;
-            }
-
-            if (!foundEnabled.WaitOne(0))
-            {
-                foundEnabled.Dispose();
-                return;
-            }
-
-            EventWaitHandle foundStop;
-            if (!EventWaitHandle.TryOpenExisting(HandshakeProtocol.StopName(pid), EventWaitHandleRights.Synchronize, out foundStop))
-            {
-                foundEnabled.Dispose();
-                return;
-            }
-
-            if (foundStop.WaitOne(0))
-            {
-                lastStopSeenQpc = Stopwatch.GetTimestamp();
-                foundStop.Dispose();
-                foundEnabled.Dispose();
-                return;
-            }
-
-            enabled = foundEnabled;
-            stop = foundStop;
-            lastEnabledSeenQpc = Stopwatch.GetTimestamp();
-            Obs("B", "READY_CREATE_BEGIN", "sinceCtorBeginMs=" + SinceLoadMs() + " createCount=" + (readyCreateCount + 1));
-
-            // Instrumentation first (best effort, never decisive), then Ready, so a Caller that sees Ready can read the numbers.
-            readyCreateCount++;
-            try
-            {
-                infoSection = MemoryMappedFile.CreateOrOpen(HandshakeProtocol.InfoName(pid), BridgeInfo.Size, MemoryMappedFileAccess.ReadWrite);
-                info = new BridgeInfo
+                if (control == null)
                 {
-                    ProtocolVersion = BridgeInfo.InfoVersion,
-                    Bitness = Environment.Is64BitProcess ? 64 : 32,
-                    BridgeLoadQpc = loadQpc,
-                    AvailableCreatedQpc = availableCreatedQpc,
-                    ReadyCreatedQpc = Stopwatch.GetTimestamp(),
-                    BridgeLoadUtcTicks = loadUtcTicks,
-                    ReadyCreatedUtcTicks = DateTime.UtcNow.Ticks,
-                    AvailableDestroyedQpc = availableDestroyedQpc,
-                    ReadyDestroyedQpc = readyDestroyedQpc,
-                    AvailableCreateCount = availableCreateCount,
-                    AvailableDestroyCount = availableDestroyCount,
-                    ReadyCreateCount = readyCreateCount,
-                    ReadyDestroyCount = readyDestroyCount,
-                    LastEnabledSeenQpc = lastEnabledSeenQpc,
-                    LastStopSeenQpc = lastStopSeenQpc,
-                };
-                WriteInfo();
+                    control = new HandshakeControlPlane(pid, loadQpc, loadUtcTicks, Obs, OnControlHandshakeLost, OnControlHandshakeUp, HandshakeTiming.CallerPollMs);
+                }
+
+                control.PublishAvailability();
+                if (startThread)
+                {
+                    control.Start();
+                }
             }
             catch
             {
-                DisposeInfo(); // the measurement must never decide the handshake
-            }
-
-            bool created;
-            ready = new EventWaitHandle(false, EventResetMode.ManualReset, HandshakeProtocol.ReadyName(pid), out created);
-            ready.Set();
-            state = BridgeState.Connected;
-            Obs("B", "READY_CREATE_OK", "sinceCtorBeginMs=" + SinceLoadMs() + " createdNew=" + (created ? "Y" : "N") + " createCount=" + readyCreateCount);
-        }
-
-        private bool StillEnabled()
-        {
-            if (enabled == null || stop == null)
-            {
-                return false;
-            }
-
-            if (stop.WaitOne(0))
-            {
-                lastStopSeenQpc = Stopwatch.GetTimestamp();
-                return false;
-            }
-
-            return enabled.WaitOne(0);
-        }
-
-        private void WriteInfo()
-        {
-            if (infoSection == null)
-            {
-                return;
-            }
-
-            using (MemoryMappedViewAccessor view = infoSection.CreateViewAccessor(0, BridgeInfo.Size, MemoryMappedFileAccess.ReadWrite))
-            {
-                info.WriteTo(view);
+                // BVE must not be affected; the control thread / Tick retries
             }
         }
 
-        private void DisposeInfo()
+        /// <summary>The control thread's Ready was withdrawn (TS Scoring OFF / Caller stopped / Dispose): stop the external ScenarioReady publication.</summary>
+        private void OnControlHandshakeLost(string reason)
         {
-            MemoryMappedFile sectionToRelease = infoSection;
-            infoSection = null;
-            if (sectionToRelease != null)
+            try
             {
-                try { sectionToRelease.Dispose(); } catch { }
-            }
-        }
-
-        /// <summary>Withdraws Ready (and the handshake's own handles). BridgeAvailable is NOT touched here; only Dispose removes it.</summary>
-        private void Release(string reason)
-        {
-            // ScenarioReady is published only while Ready exists: withdraw it first (the level itself is kept by the tracker).
-            try { if (tracker != null) { tracker.OnHandshakeLost(reason); } } catch { }
-
-            EventWaitHandle readyToRelease = ready;
-            ready = null;
-            if (readyToRelease != null)
-            {
-                // Record the destruction (visible only while the measurement block still exists), then withdraw Ready.
-                readyDestroyedQpc = Stopwatch.GetTimestamp();
-                readyDestroyCount++;
-                try
+                ScenarioReadyTracker t = tracker;
+                if (t != null)
                 {
-                    info.ReadyDestroyedQpc = readyDestroyedQpc;
-                    info.ReadyDestroyCount = readyDestroyCount;
-                    info.LastStopSeenQpc = lastStopSeenQpc;
-                    WriteInfo();
+                    t.OnHandshakeLost(reason); // touches the named Event and the state block only, never a BVE object
                 }
-                catch
+            }
+            catch
+            {
+            }
+        }
+
+        /// <summary>The control thread created Ready (epoch = its ReadyEpoch): the tracker starts the epoch and publishes the HELD ScenarioReady again, with no Tick.</summary>
+        private void OnControlHandshakeUp(int readyEpoch)
+        {
+            Interlocked.Exchange(ref handshakeUpQpc, Stopwatch.GetTimestamp());
+            Interlocked.Exchange(ref handshakeUpPending, 1);
+            try
+            {
+                ScenarioReadyTracker t = tracker;
+                if (t != null)
                 {
+                    t.OnHandshakeUp(readyEpoch); // plain numbers and the named Event / state block only, never a BVE object
                 }
-
-                try { readyToRelease.Reset(); } catch { }
-                try { readyToRelease.Dispose(); } catch { }
-                Obs("B", "READY_DISPOSED", "reason=" + reason + " destroyCount=" + readyDestroyCount);
             }
-
-            DisposeInfo();
-
-            EventWaitHandle stopToRelease = stop;
-            stop = null;
-            if (stopToRelease != null)
+            catch
             {
-                try { stopToRelease.Dispose(); } catch { }
             }
+        }
 
-            EventWaitHandle enabledToRelease = enabled;
-            enabled = null;
-            if (enabledToRelease != null)
+        private int ControlReadyEpoch()
+        {
+            HandshakeControlPlane c = control;
+            return c == null ? 0 : c.ReadyEpoch;
+        }
+
+        /// <summary>Diagnostics: the first Tick after the control plane restored Ready (e.g. TS Scoring ON again during a pause).</summary>
+        private void NoteTickAfterHandshakeUp()
+        {
+            if (Interlocked.Exchange(ref handshakeUpPending, 0) == 1)
             {
-                try { enabledToRelease.Dispose(); } catch { }
+                long since = Stopwatch.GetTimestamp() - Interlocked.Read(ref handshakeUpQpc);
+                Obs("A", "CURRENT_TICK_AFTER_HANDSHAKE_UP", "sinceHandshakeUpMs=" + Math.Round(HandshakeProtocol.QpcToMs(since), 1) + " (the held ScenarioReady was already published again by the control thread; this Tick only continues from there)");
             }
+        }
+
+        /// <summary>The Phase B handshake is up: TS Scoring is enabled, Stop is not set and Ready is published (a lock free volatile read).</summary>
+        private bool HandshakeUp()
+        {
+            HandshakeControlPlane c = control;
+            return c != null && c.HandshakeUp;
         }
 
         // ------------------------------------------------------------------------------------------------------------------
@@ -414,7 +260,13 @@ namespace TSScoringPlugin.Handshake
 
         private string ReadyFlag()
         {
-            return ready != null ? "Y" : "N";
+            return HandshakeUp() ? "Y" : "N";
+        }
+
+        private string AvailableFlag()
+        {
+            HandshakeControlPlane c = control;
+            return c != null && c.IsAvailablePublished ? "Y" : "N";
         }
 
         private string ReadIsCreatedText()
@@ -466,13 +318,7 @@ namespace TSScoringPlugin.Handshake
             }
 
             IScenarioReadyPublisher publisher = publisherOverride ?? new ScenarioReadyPublisher(pid);
-            tracker = new ScenarioReadyTracker(Obs, readSnapshot, HandshakeUp, publisher, null);
-        }
-
-        /// <summary>The Phase B handshake is up: TS Scoring is enabled, Stop is not set and Ready is published.</summary>
-        private bool HandshakeUp()
-        {
-            return state == BridgeState.Connected && ready != null;
+            tracker = new ScenarioReadyTracker(Obs, readSnapshot, HandshakeUp, publisher, null, ControlReadyEpoch);
         }
 
         private void SubscribeObservers()

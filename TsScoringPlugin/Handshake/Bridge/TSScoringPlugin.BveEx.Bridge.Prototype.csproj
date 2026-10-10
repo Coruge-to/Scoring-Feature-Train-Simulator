@@ -59,6 +59,7 @@
   <ItemGroup>
     <Compile Include="src\AssemblyInfo.cs" />
     <Compile Include="src\TsScoringBridgePrototype.cs" />
+    <Compile Include="src\HandshakeControlPlane.cs" />
     <Compile Include="src\ScenarioObserver.cs" />
     <Compile Include="src\ScenarioReadyTracker.cs" />
     <Compile Include="src\ScenarioReadyPublisher.cs" />

@@ -235,7 +235,48 @@ namespace TSScoringPlugin.Handshake
         public const int LoadTickSeen = 2;               // the first Tick of this generation, after ScenarioCreated, was received
         public const int LoadKnownBits = LoadCreated | LoadTickSeen;
 
+        // Phase SI-A7 (M1a) - the READY EPOCH of the Bridge, inside the same seqlock (offsets 36..51; they were reserved zero before). One epoch = one
+        // creation of Ready by the control plane (TS Scoring switched ON, or the Caller came back). TickSeenInEpoch says whether the EXTENSION's Tick ran
+        // at least once since that Ready appeared. "ScenarioReady = 1 and TickSeenInEpoch = 0" therefore only exists when the held ScenarioReady was
+        // published again WITHOUT a Tick (e.g. TS Scoring switched OFF -> ON during a pause). A Bridge of the time before SI-A7 leaves them zero
+        // (EpochMagic 0 = "no information"); a Caller of the time before SI-A7 never reads them. 52..63 stay reserved.
+        public int EpochMagic;           // 36  EpochMagicValue when the Bridge provides the epoch, else 0
+        public int ReadyEpoch;           // 40  >= 1: number of Ready creations of this Bridge instance (1 = the first one)
+        public int EpochFlags;           // 44  bit0 TickSeenInEpoch
+        public int EpochCheck;           // 48  derived from ReadyEpoch, EpochFlags, ScenarioGeneration and Sequence (a foreign or torn field reads as "no information")
+
+        public const int EpochMagicValue = 0x45504F31;   // "EPO1"
+        public const int EpochTickSeen = 1;              // an extension Tick ran in this epoch
+        public const int EpochKnownBits = EpochTickSeen;
+
         public bool Ready { get { return IsScenarioReady == 1; } }
+
+        /// <summary>True when the Bridge wrote a valid epoch for this block (an older Bridge, or a damaged field, reads as false = no information).</summary>
+        public bool EpochSupported
+        {
+            get
+            {
+                return EpochMagic == EpochMagicValue
+                    && ReadyEpoch >= 1
+                    && (EpochFlags & ~EpochKnownBits) == 0
+                    && EpochCheck == ComputeEpochCheck(ReadyEpoch, EpochFlags, ScenarioGeneration, Sequence);
+            }
+        }
+
+        public bool TickSeenInEpoch { get { return EpochSupported && (EpochFlags & EpochTickSeen) != 0; } }
+
+        internal static int ComputeEpochCheck(int readyEpoch, int epochFlags, int generation, int sequence)
+        {
+            unchecked
+            {
+                int h = 0x45504F43; // "EPOC"
+                h = (h * 31) ^ readyEpoch;
+                h = (h * 31) ^ epochFlags;
+                h = (h * 31) ^ generation;
+                h = (h * 31) ^ sequence;
+                return h;
+            }
+        }
 
         /// <summary>True when the Bridge wrote a valid load marker for this block (an older Bridge, or a damaged marker, reads as false = no information).</summary>
         public bool LoadSupported
@@ -281,7 +322,7 @@ namespace TSScoringPlugin.Handshake
         /// <summary>Writes one consistent state without a load marker (the form of Phase C3; bytes 24..35 are written as zero = "no information").</summary>
         public static void Write(MemoryMappedViewAccessor view, int pid, int generation, bool ready)
         {
-            WriteCore(view, pid, generation, ready, false, 0);
+            WriteCore(view, pid, generation, ready, false, 0, false, 0, 0);
         }
 
         /// <summary>
@@ -291,10 +332,20 @@ namespace TSScoringPlugin.Handshake
         /// </summary>
         public static void WriteWithLoad(MemoryMappedViewAccessor view, int pid, int generation, bool ready, int loadInfo)
         {
-            WriteCore(view, pid, generation, ready, true, loadInfo & LoadKnownBits);
+            WriteCore(view, pid, generation, ready, true, loadInfo & LoadKnownBits, false, 0, 0);
         }
 
-        private static void WriteCore(MemoryMappedViewAccessor view, int pid, int generation, bool ready, bool withLoad, int loadInfo)
+        /// <summary>
+        /// Phase SI-A7: writes one consistent state WITH the load marker AND the Ready epoch (bytes 36..51), in the same seqlock write as the level. An epoch below 1
+        /// is not representable: such a call writes the state without an epoch (EpochMagic 0 = "no information"), exactly like WriteWithLoad.
+        /// </summary>
+        public static void WriteWithEpoch(MemoryMappedViewAccessor view, int pid, int generation, bool ready, int loadInfo, int readyEpoch, int epochFlags)
+        {
+            bool epoch = readyEpoch >= 1;
+            WriteCore(view, pid, generation, ready, true, loadInfo & LoadKnownBits, epoch, epoch ? readyEpoch : 0, epoch ? (epochFlags & EpochKnownBits) : 0);
+        }
+
+        private static void WriteCore(MemoryMappedViewAccessor view, int pid, int generation, bool ready, bool withLoad, int loadInfo, bool withEpoch, int readyEpoch, int epochFlags)
         {
             int current = view.ReadInt32(16);
             if ((current & 1) != 0)
@@ -316,6 +367,10 @@ namespace TSScoringPlugin.Handshake
             view.Write(24, withLoad ? LoadMagicValue : 0);
             view.Write(28, withLoad ? loadInfo : 0);
             view.Write(32, withLoad ? ComputeLoadCheck(loadInfo, generation, finalSeq) : 0);
+            view.Write(36, withEpoch ? EpochMagicValue : 0);
+            view.Write(40, withEpoch ? readyEpoch : 0);
+            view.Write(44, withEpoch ? epochFlags : 0);
+            view.Write(48, withEpoch ? ComputeEpochCheck(readyEpoch, epochFlags, generation, finalSeq) : 0);
             Thread.MemoryBarrier();
             view.Write(16, finalSeq);         // even: stable
         }
@@ -341,6 +396,10 @@ namespace TSScoringPlugin.Handshake
                 read.LoadMagic = view.ReadInt32(24);
                 read.LoadInfo = view.ReadInt32(28);
                 read.LoadCheck = view.ReadInt32(32);
+                read.EpochMagic = view.ReadInt32(36);
+                read.ReadyEpoch = view.ReadInt32(40);
+                read.EpochFlags = view.ReadInt32(44);
+                read.EpochCheck = view.ReadInt32(48);
                 Thread.MemoryBarrier();
                 int s2 = view.ReadInt32(16);
                 if (s1 != s2)

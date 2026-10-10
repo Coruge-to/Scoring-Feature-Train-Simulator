@@ -32,7 +32,9 @@ using System.Threading;
 //   44 uint32  ChangeCount: number of completed state writes (the initial state is write 0)
 //   48 uint32  LoadInfo   (Phase SI-A6) bit0 ScenarioCreated of ScenarioGeneration was received, bit1 the first Tick of it was received; 0 when LoadMagic is 0
 //   52 uint32  LoadMagic  (Phase SI-A6) 0x4C4F4431 ("LOD1") when the Bridge provided the marker for this generation, else 0 = "no information" (an older Bridge)
-//   56..59     reserved, zero
+//   56 uint32  EpochInfo  (Phase SI-A7) 0 = no information (an older Bridge or Caller, or the state is withdrawn). Otherwise bit0 Supported (the Bridge provided the Ready
+//              epoch), bit1 TickSeenInEpoch (the extension's Tick ran at least once since that Ready appeared), bits 8..23 the low 16 bits of ReadyEpoch. Diagnostic only
+//              in M1a: it is copied from the Bridge's ScenarioState (the same reading as the generation) and nothing in the application acts on it yet.
 //   60 uint32  Tail   equals Head after a completed write (a reader accepts a copy only when Head == Tail and Head is even)
 // ============================================================================
 namespace TSScoringPlugin.Handshake
@@ -56,6 +58,7 @@ namespace TSScoringPlugin.Handshake
         public const int OffChangeCount = 44;
         public const int OffLoadInfo = 48;
         public const int OffLoadMagic = 52;
+        public const int OffEpochInfo = 56;
         public const int OffTail = 60;
 
         public const uint FlagSession = 1;
@@ -64,6 +67,22 @@ namespace TSScoringPlugin.Handshake
 
         public const uint LoadMagic = 0x4C4F4431;
         public const uint LoadKnownBits = 3;
+
+        public const uint EpochSupported = 1;          // bit0: the Bridge provided the Ready epoch
+        public const uint EpochTickSeen = 2;           // bit1: TickSeenInEpoch
+        public const int EpochNumberShift = 8;         // bits 8..23: low 16 bits of ReadyEpoch
+        public const uint EpochNumberMask = 0xFFFF;
+
+        /// <summary>Packs the Ready epoch the way the state block carries it. 0 = no information (also for an epoch below 1).</summary>
+        public static uint PackEpochInfo(bool supported, int readyEpoch, bool tickSeenInEpoch)
+        {
+            if (!supported || readyEpoch < 1)
+            {
+                return 0u;
+            }
+
+            return EpochSupported | (tickSeenInEpoch ? EpochTickSeen : 0u) | (((uint)readyEpoch & EpochNumberMask) << EpochNumberShift);
+        }
 
         public static string InstancePrefix(string instance)
         {
@@ -82,6 +101,7 @@ namespace TSScoringPlugin.Handshake
         public uint Head;
         public bool LoadSupported;
         public uint LoadInfo;
+        public uint EpochInfo;
     }
 
     /// <summary>
@@ -99,6 +119,7 @@ namespace TSScoringPlugin.Handshake
         private int generation;
         private bool loadSupported;
         private uint loadInfo;
+        private uint epochInfo;
         private bool closed;
 
         private AppStatePublisher()
@@ -130,6 +151,7 @@ namespace TSScoringPlugin.Handshake
                 v.Write(AppStateLayout.OffChangeCount, 0u);
                 v.Write(AppStateLayout.OffLoadInfo, 0u);
                 v.Write(AppStateLayout.OffLoadMagic, 0u);
+                v.Write(AppStateLayout.OffEpochInfo, 0u);
                 Thread.MemoryBarrier();
                 v.Write(AppStateLayout.OffTail, 0u);
                 v.Write(AppStateLayout.OffHead, 0u);
@@ -166,6 +188,15 @@ namespace TSScoringPlugin.Handshake
         /// </summary>
         public AppStateWrite WriteWithLoad(bool newSession, bool newDriving, int newGeneration, uint newLoadInfo, bool newLoadSupported)
         {
+            return WriteWithEpoch(newSession, newDriving, newGeneration, newLoadInfo, newLoadSupported, 0u);
+        }
+
+        /// <summary>
+        /// Phase SI-A7: the same with the Ready epoch of the Bridge (AppStateLayout.PackEpochInfo; 0 = no information). Part of "what the block already says": it is written when
+        /// it changes, in the same seqlock write as Session / Driving / ScenarioGeneration / the load marker.
+        /// </summary>
+        public AppStateWrite WriteWithEpoch(bool newSession, bool newDriving, int newGeneration, uint newLoadInfo, bool newLoadSupported, uint newEpochInfo)
+        {
             AppStateWrite r = new AppStateWrite();
             if (closed || view == null)
             {
@@ -174,12 +205,12 @@ namespace TSScoringPlugin.Handshake
 
             bool drv = newSession && newDriving;
             uint info = newLoadSupported ? (newLoadInfo & AppStateLayout.LoadKnownBits) : 0u;
-            if (session == newSession && driving == drv && generation == newGeneration && loadSupported == newLoadSupported && loadInfo == info)
+            if (session == newSession && driving == drv && generation == newGeneration && loadSupported == newLoadSupported && loadInfo == info && epochInfo == newEpochInfo)
             {
                 return r; // the block already says exactly this (the fresh header says all OFF / generation 0 / no marker)
             }
 
-            WriteBlock(newSession, drv, newGeneration, false, info, newLoadSupported);
+            WriteBlock(newSession, drv, newGeneration, false, info, newLoadSupported, newEpochInfo);
             r.Written = true;
             r.Session = session;
             r.Driving = driving;
@@ -188,6 +219,7 @@ namespace TSScoringPlugin.Handshake
             r.Head = head;
             r.LoadSupported = loadSupported;
             r.LoadInfo = loadInfo;
+            r.EpochInfo = epochInfo;
             return r;
         }
 
@@ -200,7 +232,7 @@ namespace TSScoringPlugin.Handshake
                 return r;
             }
 
-            WriteBlock(false, false, generation, true, 0u, false);
+            WriteBlock(false, false, generation, true, 0u, false, 0u);
             closed = true;
             r.Written = true;
             r.Session = false;
@@ -229,7 +261,7 @@ namespace TSScoringPlugin.Handshake
             }
         }
 
-        private void WriteBlock(bool newSession, bool newDriving, int newGeneration, bool close, uint newLoadInfo, bool newLoadSupported)
+        private void WriteBlock(bool newSession, bool newDriving, int newGeneration, bool close, uint newLoadInfo, bool newLoadSupported, uint newEpochInfo)
         {
             uint writing = unchecked(head + 1);
             uint finalHead = unchecked(head + 2);
@@ -243,6 +275,7 @@ namespace TSScoringPlugin.Handshake
             view.Write(AppStateLayout.OffChangeCount, next);
             view.Write(AppStateLayout.OffLoadInfo, newLoadSupported ? newLoadInfo : 0u);
             view.Write(AppStateLayout.OffLoadMagic, newLoadSupported ? AppStateLayout.LoadMagic : 0u);
+            view.Write(AppStateLayout.OffEpochInfo, newEpochInfo);
             Thread.MemoryBarrier();
             view.Write(AppStateLayout.OffTail, finalHead);
             Thread.MemoryBarrier();
@@ -255,6 +288,7 @@ namespace TSScoringPlugin.Handshake
             generation = newGeneration;
             loadSupported = newLoadSupported;
             loadInfo = newLoadSupported ? newLoadInfo : 0u;
+            epochInfo = newEpochInfo;
         }
     }
 }

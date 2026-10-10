@@ -12,10 +12,12 @@ using System.Threading;
 // Close(): event reset, block written with level 0, then both released. No file, registry, pipe or socket; default access rules.
 // Phase SI-A6: the block also carries the load marker of the generation (ScenarioState.LoadInfo, bytes 24..35, written in the same seqlock write as the
 // level), so that a reader learns "ScenarioCreated was received" without any Tick. The tracker writes it on BVE's own event / Tick thread; nothing here reads BVE.
+// Phase SI-A7: the block also carries the Ready epoch (ScenarioState bytes 36..51: EpochMagic, ReadyEpoch, EpochFlags, EpochCheck) in the same seqlock write. The tracker
+// writes it from BVE's Tick / event thread AND from the control plane's thread (a held ScenarioReady published again without a Tick); both only pass plain numbers.
 // ============================================================================
 namespace TSScoringPlugin.Handshake
 {
-    internal sealed class ScenarioReadyPublisher : IScenarioLoadPublisher
+    internal sealed class ScenarioReadyPublisher : IScenarioEpochPublisher
     {
         private readonly int pid;
         private EventWaitHandle readyEvent;
@@ -31,20 +33,26 @@ namespace TSScoringPlugin.Handshake
 
         public void Open(int generation, bool ready)
         {
-            OpenCore(generation, ready, 0, false);
+            OpenCore(generation, ready, 0, false, 0, 0);
         }
 
         /// <summary>Phase SI-A6: the same, with the load marker of the generation (bit0 ScenarioCreated, bit1 first Tick).</summary>
         public void OpenWithLoad(int generation, bool ready, int loadInfo)
         {
-            OpenCore(generation, ready, loadInfo, true);
+            OpenCore(generation, ready, loadInfo, true, 0, 0);
         }
 
-        private void OpenCore(int generation, bool ready, int loadInfo, bool withLoad)
+        /// <summary>Phase SI-A7: the same, with the Ready epoch (ScenarioState bytes 36..51; epoch &lt; 1 = none) written in the same seqlock write.</summary>
+        public void OpenWithEpoch(int generation, bool ready, int loadInfo, int readyEpoch, int epochFlags)
+        {
+            OpenCore(generation, ready, loadInfo, true, readyEpoch, epochFlags);
+        }
+
+        private void OpenCore(int generation, bool ready, int loadInfo, bool withLoad, int readyEpoch, int epochFlags)
         {
             if (IsOpen)
             {
-                UpdateCore(generation, ready, loadInfo, withLoad);
+                UpdateCore(generation, ready, loadInfo, withLoad, readyEpoch, epochFlags);
                 return;
             }
 
@@ -55,7 +63,7 @@ namespace TSScoringPlugin.Handshake
                 bool created;
                 readyEvent = new EventWaitHandle(false, EventResetMode.ManualReset, HandshakeProtocol.ScenarioReadyName(pid), out created);
                 readyEvent.Reset();
-                UpdateCore(generation, ready, loadInfo, withLoad);
+                UpdateCore(generation, ready, loadInfo, withLoad, readyEpoch, epochFlags);
             }
             catch
             {
@@ -66,16 +74,22 @@ namespace TSScoringPlugin.Handshake
 
         public void Update(int generation, bool ready)
         {
-            UpdateCore(generation, ready, 0, false);
+            UpdateCore(generation, ready, 0, false, 0, 0);
         }
 
         /// <summary>Phase SI-A6: the same, with the load marker of the generation (written in the same seqlock write as the level).</summary>
         public void UpdateWithLoad(int generation, bool ready, int loadInfo)
         {
-            UpdateCore(generation, ready, loadInfo, true);
+            UpdateCore(generation, ready, loadInfo, true, 0, 0);
         }
 
-        private void UpdateCore(int generation, bool ready, int loadInfo, bool withLoad)
+        /// <summary>Phase SI-A7: the same, with the Ready epoch (ScenarioState bytes 36..51) written in the same seqlock write as the level.</summary>
+        public void UpdateWithEpoch(int generation, bool ready, int loadInfo, int readyEpoch, int epochFlags)
+        {
+            UpdateCore(generation, ready, loadInfo, true, readyEpoch, epochFlags);
+        }
+
+        private void UpdateCore(int generation, bool ready, int loadInfo, bool withLoad, int readyEpoch, int epochFlags)
         {
             if (!IsOpen)
             {
@@ -84,19 +98,23 @@ namespace TSScoringPlugin.Handshake
 
             if (ready)
             {
-                WriteState(generation, true, loadInfo, withLoad);
+                WriteState(generation, true, loadInfo, withLoad, readyEpoch, epochFlags);
                 readyEvent.Set();
             }
             else
             {
                 readyEvent.Reset();
-                WriteState(generation, false, loadInfo, withLoad);
+                WriteState(generation, false, loadInfo, withLoad, readyEpoch, epochFlags);
             }
         }
 
-        private void WriteState(int generation, bool ready, int loadInfo, bool withLoad)
+        private void WriteState(int generation, bool ready, int loadInfo, bool withLoad, int readyEpoch, int epochFlags)
         {
-            if (withLoad)
+            if (withLoad && readyEpoch >= 1)
+            {
+                ScenarioState.WriteWithEpoch(view, pid, generation, ready, loadInfo, readyEpoch, epochFlags);
+            }
+            else if (withLoad)
             {
                 ScenarioState.WriteWithLoad(view, pid, generation, ready, loadInfo);
             }

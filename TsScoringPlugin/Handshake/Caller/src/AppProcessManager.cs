@@ -179,6 +179,7 @@ namespace TSScoringPlugin.Handshake
         private int latestGeneration;
         private bool latestLoadSupported;   // Phase SI-A6: the load marker of the generation (ScenarioCreated / first Tick), as the Bridge published it
         private uint latestLoadInfo;
+        private uint latestEpochInfo;       // Phase SI-A7: the Ready epoch of the Bridge, packed as the state block carries it (0 = no information)
         private int statePublishCount;      // writes made into the block (the initial one included)
         private long stateSuppressedCount;  // identical reports (not written)
         private bool stateBlockCreated;
@@ -261,6 +262,9 @@ namespace TSScoringPlugin.Handshake
 
         public int LatestGeneration { get { lock (sync) { return latestGeneration; } } }
 
+        /// <summary>Phase SI-A7: the newest Ready epoch the Caller reported (AppStateLayout.PackEpochInfo; 0 = no information). Diagnostic only.</summary>
+        public uint LatestEpochInfo { get { lock (sync) { return latestEpochInfo; } } }
+
         // ------------------------------------------------------------------------------------------------------------------------------
         // The logical start request (monitor thread; no I/O, no wait)
         // ------------------------------------------------------------------------------------------------------------------------------
@@ -328,6 +332,15 @@ namespace TSScoringPlugin.Handshake
         /// <summary>Phase SI-A6: the same with the load marker of the generation. loadSupported false = the Bridge gave none (an older Bridge, or no valid block).</summary>
         public void PublishStateWithLoad(bool session, bool driving, int scenarioGeneration, uint loadInfo, bool loadSupported)
         {
+            PublishStateWithEpoch(session, driving, scenarioGeneration, loadInfo, loadSupported, 0u);
+        }
+
+        /// <summary>
+        /// Phase SI-A7: the same with the Ready epoch of the Bridge (AppStateLayout.PackEpochInfo; 0 = no information). The epoch is DIAGNOSTIC: it is remembered and written
+        /// when it changes (in the same write as the rest of the state) and nothing in the Caller or the application acts on it.
+        /// </summary>
+        public void PublishStateWithEpoch(bool session, bool driving, int scenarioGeneration, uint loadInfo, bool loadSupported, uint epochInfo)
+        {
             bool drv = session && driving;
             uint info = loadSupported ? loadInfo : 0u;
             AppStateWrite w = new AppStateWrite();
@@ -339,7 +352,7 @@ namespace TSScoringPlugin.Handshake
                     return;
                 }
 
-                if (latestKnown && latestSession == session && latestDriving == drv && latestGeneration == scenarioGeneration && latestLoadSupported == loadSupported && latestLoadInfo == info)
+                if (latestKnown && latestSession == session && latestDriving == drv && latestGeneration == scenarioGeneration && latestLoadSupported == loadSupported && latestLoadInfo == info && latestEpochInfo == epochInfo)
                 {
                     stateSuppressedCount++;
                     return;
@@ -351,9 +364,10 @@ namespace TSScoringPlugin.Handshake
                 latestGeneration = scenarioGeneration;
                 latestLoadSupported = loadSupported;
                 latestLoadInfo = info;
+                latestEpochInfo = epochInfo;
                 if (statePublisher != null && !statePublisher.IsClosed)
                 {
-                    w = statePublisher.WriteWithLoad(session, drv, scenarioGeneration, info, loadSupported);
+                    w = statePublisher.WriteWithEpoch(session, drv, scenarioGeneration, info, loadSupported, epochInfo);
                     if (w.Written)
                     {
                         statePublishCount++;
@@ -364,7 +378,7 @@ namespace TSScoringPlugin.Handshake
 
             if (w.Written)
             {
-                Log("APP_STATE_PUBLISH", "instance=" + inst + " session=" + (w.Session ? 1 : 0) + " driving=" + (w.Driving ? 1 : 0) + " ScenarioGeneration=" + w.Generation + " changeNo=" + w.ChangeCount + (w.LoadSupported ? " load=" + w.LoadInfo : string.Empty));
+                Log("APP_STATE_PUBLISH", "instance=" + inst + " session=" + (w.Session ? 1 : 0) + " driving=" + (w.Driving ? 1 : 0) + " ScenarioGeneration=" + w.Generation + " changeNo=" + w.ChangeCount + (w.LoadSupported ? " load=" + w.LoadInfo : string.Empty) + (w.EpochInfo != 0u ? " epochInfo=" + w.EpochInfo : string.Empty));
             }
         }
 
@@ -639,7 +653,7 @@ namespace TSScoringPlugin.Handshake
                     s = latestSession;
                     d = latestDriving;
                     g = latestGeneration;
-                    first = publisher.WriteWithLoad(s, d, g, latestLoadInfo, latestLoadSupported);   // the current state (load marker included); an all-OFF / generation 0 / no-marker state needs no write
+                    first = publisher.WriteWithEpoch(s, d, g, latestLoadInfo, latestLoadSupported, latestEpochInfo);   // the current state (load marker and epoch included); an all-OFF / generation 0 / no-marker / no-epoch state needs no write
                     if (first.Written)
                     {
                         statePublishCount++;

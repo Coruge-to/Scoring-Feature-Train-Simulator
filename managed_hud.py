@@ -159,6 +159,7 @@ class ManagedHudController(object):
         self._input = None              # Phase SI-A: the input / scoring controller (managed_input), attached by main._attach_managed_hud; None = HUD only
         self._recovery = None           # Phase SI-A6: the pause data recovery (pause_recovery), attached by main._attach_managed_hud; None = none
         self._closed_seen = False       # the Caller withdrew the state (Closed flag): the NORMAL end
+        self._epoch_last = (False, False, 0)   # Phase SI-A7 (M1a): the Ready epoch last reported (supported, tick seen, number); diagnostic only
         self.startup_failure = None     # why start() failed (the managed contract is not met)
         self.failsafes = 0
         # counters (tests and the summary line)
@@ -270,6 +271,7 @@ class ManagedHudController(object):
             change = self.gate.apply(snapshot)
             if change is not None:
                 self._on_change(change)
+            self._note_epoch(snapshot)
             if self._recovery is not None:
                 self._recovery.tick(snapshot, self.gate.mode)
                 self._set_interval(IDLE_INTERVAL_MS if self.gate.mode == managed_state.MODE_HIDDEN and not self._recovery.active else ACTIVE_INTERVAL_MS)
@@ -318,6 +320,19 @@ class ManagedHudController(object):
                 self._emit("hud-update-wait", reason="driving-off" if c.session else "session-off")
             self._set_interval(IDLE_INTERVAL_MS)
             self._hide("driving-off" if c.session else "session-off")
+
+    def _note_epoch(self, snapshot):
+        """Phase SI-A7 (M1a): the Ready epoch of the Bridge, DIAGNOSTIC ONLY. One `epoch-info` line whenever (supported, tick seen, epoch number) differs from the last one
+        reported; nothing at all for a block without an epoch (an older Bridge or Caller). Nothing reads it back: no token, no key, no gate input."""
+        if snapshot is None:
+            return
+        now = (snapshot.epoch_supported, snapshot.epoch_tick_seen, snapshot.ready_epoch)
+        if now == self._epoch_last:
+            return
+        was = self._epoch_last
+        self._epoch_last = now
+        self.emit_event("epoch-info", supported=int(now[0]), tick_seen=int(now[1]), ready_epoch=now[2], was_supported=int(was[0]), was_tick_seen=int(was[1]),
+                        was_epoch=was[2], session=int(snapshot.effective_session), gen=snapshot.generation)
 
     def _on_generation(self, generation):
         """Phase L3: a new ScenarioGeneration. The telemetry of the previous one is retired; when the sender had already moved on to the new scenario
@@ -528,6 +543,7 @@ class ManagedHudController(object):
             return False
         snapshot = self._reader.last
         change = self.gate.apply(snapshot)
+        self._note_epoch(snapshot)
         if change is not None:
             self._on_change(change)
         else:

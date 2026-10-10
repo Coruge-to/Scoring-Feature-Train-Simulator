@@ -21,6 +21,14 @@ Phase SI-A6 - the LOAD MARKER (bytes 48..55, formerly reserved zero; Version, Si
 Both are written in the same seqlock write as the generation, so one reading shows the generation and the marker of ONE write. A block with LoadMagic 0
 (a Bridge or Caller from before SI-A6) is `load_supported = False`: nothing may be concluded from the marker (the automatic P-to-P recovery stays off).
 
+Phase SI-A7 (M1a) - the READY EPOCH (bytes 56..59, formerly reserved zero; Version, Size and every earlier field are unchanged):
+    56 uint32  EpochInfo  0 = no information (an older Bridge or Caller, a withdrawn state). Otherwise bit0 Supported (the Bridge provided the Ready epoch), bit1
+                          TickSeenInEpoch (the extension's Tick ran at least once since that Ready appeared), bits 8..23 the low 16 bits of ReadyEpoch.
+`ScenarioReady on and TickSeenInEpoch = 0` can only be a held level that the Bridge published again WITHOUT a Tick (TS Scoring switched OFF -> ON during a pause).
+In M1a this is DIAGNOSTIC ONLY: it is parsed, exposed as `epoch_supported` / `epoch_tick_seen` / `ready_epoch` and logged when it changes. Nothing acts on it: no
+recovery token is created from it, no key is sent (pause_recovery.py ignores it; IMPLEMENTED_KINDS is unchanged). An EpochInfo that does not parse (an unknown bit,
+no Supported bit) is "no information" - never an error, never a loss of the block.
+
 HUD gate (HudGate, pure):
     Session ON  and Driving ON   -> MODE_ACTIVE   (the HUD is shown and updated)
     Session ON  and Driving OFF  -> MODE_WAITING  (soft OFF: the Overlay is kept, the HUD is hidden and not updated)
@@ -45,14 +53,22 @@ FLAG_CLOSED = 4
 _KNOWN_FLAGS = FLAG_SESSION | FLAG_DRIVING | FLAG_CLOSED
 
 OFF_LOAD_INFO, OFF_LOAD_MAGIC = 48, 52
+OFF_EPOCH_INFO = 56
 LOAD_MAGIC = 0x4C4F4431                     # "LOD1"
 LOAD_CREATED = 1                            # ScenarioCreated of the generation was received
 LOAD_TICK_SEEN = 2                          # the first Tick of the generation was received
 _KNOWN_LOAD_BITS = LOAD_CREATED | LOAD_TICK_SEEN
 
+EPOCH_SUPPORTED = 1                         # bit0: the Bridge provided the Ready epoch
+EPOCH_TICK_SEEN = 2                         # bit1: the extension's Tick ran at least once in that epoch
+EPOCH_NUMBER_SHIFT = 8                      # bits 8..23: low 16 bits of ReadyEpoch
+EPOCH_NUMBER_MASK = 0xFFFF
+_KNOWN_EPOCH_BITS = EPOCH_SUPPORTED | EPOCH_TICK_SEEN | (EPOCH_NUMBER_MASK << EPOCH_NUMBER_SHIFT)
+
 _HEADER = struct.Struct("<IIII16s")        # magic, version, size, pid, instance prefix  (offsets 0..31)
 _BODY = struct.Struct("<IIiI")             # head, flags, generation, change count      (offsets 32..47)
 _LOAD = struct.Struct("<II")               # load info, load magic                      (offsets 48..55)
+_EPOCH = struct.Struct("<I")               # epoch info                                 (offset 56)
 _TAIL = struct.Struct("<I")                # offset 60
 
 MODE_HIDDEN = "hidden"
@@ -68,9 +84,9 @@ def state_name(bve_pid, instance):
 
 class StateSnapshot(object):
     """One consistent reading of the block. `session` / `driving` are the raw flags; use effective_* for the HUD."""
-    __slots__ = ("session", "driving", "closed", "generation", "change_count", "head", "load_supported", "load_info")
+    __slots__ = ("session", "driving", "closed", "generation", "change_count", "head", "load_supported", "load_info", "epoch_info")
 
-    def __init__(self, session, driving, closed, generation, change_count, head, load_supported=False, load_info=0):
+    def __init__(self, session, driving, closed, generation, change_count, head, load_supported=False, load_info=0, epoch_info=0):
         self.session = session
         self.driving = driving
         self.closed = closed
@@ -79,6 +95,22 @@ class StateSnapshot(object):
         self.head = head
         self.load_supported = load_supported      # Phase SI-A6: the Bridge provided the load marker (LoadMagic valid); False = "no information"
         self.load_info = load_info if load_supported else 0
+        self.epoch_info = epoch_info if epoch_info & EPOCH_SUPPORTED else 0     # Phase SI-A7: 0 = "no information"
+
+    @property
+    def epoch_supported(self):
+        """The Bridge provided the Ready epoch (Phase SI-A7). False = "no information" (an older Bridge or Caller): nothing may be concluded from the epoch."""
+        return bool(self.epoch_info & EPOCH_SUPPORTED)
+
+    @property
+    def epoch_tick_seen(self):
+        """The extension's Tick ran at least once since the current Ready appeared (needs epoch_supported)."""
+        return self.epoch_supported and bool(self.epoch_info & EPOCH_TICK_SEEN)
+
+    @property
+    def ready_epoch(self):
+        """The low 16 bits of the Bridge's ReadyEpoch (0 when unsupported). A diagnostic number: it only tells epochs apart."""
+        return (self.epoch_info >> EPOCH_NUMBER_SHIFT) & EPOCH_NUMBER_MASK if self.epoch_supported else 0
 
     @property
     def created_seen(self):
@@ -129,8 +161,10 @@ def parse_state(data, bve_pid, instance):
         return None, "flags"
     load_info, load_magic = _LOAD.unpack_from(data, OFF_LOAD_INFO)
     load_supported = load_magic == LOAD_MAGIC       # any other magic (0 = an older Bridge / Caller) is "no information", never an error
+    (epoch_raw,) = _EPOCH.unpack_from(data, OFF_EPOCH_INFO)
+    epoch_info = epoch_raw if (epoch_raw & EPOCH_SUPPORTED) and not (epoch_raw & ~_KNOWN_EPOCH_BITS) else 0   # Phase SI-A7: anything else is "no information"
     return StateSnapshot(bool(flags & FLAG_SESSION), bool(flags & FLAG_DRIVING), bool(flags & FLAG_CLOSED), generation, count, head,
-                         load_supported, (load_info & _KNOWN_LOAD_BITS) if load_supported else 0), None
+                         load_supported, (load_info & _KNOWN_LOAD_BITS) if load_supported else 0, epoch_info), None
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------------

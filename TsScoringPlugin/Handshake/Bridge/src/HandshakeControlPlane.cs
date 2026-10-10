@@ -5,23 +5,34 @@ using System.Security.AccessControl;
 using System.Threading;
 
 // ============================================================================
-// PHASE L1 - Tick independent CONTROL PLANE of the Bridge (host independent: no AtsEX / BveEX type in this file).
+// PHASE SI-A7 (M1a) - the Tick independent CONTROL PLANE of the Bridge, shared by the Current and the Legacy adapter.
+// This file is HOST INDEPENDENT: it names no type of any host and no object of the simulator (the verification scripts check that, comments included).
+// It moved here from Bridge\Legacy\src (Phase L1, where only the Legacy adapter used it); the Current adapter now uses the very same source.
 //
-// Why it exists: in AtsEX legacy mode the extension's Tick (and the data updates) can stop while the simulation is paused (verified in the
-// DenGo project). The control plane therefore must not wait for Tick. It owns only named kernel objects and nothing of BVE:
+// Why it exists: the extension's Tick (and the data updates) can stop while the simulation is paused. The handshake therefore must not wait for Tick.
+// The control plane owns only named kernel objects, one memory section and plain numbers:
 //   Enabled / Stop (opened, set by the Caller)     BridgeAvailable / Ready (created here)     BridgeInfo (measurement block, as Phase B)
-// and it runs on ONE background thread of its own (never BVE's thread). The thread NEVER touches BveHacker, Scenario, Vehicle, TimeManager
-// or any other BVE object: those are read on Tick by the ScenarioReady tracker only (thread safety of BVE internals is not established).
+// and it runs on ONE background thread of its own (never the host's thread). That thread NEVER touches anything of the simulator or of the host's
+// object model: not the hacker object, not the scenario, the vehicle, the time manager, the current position, the current time, the station list, or any
+// other object whose thread safety is not established. Those are read on Tick by the ready-level tracker only. What the thread MAY use is exactly:
+//   named events, the memory-mapped files above, Stopwatch, the observation log, and plain numbers handed over through the two callbacks below.
 //
 // Behaviour = the Phase B handshake of the Current adapter, same names, same rules, driven by a thread instead of Tick:
 //   * BridgeAvailable: created and set when the Bridge loads; reset and released only by WithdrawAvailability (Bridge Dispose).
 //   * Ready: created and set while the Caller is Enabled and Stop is not set; withdrawn as soon as Stop is set or Enabled is lost
 //     (that is: also while the simulation is paused and Tick is silent). Re-created when the Caller is enabled again.
-//   * Withdrawing Ready first tells the owner (handshakeLost) so that the external ScenarioReady publication stops BEFORE Ready goes.
-//     The ScenarioReady LEVEL is kept by the tracker. Re-publication is decided on the next Tick (by the tracker), not here.
+//   * Withdrawing Ready first tells the owner (handshakeLost) so that the external ready-level publication stops BEFORE Ready goes. The level itself is kept
+//     by the owner. Creating Ready tells the owner (handshakeUp, with the new ReadyEpoch) AFTER Ready exists, and the owner publishes the HELD level again
+//     right away - from this thread, with no Tick - using only the plain numbers it already keeps.
+//   * ReadyEpoch = the number of Ready creations of this instance (1 = the first). It is a lock free volatile value that is set BEFORE the handshake is
+//     reported up, so a Tick that sees the handshake up always sees the epoch of that very Ready.
+//   * The thread survives any exception of one step (the step withdraws Ready and the next poll starts over); it ends only on Shutdown.
 //
-// Locking: one private gate serialises Step / Shutdown / Publish / Withdraw. Tick never takes that gate (it reads the volatile 'up' flag),
-// so the tracker's gate and this gate are never taken in opposite orders.
+// LOCK ORDER (the only one, fixed by the verification scripts):
+//   control gate  ->  owner's gate (the tracker).
+//   The control plane takes its own gate and, while holding it, calls handshakeLost / handshakeUp, which take the owner's gate. Nothing that holds the
+//   owner's gate takes the control gate: the owner and the adapter's Tick read this class through lock free volatile members only
+//   (HandshakeUp, ReadyEpoch, IsWorkerAlive). The observation log is a leaf lock below both.
 // ============================================================================
 namespace TSScoringPlugin.Handshake
 {
@@ -35,12 +46,13 @@ namespace TSScoringPlugin.Handshake
         private readonly long loadUtcTicks;
         private readonly Action<string, string, string> log;     // (track, event, detail)
         private readonly Action<string> handshakeLost;           // called BEFORE Ready is withdrawn (reason code)
-        private readonly Action handshakeUp;                     // called AFTER Ready was published
+        private readonly Action<int> handshakeUp;                // called AFTER Ready was published (the new ReadyEpoch)
         private readonly int pollMs;
         private readonly object gate = new object();
         private readonly ManualResetEvent shutdown = new ManualResetEvent(false);
 
         private volatile bool up;                                // Ready is published (read by Tick without a lock)
+        private volatile int readyEpoch;                         // number of the current / latest Ready creation (read without a lock; set before 'up')
         private bool stopped;
         private Thread worker;
 
@@ -60,8 +72,9 @@ namespace TSScoringPlugin.Handshake
         private long readyDestroyedQpc;
         private int readyCreateCount;
         private int readyDestroyCount;
+        private int stepExceptions;
 
-        internal HandshakeControlPlane(int pid, long loadQpc, long loadUtcTicks, Action<string, string, string> log, Action<string> handshakeLost, Action handshakeUp, int pollMs)
+        internal HandshakeControlPlane(int pid, long loadQpc, long loadUtcTicks, Action<string, string, string> log, Action<string> handshakeLost, Action<int> handshakeUp, int pollMs)
         {
             this.pid = pid;
             this.loadQpc = loadQpc;
@@ -75,13 +88,20 @@ namespace TSScoringPlugin.Handshake
         /// <summary>Ready is published (TS Scoring enabled, Stop not set). Lock free; safe to read from Tick.</summary>
         internal bool HandshakeUp { get { return up; } }
 
+        /// <summary>The number of the current (or, while the handshake is down, the latest) Ready creation. 0 = Ready was never created. Lock free.</summary>
+        internal int ReadyEpoch { get { return readyEpoch; } }
+
         internal bool IsAvailablePublished { get { lock (gate) { return available != null; } } }
 
+        /// <summary>Lock free: the worker thread exists and runs.</summary>
         internal bool IsWorkerAlive { get { Thread w = worker; return w != null && w.IsAlive; } }
 
         internal int ReadyCreateCount { get { lock (gate) { return readyCreateCount; } } }
 
         internal int ReadyDestroyCount { get { lock (gate) { return readyDestroyCount; } } }
+
+        /// <summary>Exceptions swallowed by Step (the offline tests: 0 in every normal run).</summary>
+        internal int StepExceptionCount { get { lock (gate) { return stepExceptions; } } }
 
         /// <summary>Starts the control thread once (no-op while it runs or after Shutdown).</summary>
         internal void Start()
@@ -95,7 +115,7 @@ namespace TSScoringPlugin.Handshake
 
                 Thread t = new Thread(Loop);
                 t.IsBackground = true;
-                t.Name = "TS Scoring legacy control plane";
+                t.Name = "TS Scoring control plane";
                 worker = t;
                 t.Start();
             }
@@ -108,12 +128,19 @@ namespace TSScoringPlugin.Handshake
             {
                 while (!shutdown.WaitOne(pollMs))
                 {
-                    Step();
+                    try
+                    {
+                        Step();
+                    }
+                    catch
+                    {
+                        // one bad step must not end the control plane (a pause may last minutes and Tick cannot restart it then); Step already withdrew Ready
+                    }
                 }
             }
             catch
             {
-                // an extension must never take BVE down; Tick restarts the thread (Start) if it ever ends
+                // an extension must never take the host down
             }
             finally
             {
@@ -152,6 +179,7 @@ namespace TSScoringPlugin.Handshake
                 }
                 catch (Exception ex)
                 {
+                    stepExceptions++;
                     try { ReleaseLocked("control-exception-" + ex.GetType().Name); } catch { }
                 }
             }
@@ -210,7 +238,7 @@ namespace TSScoringPlugin.Handshake
 
         /// <summary>
         /// Stops the thread (waits a short time for it), withdraws Ready and every handle of the handshake. BridgeAvailable is NOT touched.
-        /// After this call Step does nothing. Safe to call more than once.
+        /// After this call Step does nothing. Safe to call more than once; the thread is joined outside the gate.
         /// </summary>
         internal void Shutdown(string reason)
         {
@@ -316,9 +344,10 @@ namespace TSScoringPlugin.Handshake
             bool created;
             ready = new EventWaitHandle(false, EventResetMode.ManualReset, HandshakeProtocol.ReadyName(pid), out created);
             ready.Set();
+            readyEpoch = readyCreateCount;   // BEFORE 'up': whoever sees the handshake up sees the epoch of this Ready
             up = true;
-            log("B", "READY_CREATE_OK", "sinceCtorBeginMs=" + SinceLoadMs() + " createdNew=" + (created ? "Y" : "N") + " createCount=" + readyCreateCount);
-            try { handshakeUp(); } catch { }
+            log("B", "READY_CREATE_OK", "sinceCtorBeginMs=" + SinceLoadMs() + " createdNew=" + (created ? "Y" : "N") + " createCount=" + readyCreateCount + " readyEpoch=" + readyEpoch);
+            try { handshakeUp(readyEpoch); } catch { }
         }
 
         /// <summary>Withdraws Ready (and the handshake's own handles). BridgeAvailable is NOT touched.</summary>
@@ -326,7 +355,7 @@ namespace TSScoringPlugin.Handshake
         {
             up = false;
 
-            // ScenarioReady is published only while Ready exists: it is withdrawn first (the level itself is kept by the tracker).
+            // The external ready-level publication exists only while Ready exists: it is withdrawn first (the level itself is kept by the owner).
             try { handshakeLost(reason); } catch { }
 
             EventWaitHandle readyToRelease = ready;
@@ -348,7 +377,7 @@ namespace TSScoringPlugin.Handshake
 
                 try { readyToRelease.Reset(); } catch { }
                 try { readyToRelease.Dispose(); } catch { }
-                log("B", "READY_DISPOSED", "reason=" + reason + " destroyCount=" + readyDestroyCount);
+                log("B", "READY_DISPOSED", "reason=" + reason + " destroyCount=" + readyDestroyCount + " readyEpoch=" + readyEpoch);
             }
 
             DisposeInfoLocked();

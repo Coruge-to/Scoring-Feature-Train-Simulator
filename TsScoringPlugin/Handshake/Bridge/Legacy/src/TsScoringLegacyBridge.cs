@@ -29,10 +29,12 @@ using BveTypes.ClassWrappers;
 // IsScenarioCreated is true, Scenario / TimeManager / LocationManager (position finite) / Vehicle are readable, the Bridge is not disposed
 // and the handshake (Enabled + Ready) is up. PostTick is not used at all (it does not exist in Legacy).
 //
-// Threads: the control plane (Enabled / Stop / BridgeAvailable / Ready, Dispose requests) runs on its own background thread and touches
-// named kernel objects only. BveHacker, Scenario, Vehicle and TimeManager are read on the host's Tick thread only (inside the tracker).
+// Threads: the control plane (Enabled / Stop / BridgeAvailable / Ready, Dispose requests; HandshakeControlPlane.cs, shared with the Current adapter since
+// Phase SI-A7) runs on its own background thread and touches named kernel objects only. BveHacker, Scenario, Vehicle and TimeManager are read on the
+// host's Tick thread only (inside the tracker).
 // While the simulation is paused and Tick is silent, turning TS Scoring OFF withdraws ScenarioReady and Ready at once; turning it ON again
-// restores Ready at once, and the (kept) ScenarioReady level is published again by the first Tick after that.
+// restores Ready at once AND (Phase SI-A7) publishes the kept ScenarioReady level again at once, from the control thread, with the new Ready epoch and
+// TickSeenInEpoch = 0 - the tracker only uses the plain numbers it already holds. ESTABLISHING ScenarioReady stays on Tick.
 //
 // No exception ever leaves the constructor, Tick, Dispose or an event handler.
 // ============================================================================
@@ -56,7 +58,7 @@ namespace TSScoringPlugin.Handshake
         private volatile ScenarioReadyTracker tracker;
         private volatile HandshakeControlPlane control;
 
-        // diagnostics: the control plane restored Ready (thread) -> the first Tick afterwards publishes ScenarioReady again
+        // diagnostics: the control plane restored Ready (thread) -> the held ScenarioReady was published again by that thread; the first Tick afterwards is noted
         private long handshakeUpQpc;
         private int handshakeUpPending;
 
@@ -179,19 +181,37 @@ namespace TSScoringPlugin.Handshake
             }
         }
 
-        private void OnControlHandshakeUp()
+        /// <summary>The control thread created Ready (epoch = its ReadyEpoch): the tracker starts the epoch and publishes the HELD ScenarioReady again, with no Tick.</summary>
+        private void OnControlHandshakeUp(int readyEpoch)
         {
             Interlocked.Exchange(ref handshakeUpQpc, Stopwatch.GetTimestamp());
             Interlocked.Exchange(ref handshakeUpPending, 1);
+            try
+            {
+                ScenarioReadyTracker t = tracker;
+                if (t != null)
+                {
+                    t.OnHandshakeUp(readyEpoch); // plain numbers and the named Event / state block only, never a BVE object
+                }
+            }
+            catch
+            {
+            }
         }
 
-        /// <summary>Diagnostics: the control plane is back (e.g. TS Scoring ON again during a pause); BVE data is published again on this Tick.</summary>
+        private int ControlReadyEpoch()
+        {
+            HandshakeControlPlane c = control;
+            return c == null ? 0 : c.ReadyEpoch;
+        }
+
+        /// <summary>Diagnostics: the first Tick after the control plane restored Ready (e.g. TS Scoring ON again during a pause).</summary>
         private void NoteTickAfterHandshakeUp()
         {
             if (Interlocked.Exchange(ref handshakeUpPending, 0) == 1)
             {
                 long since = Stopwatch.GetTimestamp() - Interlocked.Read(ref handshakeUpQpc);
-                Obs("A", "LEGACY_TICK_AFTER_HANDSHAKE_UP", "sinceHandshakeUpMs=" + Math.Round(HandshakeProtocol.QpcToMs(since), 1) + " (ScenarioReady is published again from Tick, never from the control thread)");
+                Obs("A", "LEGACY_TICK_AFTER_HANDSHAKE_UP", "sinceHandshakeUpMs=" + Math.Round(HandshakeProtocol.QpcToMs(since), 1) + " (the held ScenarioReady was already published again by the control thread; this Tick only continues from there)");
             }
         }
 
@@ -281,7 +301,7 @@ namespace TSScoringPlugin.Handshake
             }
 
             IScenarioReadyPublisher publisher = publisherOverride ?? new ScenarioReadyPublisher(pid);
-            tracker = new ScenarioReadyTracker(Obs, readSnapshot, HandshakeUp, publisher, null);
+            tracker = new ScenarioReadyTracker(Obs, readSnapshot, HandshakeUp, publisher, null, ControlReadyEpoch);
         }
 
         private void SubscribeObservers()
