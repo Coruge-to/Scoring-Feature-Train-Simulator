@@ -31,6 +31,13 @@ using BveTypes.ClassWrappers;
 //   Scenario.Vehicle.Instruments.Cab (runtime type) .Handles: ReverserPosition / PowerNotch / BrakeNotch / NotchInfo (counts, EmergencyBrakeNotch, B67Notch, HasHoldingSpeedBrake)
 //   Scenario.Vehicle.Panel.StateStore.BcPressure / BpPressure (arrays, logged as they are)
 //
+// Phase SI-0 (scoring-integration observation, diagnostic log only - nothing below is sent to the telemetry stream), read on the Tick thread only. READ ONLY:
+// no method of the host that moves, re-times, initialises or jumps anything is called (Scenario.Initialize, InitializeTimeAndLocation, TimeManager.SetTime and the
+// list navigation members GoTo / CurrentIndex are deliberately NOT used):
+//   Scenario.Vehicle.Instruments.BrakeSystem.BrakeController (Smee / Cl BpInitialPressure) and BrakeSystem.Smee / .Cl (the route the Current sender takes)
+//   Scenario.Vehicle.Dynamics.CarLength / FirstCar.Count / MotorCar.Count / TrailerCar.Count
+//   Scenario.Route.SpeedLimits (Count, the indexer, MapObjectBase.Location, ValueNode<double>.Value)
+//
 // The timer thread (heartbeat) uses the session's own volatile fields only; it never touches BveHacker, a Scenario or any BVE object.
 // No exception ever leaves the constructor, Tick, Dispose, an event handler or the timer.
 // ============================================================================
@@ -55,7 +62,7 @@ namespace TSScoringPlugin.Telemetry
         {
             sink = new UdpTelemetrySink();
             AtsExLegacyApi api = new AtsExLegacyApi();
-            session = new LegacyTelemetrySession(api, sink, delegate { return clock.ElapsedMilliseconds; }, delegate { return DateTime.UtcNow.Ticks; }, diag, api);
+            session = new LegacyTelemetrySession(api, sink, delegate { return clock.ElapsedMilliseconds; }, delegate { return DateTime.UtcNow.Ticks; }, diag, api, api);
             try
             {
                 api.AttachNative(Native);      // PluginBase.Native: the public route to INative; only held here, read on the Tick thread
@@ -92,6 +99,7 @@ namespace TSScoringPlugin.Telemetry
 
             diag.Event("TEL_INIT", "ver=" + FileTelemetryDiag.Version + " bitness=" + (IntPtr.Size * 8) + " host=AtsExLegacy identity=" + LegacyScenarioIdentity.KindSourceObject
                 + " events=" + (subscribed ? "yes" : "no") + " heartbeat=" + (heartbeat != null ? "yes" : "no"));
+            try { session.NoteInit("events=" + (subscribed ? "yes" : "no") + " heartbeat=" + (heartbeat != null ? "yes" : "no")); } catch { }
         }
 
         public override TickResult Tick(TimeSpan elapsed)
@@ -208,11 +216,12 @@ namespace TSScoringPlugin.Telemetry
     }
 
     /// <summary>The Legacy API read into ILegacyApi. Every Try method catches everything: an unreadable value is "not available", never a default.</summary>
-    internal sealed class AtsExLegacyApi : ILegacyApi, ILegacyInputApi
+    internal sealed class AtsExLegacyApi : ILegacyApi, ILegacyInputApi, ILegacyScoringApi
     {
         private IBveHacker hacker;
         private INative nativeHost;
         private Scenario current;
+        private SpeedLimitList limitList;       // Phase SI-0: the list of this Tick only (reset with every new wrapper in TryScenarioIdentity)
         private int sectionCursor;
         private object sectionOwner;
 
@@ -235,6 +244,7 @@ namespace TSScoringPlugin.Telemetry
         {
             identity = null;
             current = null;
+            limitList = null;
             try
             {
                 Scenario s = hacker.Scenario;
@@ -588,6 +598,194 @@ namespace TSScoringPlugin.Telemetry
             {
                 pressure = null;
                 reason = LegacyInputReason.ReadException;
+                return false;
+            }
+        }
+
+        // -- Phase SI-0: the scoring-integration observation (ILegacyScoringApi). Tick thread only; READ ONLY; every Try method turns any exception into a fixed reason. ----
+        string ILegacyScoringApi.HostTypesVersion
+        {
+            get
+            {
+                try { return typeof(Scenario).Assembly.GetName().Version.ToString(); }
+                catch { return "na"; }
+            }
+        }
+
+        bool ILegacyScoringApi.TryBpInitial(out LegacyBpInitialSnapshot snapshot, out string reason)
+        {
+            snapshot = null;
+            reason = LegacyScoringReason.ReadException;
+            try
+            {
+                if (ReferenceEquals(current, null)) { reason = LegacyScoringReason.ScenarioNull; return false; }
+                Vehicle vehicle = current.Vehicle;
+                if (ReferenceEquals(vehicle, null)) { reason = LegacyScoringReason.VehicleNull; return false; }
+                VehicleInstrumentSet instruments = vehicle.Instruments;
+                if (ReferenceEquals(instruments, null)) { reason = LegacyScoringReason.InstrumentsNull; return false; }
+                BrakeSystem system = instruments.BrakeSystem;
+                if (ReferenceEquals(system, null)) { reason = LegacyScoringReason.BrakeSystemNull; return false; }
+
+                LegacyBpInitialSnapshot s = new LegacyBpInitialSnapshot();
+                BrakeControllerBase controller = null;
+                try { controller = system.BrakeController; } catch { }
+                if (ReferenceEquals(controller, null))
+                {
+                    s.ActiveKind = LegacyBrakeKind.None;
+                    s.ControllerReason = LegacyScoringReason.ControllerNull;
+                }
+                else
+                {
+                    s.ActiveKind = KindOf(controller);
+                    Smee smee = controller as Smee;
+                    Cl cl = controller as Cl;
+                    if (!ReferenceEquals(smee, null))
+                    {
+                        try { s.ControllerRawPa = smee.BpInitialPressure; } catch { s.ControllerReason = LegacyScoringReason.ReadException; }
+                    }
+                    else if (!ReferenceEquals(cl, null))
+                    {
+                        try { s.ControllerRawPa = cl.BpInitialPressure; } catch { s.ControllerReason = LegacyScoringReason.ReadException; }
+                    }
+                    else
+                    {
+                        s.ControllerReason = LegacyScoringReason.NotApplicable;      // an Ecb has no such property
+                    }
+                }
+
+                // the route the Current sender takes (BrakeSystem.Smee.BpInitialPressure): logged next to the controller route so that the two can be compared
+                try
+                {
+                    Smee smeeProperty = system.Smee;
+                    if (!ReferenceEquals(smeeProperty, null))
+                    {
+                        s.SmeePropertyPresent = true;
+                        try { s.SmeePropertyRawPa = smeeProperty.BpInitialPressure; } catch { }
+                    }
+                }
+                catch
+                {
+                }
+
+                try
+                {
+                    Cl clProperty = system.Cl;
+                    if (!ReferenceEquals(clProperty, null))
+                    {
+                        s.ClPropertyPresent = true;
+                        try { s.ClPropertyRawPa = clProperty.BpInitialPressure; } catch { }
+                    }
+                }
+                catch
+                {
+                }
+
+                snapshot = s;
+                return true;
+            }
+            catch
+            {
+                snapshot = null;
+                reason = LegacyScoringReason.ReadException;
+                return false;
+            }
+        }
+
+        bool ILegacyScoringApi.TryVehicleLength(out LegacyVehicleLengthSnapshot snapshot, out string reason)
+        {
+            snapshot = null;
+            reason = LegacyScoringReason.ReadException;
+            try
+            {
+                if (ReferenceEquals(current, null)) { reason = LegacyScoringReason.ScenarioNull; return false; }
+                Vehicle vehicle = current.Vehicle;
+                if (ReferenceEquals(vehicle, null)) { reason = LegacyScoringReason.VehicleNull; return false; }
+                VehicleDynamics dynamics = vehicle.Dynamics;
+                if (ReferenceEquals(dynamics, null)) { reason = LegacyScoringReason.DynamicsNull; return false; }
+
+                LegacyVehicleLengthSnapshot s = new LegacyVehicleLengthSnapshot();
+                try { s.CarLength = dynamics.CarLength; } catch { }
+                try { CarInfo first = dynamics.FirstCar; if (!ReferenceEquals(first, null)) { s.FirstCount = first.Count; } } catch { }
+                try { CarInfo motor = dynamics.MotorCar; if (!ReferenceEquals(motor, null)) { s.MotorCount = motor.Count; } } catch { }
+                try { CarInfo trailer = dynamics.TrailerCar; if (!ReferenceEquals(trailer, null)) { s.TrailerCount = trailer.Count; } } catch { }
+                snapshot = s;
+                return true;
+            }
+            catch
+            {
+                snapshot = null;
+                reason = LegacyScoringReason.ReadException;
+                return false;
+            }
+        }
+
+        /// <summary>The ground limit list of this Tick (fetched once per Tick: the wrappers are rebuilt on every access). Reads only.</summary>
+        private SpeedLimitList LimitListOrNull(out string reason)
+        {
+            reason = LegacyScoringReason.ReadException;
+            if (!ReferenceEquals(limitList, null))
+            {
+                return limitList;
+            }
+
+            if (ReferenceEquals(current, null)) { reason = LegacyScoringReason.ScenarioNull; return null; }
+            Route route = current.Route;
+            if (ReferenceEquals(route, null)) { reason = LegacyScoringReason.RouteNull; return null; }
+            SpeedLimitList list = route.SpeedLimits;
+            if (ReferenceEquals(list, null)) { reason = LegacyScoringReason.LimitsNull; return null; }
+            limitList = list;
+            return list;
+        }
+
+        bool ILegacyScoringApi.TryLimitCount(out int count, out string reason)
+        {
+            count = 0;
+            reason = LegacyScoringReason.ReadException;
+            try
+            {
+                SpeedLimitList list = LimitListOrNull(out reason);
+                if (ReferenceEquals(list, null)) { return false; }
+                count = list.Count;
+                return true;
+            }
+            catch
+            {
+                count = 0;
+                reason = LegacyScoringReason.ReadException;
+                return false;
+            }
+        }
+
+        bool ILegacyScoringApi.TryLimitElement(int index, out LegacyLimitElement element, out string reason)
+        {
+            element = null;
+            reason = LegacyScoringReason.ReadException;
+            try
+            {
+                SpeedLimitList list = LimitListOrNull(out reason);
+                if (ReferenceEquals(list, null)) { return false; }
+                if (index < 0 || index >= list.Count) { reason = LegacyScoringReason.IndexRange; return false; }
+                MapObjectBase item = list[index];
+                if (ReferenceEquals(item, null)) { reason = LegacyScoringReason.ElementNull; return false; }
+
+                LegacyLimitElement e = new LegacyLimitElement();
+                e.TypeName = LegacyScoringProbe.TypeWord(item.GetType());
+                e.Location = item.Location;
+                e.Value = double.NaN;
+                ValueNode<double> node = item as ValueNode<double>;
+                if (!ReferenceEquals(node, null))
+                {
+                    e.Value = node.Value;
+                    e.IsValueNode = true;
+                }
+
+                element = e;
+                return true;
+            }
+            catch
+            {
+                element = null;
+                reason = LegacyScoringReason.ReadException;
                 return false;
             }
         }

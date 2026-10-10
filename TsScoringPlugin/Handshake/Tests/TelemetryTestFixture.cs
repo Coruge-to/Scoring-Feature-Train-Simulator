@@ -521,6 +521,7 @@ namespace TsScoringLegacyTelemetryTests
         public FakeApi Api = new FakeApi();
         public CollectSink Sink = new CollectSink();
         public CollectDiag Diag = new CollectDiag();
+        public FakeScoringApi Scoring = null;     // Phase SI-0: null = no scoring-integration observation wired
         public FakeInputApi Input = null;         // Phase LI0: null = no input observation wired (the L3 sessions of the earlier tests)
         public long Now = 1000;
         public long Seed = 5000000000L;
@@ -545,10 +546,21 @@ namespace TsScoringLegacyTelemetryTests
             session = Make(withDiag ? (ITelemetryDiag)Diag : null);
         }
 
+        /// <summary>Phase SI-0: withScoring wires the scoring-integration observation (a FakeScoringApi in Scoring) next to the input surface.</summary>
+        public Harness(bool withInput, bool withDiag, bool withScoring)
+        {
+            if (withInput) { Input = new FakeInputApi(); }
+            if (withScoring) { Scoring = new FakeScoringApi(); }
+            session = Make(withDiag ? (ITelemetryDiag)Diag : null);
+        }
+
         private LegacyTelemetrySession Make(ITelemetryDiag d)
         {
-            return new LegacyTelemetrySession(Api, Sink, delegate { return Now; }, delegate { return Seed; }, d, Input);
+            return new LegacyTelemetrySession(Api, Sink, delegate { return Now; }, delegate { return Seed; }, d, Input, Scoring);
         }
+
+        /// <summary>Phase SI-0: the host adapter reports its set-up (the "init" word of the order).</summary>
+        public void NoteInit(string detail) { session.NoteInit(detail); }
 
         /// <summary>Replaces the diagnostic with the REAL file diagnostic of the DLL, writing to a path the test owns.</summary>
         public void UseFileDiag(string path)
@@ -719,6 +731,235 @@ namespace TsScoringLegacyTelemetryTests
         {
             double permille;
             return LegacyTelemetrySession.GradientRatioToPermille(ratio, out permille);
+        }
+    }
+
+    // ---- PHASE SI-0 (scoring-integration observation) fakes -----------------------------------------------------------------------------------
+    public class FakeLimit
+    {
+        public double Location;
+        public double ValueMps;
+        public bool IsNode = true;
+        public string TypeName = "ValueNode_1";
+
+        public FakeLimit(double location, double valueMps)
+        {
+            Location = location;
+            ValueMps = valueMps;
+        }
+    }
+
+    /// <summary>A fake of the scoring-integration read surface (ILegacyScoringApi). Records the thread of every call.</summary>
+    public class FakeScoringApi : ILegacyScoringApi
+    {
+        public string Version = "1.0.50314.2";
+
+        // O-A
+        public bool BpFail = false;
+        public string BpReason = "brakesystem-null";
+        public bool BpThrow = false;
+        public int KindValue = 2;                  // 0 none, 1 Ecb, 2 Smee, 3 Cl
+        public double? ControllerPa = 490000.0;    // BpInitialPressure of the active controller (null = could not be read)
+        public string ControllerReason = null;
+        public bool SmeeProp = true;
+        public double? SmeePa = 490000.0;
+        public bool ClProp = false;
+        public double? ClPa = null;
+
+        // O-B
+        public bool VehFail = false;
+        public string VehReason = "dynamics-null";
+        public bool VehThrow = false;
+        public double? CarLen = 20.0;
+        public double? First = 1.0;
+        public double? Motor = 4.0;
+        public double? Trailer = 3.0;
+
+        // O-C
+        public bool LimitsFail = false;
+        public string LimitsReason = "limits-null";
+        public bool LimitsThrow = false;
+        public List<FakeLimit> Limits = new List<FakeLimit>();
+        public int FailElementAt = -1;             // the element with this index cannot be read
+        public int ThrowElementAt = -1;
+
+        public Dictionary<string, int> Calls = new Dictionary<string, int>();
+        public HashSet<int> Threads = new HashSet<int>();
+
+        private void Note(string name)
+        {
+            int n;
+            Calls.TryGetValue(name, out n);
+            Calls[name] = n + 1;
+            lock (Threads) { Threads.Add(System.Threading.Thread.CurrentThread.ManagedThreadId); }
+        }
+
+        public int CallCount(string name)
+        {
+            int n;
+            Calls.TryGetValue(name, out n);
+            return n;
+        }
+
+        public int TotalCalls()
+        {
+            int t = 0;
+            foreach (int v in Calls.Values) { t += v; }
+            return t;
+        }
+
+        string ILegacyScoringApi.HostTypesVersion { get { Note("HostTypesVersion"); return Version; } }
+
+        bool ILegacyScoringApi.TryBpInitial(out LegacyBpInitialSnapshot snapshot, out string reason)
+        {
+            Note("TryBpInitial");
+            snapshot = null;
+            reason = BpReason;
+            if (BpThrow) { throw new InvalidOperationException("fake failure in bp initial"); }
+            if (BpFail) { return false; }
+            LegacyBpInitialSnapshot s = new LegacyBpInitialSnapshot();
+            s.ActiveKind = (LegacyBrakeKind)KindValue;
+            s.ControllerRawPa = ControllerPa;
+            s.ControllerReason = ControllerReason;
+            s.SmeePropertyPresent = SmeeProp;
+            s.SmeePropertyRawPa = SmeePa;
+            s.ClPropertyPresent = ClProp;
+            s.ClPropertyRawPa = ClPa;
+            snapshot = s;
+            return true;
+        }
+
+        bool ILegacyScoringApi.TryVehicleLength(out LegacyVehicleLengthSnapshot snapshot, out string reason)
+        {
+            Note("TryVehicleLength");
+            snapshot = null;
+            reason = VehReason;
+            if (VehThrow) { throw new InvalidOperationException("fake failure in vehicle length"); }
+            if (VehFail) { return false; }
+            LegacyVehicleLengthSnapshot s = new LegacyVehicleLengthSnapshot();
+            s.CarLength = CarLen;
+            s.FirstCount = First;
+            s.MotorCount = Motor;
+            s.TrailerCount = Trailer;
+            snapshot = s;
+            return true;
+        }
+
+        bool ILegacyScoringApi.TryLimitCount(out int count, out string reason)
+        {
+            Note("TryLimitCount");
+            count = 0;
+            reason = LimitsReason;
+            if (LimitsThrow) { throw new InvalidOperationException("fake failure in limits"); }
+            if (LimitsFail) { return false; }
+            count = Limits.Count;
+            return true;
+        }
+
+        bool ILegacyScoringApi.TryLimitElement(int index, out LegacyLimitElement element, out string reason)
+        {
+            Note("TryLimitElement");
+            element = null;
+            reason = "element-null";
+            if (index == ThrowElementAt) { throw new InvalidOperationException("fake failure in element"); }
+            if (index == FailElementAt || index < 0 || index >= Limits.Count) { return false; }
+            FakeLimit f = Limits[index];
+            LegacyLimitElement e = new LegacyLimitElement();
+            e.Location = f.Location;
+            e.Value = f.IsNode ? f.ValueMps : double.NaN;
+            e.IsValueNode = f.IsNode;
+            e.TypeName = f.TypeName;
+            element = e;
+            return true;
+        }
+    }
+
+    /// <summary>The pure parts of the scoring-integration observation and its limits, for the tests.</summary>
+    public static class ScoringInfo
+    {
+        public static string TypeWord(Type t) { return LegacyScoringProbe.TypeWord(t); }
+        public static string Num(double v) { return LegacyScoringProbe.Num(v); }
+        public static string SafeWord(string s, string fallback) { return LegacyScoringProbe.SafeWord(s, fallback); }
+        public static string SafeVersion(string s) { return LegacyScoringProbe.SafeVersion(s); }
+        public static int MaxLines { get { return LegacyScoringProbe.MaxLinesPerGeneration; } }
+        public static int ScanPerTick { get { return LegacyScoringProbe.ScanPerTick; } }
+        public static int MaxScan { get { return LegacyScoringProbe.MaxScanElements; } }
+        public static int CapLimitChange { get { return LegacyScoringProbe.CapLimitChange; } }
+        public static int CapBpChange { get { return LegacyScoringProbe.CapBpChange; } }
+        public static int CapVehChange { get { return LegacyScoringProbe.CapVehChange; } }
+        public static int OrderMaxLines { get { return LegacyOrderRecorder.MaxLinesPerProcess; } }
+        public static int OrderMaxPerWord { get { return LegacyOrderRecorder.MaxPerWord; } }
+
+        /// <summary>{ head, tail } km/h as the Current sender derives them from the list.</summary>
+        public static double[] HeadTail(double location, double trainLength, double[] locs, double[] kmh)
+        {
+            double head;
+            double tail;
+            LegacyScoringProbe.HeadTail(location, trainLength, locs, kmh, out head, out tail);
+            return new double[] { head, tail };
+        }
+
+        public static string Ahead(double location, double[] locs, double[] kmh)
+        {
+            string sample;
+            int n = LegacyScoringProbe.Ahead(location, locs, kmh, out sample);
+            return n + ":" + sample;
+        }
+
+    }
+
+    /// <summary>The order recorder on its own: its lines are collected in Lines; Now is the clock the test moves.</summary>
+    public class RecorderBox
+    {
+        internal LegacyOrderRecorder Recorder;
+        public List<string> Lines = new List<string>();
+        public long Now = 0;
+        private readonly object gate = new object();
+
+        public RecorderBox()
+        {
+            Recorder = new LegacyOrderRecorder(delegate { return Now; }, delegate (string name, string detail) { lock (gate) { Lines.Add(name + " " + detail); } });
+        }
+
+        public void Note(string word, string detail) { Recorder.Note(word, detail); }
+
+        /// <summary>Notes from several real threads at once (each thread uses its own word).</summary>
+        public void NoteFromThreads(int threads, int each)
+        {
+            List<System.Threading.Thread> list = new List<System.Threading.Thread>();
+            for (int t = 0; t < threads; t++)
+            {
+                System.Threading.Thread th = new System.Threading.Thread(delegate ()
+                {
+                    string word = "c" + System.Threading.Thread.CurrentThread.ManagedThreadId;
+                    for (int k = 0; k < each; k++) { Recorder.Note(word, "k=1"); }
+                });
+                list.Add(th);
+                th.Start();
+            }
+
+            foreach (System.Threading.Thread th in list) { th.Join(); }
+        }
+
+        public int Suppressed { get { return Recorder.Suppressed; } }
+        public int Written { get { return Recorder.Lines; } }
+    }
+
+    /// <summary>The REAL host adapter (AtsExLegacyApi) with nothing attached: it must answer with fixed reasons, never throw. Needs the host assemblies to load.</summary>
+    public static class ScoringAdapterProbe
+    {
+        public static string[] Run()
+        {
+            Type adapterType = typeof(ILegacyScoringApi).Assembly.GetType("TSScoringPlugin.Telemetry.AtsExLegacyApi", true);
+            ILegacyScoringApi scoring = (ILegacyScoringApi)Activator.CreateInstance(adapterType, true);
+            LegacyBpInitialSnapshot b; LegacyVehicleLengthSnapshot v; LegacyLimitElement e;
+            int count;
+            string rb, rv, rc, re;
+            bool bb = scoring.TryBpInitial(out b, out rb);
+            bool bv = scoring.TryVehicleLength(out v, out rv);
+            bool bc = scoring.TryLimitCount(out count, out rc);
+            bool be = scoring.TryLimitElement(0, out e, out re);
+            return new string[] { scoring.HostTypesVersion, bb + ":" + rb, bv + ":" + rv, bc + ":" + rc, be + ":" + re };
         }
     }
 

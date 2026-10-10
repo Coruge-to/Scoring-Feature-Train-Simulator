@@ -387,7 +387,7 @@ Check 'G01 the new files are host independent (no AtsEx / BveTypes name) and use
 Check 'G02 the session names no handle / pressure key as a literal (the keys live in the handle contract only) and never reduces an array itself' (($seCode -notmatch '"(REV|POW|BRK|HTYPE|ALLTXT|BCP|BPP)"') -and ($seCode -notmatch 'StoreBc|StoreBp|\.Bc\b|\.Bp\b'))
 Check 'G03 only the Tick thread reaches the input surface: the heartbeat method of the session does not mention the input classes' (([regex]::Match($seCode, 'internal string ComposeHeartbeat\(\)[\s\S]*?\n        \}').Value) -notmatch 'input|Input')
 $vi = (Get-Item $dllPath).VersionInfo
-Check 'G04 the DLL is 0.3.0.0 (Phase LI2: assembly and file version), product TS Scoring, provider Coruge-to; the description still names Phase L3 and LI1' (([TsScoringLegacyTelemetryTests.DiagInfo]::Version -eq '0.3.0.0') -and ($vi.FileVersion -eq '0.3.0.0') -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.CompanyName -eq 'Coruge-to') -and ($vi.Comments -match 'Phase L3') -and ($vi.Comments -match 'LI1') -and ($vi.Comments -match 'LI2'))
+Check 'G04 the DLL is 0.3.0.0 (Phase LI2) or the Phase SI-0 observation build 0.3.1.0 (assembly and file version), product TS Scoring, provider Coruge-to; the description still names Phase L3 and LI1' ((([TsScoringLegacyTelemetryTests.DiagInfo]::Version) -in @('0.3.0.0', '0.3.1.0')) -and ($vi.FileVersion -in @('0.3.0.0', '0.3.1.0')) -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.CompanyName -eq 'Coruge-to') -and ($vi.Comments -match 'Phase L3') -and ($vi.Comments -match 'LI1') -and ($vi.Comments -match 'LI2'))
 $csproj = [IO.File]::ReadAllText((Join-Path $Root 'Telemetry\Legacy\TSScoringPlugin.AtsExLegacy.Telemetry.csproj'))
 Check 'G05 the project compiles the two new files and still references only the read-only legacy host assemblies (Private=False)' (($csproj -match 'src\\LegacyHandleContract\.cs') -and ($csproj -match 'src\\LegacyInputTelemetry\.cs') -and (([regex]::Matches($csproj, '<Private>False</Private>')).Count -eq 5))
 function RunGit([string[]]$gitArgs) { $out = & git @gitArgs 2>$null; if ($LASTEXITCODE -ne 0) { return '' }; return ($out -join "`n") }
@@ -404,9 +404,10 @@ $tcDiff = RunGit @('-C', $top, 'diff', '-U0', 'HEAD', '--', 'TsScoringPlugin/Han
 $tcPlus = @($tcDiff -split "`n" | Where-Object { $_ -match '^\+[^+]' })
 $tcMinus = @($tcDiff -split "`n" | Where-Object { $_ -match '^-[^-]' })
 Check 'G07 the shared telemetry contract is byte-identical to HEAD (LI1 added the three token constants handle, bcp, bpp; LI2 changes nothing in it) and defines them' ((-not $tcDiff) -and ([IO.File]::ReadAllText((Join-Path $Root 'Telemetry\Shared\TelemetryContract.cs')) -match 'TokHandle[\s\S]*TokBcp[\s\S]*TokBpp'))
-$changed = @((RunGit @('-C', $top, 'diff', '--name-only', 'HEAD')) -split "`n" | Where-Object { $_ })
+# G08 describes what THIS phase changed: the LI1 work is committed (0010a8b, parent d7f5d8f), so it is pinned to that commit pair in history (the same assertion as while the work was uncommitted, no longer dependent on a LATER phase's working tree).
+$changed = @((RunGit @('-C', $top, 'diff', '--name-only', 'd7f5d8f', '0010a8b')) -split "`n" | Where-Object { $_ })
 $untracked = @((RunGit @('-C', $top, 'ls-files', '--others', '--exclude-standard')) -split "`n" | Where-Object { $_ })
-$touched = @($changed + $untracked | Sort-Object -Unique)
+$touched = @($changed | Sort-Object -Unique)
 $li1Allowed = @($touched | Where-Object { $_ -match '^TsScoringPlugin/Handshake/(Telemetry/(Legacy/|Shared/TelemetryContract\.cs)|Tests/|Tools/|Docs/Handshake-PhaseLI[12]|Docs/Handshake-PhaseL3-LegacyTelemetry\.md)|^tests/(test_legacy_input_li[12]|legacy_input_reference)\.py$|^tests/legacy_input_matrix24\.json$' })
 $outside = @($touched | Where-Object { $_ -notin $li1Allowed })
 Check ('G08 scope: only the Legacy telemetry project, the shared contract constants, tests, verifiers, the LI1 document and the one-section note in the L3 document changed (' + $touched.Count + ' files; outside: ' + ($outside -join ',') + ')') ($outside.Count -eq 0)

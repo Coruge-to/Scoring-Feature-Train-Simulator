@@ -77,6 +77,13 @@ namespace TSScoringPlugin.Telemetry
         private readonly LegacyInputProbe inputProbe;   // Phase LI0 observation (Tick thread only); null when not wired
         private readonly LegacyInputTickCache inputCache;           // Phase LI1: one read of the input surface per Tick for both consumers below; null when no input is wired
         private readonly LegacyInputTelemetry inputTelemetry;       // Phase LI1: the handle group and the pressures of the line; null when no input is wired
+        private readonly LegacyScoringProbe scoringProbe;           // Phase SI-0: the scoring-integration observation (Tick thread only, diagnostic log only); null when not wired
+        private readonly LegacyOrderRecorder order;                 // Phase SI-0: the order of events / first Tick / heartbeat status / first line (any thread, diagnostic log only); null when not wired
+        private const long TickGapNoteMs = 250;                     // a Tick after a longer silence is noted as a resume (the Pause side of the order)
+        private bool anyTick;                                       // Tick thread only
+        private long prevTickMs;                                    // Tick thread only
+        private bool lastCreated;                                   // Tick thread only
+        private volatile int heartbeatStatus;                       // 0 nothing noted yet, 1 running, 2 paused, 3 idle = no active instance (heartbeat thread writes, the Tick thread resets)
 
         // diagnostics (tests, and a future log)
         internal int Epochs { get; private set; }
@@ -101,6 +108,15 @@ namespace TSScoringPlugin.Telemetry
         /// (diagnostic log only) runs on the same reads.
         /// </summary>
         internal LegacyTelemetrySession(ILegacyApi api, ITelemetrySink sink, Func<long> nowMs, Func<long> idSeed, ITelemetryDiag diag, ILegacyInputApi input)
+            : this(api, sink, nowMs, idSeed, diag, input, null)
+        {
+        }
+
+        /// <summary>
+        /// scoring = the read surface of the Phase SI-0 observation. With a diagnostic as well, the scoring-integration observation and the order recorder run
+        /// (diagnostic log only: nothing of them enters the telemetry line, AVAIL or the heartbeat). null = not wired.
+        /// </summary>
+        internal LegacyTelemetrySession(ILegacyApi api, ITelemetrySink sink, Func<long> nowMs, Func<long> idSeed, ITelemetryDiag diag, ILegacyInputApi input, ILegacyScoringApi scoring)
         {
             this.api = api;
             this.sink = sink;
@@ -116,6 +132,12 @@ namespace TSScoringPlugin.Telemetry
                 {
                     inputProbe = new LegacyInputProbe(inputCache, Log);
                 }
+            }
+
+            if (scoring != null && diag != null)
+            {
+                scoringProbe = new LegacyScoringProbe(scoring, Log);
+                order = new LegacyOrderRecorder(nowMs, Log);
             }
         }
 
@@ -143,18 +165,41 @@ namespace TSScoringPlugin.Telemetry
         // -- lifecycle events (Tick thread) ---------------------------------------------------------------------------------------------------
         internal void OnScenarioOpened(bool isReload)
         {
+            NoteEvent("evt-opened", "reload=" + (isReload ? "1" : "0"));
             EndEpoch(isReload ? "scenario-opened-reload" : "scenario-opened");
         }
 
         internal void OnScenarioClosed()
         {
+            NoteEvent("evt-closed", null);
             EndEpoch("scenario-closed");
         }
 
         internal void OnScenarioCreated()
         {
+            NoteEvent("evt-created", null);
             // the new scenario instance is recognised by the next Tick; nothing of the old one may continue until then
             EndEpoch("scenario-created");
+        }
+
+        /// <summary>Phase SI-0: the host adapter reports that the extension is set up (called once, from the constructor, on the host's thread).</summary>
+        internal void NoteInit(string detail)
+        {
+            NoteEvent("init", detail);
+        }
+
+        /// <summary>Phase SI-0 (order): one host event with the scenario-created flag read at that moment. Reads IsScenarioCreated only, inside the host's own event.</summary>
+        private void NoteEvent(string word, string detail)
+        {
+            if (order == null)
+            {
+                return;
+            }
+
+            string created;
+            try { created = api.IsScenarioCreated() ? "1" : "0"; }
+            catch { created = "na"; }
+            order.Note(word, (string.IsNullOrEmpty(detail) ? string.Empty : detail + " ") + "created=" + created);
         }
 
         internal void OnDispose()
@@ -165,6 +210,7 @@ namespace TSScoringPlugin.Telemetry
             }
 
             disposed = true;
+            if (order != null) { order.Note("dispose", "epochs=" + Epochs); }
             EndEpoch("dispose");
             Log("TEL_DISPOSE", "epochs=" + Epochs + " lines=" + LinesSent + " skipped=" + LinesSkipped + " discontinuities=" + Discontinuities);
             try { sink.Close(); } catch { }
@@ -177,6 +223,8 @@ namespace TSScoringPlugin.Telemetry
             {
                 EndInputProbe();
                 Log("TEL_EPOCH_END", "scenarioId=" + scenarioId + " lines=" + epochLines + " reason=" + reason);
+                if (order != null) { order.Note("epoch-end", "scenarioId=" + scenarioId + " lines=" + epochLines + " reason=" + reason); }
+                heartbeatStatus = 0;     // the heartbeat of the next instance starts from nothing (a repeated EndEpoch while no instance is active changes nothing)
                 endReason = reason;      // the FIRST cause is the reason; later events of the same reload (Opened, then Created) do not overwrite it
             }
 
@@ -187,6 +235,7 @@ namespace TSScoringPlugin.Telemetry
         {
             try { if (inputProbe != null) { inputProbe.EndGeneration(); } } catch { }
             try { if (inputTelemetry != null) { inputTelemetry.End(); } } catch { }
+            try { if (scoringProbe != null) { scoringProbe.EndGeneration(); } } catch { }
         }
 
         /// <summary>The observation of the scoring inputs (diagnostic log only). It never changes the telemetry line and can never throw out of here.</summary>
@@ -220,9 +269,11 @@ namespace TSScoringPlugin.Telemetry
             {
                 EndInputProbe();
                 Log("TEL_EPOCH_END", "scenarioId=" + scenarioId + " lines=" + epochLines + " reason=" + reason);
+                if (order != null) { order.Note("epoch-end", "scenarioId=" + scenarioId + " lines=" + epochLines + " reason=" + reason); }
             }
 
             ResetEpochState();
+            heartbeatStatus = 0;
             scenarioToken = identity.Source;
             identityKind = identity.Kind ?? "unknown";
             epochActive = true;
@@ -244,8 +295,10 @@ namespace TSScoringPlugin.Telemetry
             lastScenarioId = id;
             scenarioActive = true;
             Log("TEL_EPOCH_BEGIN", "n=" + Epochs + " scenarioId=" + id + " reason=" + reason + " identity=" + identityKind);
+            if (order != null) { order.Note("epoch-begin", "n=" + Epochs + " scenarioId=" + id + " reason=" + reason); }
             try { if (inputProbe != null) { inputProbe.Begin(id); } } catch { }
             try { if (inputTelemetry != null) { inputTelemetry.Begin(id); } } catch { }
+            try { if (scoringProbe != null) { scoringProbe.Begin(id); } } catch { }
         }
 
         // -- the gradient unit ----------------------------------------------------------------------------------------------------------------
@@ -291,13 +344,52 @@ namespace TSScoringPlugin.Telemetry
         /// <summary>STATUS:LOADED:RUNNING / PAUSED while a scenario instance is active, else null. Reads no BVE object.</summary>
         internal string ComposeHeartbeat()
         {
-            if (disposed || !scenarioActive)
+            if (disposed)
             {
                 return null;
             }
 
+            if (!scenarioActive)
+            {
+                NoteHeartbeatIdle();
+                return null;
+            }
+
             long age = nowMs() - Interlocked.Read(ref lastTickMs);
-            return age > PausedAfterMs ? "STATUS:LOADED:PAUSED" : "STATUS:LOADED:RUNNING";
+            bool paused = age > PausedAfterMs;
+            NoteHeartbeat(paused, age);
+            return paused ? "STATUS:LOADED:PAUSED" : "STATUS:LOADED:RUNNING";
+        }
+
+        /// <summary>Phase SI-0 (order): the heartbeat timer is alive but there is no active scenario instance (so nothing is sent), noted once per idle period. Heartbeat thread: reads its own fields only.</summary>
+        private void NoteHeartbeatIdle()
+        {
+            if (order == null || heartbeatStatus == 3)
+            {
+                return;
+            }
+
+            heartbeatStatus = 3;
+            order.Note("hb-idle", "scenarioId=" + scenarioId);
+        }
+
+        /// <summary>Phase SI-0 (order): the status words of the heartbeat, noted when the status of this scenario instance changes (first running, first paused, running again). Heartbeat thread: reads its own fields only.</summary>
+        private void NoteHeartbeat(bool paused, long ageMs)
+        {
+            if (order == null)
+            {
+                return;
+            }
+
+            int status = paused ? 2 : 1;
+            if (heartbeatStatus == status)
+            {
+                return;
+            }
+
+            bool first = heartbeatStatus == 0 || heartbeatStatus == 3;
+            heartbeatStatus = status;
+            order.Note(paused ? "hb-paused" : (first ? "hb-first-running" : "hb-running-again"), "scenarioId=" + scenarioId + " ageMs=" + ageMs);
         }
 
         // -- the Tick -------------------------------------------------------------------------------------------------------------------------
@@ -325,6 +417,7 @@ namespace TSScoringPlugin.Telemetry
             bool created;
             try { created = api.IsScenarioCreated(); }
             catch { created = false; }
+            NoteTickOrder(created);
             if (!created)
             {
                 EndEpoch("not-created");
@@ -368,6 +461,7 @@ namespace TSScoringPlugin.Telemetry
                 || !TelemetryContract.Finite(location) || !TelemetryContract.Finite(speedMps))
             {
                 LinesSkipped++;
+                ObserveScoring(false, 0.0, null);
                 return;
             }
 
@@ -477,6 +571,7 @@ namespace TSScoringPlugin.Telemetry
             }
 
             // ground limit: the limit in force now. HEAD and TAIL are the same real value; the look-ahead list does not exist in the Legacy API
+            double? groundForProbe = null;       // Phase SI-0: the value of this very read, handed to the observation (nothing is read twice)
             try
             {
                 double ground;
@@ -484,6 +579,7 @@ namespace TSScoringPlugin.Telemetry
                 {
                     string kmh = TelemetryContract.D(TelemetryContract.GroundLimitKmh(ground));
                     lb.Group(TelemetryContract.TokMapLimit, "MAPHEAD", kmh, "MAPTAIL", kmh);
+                    groundForProbe = ground;
                 }
             }
             catch
@@ -611,11 +707,59 @@ namespace TSScoringPlugin.Telemetry
             {
                 epochUdpLogged = true;
                 Log("TEL_UDP_BEGIN", "scenarioId=" + scenarioId);
+                if (order != null) { order.Note("line-first", "scenarioId=" + scenarioId); }
             }
 
             lastTimeMs = timeMs;
             lastSpeedMps = speedMps;
             haveLastSample = true;
+
+            // Phase SI-0: the scoring-integration observation (diagnostic log only). It runs after the line was sent and changes nothing of it.
+            ObserveScoring(true, location, groundForProbe);
+        }
+
+        /// <summary>Phase SI-0 (order): the first Tick of the process, a Tick after a long silence (a resume from Pause), and the scenario-created flag as the Tick sees it.</summary>
+        private void NoteTickOrder(bool created)
+        {
+            if (order == null)
+            {
+                return;
+            }
+
+            long now = nowMs();
+            if (!anyTick)
+            {
+                anyTick = true;
+                order.Note("tick-first-process", "created=" + (created ? "1" : "0") + " epochs=" + Epochs);
+            }
+            else if (now - prevTickMs > TickGapNoteMs)
+            {
+                order.Note("tick-resume", "gapMs=" + (now - prevTickMs) + " created=" + (created ? "1" : "0"));
+            }
+
+            prevTickMs = now;
+            if (created != lastCreated)
+            {
+                lastCreated = created;
+                order.Note("created-changed", "created=" + (created ? "1" : "0"));
+            }
+        }
+
+        /// <summary>Phase SI-0: hands the Tick to the scoring observation. Nothing it does can throw out of here or reach the line.</summary>
+        private void ObserveScoring(bool coreOk, double location, double? groundMps)
+        {
+            if (scoringProbe == null)
+            {
+                return;
+            }
+
+            try
+            {
+                scoringProbe.Observe(coreOk, location, groundMps, LegacyScoringProbe.PresentBpKpa(inputCache));
+            }
+            catch
+            {
+            }
         }
 
         /// <summary>The telemetry line under construction: tokens and the keys that belong to them, added together or not at all.</summary>

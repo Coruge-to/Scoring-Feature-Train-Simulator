@@ -459,7 +459,7 @@ $exCode = Code ([IO.File]::ReadAllText((Join-Path $srcDir 'LegacyTelemetryExtens
 Check 'G01 the contract and the telemetry core stay host independent (no AtsEx / BveTypes name) and use no reflection, hook, DllImport, unsafe, Harmony or private member' ((($hcCode + $itCode) -cnotmatch 'AtsEx|BveTypes|BveEx') -and (($hcCode + $itCode) -notmatch 'BindingFlags|DllImport|\bunsafe\b|Harmony|\.GetField\(|\.GetProperty\(|\.GetMethod\(|\.Invoke\(|Marshal\.'))
 Check 'G02 the formal count is read from the public API property NotchInfo.HoldingSpeedNotchCount and is never filled from PowerNotchCount (no assignment from it anywhere)' (($exCode -match 's\.HoldingSpeedNotchCount\s*=\s*info\.HoldingSpeedNotchCount') -and (($exCode + $hcCode + $itCode) -notmatch 'HoldingSpeedNotchCount\s*=[^=;]*PowerNotchCount') -and ($hcCode -notmatch 'holdN\s*=[^;]*(PowerNotchCount|powN)'))
 $vi = (Get-Item $dllPath).VersionInfo
-Check 'G03 the DLL is 0.3.0.0 (assembly and file version), product TS Scoring, provider Coruge-to; the description names Phase L3, LI1 and LI2' (([TsScoringLegacyTelemetryTests.DiagInfo]::Version -eq '0.3.0.0') -and ($vi.FileVersion -eq '0.3.0.0') -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.CompanyName -eq 'Coruge-to') -and ($vi.Comments -match 'Phase L3') -and ($vi.Comments -match 'LI1') -and ($vi.Comments -match 'LI2'))
+Check 'G03 the DLL is 0.3.0.0 or the Phase SI-0 observation build 0.3.1.0 (assembly and file version), product TS Scoring, provider Coruge-to; the description names Phase L3, LI1 and LI2' ((([TsScoringLegacyTelemetryTests.DiagInfo]::Version) -in @('0.3.0.0', '0.3.1.0')) -and ($vi.FileVersion -in @('0.3.0.0', '0.3.1.0')) -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.CompanyName -eq 'Coruge-to') -and ($vi.Comments -match 'Phase L3') -and ($vi.Comments -match 'LI1') -and ($vi.Comments -match 'LI2'))
 function RunGit([string[]]$gitArgs) { $out = & git @gitArgs 2>$null; if ($LASTEXITCODE -ne 0) { return '' }; return ($out -join "`n") }
 $top = (RunGit @('-C', $Root, 'rev-parse', '--show-toplevel')).Trim() -replace '/', '\'
 $frozen = @(
@@ -467,19 +467,21 @@ $frozen = @(
     'telemetry_contract.py', 'telemetry_gate.py', 'network.py', 'main.py', 'hud_ui.py', 'scoring_logic.py', 'managed_hud.py', 'managed_mode.py', 'managed_state.py', 'menu_ui.py', 'config.py', 'utils.py',
     'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyApi.cs', 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs', 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetrySession.cs'
 )
-$changedFrozen = @((RunGit (@('-C', $top, 'diff', '--name-only', 'HEAD', '--') + $frozen)) -split "`n" | Where-Object { $_ })
-Check ('G04 frozen by the brief and byte-identical to HEAD: Current sender, Caller, both Bridges, the Handshake protocol, the shared telemetry contract, the Python reader / HUD / scoring / managed mode (Python production code has NO Legacy or holding speed branch), the Legacy session (' + $changedFrozen.Count + ' changed) ' + ($changedFrozen -join ',')) ($changedFrozen.Count -eq 0)
-$probeDiff = RunGit @('-C', $top, 'diff', '-U0', 'HEAD', '--', 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyInputProbe.cs')
+# The scope guards G04 - G08 describe what THIS phase changed. The LI2 work is committed now (3158ce2, parent 0010a8b), so they are pinned to that commit pair in history: they keep saying exactly what they said while the work was uncommitted, and they no longer depend on what a LATER phase changes in the working tree.
+$li2Parent = '0010a8b'; $li2Commit = '3158ce2'
+$changedFrozen = @((RunGit (@('-C', $top, 'diff', '--name-only', $li2Parent, $li2Commit, '--') + $frozen)) -split "`n" | Where-Object { $_ })
+Check ('G04 frozen by the brief and byte-identical between the LI1 commit and the LI2 commit: Current sender, Caller, both Bridges, the Handshake protocol, the shared telemetry contract, the Python reader / HUD / scoring / managed mode (Python production code has NO Legacy or holding speed branch), the Legacy session (' + $changedFrozen.Count + ' changed) ' + ($changedFrozen -join ',')) ($changedFrozen.Count -eq 0)
+$probeDiff = RunGit @('-C', $top, 'diff', '-U0', $li2Parent, $li2Commit, '--', 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyInputProbe.cs')
 $probePlus = @($probeDiff -split "`n" | Where-Object { $_ -match '^\+[^+]' }); $probeMinus = @($probeDiff -split "`n" | Where-Object { $_ -match '^-[^-]' })
 Check 'G05 LegacyInputProbe.cs (the LI0 observation) changed only by the snapshot member HoldingSpeedNotchCount (a comment line of HasHoldingSpeedBrake) and, after the LI2 retest, the diagnostic words appended to the static part of TEL_HANDLE_FIRST (holdN, holdBrake, holdSource, holdValidity): no observation logic, no new line, no new event' (($probePlus.Count -eq 5) -and ($probeMinus.Count -eq 2) -and (@($probePlus | Where-Object { $_ -match 'HoldingSpeedNotchCount|HasHoldingSpeedBrake|holdN=|holdSource|holdValidity|b67=' }).Count -eq 5) -and (@($probeMinus | Where-Object { $_ -match 'HasHoldingSpeedBrake|b67=' }).Count -eq 2))
-$extDiff = RunGit @('-C', $top, 'diff', '-U0', 'HEAD', '--', 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs')
+$extDiff = RunGit @('-C', $top, 'diff', '-U0', $li2Parent, $li2Commit, '--', 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs')
 $extPlus = @($extDiff -split "`n" | Where-Object { $_ -match '^\+[^+]' }); $extMinus = @($extDiff -split "`n" | Where-Object { $_ -match '^-[^-]' })
 Check 'G06 LegacyTelemetryExtension.cs (the host adapter) changed by exactly ONE added line: the public read of NotchInfo.HoldingSpeedNotchCount into the snapshot (no other host member, no new API, no thread)' (($extPlus.Count -eq 1) -and ($extMinus.Count -eq 0) -and ($extPlus[0] -match 'HoldingSpeedNotchCount = info\.HoldingSpeedNotchCount'))
-$csprojDiff = RunGit @('-C', $top, 'diff', '--name-only', 'HEAD', '--', 'TsScoringPlugin/Handshake/Telemetry/Legacy/TSScoringPlugin.AtsExLegacy.Telemetry.csproj')
+$csprojDiff = RunGit @('-C', $top, 'diff', '--name-only', $li2Parent, $li2Commit, '--', 'TsScoringPlugin/Handshake/Telemetry/Legacy/TSScoringPlugin.AtsExLegacy.Telemetry.csproj')
 Check 'G07 the project file is unchanged (no new source, no new reference)' ($csprojDiff -eq '')
-$changed = @((RunGit @('-C', $top, 'diff', '--name-only', 'HEAD')) -split "`n" | Where-Object { $_ })
+$changed = @((RunGit @('-C', $top, 'diff', '--name-only', $li2Parent, $li2Commit)) -split "`n" | Where-Object { $_ })
 $untracked = @((RunGit @('-C', $top, 'ls-files', '--others', '--exclude-standard')) -split "`n" | Where-Object { $_ })
-$touched = @($changed + $untracked | Sort-Object -Unique)
+$touched = @($changed | Sort-Object -Unique)
 $allowed = @($touched | Where-Object { $_ -match '^TsScoringPlugin/Handshake/(Telemetry/Legacy/src/|Tests/|Tools/|Docs/Handshake-PhaseLI[12]|Docs/Handshake-PhaseL3-LegacyTelemetry\.md)|^tests/(test_legacy_input_li[12]|legacy_input_reference)\.py$|^tests/legacy_input_matrix24\.json$' })
 $outside = @($touched | Where-Object { $_ -notin $allowed })
 Check ('G08 scope: only the Legacy telemetry sources, tests, verifiers and the LI1 / LI2 documents changed (' + $touched.Count + ' files; outside: ' + ($outside -join ',') + ')') ($outside.Count -eq 0)

@@ -64,6 +64,7 @@
     <Compile Include="src\LegacyHandleContract.cs" />
     <Compile Include="src\LegacyInputProbe.cs" />
     <Compile Include="src\LegacyInputTelemetry.cs" />
+    <Compile Include="src\LegacyScoringProbe.cs" />
     <Compile Include="src\LegacyStationTimeline.cs" />
     <Compile Include="src\LegacyTelemetrySession.cs" />
     <Compile Include="src\LegacyTelemetryExtension.cs" />
