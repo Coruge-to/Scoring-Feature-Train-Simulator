@@ -523,6 +523,7 @@ namespace TsScoringLegacyTelemetryTests
         public CollectDiag Diag = new CollectDiag();
         public FakeScoringApi Scoring = null;     // Phase SI-0: null = no scoring-integration observation wired
         public FakeInputApi Input = null;         // Phase LI0: null = no input observation wired (the L3 sessions of the earlier tests)
+        public FakeGroundApi Ground = null;       // Phase SI-1: null = the ground limit contract is not wired (the sessions of the earlier phases)
         public long Now = 1000;
         public long Seed = 5000000000L;
         private LegacyTelemetrySession session;
@@ -554,9 +555,18 @@ namespace TsScoringLegacyTelemetryTests
             session = Make(withDiag ? (ITelemetryDiag)Diag : null);
         }
 
+        /// <summary>Phase SI-1: withGround wires the ground limit contract (a FakeGroundApi in Ground) next to the input surface and the SI-0 observation.</summary>
+        public Harness(bool withInput, bool withDiag, bool withScoring, bool withGround)
+        {
+            if (withInput) { Input = new FakeInputApi(); }
+            if (withScoring) { Scoring = new FakeScoringApi(); }
+            if (withGround) { Ground = new FakeGroundApi(); }
+            session = Make(withDiag ? (ITelemetryDiag)Diag : null);
+        }
+
         private LegacyTelemetrySession Make(ITelemetryDiag d)
         {
-            return new LegacyTelemetrySession(Api, Sink, delegate { return Now; }, delegate { return Seed; }, d, Input, Scoring);
+            return new LegacyTelemetrySession(Api, Sink, delegate { return Now; }, delegate { return Seed; }, d, Input, Scoring, Ground);
         }
 
         /// <summary>Phase SI-0: the host adapter reports its set-up (the "init" word of the order).</summary>
@@ -960,6 +970,233 @@ namespace TsScoringLegacyTelemetryTests
             bool bc = scoring.TryLimitCount(out count, out rc);
             bool be = scoring.TryLimitElement(0, out e, out re);
             return new string[] { scoring.HostTypesVersion, bb + ":" + rb, bv + ":" + rv, bc + ":" + rc, be + ":" + re };
+        }
+    }
+
+    // ---- PHASE SI-1 (ground limit contract) fakes -------------------------------------------------------------------------------------------
+    /// <summary>A fake of the ground limit read surface (ILegacyGroundApi). Records the thread of every call. Limits use FakeLimit (m/s).</summary>
+    public class FakeGroundApi : ILegacyGroundApi
+    {
+        // the car numbers
+        public bool CarFail = false;
+        public string CarReason = "dynamics-null";
+        public bool CarThrow = false;
+        public double? CarLen = 18.0;
+        public double? Motor = 1.0;
+        public double? Trailer = 0.0;
+
+        // the list
+        public bool LimitsFail = false;
+        public string LimitsReason = "limits-null";
+        public bool LimitsThrow = false;
+        public List<FakeLimit> Limits = new List<FakeLimit>();
+        public int FailElementAt = -1;             // the element with this index cannot be read
+        public int ThrowElementAt = -1;
+        public int? CountOverride = null;          // the count the host reports (different from Limits.Count = a list that changes under the reader)
+
+        public Dictionary<string, int> Calls = new Dictionary<string, int>();
+        public HashSet<int> Threads = new HashSet<int>();
+
+        private void Note(string name)
+        {
+            int n;
+            Calls.TryGetValue(name, out n);
+            Calls[name] = n + 1;
+            lock (Threads) { Threads.Add(System.Threading.Thread.CurrentThread.ManagedThreadId); }
+        }
+
+        public int CallCount(string name)
+        {
+            int n;
+            Calls.TryGetValue(name, out n);
+            return n;
+        }
+
+        public int TotalCalls()
+        {
+            int t = 0;
+            foreach (int v in Calls.Values) { t += v; }
+            return t;
+        }
+
+        /// <summary>Limit in km/h for the tests that think in km/h.</summary>
+        public void Lim(double location, double kmh)
+        {
+            Limits.Add(new FakeLimit(location, kmh / 3.6));
+        }
+
+        bool ILegacyGroundApi.TryCarSpec(out LegacyVehicleLengthSnapshot snapshot, out string reason)
+        {
+            Note("TryCarSpec");
+            snapshot = null;
+            reason = CarReason;
+            if (CarThrow) { throw new InvalidOperationException("fake failure in car spec"); }
+            if (CarFail) { return false; }
+            LegacyVehicleLengthSnapshot s = new LegacyVehicleLengthSnapshot();
+            s.CarLength = CarLen;
+            s.MotorCount = Motor;
+            s.TrailerCount = Trailer;
+            snapshot = s;
+            return true;
+        }
+
+        bool ILegacyGroundApi.TryLimitCount(out int count, out string reason)
+        {
+            Note("TryLimitCount");
+            count = 0;
+            reason = LimitsReason;
+            if (LimitsThrow) { throw new InvalidOperationException("fake failure in limits"); }
+            if (LimitsFail) { return false; }
+            count = CountOverride.HasValue ? CountOverride.Value : Limits.Count;
+            return true;
+        }
+
+        bool ILegacyGroundApi.TryLimitElement(int index, out LegacyLimitElement element, out string reason)
+        {
+            Note("TryLimitElement");
+            element = null;
+            reason = "element-null";
+            if (index == ThrowElementAt) { throw new InvalidOperationException("fake failure in element"); }
+            if (index == FailElementAt || index < 0 || index >= Limits.Count) { return false; }
+            FakeLimit f = Limits[index];
+            LegacyLimitElement e = new LegacyLimitElement();
+            e.Location = f.Location;
+            e.Value = f.IsNode ? f.ValueMps : double.NaN;
+            e.IsValueNode = f.IsNode;
+            e.TypeName = f.TypeName;
+            element = e;
+            return true;
+        }
+    }
+
+    /// <summary>The pure parts of the ground limit contract, for the tests (km/h lists).</summary>
+    public static class GroundInfo
+    {
+        public static int ScanPerTick { get { return LegacyGroundTelemetry.ScanPerTick; } }
+        public static int MaxElements { get { return LegacyGroundTelemetry.MaxElements; } }
+        public static int RetryEveryTicks { get { return LegacyGroundTelemetry.RetryEveryTicks; } }
+        public static int MaxAheadEntries { get { return LegacyGroundContract.MaxAheadEntries; } }
+        public static double Window { get { return LegacyGroundContract.AheadWindowMeters; } }
+
+        /// <summary>{ ok (1/0), length } for the three numbers; -1 stands for "could not be read" (null).</summary>
+        public static double[] TrainLength(double carLength, double motor, double trailer)
+        {
+            double len;
+            bool ok = LegacyGroundContract.TryTrainLength(Opt(carLength), Opt(motor), Opt(trailer), out len);
+            return new double[] { ok ? 1.0 : 0.0, len };
+        }
+
+        public static double[] TrainLengthRaw(double? carLength, double? motor, double? trailer)
+        {
+            double len;
+            bool ok = LegacyGroundContract.TryTrainLength(carLength, motor, trailer, out len);
+            return new double[] { ok ? 1.0 : 0.0, len };
+        }
+
+        private static double? Opt(double v) { return v == -1.0 ? (double?)null : v; }
+
+        public static double Head(double location, double[] locs, double[] kmh) { return LegacyGroundContract.HeadKmh(location, locs, kmh); }
+        public static double Tail(double location, double trainLength, double[] locs, double[] kmh) { return LegacyGroundContract.TailKmh(location, trainLength, locs, kmh); }
+        public static double Clear(double location, double trainLength, double[] locs, double[] kmh) { return LegacyGroundContract.ClearDist(location, trainLength, locs, kmh); }
+
+        /// <summary>The MAPLIMITS text, or $null (more than the allowed entries in the window).</summary>
+        public static string Ahead(double location, double[] locs, double[] kmh)
+        {
+            string text;
+            int count;
+            return LegacyGroundContract.TryAhead(location, locs, kmh, out text, out count) ? text : null;
+        }
+
+        public static int AheadCount(double location, double[] locs, double[] kmh)
+        {
+            string text;
+            int count;
+            LegacyGroundContract.TryAhead(location, locs, kmh, out text, out count);
+            return count;
+        }
+
+        public static double[] LimitKmh(double mps)
+        {
+            double kmh;
+            bool ok = LegacyGroundContract.TryLimitKmh(mps, out kmh);
+            return new double[] { ok ? 1.0 : 0.0, kmh };
+        }
+    }
+
+    /// <summary>
+    /// A LITERAL port of the speed limit part of the Current sender (TsScoringPlugin\Class1.cs, "speedLimits" block): the same loops, the same comparisons, the same sentinels,
+    /// in the order of the list as it is given (no sorting). It exists only so that the Legacy contract is compared with the Current formula on many lists.
+    /// Result: { MAPLIMITS text, MAPHEAD, MAPTAIL (the lowest value in (tail, head], the Current MAPTAIL), CLEARDIST }, numbers in round-trip text.
+    /// </summary>
+    public static class CurrentReference
+    {
+        public static string[] Compute(double location, double trainLength, double[] locs, double[] valuesMps)
+        {
+            System.Globalization.CultureInfo inv = System.Globalization.CultureInfo.InvariantCulture;
+            List<Tuple<double, double>> validLimits = new List<Tuple<double, double>>();
+            List<string> futureList = new List<string>();
+            for (int k = 0; k < locs.Length; k++)
+            {
+                double sloc = locs[k];
+                double rawVal = valuesMps[k];
+                double sval = (double.IsInfinity(rawVal) || rawVal > 999.0 || rawVal <= 0) ? 1000.0 : rawVal * 3.6;
+                validLimits.Add(new Tuple<double, double>(sloc, sval));
+                if (sloc > location && sloc <= location + 3000.0) futureList.Add(string.Format(inv, "{0:F1}={1:F1}", sloc, sval));
+            }
+            string mapLimitsStr = string.Join("_", futureList);
+
+            double tailLoc = location - trainLength;
+            double limitAtTail = 1000.0;
+            double limitAtHead = 1000.0;
+            double distToClear = 0.0;
+
+            foreach (var l in validLimits)
+            {
+                if (l.Item1 <= tailLoc) limitAtTail = l.Item2;
+                if (l.Item1 <= location) limitAtHead = l.Item2;
+            }
+
+            double minOccupied = limitAtTail;
+            foreach (var l in validLimits)
+            {
+                if (l.Item1 > tailLoc && l.Item1 <= location)
+                {
+                    if (l.Item2 < minOccupied) minOccupied = l.Item2;
+                }
+            }
+
+            if (minOccupied < limitAtHead)
+            {
+                double clearanceLoc = location;
+                for (int i = validLimits.Count - 1; i >= 0; i--)
+                {
+                    if (validLimits[i].Item1 <= location && validLimits[i].Item1 > tailLoc)
+                    {
+                        if (validLimits[i].Item2 == limitAtHead) clearanceLoc = validLimits[i].Item1;
+                        else break;
+                    }
+                }
+                distToClear = clearanceLoc - tailLoc;
+            }
+
+            return new string[] { mapLimitsStr, limitAtHead.ToString("R", inv), minOccupied.ToString("R", inv), distToClear.ToString("R", inv) };
+        }
+    }
+
+    /// <summary>The REAL host adapter (AtsExLegacyApi) with nothing attached, asked through the ground limit surface: fixed reasons, never an exception.</summary>
+    public static class GroundAdapterProbe
+    {
+        public static string[] Run()
+        {
+            Type adapterType = typeof(ILegacyGroundApi).Assembly.GetType("TSScoringPlugin.Telemetry.AtsExLegacyApi", true);
+            ILegacyGroundApi ground = (ILegacyGroundApi)Activator.CreateInstance(adapterType, true);
+            LegacyVehicleLengthSnapshot v; LegacyLimitElement e;
+            int count;
+            string rv, rc, re;
+            bool bv = ground.TryCarSpec(out v, out rv);
+            bool bc = ground.TryLimitCount(out count, out rc);
+            bool be = ground.TryLimitElement(0, out e, out re);
+            return new string[] { bv + ":" + rv, bc + ":" + rc, be + ":" + re };
         }
     }
 

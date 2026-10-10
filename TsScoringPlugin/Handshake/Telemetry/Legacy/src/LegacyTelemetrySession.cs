@@ -11,7 +11,9 @@ using System.Threading;
 // sentinels of the telemetry contract, and an AVAIL part that names exactly those data groups. Nothing is guessed, defaulted or carried over:
 //
 //   * a value that cannot be read is not written, and its token is not in AVAIL;
-//   * data that does not exist in the Legacy API (the ground limit look-ahead, the vehicle length derivation, the jump) has no token and no key, ever;
+//   * data that does not exist in the Legacy API (the jump, the door close time) has no token and no key, ever;
+//   * Phase SI-1: the vehicle length, the ground limit look-ahead and the head limit are DERIVED from public Legacy API values (LegacyGroundTelemetry), each group
+//     all or nothing, and only when the session is given the read surface for it;
 //   * Phase LI1: the handle group (generic texts built from the handle numbers) and the brake pressures (StateStore, kPa) are offered by LegacyInputTelemetry
 //     from the same all-or-nothing rule: a group that cannot be built completely in this Tick is neither written nor announced;
 //   * a new scenario instance (ScenarioOpened / ScenarioClosed / ScenarioCreated, a different ORIGINAL Scenario object, IsScenarioCreated false) ends the
@@ -78,7 +80,8 @@ namespace TSScoringPlugin.Telemetry
         private readonly LegacyInputTickCache inputCache;           // Phase LI1: one read of the input surface per Tick for both consumers below; null when no input is wired
         private readonly LegacyInputTelemetry inputTelemetry;       // Phase LI1: the handle group and the pressures of the line; null when no input is wired
         private readonly LegacyScoringProbe scoringProbe;           // Phase SI-0: the scoring-integration observation (Tick thread only, diagnostic log only); null when not wired
-        private readonly LegacyOrderRecorder order;                 // Phase SI-0: the order of events / first Tick / heartbeat status / first line (any thread, diagnostic log only); null when not wired
+        private readonly LegacyGroundTelemetry ground;              // Phase SI-1: TRAINLEN / MAPLIMITS / CLEARDIST / the head limit (Tick thread only); null when not wired
+        private readonly LegacyOrderRecorder order;               // Phase SI-0: the order of events / first Tick / heartbeat status / first line (any thread, diagnostic log only); null when not wired
         private const long TickGapNoteMs = 250;                     // a Tick after a longer silence is noted as a resume (the Pause side of the order)
         private bool anyTick;                                       // Tick thread only
         private long prevTickMs;                                    // Tick thread only
@@ -117,8 +120,22 @@ namespace TSScoringPlugin.Telemetry
         /// (diagnostic log only: nothing of them enters the telemetry line, AVAIL or the heartbeat). null = not wired.
         /// </summary>
         internal LegacyTelemetrySession(ILegacyApi api, ITelemetrySink sink, Func<long> nowMs, Func<long> idSeed, ITelemetryDiag diag, ILegacyInputApi input, ILegacyScoringApi scoring)
+            : this(api, sink, nowMs, idSeed, diag, input, scoring, null)
+        {
+        }
+
+        /// <summary>
+        /// groundApi = the read surface of the Phase SI-1 ground limit contract (TRAINLEN, MAPLIMITS, CLEARDIST and the head limit of MAPHEAD). null = not wired: none of
+        /// those is ever written or announced and MAPHEAD stays equal to MAPTAIL (the sender of the earlier phases, byte for byte).
+        /// </summary>
+        internal LegacyTelemetrySession(ILegacyApi api, ITelemetrySink sink, Func<long> nowMs, Func<long> idSeed, ITelemetryDiag diag, ILegacyInputApi input, ILegacyScoringApi scoring, ILegacyGroundApi groundApi)
         {
             this.api = api;
+            if (groundApi != null)
+            {
+                ground = new LegacyGroundTelemetry(groundApi, Log);
+            }
+
             this.sink = sink;
             this.nowMs = nowMs;
             this.idSeed = idSeed;
@@ -236,6 +253,7 @@ namespace TSScoringPlugin.Telemetry
             try { if (inputProbe != null) { inputProbe.EndGeneration(); } } catch { }
             try { if (inputTelemetry != null) { inputTelemetry.End(); } } catch { }
             try { if (scoringProbe != null) { scoringProbe.EndGeneration(); } } catch { }
+            try { if (ground != null) { ground.End(); } } catch { }
         }
 
         /// <summary>The observation of the scoring inputs (diagnostic log only). It never changes the telemetry line and can never throw out of here.</summary>
@@ -299,6 +317,7 @@ namespace TSScoringPlugin.Telemetry
             try { if (inputProbe != null) { inputProbe.Begin(id); } } catch { }
             try { if (inputTelemetry != null) { inputTelemetry.Begin(id); } } catch { }
             try { if (scoringProbe != null) { scoringProbe.Begin(id); } } catch { }
+            try { if (ground != null) { ground.Begin(id); } } catch { }
         }
 
         // -- the gradient unit ----------------------------------------------------------------------------------------------------------------
@@ -570,16 +589,52 @@ namespace TSScoringPlugin.Telemetry
             {
             }
 
-            // ground limit: the limit in force now. HEAD and TAIL are the same real value; the look-ahead list does not exist in the Legacy API
+            // ground limit. MAPTAIL is the limit the host has in force now (the lowest value in (tail, head], the meaning of the Current MAPTAIL) and is never changed.
+            // MAPHEAD is the limit in force at the head: Phase SI-1 computes it from the public limit list (LegacyGroundTelemetry); when it cannot be established it
+            // stays equal to MAPTAIL (the Python side then has no tail wait: nothing is made up).
             double? groundForProbe = null;       // Phase SI-0: the value of this very read, handed to the observation (nothing is read twice)
+            double? hostTailKmh = null;
             try
             {
-                double ground;
-                if (api.TryGroundLimitMps(out ground) && !double.IsNaN(ground))
+                double hostGround;
+                if (api.TryGroundLimitMps(out hostGround) && !double.IsNaN(hostGround))
                 {
-                    string kmh = TelemetryContract.D(TelemetryContract.GroundLimitKmh(ground));
-                    lb.Group(TelemetryContract.TokMapLimit, "MAPHEAD", kmh, "MAPTAIL", kmh);
-                    groundForProbe = ground;
+                    hostTailKmh = TelemetryContract.GroundLimitKmh(hostGround);
+                    groundForProbe = hostGround;
+                }
+            }
+            catch
+            {
+                hostTailKmh = null;
+                groundForProbe = null;
+            }
+
+            // Phase SI-1: the list, the train length, the head limit (all or nothing per group; see LegacyGroundTelemetry)
+            LegacyGroundValues groundValues = null;
+            try
+            {
+                if (ground != null)
+                {
+                    groundValues = ground.Read(location, hostTailKmh);
+                }
+            }
+            catch
+            {
+                groundValues = null;
+            }
+
+            if (hostTailKmh.HasValue)
+            {
+                string tailText = TelemetryContract.D(hostTailKmh.Value);
+                string headText = groundValues != null && groundValues.HaveHead ? TelemetryContract.D(groundValues.HeadKmh) : tailText;
+                lb.Group(TelemetryContract.TokMapLimit, "MAPHEAD", headText, "MAPTAIL", tailText);
+            }
+
+            try
+            {
+                if (ground != null && groundValues != null)
+                {
+                    ground.Compose(groundValues, hostTailKmh.HasValue, delegate (string token, string[] pairs) { lb.Group(token, pairs); });
                 }
             }
             catch

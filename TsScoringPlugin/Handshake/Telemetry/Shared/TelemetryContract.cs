@@ -33,6 +33,8 @@ namespace TSScoringPlugin.Telemetry
         internal const string TokSigLimit = "siglimit";
         internal const string TokSigLimitAhead = "siglimit_ahead";
         internal const string TokMapLimit = "maplimit";
+        internal const string TokMapLimitAhead = "maplimit_ahead";   // Phase SI-1: MAPLIMITS, CLEARDIST (together)
+        internal const string TokTrainLen = "trainlen";              // Phase SI-1: TRAINLEN
         internal const string TokHandle = "handle";          // Phase LI1: REV POW BRK HTYPE ALLTXT, all or nothing
         internal const string TokBcp = "bcp";                // Phase LI1: BCP (kPa)
         internal const string TokBpp = "bpp";                // Phase LI1: BPP (kPa)

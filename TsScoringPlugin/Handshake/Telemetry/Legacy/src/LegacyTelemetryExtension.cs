@@ -38,6 +38,10 @@ using BveTypes.ClassWrappers;
 //   Scenario.Vehicle.Dynamics.CarLength / FirstCar.Count / MotorCar.Count / TrailerCar.Count
 //   Scenario.Route.SpeedLimits (Count, the indexer, MapObjectBase.Location, ValueNode<double>.Value)
 //
+// Phase SI-1 (SENT to the telemetry stream: TRAINLEN, MAPLIMITS, CLEARDIST, and the head limit of MAPHEAD), the same READ ONLY public values as the SI-0 observation:
+//   Scenario.Vehicle.Dynamics.CarLength / MotorCar.Count / TrailerCar.Count  (FirstCar is not read: it is not part of the length)
+//   Scenario.Route.SpeedLimits (Count, the indexer, MapObjectBase.Location, ValueNode<double>.Value)
+//
 // The timer thread (heartbeat) uses the session's own volatile fields only; it never touches BveHacker, a Scenario or any BVE object.
 // No exception ever leaves the constructor, Tick, Dispose, an event handler or the timer.
 // ============================================================================
@@ -62,7 +66,7 @@ namespace TSScoringPlugin.Telemetry
         {
             sink = new UdpTelemetrySink();
             AtsExLegacyApi api = new AtsExLegacyApi();
-            session = new LegacyTelemetrySession(api, sink, delegate { return clock.ElapsedMilliseconds; }, delegate { return DateTime.UtcNow.Ticks; }, diag, api, api);
+            session = new LegacyTelemetrySession(api, sink, delegate { return clock.ElapsedMilliseconds; }, delegate { return DateTime.UtcNow.Ticks; }, diag, api, api, api);
             try
             {
                 api.AttachNative(Native);      // PluginBase.Native: the public route to INative; only held here, read on the Tick thread
@@ -216,7 +220,7 @@ namespace TSScoringPlugin.Telemetry
     }
 
     /// <summary>The Legacy API read into ILegacyApi. Every Try method catches everything: an unreadable value is "not available", never a default.</summary>
-    internal sealed class AtsExLegacyApi : ILegacyApi, ILegacyInputApi, ILegacyScoringApi
+    internal sealed class AtsExLegacyApi : ILegacyApi, ILegacyInputApi, ILegacyScoringApi, ILegacyGroundApi
     {
         private IBveHacker hacker;
         private INative nativeHost;
@@ -788,6 +792,45 @@ namespace TSScoringPlugin.Telemetry
                 reason = LegacyScoringReason.ReadException;
                 return false;
             }
+        }
+
+        // -- Phase SI-1: the ground limit contract (ILegacyGroundApi). Tick thread only; READ ONLY. The list reads are the ones of the SI-0 observation (one list wrapper per Tick). ----
+        bool ILegacyGroundApi.TryCarSpec(out LegacyVehicleLengthSnapshot snapshot, out string reason)
+        {
+            snapshot = null;
+            reason = LegacyScoringReason.ReadException;
+            try
+            {
+                if (ReferenceEquals(current, null)) { reason = LegacyScoringReason.ScenarioNull; return false; }
+                Vehicle vehicle = current.Vehicle;
+                if (ReferenceEquals(vehicle, null)) { reason = LegacyScoringReason.VehicleNull; return false; }
+                VehicleDynamics dynamics = vehicle.Dynamics;
+                if (ReferenceEquals(dynamics, null)) { reason = LegacyScoringReason.DynamicsNull; return false; }
+
+                // the train is CarLength x (MotorCar + TrailerCar); FirstCar is not part of it (SI-0 live check). A number that cannot be read stays null.
+                LegacyVehicleLengthSnapshot s = new LegacyVehicleLengthSnapshot();
+                try { s.CarLength = dynamics.CarLength; } catch { }
+                try { CarInfo motor = dynamics.MotorCar; if (!ReferenceEquals(motor, null)) { s.MotorCount = motor.Count; } } catch { }
+                try { CarInfo trailer = dynamics.TrailerCar; if (!ReferenceEquals(trailer, null)) { s.TrailerCount = trailer.Count; } } catch { }
+                snapshot = s;
+                return true;
+            }
+            catch
+            {
+                snapshot = null;
+                reason = LegacyScoringReason.ReadException;
+                return false;
+            }
+        }
+
+        bool ILegacyGroundApi.TryLimitCount(out int count, out string reason)
+        {
+            return ((ILegacyScoringApi)this).TryLimitCount(out count, out reason);
+        }
+
+        bool ILegacyGroundApi.TryLimitElement(int index, out LegacyLimitElement element, out string reason)
+        {
+            return ((ILegacyScoringApi)this).TryLimitElement(index, out element, out reason);
         }
 
         public bool TryBrakeNotches(out int brakeNotchCount, out bool hasHoldingSpeedBrake)
