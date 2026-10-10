@@ -46,6 +46,7 @@ class TelemetryGate(object):
         self._applied_epoch = None      # the SCENARIO_ID the application state was last built from
         self._epoch_reset = False
         self._dropped_logged = set()    # the drop reasons already logged for the current generation
+        self.last_verdict = None        # what accept() decided last: followed (normal mode) / accepted / held / stale / invalid
         # counters
         self.accepted = 0
         self.stale = 0
@@ -135,14 +136,17 @@ class TelemetryGate(object):
         line = contract.parse_telemetry(text)
         if not self.strict:
             self._follow_avail(line.availability if line.valid else None, line)
+            self.last_verdict = "followed"
             return True
         if not line.valid:
             self.invalid += 1
+            self.last_verdict = "invalid"
             self._drop_episode(line.reason)
             return False
         sid = line.scenario_id
         if sid in self._retired or (sid in self._seen and sid != self._newest):
             self.stale += 1
+            self.last_verdict = "stale"
             self._drop_episode("stale-epoch")
             return False
         if sid not in self._seen:
@@ -155,10 +159,12 @@ class TelemetryGate(object):
             self._ahead = sid
             self._held = (sid, text, line.availability)
             self.ahead_lines += 1
+            self.last_verdict = "held"
             self._drop_episode("sender-ahead")
             return False
         self._accepted += 1
         self.accepted += 1
+        self.last_verdict = "accepted"
         self._follow_avail(line.availability, line)
         return True
 

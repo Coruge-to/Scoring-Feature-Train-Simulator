@@ -26,9 +26,12 @@ from scoring_logic import (
 from menu_ui import draw_menu
 from hud_ui import draw_hud
 from utils import write_desktop_log, NumericKeyInputRouter
+import managed_input
 import managed_mode
+import pause_recovery
 import telemetry_contract
 import telemetry_gate
+import utils
 
 KERNING_OFFSETS = {
     "メ": 12,
@@ -381,7 +384,12 @@ class Overlay(QWidget):
                                 })
 
                     if new_list:
-                        self.station_list = new_list
+                        if self.telemetry_gate.strict:
+                            # managed mode: a STALIST names no scenario, so it only becomes THE station list together with the telemetry line that
+                            # follows it (same sender tick) once that line is accepted for the current generation; see _take_pending_station_list
+                            self.pending_station_list = new_list
+                        else:
+                            self.station_list = new_list
 
                 elif text.startswith("META:"):
                     parts = text.split(':')
@@ -413,13 +421,32 @@ class Overlay(QWidget):
                 else:
                     if self.telemetry_gate.accept(text):
                         latest_telemetry = text
+                        self._take_pending_station_list(True)
+                    else:
+                        self._take_pending_station_list(False)
             except Exception:
                 pass
 
         if latest_telemetry:
             self.apply_telemetry_text(latest_telemetry)
+            committed = self.__dict__.pop('_station_list_to_commit', None)
+            if committed is not None:
+                self.station_list = committed
 
         self._settle_jump_complete()
+
+    def _take_pending_station_list(self, accepted):
+        """Managed mode: the STALIST received just before a telemetry line is that line's. Accepted line: it becomes the station list once the line is applied
+        (after the generation reset the application of the line may do). A line the gate holds because the sender is ahead of the Caller: it waits with the
+        held line. Any other (stale / invalid) line: it is dropped. Normal mode never has a pending list."""
+        pending = getattr(self, 'pending_station_list', None)
+        if pending is None:
+            return
+        self.pending_station_list = None
+        if accepted:
+            self._station_list_to_commit = pending
+        elif self.telemetry_gate.last_verdict == "held":
+            self.held_station_list = pending
 
     def reset_telemetry_state(self):
         """Phase L3: a NEW scenario instance starts: every value that comes from the telemetry line returns to its construction default, so that a
@@ -505,8 +532,10 @@ class Overlay(QWidget):
                             rev_list = [s.strip() for s in vals[1].split('_') if s.strip()]
                             pow_list = [s.strip() for s in vals[2].split('_') if s.strip()]
                             brk_list = [s.strip() for s in vals[3].split('_') if s.strip()]
+                            # 第4群（抑速ノッチの表示文字列）は後方互換：無い・空の旧電文では従来どおり力行文字列だけで幅を決める
+                            hld_list = [s.strip() for s in vals[4].split('_') if s.strip()] if len(vals) >= 5 else []
                             self.all_brk_texts = brk_list
-                            
+
                             fm_local = QFontMetrics(self.font_ui)
                             
                             def get_adjusted_max_w(text_list, apply_offset=False):
@@ -524,7 +553,8 @@ class Overlay(QWidget):
                             brk_eval_list = brk_list[1:] if self.is_single_handle and len(brk_list) > 1 else brk_list
                             
                             self.max_rev_w = get_adjusted_max_w(rev_list, apply_offset=False)
-                            self.max_pow_w = get_adjusted_max_w(pow_list, apply_offset=False)
+                            # POW欄は powNotch < 0 のとき抑速文字列を表示するので、力行と抑速の最大描画幅で事前確定する（BRK欄には加えない）
+                            self.max_pow_w = get_adjusted_max_w(pow_list + hld_list, apply_offset=False)
                             self.max_brk_w = get_adjusted_max_w(brk_eval_list, apply_offset=True)
                             
                     elif part.startswith("SIGLIMIT:"): self.bve_signal_limit = float(part.split(':')[1])
@@ -562,7 +592,9 @@ class Overlay(QWidget):
                     elif part.startswith("BPP:"):
                         vals = part.split(':')
                         if len(vals) >= 2: self.bpPressure = float(vals[1])
-                        if len(vals) >= 3: self.bve_bp_initial = float(vals[2])
+                        if len(vals) >= 3:
+                            self.bve_bp_initial = float(vals[2])
+                            self.bve_bp_initial_received = True
                     elif part.startswith("PRATES:"):
                         vals = part.split(':')
                         if len(vals) >= 3 and vals[1]:
@@ -594,6 +626,11 @@ class Overlay(QWidget):
                             write_desktop_log(f"[UDP] ドア時間(CloseTime)を受信: {val} ms")
                             self._debug_door_time_printed = val
                 except Exception: continue
+
+            # managed mode: the sender's JUMP counter is a sender-lifetime counter; the first accepted line of a generation is the reference
+            if getattr(self, 'jump_baseline_pending', False):
+                self.last_jump_count = self.bve_jump_count
+                self.jump_baseline_pending = False
 
     def _settle_jump_complete(self):
         if self.pending_jump_complete is not None:
@@ -1310,6 +1347,10 @@ class Overlay(QWidget):
                     self.input_mode_active = False
                     
             elif self.menu_cursor == 1: # 「採点を開始する」
+                start_gate = getattr(self, 'scoring_start_gate', None)
+                if start_gate is not None and not start_gate():
+                    self.toggle_menu(is_bve_advancing)       # managed mode: refused (one warning was shown); the menu closes, BVE resumes
+                    return
                 self.is_scoring_mode = True
                 reset_result_display_state(self)
                 reset_score_accumulation(self)
@@ -1568,6 +1609,7 @@ class Overlay(QWidget):
                     win32gui.SetWindowPos(self.bve_hwnd, win32con.HWND_TOP, x, y, w, h, win32con.SWP_NOZORDER | win32con.SWP_FRAMECHANGED | win32con.SWP_SHOWWINDOW)
                     
                     self.is_borderless_fullscreen = True
+                    self._emit_input_event("window-fullscreen", state="on")
                 except Exception as e:
                     write_desktop_log(f"[WINDOW] フルスクリーン化エラー: {e}")
 
@@ -1595,6 +1637,7 @@ class Overlay(QWidget):
                     win32gui.SetWindowPlacement(self.bve_hwnd, self.bve_original_placement)
                 
                 self.is_borderless_fullscreen = False
+                self._emit_input_event("window-fullscreen", state="off")
             except Exception as e:
                 write_desktop_log(f"[WINDOW] 復元エラー: {e}")
 
@@ -1667,7 +1710,7 @@ class Overlay(QWidget):
             save_dir = os.path.join(os.environ["USERPROFILE"], "Documents", "bve_score")
             os.makedirs(save_dir, exist_ok=True)
             default_name = datetime.now().strftime("Result_%Y%m%d_%H%M%S.jpg")
-            save_path, _ = QFileDialog.getSaveFileName(self, "採点結果を保存", os.path.join(save_dir, default_name), "JPEG Image (*.jpg);;PNG Image (*.png)")
+            save_path = self.ask_result_save_path(os.path.join(save_dir, default_name))
             
             if save_path:
                 fhd_pixmap.save(save_path, "JPG", 100) # 完成した合成画像を保存
@@ -1680,6 +1723,8 @@ class Overlay(QWidget):
         self.update()
     
     def update_logic(self):
+        """Normal (manual) mode timer slot: Esc, the search for the BVE window by title, the window follow, then the shared step. Phase SI-A2 only cut the
+        body into the methods below; every statement and its order is the one of the single function it was."""
         if keyboard.is_pressed('esc'): QApplication.quit()
 
         is_bve_active = False
@@ -1694,56 +1739,92 @@ class Overlay(QWidget):
             if self.was_bve_found and self.bve_hwnd is None:
                 QApplication.quit()
                 return
-        
+
         if self.bve_hwnd:
             self.was_bve_found = True 
             is_bve_active = (win32gui.GetForegroundWindow() == self.bve_hwnd)
-            
-            # =================================================================
-            if getattr(self, 'is_bve_loaded', False):
-                # 駅リストが無く、未実行で、かつBVEが「PAUSED」と叫んでいる時だけ！
-                if not getattr(self, 'station_list', []) and not getattr(self, 'initial_kickstart_done', False):
-                    if getattr(self, 'bve_actual_state', '') == 'PAUSED':
-                        self.auto_pause_pending = True
-                        self.initial_kickstart_done = True
-                        self.kick_bve_time = self.bve_time_ms
-                        write_desktop_log("[MAIN] BVEの凍結を確認。キックスタートを実行します。")
-                        win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
-                        win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
-                        self.bve_actual_state = 'RUNNING'
-                    
-                    elif getattr(self, 'bve_actual_state', '') == 'RUNNING':
-                        # 既に動いているなら、Pを送る必要はないのでフラグだけ立てて終了
-                        self.initial_kickstart_done = True
-            
-            if not self.is_linked:
-                try:
-                    win32gui.SetWindowLong(int(self.winId()), win32con.GWL_HWNDPARENT, self.bve_hwnd)
-                    self.is_linked = True
-                    self.show()
-                except Exception: pass
-            try:
-                if win32gui.IsIconic(self.bve_hwnd):
-                    if self.isVisible(): self.hide()
-                else:
-                    client_rect = win32gui.GetClientRect(self.bve_hwnd)
-                    if client_rect[2] > 0 and client_rect[3] > 0:
-                        client_x, client_y = win32gui.ClientToScreen(self.bve_hwnd, (0, 0))
-                        w, h = client_rect[2], client_rect[3]
-                        current_geom = self.geometry()
-                        if (current_geom.x() != client_x or current_geom.y() != client_y or 
-                            current_geom.width() != w or current_geom.height() != h):
-                            self.setGeometry(client_x, client_y, w, h)
-                    if not self.isVisible(): self.show()
-            except Exception:
-                self.bve_hwnd = None
-                self.is_linked = False
-                self.hide()
+            self._kick_start_first_press()
+            self._follow_bve_window()
         else:
             self.hide()
 
+        self._run_input_and_scoring_step(is_bve_active)
+
+    # -- the parts of the shared step (normal mode runs them from update_logic, managed mode from the managed input controller) ------------------
+    def _kick_start_first_press(self):
+        """P to P, first half: the BVE reports PAUSED at load and no station list came: press P once so that the time runs and the telemetry flows."""
+        # =================================================================
+        if getattr(self, 'is_bve_loaded', False):
+            # 駅リストが無く、未実行で、かつBVEが「PAUSED」と叫んでいる時だけ！
+            if not getattr(self, 'station_list', []) and not getattr(self, 'initial_kickstart_done', False):
+                if getattr(self, 'bve_actual_state', '') == 'PAUSED':
+                    self.auto_pause_pending = True
+                    self.initial_kickstart_done = True
+                    self.kick_bve_time = self.bve_time_ms
+                    write_desktop_log("[MAIN] BVEの凍結を確認。キックスタートを実行します。")
+                    win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
+                    win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
+                    self.bve_actual_state = 'RUNNING'
+                    self._emit_input_event("kickstart", step="first")
+                    
+                elif getattr(self, 'bve_actual_state', '') == 'RUNNING':
+                    # 既に動いているなら、Pを送る必要はないのでフラグだけ立てて終了
+                    self.initial_kickstart_done = True
+
+    def _follow_bve_window(self):
+        """Normal mode only: own the overlay by the BVE window, put it on its client area, hide it while BVE is minimized."""
+        if not self.is_linked:
+            try:
+                win32gui.SetWindowLong(int(self.winId()), win32con.GWL_HWNDPARENT, self.bve_hwnd)
+                self.is_linked = True
+                self.show()
+            except Exception: pass
+        try:
+            if win32gui.IsIconic(self.bve_hwnd):
+                if self.isVisible(): self.hide()
+            else:
+                client_rect = win32gui.GetClientRect(self.bve_hwnd)
+                if client_rect[2] > 0 and client_rect[3] > 0:
+                    client_x, client_y = win32gui.ClientToScreen(self.bve_hwnd, (0, 0))
+                    w, h = client_rect[2], client_rect[3]
+                    current_geom = self.geometry()
+                    if (current_geom.x() != client_x or current_geom.y() != client_y or 
+                        current_geom.width() != w or current_geom.height() != h):
+                        self.setGeometry(client_x, client_y, w, h)
+                if not self.isVisible(): self.show()
+        except Exception:
+            self.bve_hwnd = None
+            self.is_linked = False
+            self.hide()
+
+    def _run_input_and_scoring_step(self, is_bve_active):
+        """Everything of one tick that follows the window work, in the order it always had."""
         current_time = self.bve_time_ms / 1000.0
 
+        self._detect_and_release_fast_forward()
+
+        is_bve_advancing = self._resolve_bve_advancing()
+
+        self._kick_start_second_press(is_bve_advancing)
+
+        self._sync_system_key_suppression(is_bve_active)
+
+        self._sync_f8_suppression(is_bve_active)
+
+        self._sync_time_position_window_lock()
+
+        should_block_keys = self._sync_menu_key_suppression(is_bve_active)
+
+        self._sync_numeric_input(should_block_keys, is_bve_active)
+
+        self._handle_mouse(is_bve_active, is_bve_advancing)
+
+        self._handle_keys(is_bve_active, is_bve_advancing)
+
+        self._advance_scoring_clock_and_score(current_time)
+
+    def _detect_and_release_fast_forward(self):
+        """Fast-forward detection from the BVE time against the real time, and the release (F8 injection) while a scoring run is driving."""
         # BVE内時間と実時間の進行差から早送りを検知する
         real_now = time.time()
         if self.ff_check_real_time == 0.0:
@@ -1772,7 +1853,10 @@ class Overlay(QWidget):
                         win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x77, 0) # F8
                         win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x77, 0)
                         self.is_fast_forwarding = False
+                        self._emit_input_event("ff-release")
 
+    def _resolve_bve_advancing(self):
+        """Is the BVE time advancing: from the sender's STATUS if there is one, else guessed from the clock."""
         if getattr(self, 'bve_actual_state', '') != '':
             is_bve_advancing = ('RUNNING' in self.bve_actual_state)
         else:
@@ -1780,15 +1864,21 @@ class Overlay(QWidget):
             if self.bve_time_ms != self.last_bve_time_ms:
                 self.last_time_change_real = time.time()
             is_bve_advancing = (time.time() - getattr(self, 'last_time_change_real', 0)) < 0.8
+        return is_bve_advancing
 
+    def _kick_start_second_press(self, is_bve_advancing):
+        """P to P, second half: as soon as the BVE time advanced, press P once more (pause again). Runs when the station list is there."""
         # BVE内部時間が進み始めた直後に自動停止する
         if getattr(self, 'auto_pause_pending', False) and getattr(self, 'station_list', []):
             if self.bve_time_ms > getattr(self, 'kick_bve_time', self.bve_time_ms):
                 if self.bve_hwnd and is_bve_advancing:
                     win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
                     win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
+                    self._emit_input_event("kickstart", step="second")
                 self.auto_pause_pending = False
 
+    def _sync_system_key_suppression(self, is_bve_active):
+        """F7 and P are not passed to BVE while a menu is open or a scoring run is on (BVE in front)."""
         # メニュー表示中または採点中は、BVE側のシステムキー入力を抑止する
         should_block_sys = (self.menu_state != 0 or (getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False))) and is_bve_active
         
@@ -1809,6 +1899,8 @@ class Overlay(QWidget):
                 self.sys_hook_dict.clear()
             self.sys_keys_blocked = False
 
+    def _sync_f8_suppression(self, is_bve_active):
+        """F8 is not passed to BVE while a scoring run is driving (the menu hooks own F8 while a menu is open)."""
         # 採点中かつ走行中はF8入力を抑止する
         should_block_f8 = self.F8_disable and getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False) and self.bve_speed >= 0.1 and is_bve_active and self.menu_state == 0
         
@@ -1828,6 +1920,8 @@ class Overlay(QWidget):
             self.f8_hook_dict.clear()
             self.f8_physically_blocked = False
 
+    def _sync_time_position_window_lock(self):
+        """The \"time and position\" window of BVE is disabled while a menu is open or a scoring run is on, and enabled again afterwards."""
         # メニュー表示中または採点中は「時刻と位置」ウィンドウを操作不能にする
         try:
             # BVEのダイヤグラムウィンドウをタイトルで検索
@@ -1844,6 +1938,8 @@ class Overlay(QWidget):
         except Exception:
             pass
 
+    def _sync_menu_key_suppression(self, is_bve_active):
+        """The menu keys are not passed to BVE while a menu is open (BVE in front). Returns whether they are blocked."""
         should_block_keys = (self.menu_state != 0) and is_bve_active
         if should_block_keys and not self.keys_blocked:
             block_keys = ['0','1','2','3','4','5','6','7','8','9','f8','up','down','left','right','enter','backspace', 'h']
@@ -1855,7 +1951,10 @@ class Overlay(QWidget):
                 if hook: keyboard.unhook(hook)
             self.hook_dict.clear()
             self.keys_blocked = False
+        return should_block_keys
 
+    def _sync_numeric_input(self, should_block_keys, is_bve_active):
+        """The numeric-input router follows the menu key block; its digits are applied while a numeric field is being edited."""
         # 数値入力用ルーターは、メニュー表示中かつBVE前面の間だけ登録する
         # （結果画面のスクショ保存でメニュー用フックが外れた場合も、ここで後始末する）
         if should_block_keys and self.numeric_router_hook is None:
@@ -1875,10 +1974,13 @@ class Overlay(QWidget):
                 if event_kind == 'digit':
                     self.apply_numeric_char(event_value)
 
+    def _handle_mouse(self, is_bve_active, is_bve_advancing):
+        """The rank slider (drag) and the menu click zones."""
         is_left_clicked = (win32api.GetAsyncKeyState(win32con.VK_LBUTTON) & 0x8000) != 0
 
         # 評価点スライダーのクリックとドラッグを処理する
         is_mouse_down = (win32api.GetAsyncKeyState(win32con.VK_LBUTTON) & 0x8000) != 0
+
         if self.menu_state == 10 and is_mouse_down and is_bve_active:
             cursor_pos = win32gui.GetCursorPos()
             geom = self.geometry()
@@ -2000,6 +2102,8 @@ class Overlay(QWidget):
                             self.handle_menu_backspace(is_bve_advancing)
         self.last_left_click = is_left_clicked
 
+    def _handle_keys(self, is_bve_active, is_bve_advancing):
+        """Edge detection of the tracked keys (BVE in front) and their dispatch: F1 F2 F11 F12 H A and the menu navigation."""
         for key in self.key_states.keys():
             is_pressed = keyboard.is_pressed(key)
             trigger_key = False
@@ -2039,22 +2143,8 @@ class Overlay(QWidget):
                     self.toggle_borderless_fullscreen()
 
                 elif key == 'f12':
-                    # BVEとオーバーレイを標準のウィンドウ状態へ復元する
-                    if self.bve_hwnd:
-                        # WS_OVERLAPPEDWINDOW はタイトルバー、枠、システムメニュー、最小化・最大化ボタンのセット
-                        standard_style = win32con.WS_OVERLAPPEDWINDOW | win32con.WS_VISIBLE
-                        win32gui.SetWindowLong(self.bve_hwnd, win32con.GWL_STYLE, standard_style)
-                        
-                        # OSに「最大化解除」のコマンドを送り、内部状態を「通常」にリセットする
-                        win32gui.SendMessage(self.bve_hwnd, win32con.WM_SYSCOMMAND, win32con.SC_RESTORE, 0)
-                        
-                        # 適正なサイズ（1280x720）と位置に配置し直し、描画を完全にリフレッシュする
-                        win32gui.SetWindowPos(self.bve_hwnd, 0, 100, 100, 1280, 720, 
-                                              win32con.SWP_NOZORDER | win32con.SWP_FRAMECHANGED | win32con.SWP_SHOWWINDOW)
-                        
-                        self.is_borderless_fullscreen = False
-                        write_desktop_log("[WINDOW] F12操作により標準ウィンドウ状態へ復元しました")
-                    
+                    self._restore_standard_window()
+
                 elif key == 'h' and self.menu_state != 0: # ヘルプ表示を切り替える
                     self.show_help = not getattr(self, 'show_help', False)
                 elif key == 'a' and self.menu_state == 8: # 運転時分設定を一括切り替えする
@@ -2082,6 +2172,27 @@ class Overlay(QWidget):
                         elif key == 'backspace': self.handle_menu_backspace(is_bve_advancing)
             self.key_states[key] = is_pressed
 
+    def _restore_standard_window(self):
+        """F12: put the BVE window back into the standard window state (share is_borderless_fullscreen with F11)."""
+        # BVEとオーバーレイを標準のウィンドウ状態へ復元する
+        if self.bve_hwnd:
+            # WS_OVERLAPPEDWINDOW はタイトルバー、枠、システムメニュー、最小化・最大化ボタンのセット
+            standard_style = win32con.WS_OVERLAPPEDWINDOW | win32con.WS_VISIBLE
+            win32gui.SetWindowLong(self.bve_hwnd, win32con.GWL_STYLE, standard_style)
+                        
+            # OSに「最大化解除」のコマンドを送り、内部状態を「通常」にリセットする
+            win32gui.SendMessage(self.bve_hwnd, win32con.WM_SYSCOMMAND, win32con.SC_RESTORE, 0)
+                        
+            # 適正なサイズ（1280x720）と位置に配置し直し、描画を完全にリフレッシュする
+            win32gui.SetWindowPos(self.bve_hwnd, 0, 100, 100, 1280, 720, 
+                                  win32con.SWP_NOZORDER | win32con.SWP_FRAMECHANGED | win32con.SWP_SHOWWINDOW)
+                        
+            self.is_borderless_fullscreen = False
+            write_desktop_log("[WINDOW] F12操作により標準ウィンドウ状態へ復元しました")
+            self._emit_input_event("window-standard")
+
+    def _advance_scoring_clock_and_score(self, current_time):
+        """The scoring clock (dt, reset after a start or a time going backwards), the scoring step and the repaint."""
         if self.last_update_time == 0.0 or current_time < self.last_update_time:
             dt = 0.0
             # 初回更新または時刻巻き戻り時に、
@@ -2102,6 +2213,83 @@ class Overlay(QWidget):
         
         self.update() 
 
+    # -- Phase SI-A: what the managed mode needs from the Overlay (nothing here runs in normal mode) ---------------------------------------------------
+    def _emit_input_event(self, event, **fields):
+        """One diagnostic event of the shared input parts; only managed mode installs a sink (ManagedInputController.note)."""
+        sink = getattr(self, 'input_event_sink', None)
+        if sink is not None:
+            sink(event, **fields)
+
+    def reset_generation_state(self):
+        """A NEW scenario instance: the scoring session and everything that belongs to the previous scenario is discarded (managed_input.discard_generation_state),
+        and a BVE window handle that is no longer valid is forgotten. The user's settings, the infrastructure and a still valid window state are kept."""
+        managed_input.discard_generation_state(self)
+        self.forget_stale_bve_window()
+
+    def forget_stale_bve_window(self):
+        if self.bve_hwnd is not None and not win32gui.IsWindow(self.bve_hwnd):
+            self.bve_hwnd = None
+            self.is_linked = False
+            self.is_borderless_fullscreen = False
+            self.bve_original_style = None
+            self.bve_original_placement = None
+
+    def adopt_bve_window(self, hwnd):
+        """Managed mode: the BVE window is the one the HUD controller linked (matched by process id), never one found by its title. A window other than the
+        one the fullscreen state was taken from starts with no fullscreen state."""
+        if self.bve_hwnd != hwnd:
+            self.is_borderless_fullscreen = False
+            self.bve_original_style = None
+            self.bve_original_placement = None
+            self.bve_hwnd = hwnd
+        self.is_linked = True
+        self.was_bve_found = True
+
+    def press_p_for_recovery(self, hwnd):
+        """Phase SI-A6: the ONE place where managed mode presses P for the kick start (pause_recovery.PauseDataRecovery: the first and the second P of a token).
+        The same PostMessage the normal mode has always used, to the BVE window found by process id. Nothing else of the kick start exists in managed mode:
+        a Pause, a load, "Session ON / Driving OFF / PAUSED / no data" are NOT reasons to press P (phase SI-A4 did, and misfired on ordinary loads)."""
+        self.adopt_bve_window(hwnd)
+        win32api.PostMessage(hwnd, win32con.WM_KEYDOWN, 0x50, 0)
+        win32api.PostMessage(hwnd, win32con.WM_KEYUP, 0x50, 0)
+
+    def managed_window_step(self, hwnd):
+        """Managed mode: the part of update_logic that follows the window work, for the linked BVE window (Esc, the search by title and the quit when the
+        window disappears do not exist here: the lifetime of the process belongs to the Stop request). The kick start's first half is NOT part of it
+        (Phase SI-A6): managed mode presses P only for a recovery token (press_p_for_recovery)."""
+        self.adopt_bve_window(hwnd)
+        is_bve_active = (win32gui.GetForegroundWindow() == hwnd)
+        self._run_input_and_scoring_step(is_bve_active)
+
+    def restore_bve_window(self):
+        """Managed shutdown: a BVE window that F11 made borderless is put back (best effort; nothing happens for a window that is gone)."""
+        if self.is_borderless_fullscreen and self.bve_hwnd and win32gui.IsWindow(self.bve_hwnd):
+            self.toggle_borderless_fullscreen()
+
+    def ask_result_save_path(self, default_path):
+        """The save dialog of the result screen. Normal mode: the native static dialog, exactly as it always was. (Managed mode replaces it by a dialog
+        that the Stop request can close: managed_input.attach_result_dialog.)"""
+        save_path, _ = QFileDialog.getSaveFileName(self, "採点結果を保存", default_path, "JPEG Image (*.jpg);;PNG Image (*.png)")
+        return save_path
+
+    def close_result_dialog(self):
+        """Closes the result save dialog if one is open (Stop request / parent gone); nothing to do otherwise."""
+        dialog = getattr(self, 'result_dialog', None)
+        if dialog is not None:
+            dialog.reject()
+
+    def apply_held_telemetry(self, text):
+        """Managed mode: the telemetry line the gate held while the sender was ahead of the Caller, applied now that the generation arrived - together with the
+        STALIST that came with it."""
+        self.apply_telemetry_text(text)
+        held = getattr(self, 'held_station_list', None)
+        self.held_station_list = None
+        if held is not None:
+            self.station_list = held
+
+    def drop_held_station_list(self):
+        self.held_station_list = None
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -2118,16 +2306,31 @@ class Overlay(QWidget):
 class _ManagedShutdownBridge(QObject):
     """Hands the stop request of the watcher thread to the UI thread (a queued signal); only the slot touches Qt objects."""
     shutdown_requested = pyqtSignal()
+    before_quit = None        # set by run_managed: closes the result save dialog if one is open, so that its nested event loop returns
 
     @pyqtSlot()
     def on_shutdown_requested(self):
+        callback = self.before_quit
+        if callback is not None:
+            try:
+                callback()
+            except Exception:
+                pass
         QApplication.quit()
 
 
-def _attach_managed_hud(overlay, hud):
+def _attach_managed_hud(overlay, hud, recovery_keys=None):
     """Phase E4: the Overlay's ONE timer now runs the managed HUD controller instead of update_logic (which keeps the key hooks, the Esc quit,
     the BVE-window quit, Kickstart and the key injection of normal mode). No second timer is created. The timer starts after AppReady.
     Returns False when the managed contract is not met (the Caller's state block is missing or invalid): AppReady must not be published."""
+    attach_input = getattr(hud, "attach_input", None)
+    if attach_input is not None and hasattr(overlay, "managed_window_step"):
+        controller = managed_input.ManagedInputController(overlay, hud, keyboard, managed_input.GuiInputApi(win32gui))
+        managed_input.attach_result_dialog(overlay)
+        attach_input(controller)
+    attach_recovery = getattr(hud, "attach_recovery", None)
+    if attach_recovery is not None and hasattr(overlay, "press_p_for_recovery"):
+        attach_recovery(pause_recovery.PauseDataRecovery(hud, overlay, recovery_keys if recovery_keys is not None else pause_recovery.Win32KeyApi(), hud.args))
     timer = overlay.timer
     timer.stop()
     try:
@@ -2177,6 +2380,7 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
     if error is not None:
         log("[MANAGED] event=args-invalid reason=%s" % error)
         return managed_mode.EXIT_ARGS_INVALID
+    utils.set_desktop_log_enabled(utils.desktop_log_requested())          # managed mode writes no Desktop\debug.log unless asked for explicitly
     try:
         life = managed_mode.ManagedLifecycle(args, sync or managed_mode.Win32Sync(), log)
     except Exception as e:
@@ -2205,6 +2409,7 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
         app = QApplication(argv[:1])
         bridge = _ManagedShutdownBridge()
         bridge.shutdown_requested.connect(bridge.on_shutdown_requested)
+        bridge.before_quit = lambda: getattr(overlay, "close_result_dialog", lambda: None)()
         overlay = (overlay_factory or Overlay)()
         if not getattr(overlay, 'udp_bind_ok', False):
             life.fail(managed_mode.EXIT_BIND_FAILED, "udp-bind-failed")

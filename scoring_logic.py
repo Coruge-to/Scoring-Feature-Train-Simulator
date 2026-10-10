@@ -6,6 +6,7 @@ from config import *
 from utils import (
     calculate_apex_speed,
     calculate_warning_distance,
+    desktop_log_enabled,
     write_desktop_log,
 )
 
@@ -130,6 +131,8 @@ def write_limit_debug_log(
     active_reds,
 ):
     if not getattr(self, 'enable_limit_debug_log', False):
+        return
+    if not desktop_log_enabled():
         return
 
     debug_file = os.path.join(

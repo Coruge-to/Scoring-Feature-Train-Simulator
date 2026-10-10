@@ -6,13 +6,22 @@ the process (never rebuilt per ScenarioGeneration, per Pause or per soft OFF).
 
     mode ACTIVE   (Session ON and Driving ON)   the Overlay is linked to THIS BVE process's window, shown, kept on its client area and updated -
                                                 (Phase L3: only once real telemetry of the current ScenarioGeneration has been received; until then it stays hidden)
-    mode WAITING  (Session ON, Driving OFF)     soft OFF: the Overlay is hidden, nothing is updated, nothing is destroyed; resumes by itself
+    mode WAITING  (Session ON, Driving OFF)     soft OFF / Pause: the Overlay is hidden, nothing is updated, nothing is destroyed; resumes by itself.
+                                                (Phase SI-A4: the scoring session is KEPT - only the input is released. Phase SI-A6: the pause recovery - pause_recovery.py -
+                                                only WATCHES the F5 key here and in the other modes; it presses P only for a pending token, never because of this mode)
     mode HIDDEN   (Session OFF / Closed / no block)  hard OFF: the same, until the next Session ON
 
-What it deliberately does NOT do (later phases): scoring start / finish / discard, key hooks and input suppression, Esc quit, Kickstart, jump
-or F8 key injection, update notices, quitting when the BVE window disappears (the lifetime of the process belongs to the Stop event).
-The HUD data itself keeps coming from the existing UDP telemetry of the Overlay; the physics bookkeeping the HUD depends on
-(update_physics_and_scoring) is run exactly as in normal mode and stays inert for scoring because is_scoring_mode is never switched on here.
+What it deliberately does NOT do: end the process (Esc, the loss of the BVE window, a state change: the lifetime of the process belongs to the Stop
+event) and update notices.
+Phase SI-A: scoring, the key suppression, the window work (F11 / F12 / the time-and-position window), the kick start and the key injection are NOT in
+this module either: they are in managed_input.py. It only reports to the attached input controller (attach_input): the hard/soft OFF of the state,
+a new ScenarioGeneration, the loss of the state block and the end of the process, and it hands over its linked window, so that the controller can
+release everything at once and run the shared step of the Overlay for THAT window. Without a controller (the E4 wiring) nothing of this exists and the
+physics bookkeeping the HUD depends on (update_physics_and_scoring) runs inert for scoring, because is_scoring_mode is never switched on.
+The HUD data itself keeps coming from the existing UDP telemetry of the Overlay.
+
+Phase SI-A6: an optional PauseDataRecovery (attach_recovery) is ticked after every state reading. The kick start (P to P) of phases SI-A / SI-A4 - "Session ON /
+Driving OFF / PAUSED / no data" is enough - is gone: it fired on ordinary scenario loads. P is pressed only for a token of a concrete operation (F5 while paused).
 
 Diagnostics: one `[MANAGED] ...` line per STATE CHANGE (fixed words and numbers; no path, no HUD text); identical readings are only counted.
 """
@@ -147,6 +156,8 @@ class ManagedHudController(object):
         self._error_lines = 0
         self._items_reported = None     # the HUD items the sender cannot provide, as last reported (None = not yet)
         self._failsafe = None           # the reason the state block was lost after AppReady (latched until the process ends)
+        self._input = None              # Phase SI-A: the input / scoring controller (managed_input), attached by main._attach_managed_hud; None = HUD only
+        self._recovery = None           # Phase SI-A6: the pause data recovery (pause_recovery), attached by main._attach_managed_hud; None = none
         self._closed_seen = False       # the Caller withdrew the state (Closed flag): the NORMAL end
         self.startup_failure = None     # why start() failed (the managed contract is not met)
         self.failsafes = 0
@@ -199,6 +210,46 @@ class ManagedHudController(object):
         return self._failsafe
 
     @property
+    def linked_hwnd(self):
+        """The BVE window the Overlay is linked to (found by the BVE process id), or None."""
+        return self._hwnd
+
+    @property
+    def telemetry_ready(self):
+        """Has telemetry of the CURRENT ScenarioGeneration been received (always True without a telemetry gate)?"""
+        return self._telemetry is None or self._telemetry.ready
+
+    @property
+    def telemetry_availability(self):
+        return self._telemetry.availability if self._telemetry is not None else telemetry_contract.ALL_AVAILABLE
+
+    def attach_input(self, controller):
+        """Phase SI-A: the input / scoring controller takes over the per-tick update step (its step does everything hud_update_step does, and the
+        shared input and scoring part of the former update_logic when the window is linked) and is told about every state change that concerns it."""
+        self._input = controller
+        self._update_step = controller.step
+
+    def attach_recovery(self, recovery):
+        """Phase SI-A6: the pause data recovery (F5 token) is ticked on every slot, after the state reading was applied."""
+        self._recovery = recovery
+
+    @property
+    def recovery(self):
+        return self._recovery
+
+    @property
+    def args(self):
+        return self._args
+
+    @property
+    def clock(self):
+        return self._clock
+
+    def find_bve_window(self):
+        """The window of THIS BVE process (matched by process id, never by title alone), searching at most every WINDOW_SEARCH_INTERVAL_S; None if there is none."""
+        return self._hwnd if self._ensure_window() else None
+
+    @property
     def input_allowed(self):
         """The gate every input operation of a later phase must pass. Never open without a live ACTIVE state; in the fail-safe it is shut for good.
         (Phase E4 itself has no input operation: managed mode installs no key hook.)"""
@@ -219,6 +270,9 @@ class ManagedHudController(object):
             change = self.gate.apply(snapshot)
             if change is not None:
                 self._on_change(change)
+            if self._recovery is not None:
+                self._recovery.tick(snapshot, self.gate.mode)
+                self._set_interval(IDLE_INTERVAL_MS if self.gate.mode == managed_state.MODE_HIDDEN and not self._recovery.active else ACTIVE_INTERVAL_MS)
             if self.gate.mode == managed_state.MODE_ACTIVE:
                 self._tick_active()
         except Exception as e:
@@ -254,6 +308,11 @@ class ManagedHudController(object):
                 self._emit("hud-update-start", gen=c.generation)
                 self._set_interval(ACTIVE_INTERVAL_MS)
         else:
+            if self._input is not None:
+                if c.session_changed and not c.session:
+                    self._input.on_inactive("session-off")
+                elif c.previous_mode == managed_state.MODE_ACTIVE:
+                    self._input.on_pause("driving-off")        # Phase SI-A4: Pause / a Tick stop is NOT the end of the scoring session (see on_pause)
             if c.previous_mode == managed_state.MODE_ACTIVE:
                 self.update_waits += 1
                 self._emit("hud-update-wait", reason="driving-off" if c.session else "session-off")
@@ -263,13 +322,19 @@ class ManagedHudController(object):
     def _on_generation(self, generation):
         """Phase L3: a new ScenarioGeneration. The telemetry of the previous one is retired; when the sender had already moved on to the new scenario
         its newest datagram was held and is applied now (the HUD then needs no further datagram to appear, e.g. while the simulation is paused)."""
+        if self._input is not None:
+            self._input.on_generation(generation)       # scoring inactive, the previous scenario's state discarded, the input released (BEFORE the held line)
         if self._telemetry is None:
             return
         held = self._telemetry.on_generation(generation)
         if held is not None:
-            apply = getattr(self._overlay, "apply_telemetry_text", None)
+            apply = getattr(self._overlay, "apply_held_telemetry", None) or getattr(self._overlay, "apply_telemetry_text", None)
             if apply is not None:
                 apply(held)
+        else:
+            drop = getattr(self._overlay, "drop_held_station_list", None)
+            if drop is not None:
+                drop()
 
     def _enter_failsafe(self, reason):
         """The state block was lost after AppReady (the reader already wrote the one `state-lost` line). The HUD is hidden and no longer
@@ -277,6 +342,10 @@ class ManagedHudController(object):
         the Caller's Stop request. The gate is forced OFF so that nothing reads it as active."""
         self._failsafe = reason
         self.failsafes += 1
+        if self._recovery is not None:
+            self._recovery.close("state-lost")           # no P from a token once the state block is gone
+        if self._input is not None:
+            self._input.on_inactive("state-lost")
         was_active = self.gate.mode == managed_state.MODE_ACTIVE
         self.gate.apply(None)
         if was_active:
@@ -290,6 +359,8 @@ class ManagedHudController(object):
         if self._telemetry is not None and not self._telemetry.ready:
             # Session ON and Driving ON are not enough: nothing is shown (and no placeholder HUD) until real telemetry of this generation arrived
             self._hide("telemetry-wait")
+            if self._input is not None:
+                self._tick_waiting_input()
             return
         self._report_items()
         linked = self._ensure_window()
@@ -312,6 +383,15 @@ class ManagedHudController(object):
         if self._update_step is not None:
             self._update_step(overlay)
             self.updates += 1
+
+    def _tick_waiting_input(self):
+        """Session ON and Driving ON but no telemetry of this generation yet: the input is released, only the linked window is looked for. (Phase SI-A6: no
+        kick start here any more - this state is also what an ordinary load looks like for a moment.)"""
+        self._ensure_window()
+        if self._hwnd is not None:
+            self._input.tick_waiting()
+        else:
+            self._input.release("telemetry-wait")
 
     def _report_items(self):
         """Phase L3: which HUD items the sender cannot provide (AVAIL) - one `hud-items` line when that set changes (fixed words, no values)."""
@@ -460,6 +540,16 @@ class ManagedHudController(object):
         if self._shutdown:
             return
         self._shutdown = True
+        if self._recovery is not None:
+            try:
+                self._recovery.close("shutdown")
+            except Exception:
+                pass
+        if self._input is not None:
+            try:
+                self._input.on_shutdown()
+            except Exception:
+                pass
         if self.gate.mode != managed_state.MODE_HIDDEN or self._shown:
             self._emit("state-withdrawn", mode=self.gate.mode)
         self._hide("shutdown")
@@ -475,6 +565,10 @@ class ManagedHudController(object):
             self.emit_event("hud-zorder-summary", sets=self.z_sets, releases=self.owner_releases, errors=self.z_errors)    # only when the Z order was ever touched; a line of its own, hud-summary is already longer than the Caller transcribes
         if self._telemetry is not None:
             self.emit_event("telemetry-summary", **self._telemetry.summary_fields())     # a line of its own: hud-summary is already longer than the Caller transcribes
+        if self._input is not None:
+            self.emit_event("input-summary", **self._input.summary_fields())
+        if self._recovery is not None and (self._recovery.created or self._recovery.refused):
+            self.emit_event("recovery-summary", **self._recovery.summary_fields())     # only when a token was ever made: a line of its own (the line budget of the Caller)
 
 
 def create_controller(overlay, args, log):

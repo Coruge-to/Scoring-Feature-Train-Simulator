@@ -60,8 +60,8 @@ class Log(object):
 
 
 def make_block(pid, inst, session=False, driving=False, closed=False, generation=0, count=0, head=None, tail=None, magic=ms.STATE_MAGIC,
-               version=ms.STATE_VERSION, size=ms.STATE_SIZE, flags=None):
-    """Builds the 64 bytes exactly as AppStatePublisher.cs lays them out."""
+               version=ms.STATE_VERSION, size=ms.STATE_SIZE, flags=None, load_info=0, load_magic=0):
+    """Builds the 64 bytes exactly as AppStatePublisher.cs lays them out (Phase SI-A6: load_info / load_magic are the bytes 48..55; 0 / 0 = an older Caller)."""
     import struct
     buf = bytearray(64)
     head = 2 * count if head is None else head
@@ -71,6 +71,7 @@ def make_block(pid, inst, session=False, driving=False, closed=False, generation
     struct.pack_into("<IIII", buf, 0, magic, version, size, pid)
     buf[16:32] = inst[:16].encode("ascii")
     struct.pack_into("<IIiI", buf, 32, head, flags, generation, count)
+    struct.pack_into("<II", buf, 48, load_info, load_magic)
     struct.pack_into("<I", buf, 60, tail)
     return bytes(buf)
 
@@ -164,9 +165,12 @@ class A_StateBlock(unittest.TestCase):
                  ("OffMagic", ms.OFF_MAGIC), ("OffVersion", ms.OFF_VERSION), ("OffSize", ms.OFF_SIZE), ("OffPid", ms.OFF_PID),
                  ("OffInstance", ms.OFF_INSTANCE), ("OffHead", ms.OFF_HEAD), ("OffFlags", ms.OFF_FLAGS), ("OffGeneration", ms.OFF_GENERATION),
                  ("OffChangeCount", ms.OFF_CHANGE_COUNT), ("OffTail", ms.OFF_TAIL), ("FlagSession", ms.FLAG_SESSION),
-                 ("FlagDriving", ms.FLAG_DRIVING), ("FlagClosed", ms.FLAG_CLOSED)]
+                 ("FlagDriving", ms.FLAG_DRIVING), ("FlagClosed", ms.FLAG_CLOSED),
+                 ("OffLoadInfo", ms.OFF_LOAD_INFO), ("OffLoadMagic", ms.OFF_LOAD_MAGIC), ("LoadMagic", ms.LOAD_MAGIC), ("LoadKnownBits", ms._KNOWN_LOAD_BITS)]
         for name, value in pairs:
             self.assertEqual(const(name), value, name)
+        self.assertEqual(ms.LOAD_MAGIC.to_bytes(4, "little"), b"1DOL")                   # "LOD1" as a number
+        self.assertEqual(ms.OFF_LOAD_INFO + ms._LOAD.size, 56)                          # the marker fills 48..55; 56..59 stay reserved
         self.assertEqual(ms.STATE_MAGIC.to_bytes(4, "little"), b"TSAS")
         # the Python struct formats cover exactly the documented offsets
         self.assertEqual(ms._HEADER.size, 32)
@@ -1809,20 +1813,42 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
         # and every other member are AST-identical to the E3 commit, the datagram intake differs only by the accept() line, and the two blocks
         # that moved (telemetry application, jump completion) moved unchanged.
         old = _git("show", E3_COMMIT + ":main.py")
-        if old is None:
+        new = _git("show", "9f25a26c6bc4a578767c7f306672811bf7bf341c:main.py")      # the commit Phase SI-A started from: SI-A's own change set is pinned by tests/test_split_equivalence_sia2.py
+        if old is None or new is None:
             self.skipTest("E3 commit / git not available (INCONCLUSIVE)")
-        with open(os.path.join(ROOT, "main.py"), encoding="utf-8") as f:
-            new = f.read()
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # tests\ is not a package
         import overlay_guard
         self.assertEqual(overlay_guard.problems(old, new), [])
 
     def test_scoring_and_ui_modules_are_unchanged_since_e3(self):
         # hud_ui.py: Phase L3, see test_hud_ui_*;  managed_mode.py: the owner-process watch (tests/test_parent_exit_p1.py guards how little of it moved)
-        out = _git("diff", "--name-only", E3_COMMIT, "--", "scoring_logic.py", "menu_ui.py", "config.py", "utils.py", "network.py")
+        out = _git("diff", "--name-only", E3_COMMIT, "--", "menu_ui.py", "config.py", "network.py")
         if out is None:
             self.skipTest("git not available (INCONCLUSIVE)")
         self.assertEqual(out.strip(), "")
+        # Phase SI-A (on purpose): scoring_logic.py and utils.py carry exactly ONE change since E3 - the switch of the Desktop debug log (no score, no rule, no constant)
+        old_scoring, old_utils = _git("show", E3_COMMIT + ":scoring_logic.py"), _git("show", E3_COMMIT + ":utils.py")
+        if old_scoring is None or old_utils is None:
+            self.skipTest("git not available (INCONCLUSIVE)")
+
+        def parts(src):
+            tree = ast.parse(src.replace("\r\n", "\n"))
+            return {(n.name if isinstance(n, (ast.FunctionDef, ast.ClassDef)) else ast.dump(n)): ast.dump(n) for n in tree.body}
+
+        for name, old, allowed_changed, allowed_added in (
+                ("scoring_logic.py", old_scoring, {"write_limit_debug_log"}, set()),
+                ("utils.py", old_utils, {"write_desktop_log"}, {"set_desktop_log_enabled", "desktop_log_enabled", "desktop_log_requested"})):
+            with open(os.path.join(ROOT, name), encoding="utf-8") as f:
+                new = f.read()
+            a, b = parts(old), parts(new)
+            removed = set(a) - set(b)
+            changed = {k for k in set(a) & set(b) if a[k] != b[k]}
+            added = set(b) - set(a)
+            # the 'from utils import (...)' statement of scoring_logic gains desktop_log_enabled; the utils module gains the switch variable and the env name
+            removed = {k for k in removed if not k.startswith("ImportFrom(module='utils'")}
+            added = {k for k in added if not k.startswith("ImportFrom(module='utils'") and not k.startswith("Assign(targets=[Name(id='_desktop_log_enabled'")
+                     and not k.startswith("Assign(targets=[Name(id='DESKTOP_LOG_ENV'")}
+            self.assertEqual((removed, changed, added), (set(), allowed_changed, allowed_added), name)
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------------
@@ -1925,7 +1951,7 @@ class H_StaticGuards(unittest.TestCase):
             self.assertNotIn(token, hud, token)
 
     def test_main_py_and_hud_ui_are_untouched_by_the_z_order_fix(self):
-        out = _git("diff", "--name-only", L3_GRADIENT_COMMIT, "--", "main.py", "hud_ui.py", "scoring_logic.py", "menu_ui.py", "network.py", "telemetry_contract.py")
+        out = _git("diff", "--name-only", L3_GRADIENT_COMMIT, "9f25a26c6bc4a578767c7f306672811bf7bf341c", "--", "main.py", "hud_ui.py", "scoring_logic.py", "menu_ui.py", "network.py", "telemetry_contract.py")
         if out is None:
             self.skipTest("git not available (INCONCLUSIVE)")
         self.assertEqual(out.strip(), "")

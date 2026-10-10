@@ -7,7 +7,29 @@ from PyQt6.QtGui import QColor, QFontMetrics, QPainterPath, QPen
 from config import *
 
 # ★ ネットワークファイル用のログ関数
+# Phase SI-A: the Desktop debug log has ONE switch. Normal mode (python main.py) keeps writing as it always did; managed mode switches it off when it
+# starts (main.run_managed) unless the environment variable TS_SCORING_DESKTOP_LOG=1 asks for it: the log lines can carry station names.
+DESKTOP_LOG_ENV = "TS_SCORING_DESKTOP_LOG"
+_desktop_log_enabled = True
+
+
+def set_desktop_log_enabled(flag):
+    global _desktop_log_enabled
+    _desktop_log_enabled = bool(flag)
+
+
+def desktop_log_enabled():
+    return _desktop_log_enabled
+
+
+def desktop_log_requested(environ=None):
+    """Is the Desktop log explicitly asked for (managed mode)? Only the exact value '1'."""
+    return (os.environ if environ is None else environ).get(DESKTOP_LOG_ENV, "") == "1"
+
+
 def write_desktop_log(msg):
+    if not _desktop_log_enabled:
+        return
     desktop = os.path.join(os.path.expanduser("~"), "Desktop")
     log_file = os.path.join(desktop, "debug.log")
     try:

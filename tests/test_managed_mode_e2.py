@@ -934,7 +934,9 @@ class E_StaticGuardsAndRegression(unittest.TestCase):
         old = _git("show", BASELINE + ":main.py")
         if old is None:
             self.skipTest("baseline commit / git not available (INCONCLUSIVE)")
-        new = read_text(os.path.join(ROOT, "main.py"))
+        new = _git("show", "9f25a26c6bc4a578767c7f306672811bf7bf341c:main.py")       # the commit Phase SI-A started from (SI-A's own change set: tests/test_split_equivalence_sia2.py)
+        if new is None:
+            self.skipTest("baseline commit / git not available (INCONCLUSIVE)")
 
         def overlay_class(src):
             tree = ast.parse(src)

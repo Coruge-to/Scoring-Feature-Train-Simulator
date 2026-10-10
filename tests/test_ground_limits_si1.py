@@ -53,8 +53,11 @@ class A_VocabularyAndScope(unittest.TestCase):
         self.assertEqual((parsed.unknown_tokens, parsed.bad_tokens), (0, 0))
 
     def test_no_python_production_file_changed_for_si1(self):
+        # Phase SI-1 (the two commits after the SI-0 commit f9b2ed5) changed no Python production file. (Phase SI-A changes the working tree on purpose, so the
+        # comparison is between the two commits, not against the working tree.)
         try:
-            changed = subprocess.run(["git", "-C", ROOT, "diff", "--name-only", "HEAD"], capture_output=True, text=True, timeout=60).stdout.split()
+            changed = subprocess.run(["git", "-C", ROOT, "diff", "--name-only", "f9b2ed5d7a3c0c7479d5798e2826b58bbdd9180b", "9f25a26c6bc4a578767c7f306672811bf7bf341c"],
+                                     capture_output=True, text=True, timeout=60).stdout.split()
             tracked = subprocess.run(["git", "-C", ROOT, "ls-files"], capture_output=True, text=True, timeout=60).stdout.split()
         except Exception:
             self.skipTest("git is not available - INCONCLUSIVE")

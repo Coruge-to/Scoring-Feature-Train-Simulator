@@ -285,7 +285,13 @@ $touched = @($changed + $untracked | Sort-Object -Unique)
 # (Phase LI2 added ONE snapshot member to LegacyInputProbe.cs and ONE read line to the host adapter; Test-LegacyInputLI2.ps1 G05 / G06 pin those diffs exactly, so only the API seam stays frozen here)
 $li0Frozen = @('TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyApi.cs')
 $li0Moved = @($touched | Where-Object { $_ -in $li0Frozen })
-$productMoved = @($touched | Where-Object { $_ -match '^(main|hud_ui|network|scoring_logic|menu_ui|config|utils|managed_[a-z]+|telemetry_[a-z]+)\.py$|/Caller/|/Bridge/|/Handshake/Shared/|Class1\.cs$|AtsLoggerPlugin\.cs$' })
+# (Phase SI-A changes the Python production files main / managed_hud / managed_input / scoring_logic / utils / telemetry_gate on purpose, in the working tree; tests\test_split_equivalence_sia2.py and
+#  tests\test_managed_input_sia3.py pin exactly what changed. The HUD, the menus, the config, the contract, the other managed modules, the Caller, the Bridges, the Current sender and the shared files stay frozen here.)
+# (Phase SI-A6 changes managed_state.py and these nine Caller / Bridge / shared files on purpose - the load marker; Test-PauseRecoverySIA6.ps1 pins them)
+$si6Exempt = @('managed_state.py', 'TsScoringPlugin/Handshake/Shared/HandshakeProtocol.cs', 'TsScoringPlugin/Handshake/Bridge/src/ScenarioReadyTracker.cs', 'TsScoringPlugin/Handshake/Bridge/src/ScenarioReadyPublisher.cs',
+               'TsScoringPlugin/Handshake/Bridge/src/AssemblyInfo.cs', 'TsScoringPlugin/Handshake/Bridge/Legacy/src/AssemblyInfo.cs', 'TsScoringPlugin/Handshake/Caller/src/AppProcessManager.cs',
+               'TsScoringPlugin/Handshake/Caller/src/AppStatePublisher.cs', 'TsScoringPlugin/Handshake/Caller/src/HandshakeSession.cs', 'TsScoringPlugin/Handshake/Caller/src/AssemblyInfo.cs')
+$productMoved = @($touched | Where-Object { $_ -notin $si6Exempt } | Where-Object { $_ -match '^(hud_ui|network|menu_ui|config|managed_mode|managed_state|telemetry_contract)\.py$|/Caller/|/Bridge/|/Handshake/Shared/|Class1\.cs$|AtsLoggerPlugin\.cs$' })
 Check ('H05 scope: the Legacy API seam (LegacyApi.cs) is unchanged since the LI0 commit (the observation and the host adapter grew by one member / one line in LI2, pinned by Test-LegacyInputLI2.ps1); no production Python, HUD, Caller, Bridge, Current sender or Handshake shared file changed (' + $touched.Count + ' files touched by the working tree)') (($li0Moved.Count -eq 0) -and ($productMoved.Count -eq 0))
 
 # ---------------------------------------------------------------------------------------------------------------------------------------------

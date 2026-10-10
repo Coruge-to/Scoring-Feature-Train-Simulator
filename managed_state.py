@@ -15,6 +15,12 @@ After AppReady, a block that stops being valid is a LOSS: HUD hidden and stopped
 (the process is neither killed nor restarted, the Overlay neither rebuilt nor destroyed). A withdrawal by the Caller (Closed flag) is NOT a
 loss; it is the normal end, and it is logged under its own name.
 
+Phase SI-A6 - the LOAD MARKER (bytes 48..55, formerly reserved zero; Version, Size and every earlier field are unchanged):
+    48 uint32  LoadInfo   bit0 ScenarioCreated of THIS ScenarioGeneration was received (a BVE event, no Tick needed), bit1 the first Tick of it was received
+    52 uint32  LoadMagic  0x4C4F4431 ("LOD1") when the Bridge provided the marker, else 0 = "no information"
+Both are written in the same seqlock write as the generation, so one reading shows the generation and the marker of ONE write. A block with LoadMagic 0
+(a Bridge or Caller from before SI-A6) is `load_supported = False`: nothing may be concluded from the marker (the automatic P-to-P recovery stays off).
+
 HUD gate (HudGate, pure):
     Session ON  and Driving ON   -> MODE_ACTIVE   (the HUD is shown and updated)
     Session ON  and Driving OFF  -> MODE_WAITING  (soft OFF: the Overlay is kept, the HUD is hidden and not updated)
@@ -38,8 +44,15 @@ FLAG_DRIVING = 2
 FLAG_CLOSED = 4
 _KNOWN_FLAGS = FLAG_SESSION | FLAG_DRIVING | FLAG_CLOSED
 
+OFF_LOAD_INFO, OFF_LOAD_MAGIC = 48, 52
+LOAD_MAGIC = 0x4C4F4431                     # "LOD1"
+LOAD_CREATED = 1                            # ScenarioCreated of the generation was received
+LOAD_TICK_SEEN = 2                          # the first Tick of the generation was received
+_KNOWN_LOAD_BITS = LOAD_CREATED | LOAD_TICK_SEEN
+
 _HEADER = struct.Struct("<IIII16s")        # magic, version, size, pid, instance prefix  (offsets 0..31)
 _BODY = struct.Struct("<IIiI")             # head, flags, generation, change count      (offsets 32..47)
+_LOAD = struct.Struct("<II")               # load info, load magic                      (offsets 48..55)
 _TAIL = struct.Struct("<I")                # offset 60
 
 MODE_HIDDEN = "hidden"
@@ -55,15 +68,27 @@ def state_name(bve_pid, instance):
 
 class StateSnapshot(object):
     """One consistent reading of the block. `session` / `driving` are the raw flags; use effective_* for the HUD."""
-    __slots__ = ("session", "driving", "closed", "generation", "change_count", "head")
+    __slots__ = ("session", "driving", "closed", "generation", "change_count", "head", "load_supported", "load_info")
 
-    def __init__(self, session, driving, closed, generation, change_count, head):
+    def __init__(self, session, driving, closed, generation, change_count, head, load_supported=False, load_info=0):
         self.session = session
         self.driving = driving
         self.closed = closed
         self.generation = generation
         self.change_count = change_count
         self.head = head
+        self.load_supported = load_supported      # Phase SI-A6: the Bridge provided the load marker (LoadMagic valid); False = "no information"
+        self.load_info = load_info if load_supported else 0
+
+    @property
+    def created_seen(self):
+        """ScenarioCreated of THIS generation was received (needs load_supported)."""
+        return self.load_supported and bool(self.load_info & LOAD_CREATED)
+
+    @property
+    def tick_seen(self):
+        """The first Tick of THIS generation was received (needs load_supported)."""
+        return self.load_supported and bool(self.load_info & LOAD_TICK_SEEN)
 
     @property
     def effective_session(self):
@@ -102,7 +127,10 @@ def parse_state(data, bve_pid, instance):
         return None, "torn"
     if flags & ~_KNOWN_FLAGS or generation < 0:
         return None, "flags"
-    return StateSnapshot(bool(flags & FLAG_SESSION), bool(flags & FLAG_DRIVING), bool(flags & FLAG_CLOSED), generation, count, head), None
+    load_info, load_magic = _LOAD.unpack_from(data, OFF_LOAD_INFO)
+    load_supported = load_magic == LOAD_MAGIC       # any other magic (0 = an older Bridge / Caller) is "no information", never an error
+    return StateSnapshot(bool(flags & FLAG_SESSION), bool(flags & FLAG_DRIVING), bool(flags & FLAG_CLOSED), generation, count, head,
+                         load_supported, (load_info & _KNOWN_LOAD_BITS) if load_supported else 0), None
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------------

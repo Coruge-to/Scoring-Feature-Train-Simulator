@@ -977,9 +977,9 @@ class E_StaticGuards(unittest.TestCase):
 
     def test_overlay_changes_are_only_the_l3_allowance(self):
         import overlay_guard
-        new = read_text(os.path.join(ROOT, "main.py"))
+        new = e4._git("show", "9f25a26c6bc4a578767c7f306672811bf7bf341c:main.py")      # the commit Phase SI-A started from (SI-A's own change set: tests/test_split_equivalence_sia2.py)
         old = e4._git("show", "bc4c1160bf6755776d27525a4928a742c460825e:main.py")
-        if old is None:
+        if old is None or new is None:
             self.skipTest("git not available (INCONCLUSIVE)")
         # against the E4 commit the L3 additions are the only differences (the E4 commit has none of the L3 members yet)
         self.assertEqual(overlay_guard.problems(old, new), [])

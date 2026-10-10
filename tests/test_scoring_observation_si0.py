@@ -183,14 +183,18 @@ class C_EveryWriterOfTheDesktopDebugLog(unittest.TestCase):
         self.assertEqual({k: v for k, v in counts.items() if v}, {"main.py": 11, "scoring_logic.py": 22})
         self.assertEqual(counts["managed_hud.py"] + counts["managed_mode.py"] + counts["managed_state.py"] + counts["hud_ui.py"], 0)
 
-    def test_the_log_function_is_unconditional_and_swallows_every_error(self):
+    def test_the_log_function_has_one_switch_and_swallows_every_error(self):
+        """SI-0 recorded: unconditional, no switch. Phase SI-A (on purpose): ONE module switch, on by default (normal mode unchanged), switched off by managed
+        mode at its start unless TS_SCORING_DESKTOP_LOG=1; nothing else about the function changed."""
         src = read("utils.py")
         i = src.index("def write_desktop_log")
         body = src[i:src.index("def get_outline_color")]
         self.assertIn('os.path.join(os.path.expanduser("~"), "Desktop")', body)
         self.assertIn('"debug.log"', body)
         self.assertIn('open(log_file, "a", encoding="utf-8")', body)
-        self.assertNotIn("if ", body)           # no switch, no mode check: managed mode would write too once scoring runs there
+        self.assertEqual(body.count("if "), 1)
+        self.assertIn("if not _desktop_log_enabled:\n        return\n", body.replace("\r\n", "\n"))         # the one switch, before anything is touched
+        self.assertIn("_desktop_log_enabled = True", src)                # on by default: the normal mode is unchanged
         self.assertIn("except:", body)
 
     def test_the_limit_debug_log_is_off_by_default_and_writes_the_same_file(self):
@@ -275,7 +279,7 @@ class D_TheResultSaveDialogAndTheStopRequest(unittest.TestCase):
     def test_the_dialog_has_exactly_one_call_site_and_one_path_to_it(self):
         self.assertEqual(self.main_src.count("QFileDialog.getSaveFileName"), 1)
         self.assertEqual(self.callers_of("take_result_screenshot"), {"Overlay.handle_menu_enter"})
-        self.assertEqual(self.callers_of("handle_menu_enter"), {"Overlay.update_logic"})
+        self.assertEqual(self.callers_of("handle_menu_enter"), {"Overlay._handle_mouse", "Overlay._handle_keys"})      # parts of the shared step (SI-A2); the step has one entry per mode
         for name in PRODUCTION:
             if name != "main.py":
                 self.assertNotIn("QFileDialog", read(name))
@@ -293,7 +297,9 @@ class D_TheResultSaveDialogAndTheStopRequest(unittest.TestCase):
 
     def test_before_the_dialog_only_two_of_the_four_hook_groups_are_released(self):
         src = ast.get_source_segment(self.main_src, self.fn["Overlay.take_result_screenshot"])
-        dialog = src.index("QFileDialog.getSaveFileName")
+        self.assertNotIn("QFileDialog", src)                              # Phase SI-A: the dialog call moved into Overlay.ask_result_save_path (managed mode replaces it)
+        self.assertEqual(ast.get_source_segment(self.main_src, self.fn["Overlay.ask_result_save_path"]).count("QFileDialog.getSaveFileName"), 1)
+        dialog = src.index("self.ask_result_save_path(")
         before = src[:dialog]
         self.assertIn("getattr(self, 'hook_dict', {}).values()", before)
         self.assertIn("getattr(self, 'sys_hook_dict', {}).values()", before)
@@ -320,11 +326,30 @@ class D_TheResultSaveDialogAndTheStopRequest(unittest.TestCase):
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------
 class E_TheSeamsOfUpdateLogic(unittest.TestCase):
+    # Phase SI-A2 cut update_logic into these methods, without changing a statement. They are listed in the order in which the original single function
+    # executed its parts: every test below that was written for the single function now reads the concatenation of these bodies in that order.
+    PARTS = ["update_logic", "_kick_start_first_press", "_follow_bve_window", "_run_input_and_scoring_step", "_detect_and_release_fast_forward",
+             "_resolve_bve_advancing", "_kick_start_second_press", "_sync_system_key_suppression", "_sync_f8_suppression",
+             "_sync_time_position_window_lock", "_sync_menu_key_suppression", "_sync_numeric_input", "_handle_mouse", "_handle_keys",
+             "_restore_standard_window", "_advance_scoring_clock_and_score"]
+
     @classmethod
     def setUpClass(cls):
         cls.main_src = read("main.py")
-        cls.func = functions(ast.parse(cls.main_src))["Overlay.update_logic"]
-        cls.src = ast.get_source_segment(cls.main_src, cls.func)
+        funcs = functions(ast.parse(cls.main_src))
+        cls.funcs = {n: funcs["Overlay." + n] for n in cls.PARTS}
+        cls.func = cls.funcs["update_logic"]
+        cls.src = "\n".join(ast.get_source_segment(cls.main_src, cls.funcs[n]) for n in cls.PARTS)
+
+    def test_the_step_calls_its_parts_in_the_order_of_the_original_function(self):
+        step = self.funcs["_run_input_and_scoring_step"]
+        called = [n.func.attr for n in sorted((n for n in ast.walk(step) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and isinstance(n.func.value, ast.Name) and n.func.value.id == "self"), key=lambda n: (n.lineno, n.col_offset))]
+        self.assertEqual(called, ["_detect_and_release_fast_forward", "_resolve_bve_advancing", "_kick_start_second_press", "_sync_system_key_suppression",
+                                  "_sync_f8_suppression", "_sync_time_position_window_lock", "_sync_menu_key_suppression", "_sync_numeric_input",
+                                  "_handle_mouse", "_handle_keys", "_advance_scoring_clock_and_score"])
+        head = self.funcs["update_logic"]
+        called = [n.func.attr for n in sorted((n for n in ast.walk(head) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and isinstance(n.func.value, ast.Name) and n.func.value.id == "self"), key=lambda n: (n.lineno, n.col_offset))]
+        self.assertEqual([c for c in called if c.startswith("_")], ["_kick_start_first_press", "_follow_bve_window", "_run_input_and_scoring_step"])
 
     def test_the_parts_run_in_this_order(self):
         markers = [
@@ -362,17 +387,19 @@ class E_TheSeamsOfUpdateLogic(unittest.TestCase):
             last = i
 
     def test_the_module_level_names_update_logic_needs_from_outside(self):
-        local = {a.arg for a in self.func.args.args}
-        for node in ast.walk(self.func):
-            if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
-                local.add(node.id)
-            if isinstance(node, (ast.FunctionDef, ast.Lambda)):
-                args = node.args
-                local.update(a.arg for a in args.args)
-            if isinstance(node, ast.ExceptHandler) and node.name:
-                local.add(node.name)
-        loaded = {n.id for n in ast.walk(self.func) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
-        external = {n for n in loaded - local if not hasattr(builtins, n)}
+        external = set()
+        for func in self.funcs.values():
+            local = {a.arg for a in func.args.args}
+            for node in ast.walk(func):
+                if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+                    local.add(node.id)
+                if isinstance(node, (ast.FunctionDef, ast.Lambda)):
+                    args = node.args
+                    local.update(a.arg for a in args.args)
+                if isinstance(node, ast.ExceptHandler) and node.name:
+                    local.add(node.name)
+            loaded = {n.id for n in ast.walk(func) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
+            external |= {n for n in loaded - local if not hasattr(builtins, n)}
         self.assertEqual(external, {"QApplication", "keyboard", "win32gui", "win32api", "win32con", "time", "write_desktop_log", "reset_transient_scoring_state",
                                     "update_physics_and_scoring", "BASE_SCREEN_W", "BASE_SCREEN_H"})
 
@@ -393,7 +420,8 @@ class E_TheSeamsOfUpdateLogic(unittest.TestCase):
 
     def test_f12_has_one_call_site_and_shares_the_state_with_f11(self):
         self.assertEqual(self.main_src.count("standard_style = win32con.WS_OVERLAPPEDWINDOW | win32con.WS_VISIBLE"), 1)
-        f12 = self.src[self.src.index("elif key == 'f12':"):self.src.index("elif key == 'h'")]
+        self.assertIn("elif key == 'f12':\n                    self._restore_standard_window()", self.src.replace("\r\n", "\n"))
+        f12 = ast.get_source_segment(self.main_src, self.funcs["_restore_standard_window"])
         self.assertIn("self.is_borderless_fullscreen = False", f12)
         self.assertIn("win32gui.SetWindowPos(self.bve_hwnd, 0, 100, 100, 1280, 720,", f12)
         self.assertIn("win32con.SC_RESTORE", f12)
