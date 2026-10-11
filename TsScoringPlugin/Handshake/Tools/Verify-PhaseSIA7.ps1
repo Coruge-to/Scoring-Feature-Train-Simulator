@@ -76,10 +76,12 @@ $allowed = @(
     'Tests/Test-LegacyInputLI0.ps1', 'Tests/Test-ObservationC1.ps1', 'Tests/Test-PauseRecoverySIA6.ps1', 'Tests/Test-ScenarioReadyC3.ps1', 'Tests/Test-HandshakeLogic.ps1',
     'Tools/Verify-PhaseC3.ps1', 'Tools/Verify-PhaseL1.ps1',
     # re-pinned at the acceptance of M1a (their scope / hash pins described the history up to Phase SI-1 and the E4 deployment)
-    'Tools/Verify-PhaseL3.ps1'
+    'Tools/Verify-PhaseL3.ps1',
+    # Phase SI-B1 (B1-probe, observation only, NOT part of M1a and NOT a product phase): its test, fixture and document; its sources and tools are the folder Tests/B1Probe/ (allowed below)
+    'Tests/Test-JumpProbeB1.ps1', 'Tests/B1ProbeTestFixture.cs', 'Docs/Handshake-PhaseSIB1-JumpProbe.md'
 ) | ForEach-Object { $H + $_ }
 $allowed += @('managed_state.py', 'managed_hud.py', 'tests/test_epoch_info_sia7.py', 'tests/managed_epoch_probe.py', 'tests/sia_managed_rig.py', 'tests/test_managed_hud_e4.py', 'tests/test_managed_input_sia3.py')
-$outside = @($touched | Where-Object { $_ -notin $allowed })
+$outside = @($touched | Where-Object { ($_ -notin $allowed) -and (-not $_.StartsWith($H + 'Tests/B1Probe/')) })
 if ($outside.Count -gt 0) { $outside | ForEach-Object { '   outside scope: ' + $_ } }
 Check 'every touched file is one of the files of Phase SI-A7 M1a (the listed sources, the re-pinned older tests, the new test / verification / document)' ($outside.Count -eq 0)
 Check 'the key files are part of it: the shared control plane (new), both adapters, the tracker, the protocol, the Caller session and the state-block writer' (@('Bridge/src/HandshakeControlPlane.cs', 'Bridge/src/TsScoringBridgePrototype.cs', 'Bridge/Legacy/src/TsScoringLegacyBridge.cs', 'Bridge/src/ScenarioReadyTracker.cs', 'Shared/HandshakeProtocol.cs', 'Caller/src/HandshakeSession.cs', 'Caller/src/AppStatePublisher.cs' | Where-Object { ($H + $_) -notin $touched }).Count -eq 0)

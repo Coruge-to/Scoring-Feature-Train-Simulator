@@ -740,10 +740,12 @@ $m1Allowed = @(
     # Phase SI-A7 (M1a): the shared control plane, the two adapters and their projects, the new test / verification / document, the L1 test whose pause contract moved
     'Bridge/src/HandshakeControlPlane.cs', 'Bridge/src/TsScoringBridgePrototype.cs', 'Bridge/Legacy/src/HandshakeControlPlane.cs', 'Bridge/Legacy/src/TsScoringLegacyBridge.cs',
     'Bridge/TSScoringPlugin.BveEx.Bridge.Prototype.csproj', 'Bridge/Legacy/TSScoringPlugin.AtsExLegacy.Bridge.Prototype.csproj',
-    'Tests/Test-ExtensionControlPlaneSIA7.ps1', 'Tools/Verify-PhaseSIA7.ps1', 'Tests/Test-LegacyL1.ps1', 'Docs/Handshake-PhaseSIA7-ControlPlane.md'
+    'Tests/Test-ExtensionControlPlaneSIA7.ps1', 'Tools/Verify-PhaseSIA7.ps1', 'Tests/Test-LegacyL1.ps1', 'Docs/Handshake-PhaseSIA7-ControlPlane.md',
+    # Phase SI-B1 (B1-probe, observation only, NOT a product phase): its test, fixture and document; its sources and tools are the folder Tests/B1Probe/ (allowed below)
+    'Tests/Test-JumpProbeB1.ps1', 'Tests/B1ProbeTestFixture.cs', 'Docs/Handshake-PhaseSIB1-JumpProbe.md'
 ) | ForEach-Object { $prefix + $_ }
 # Phase L3: the independent telemetry project (the DATA plane) is a whole directory of its own
-$m1Outside = @($touched | Where-Object { ($_ -notin $m1Allowed) -and (-not $_.StartsWith($prefix + 'Telemetry/')) })
+$m1Outside = @($touched | Where-Object { ($_ -notin $m1Allowed) -and (-not $_.StartsWith($prefix + 'Telemetry/')) -and (-not $_.StartsWith($prefix + 'Tests/B1Probe/')) })
 Check ('M1-31 only the Phase M1, Phase D1, Phase E1, Phase E3, Phase E4, Phase L3, Phase LI0, Phase LI1, Phase LI2, Phase SI-0, Phase SI-1, Phase SI-A (its document only) Phase SI-A6 (the load marker: five Bridge / shared sources and its test and document) and Phase SI-A7 M1a (the shared control plane, the two adapters, their projects, its test, verification and document) Caller / test / verification / document files differ from the baseline commit (' + $touched.Count + ' files)') (($m1Outside.Count -eq 0) -and ($touched.Count -ge 8))
 if ($m1Outside.Count -gt 0) { $m1Outside | ForEach-Object { '   outside scope: ' + $_ } }
 $failed = @($results | Where-Object { -not $_.Ok })

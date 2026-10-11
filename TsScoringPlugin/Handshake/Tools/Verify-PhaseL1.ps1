@@ -107,7 +107,7 @@ Write-Host '==== source checks: Legacy scope (comment lines skipped) ===='
 $legacyDir = Join-Path $Root 'Bridge\Legacy'
 $legacySrc = @(Get-ChildItem (Join-Path $legacyDir 'src') -Filter *.cs)
 # Phase L3: the independent telemetry project (Handshake\Telemetry: the DATA plane, its own Legacy adapter) is a separate product; its guards are Test-TelemetryL3.ps1 / Verify-PhaseL3.ps1
-$allSrc = @(Get-ChildItem $Root -Recurse -Include *.cs | Where-Object { $_.FullName -notlike '*\obj\*' -and $_.FullName -notlike '*\Telemetry\*' })
+$allSrc = @(Get-ChildItem $Root -Recurse -Include *.cs | Where-Object { $_.FullName -notlike '*\obj\*' -and $_.FullName -notlike '*\Telemetry\*' -and $_.FullName -notlike '*\Tests\B1Probe\*' })      # Phase SI-B1: Tests\B1Probe is the observation-only probe (never shipped); pinned by Tests\Test-JumpProbeB1.ps1
 $currentSrc = @($allSrc | Where-Object { $_.FullName -notlike '*\Bridge\Legacy\*' })
 $sharedNames = 'ScenarioObserver.cs', 'ScenarioReadyTracker.cs', 'ScenarioReadyPublisher.cs', 'HandshakeProtocol.cs', 'ObservationLog.cs'
 $sharedSrc = @($allSrc | Where-Object { $_.Name -in $sharedNames -and $_.FullName -notlike '*\Bridge\Legacy\*' })
@@ -227,7 +227,9 @@ $allowedExact += @('Caller/src/AssemblyInfo.cs', 'Caller/src/HandshakeSession.cs
 $allowedExact += @('Bridge/src/AssemblyInfo.cs', 'Bridge/src/HandshakeControlPlane.cs', 'Bridge/src/ScenarioReadyPublisher.cs', 'Bridge/src/ScenarioReadyTracker.cs', 'Bridge/src/TsScoringBridgePrototype.cs', 'Bridge/TSScoringPlugin.BveEx.Bridge.Prototype.csproj', 'Shared/HandshakeProtocol.cs',
     'Tests/Test-ScenarioReadyC3.ps1', 'Tests/Test-PauseRecoverySIA6.ps1', 'Tests/Test-ExtensionControlPlaneSIA7.ps1', 'Tools/Verify-PhaseSIA7.ps1',
     'Docs/Handshake-PhaseSIA-ManagedScoring.md', 'Docs/Handshake-PhaseSIA6-PauseRecovery.md', 'Docs/Handshake-PhaseSIA7-ControlPlane.md' | ForEach-Object { $prefix + $_ })
-$outside = @($touched | Where-Object { -not ($_.StartsWith($allowedPrefix) -or $_.StartsWith($prefix + 'Telemetry/') -or ($_ -in $allowedExact)) })
+# Phase SI-B1 (B1-probe, observation only, NOT a product phase): its test, fixture and document; its sources and tools are the folder Tests/B1Probe/ (allowed below)
+$allowedExact += @('Tests/Test-JumpProbeB1.ps1', 'Tests/B1ProbeTestFixture.cs', 'Docs/Handshake-PhaseSIB1-JumpProbe.md' | ForEach-Object { $prefix + $_ })
+$outside = @($touched | Where-Object { -not ($_.StartsWith($allowedPrefix) -or $_.StartsWith($prefix + 'Telemetry/') -or $_.StartsWith($prefix + 'Tests/B1Probe/') -or ($_ -in $allowedExact)) })
 Check 'Only the Legacy adapter (Bridge\Legacy\), its test, its verification, the Verify-PhaseC3.ps1 / Audit-Privacy.ps1 edits, one L1 document, the Phase M1 Caller / test / document files, the Phase D1 DrivingActive files, the Phase E1 / E3 / E4 Caller files, the Phase SI-0 / SI-1 test and document files, the Phase SI-A6 / SI-A7 M1a files (Bridge\src core, shared protocol, their tests and documents) and (Phase L3) the independent Telemetry project are touched in the Handshake tree' ($outside.Count -eq 0)
 Check 'No Python, Class1.cs, AtsLoggerPlugin.cs, packages or project file of the existing plugin is touched' (@($touched + $committedAll | Where-Object { $_ -match '\.py$|Class1\.cs$|AtsLoggerPlugin\.cs$|/packages/|\.vcxproj|\.slnx$|\.dll$|\.pdb$|\.log$|\.bak' }).Count -eq 0)
 Check 'No build output, third-party DLL, PDB or log among the files to be committed (obj / out / build.log stay ignored)' (@($touched | Where-Object { $_ -match '/out/|/obj/|/dist|build\.log|\.dll$|\.pdb$|\.log$' }).Count -eq 0)

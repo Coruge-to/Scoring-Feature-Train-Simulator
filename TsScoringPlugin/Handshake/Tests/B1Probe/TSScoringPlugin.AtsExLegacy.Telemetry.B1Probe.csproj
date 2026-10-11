@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PHASE SI-B1 - B1-probe: the OBSERVATION-ONLY build of the AtsEX Legacy telemetry DLL (NOT a product build, NOT Phase SI-B2).
+  It compiles the unchanged product sources (..\..\Telemetry\Legacy\src, except the Extension and AssemblyInfo) + the shared telemetry contract + the probe files of this folder, and a GENERATED copy of
+  src\LegacyTelemetryExtension.cs (five anchored insertions, made by New-B1ProbeExtension.ps1 into obj\; the product Extension file is never edited).
+  The DLL keeps the product file name (it REPLACES the telemetry DLL in the Legacy Extensions folder for the duration of the observation) and has its own version (0.4.1.1).
+  Build with Tests\B1Probe\Build-B1Probe.ps1 (it generates the Extension copy first). This folder is OBSERVATION tooling and lives under Tests: nothing here is part of the product telemetry project. References are the same read-only host assemblies as the product project (Private=False).
+-->
+<Project ToolsVersion="Current" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{7C3B52E1-9A64-4D08-B1F0-2E6A98D3C5B1}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <RootNamespace>TSScoringPlugin.Telemetry</RootNamespace>
+    <AssemblyName>TSScoringPlugin.AtsExLegacy.Telemetry</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <Deterministic>true</Deterministic>
+    <LangVersion>9.0</LangVersion>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <Optimize>true</Optimize>
+    <OutputPath>out\</OutputPath>
+    <IntermediateOutputPath>obj\</IntermediateOutputPath>
+    <DefineConstants>TRACE;B1_PROBE</DefineConstants>
+    <ErrorReport>none</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
+    <AtsExLegacyFolder>$(PUBLIC)\Documents\BveEx\Legacy\</AtsExLegacyFolder>
+    <GeneratedExtension>$(IntermediateOutputPath)LegacyTelemetryExtension.B1Probe.g.cs</GeneratedExtension>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="AtsEx.PluginHost">
+      <HintPath>$(AtsExLegacyFolder)AtsEx.PluginHost.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="BveTypes">
+      <HintPath>$(AtsExLegacyFolder)BveTypes.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="FastCaching">
+      <HintPath>$(AtsExLegacyFolder)FastCaching.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="FastMember">
+      <HintPath>$(AtsExLegacyFolder)FastMember.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="TypeWrapping">
+      <HintPath>$(AtsExLegacyFolder)TypeWrapping.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="src\AssemblyInfo.B1Probe.cs" />
+    <Compile Include="src\B1ProbeCore.cs" />
+    <Compile Include="src\B1ProbeHost.cs" />
+    <Compile Include="$(GeneratedExtension)" />
+    <Compile Include="..\..\Telemetry\Legacy\src\LegacyApi.cs" />
+    <Compile Include="..\..\Telemetry\Legacy\src\LegacyGroundLimits.cs" />
+    <Compile Include="..\..\Telemetry\Legacy\src\LegacyHandleContract.cs" />
+    <Compile Include="..\..\Telemetry\Legacy\src\LegacyInputProbe.cs" />
+    <Compile Include="..\..\Telemetry\Legacy\src\LegacyInputTelemetry.cs" />
+    <Compile Include="..\..\Telemetry\Legacy\src\LegacyScoringProbe.cs" />
+    <Compile Include="..\..\Telemetry\Legacy\src\LegacyStationTimeline.cs" />
+    <Compile Include="..\..\Telemetry\Legacy\src\LegacyTelemetrySession.cs" />
+    <Compile Include="..\..\Telemetry\Shared\TelemetryContract.cs">
+      <Link>Shared\TelemetryContract.cs</Link>
+    </Compile>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>
