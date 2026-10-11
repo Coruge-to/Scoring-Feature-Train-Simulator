@@ -391,7 +391,6 @@ class ManagedHudController(object):
                         self._geom = rect
                     self._show()
                     self._ensure_owner()
-                    self._ensure_z_order()
             except Exception:
                 self._unlink("bve-window-error")
                 linked = False

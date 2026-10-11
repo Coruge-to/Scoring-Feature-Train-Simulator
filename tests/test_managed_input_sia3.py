@@ -815,13 +815,13 @@ class E_KeysAndWindowsInManagedMode(ManagedCase):
         self.assertTrue(self.gui.IsWindowEnabled(900))
         self.assertTrue(all(not self.gui.IsWindowEnabled(h) for h in (901, 902, 903)))
 
-    def test_the_hud_still_sits_directly_above_the_driving_window(self):
+    def test_the_hud_uses_owner_linking_without_recurring_z_order_correction(self):
         r = self.r
         r.go_active()
         r.tick(5)
-        self.assertEqual(len(self.win.z_calls), 1)
         self.assertEqual(len(r.events("hud-owner-set")), 1)
-        self.assertEqual(self.win.z[0], int(self.o.winId()))
+        self.assertEqual(self.win.owners.get(int(self.o.winId())), self.gui.hwnd)
+        self.assertEqual(self.win.z_calls, [])
 
     def test_the_scenario_selection_window_contract_nothing_is_touched_without_a_session(self):
         """Session OFF = the BVE scenario selection screen is up: no hook, no EnableWindow, no injected key, no window change by this application."""
