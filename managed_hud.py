@@ -389,8 +389,10 @@ class ManagedHudController(object):
                     if rect is not None and rect != self._geom:
                         overlay.setGeometry(*rect)
                         self._geom = rect
-                    self._show()
+                    shown_now = self._show()
                     self._ensure_owner()
+                    if shown_now:
+                        self._ensure_z_order()
             except Exception:
                 self._unlink("bve-window-error")
                 linked = False
@@ -455,8 +457,8 @@ class ManagedHudController(object):
         stays over the HUD. Being the OWNER's window is not enough: show() puts a (re)created native window at the top of the Z order, in front of
         such a window, and setting the owner afterwards does not reorder anything.
 
-        Nothing is done while the HUD already is the window directly above the driving window (one GetWindow call per active tick). Otherwise the HUD
-        is moved directly under the window that lies directly above the driving window (a pure Z operation: no activation, no move, no resize), or to
+        It is called once after a hidden-to-visible transition, immediately after the owner is restored. It is never polled from ordinary active Ticks.
+        The HUD is moved directly under the window that lies directly above the driving window (a pure Z operation: no activation, no move, no resize), or to
         the top of the NORMAL band when that window is a topmost one - the HUD never becomes topmost. A failure here is counted and logged (a few
         lines), never hides the HUD and never unlinks it."""
         try:
@@ -500,13 +502,16 @@ class ManagedHudController(object):
             self.z_errors += 1
 
     def _show(self):
+        """Shows the HUD once and reports whether this call performed the hidden-to-visible transition.
+        Z-order finalisation belongs to that display event, not to every active Tick."""
         if self._shown:
-            return
+            return False
         self._release_owner_before_show()
         self._overlay.show()
         self._shown = True
         self.shows += 1
         self._emit("hud-show", shows=self.shows, gen=self.gate.generation)
+        return True
 
     def _hide(self, reason):
         if not self._shown:
