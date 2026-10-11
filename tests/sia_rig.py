@@ -73,8 +73,9 @@ class FakeGui(object):
         self.valid = {hwnd}
         self.titles = {hwnd: "BVE Trainsim 6"}       # visible top-level windows (hwnd -> title), what EnumWindows reports
         self.foreground = hwnd
-        self.diag = 0                                # the hwnd of the "time and position" window, 0 = none
-        self.enabled = True
+        self._diag = 0                               # the hwnd of the "time and position" top-level window, 0 = none
+        self.diag_children = []                      # child controls of the current time/position window
+        self.enabled_by_hwnd = {}                    # hwnd -> enabled state
         self.calls = []
         self.style = 0x14CF0000
         self.placement = (0, 1, (0, 0), (0, 0), (100, 100, 1380, 820))
@@ -112,15 +113,56 @@ class FakeGui(object):
     def ClientToScreen(self, h, pt):
         return self.client_origin
 
+    @property
+    def diag(self):
+        return self._diag
+
+    @diag.setter
+    def diag(self, value):
+        if self._diag:
+            self.valid.discard(self._diag)
+            for child in self.diag_children:
+                self.valid.discard(child)
+        self._diag = int(value or 0)
+        self.diag_children = []
+        if self._diag:
+            self.valid.add(self._diag)
+            self.enabled_by_hwnd[self._diag] = True
+            self.set_diag_children((self._diag + 1, self._diag + 2, self._diag + 3))
+
+    @property
+    def enabled(self):
+        """Compatibility view for existing tests: all modelled child controls are currently enabled."""
+        return all(self.enabled_by_hwnd.get(h, True) for h in self.diag_children)
+
+    def set_diag_children(self, children, initially_disabled=()):
+        for child in self.diag_children:
+            self.valid.discard(child)
+        self.diag_children = list(children)
+        disabled = set(initially_disabled)
+        for child in self.diag_children:
+            self.valid.add(child)
+            self.enabled_by_hwnd[child] = child not in disabled
+
+    def close_diag(self):
+        self.diag = 0
+
     def FindWindow(self, cls, title):
-        return self.diag if title == "時刻と位置" else 0
+        return self._diag if title == "時刻と位置" else 0
+
+    def EnumChildWindows(self, parent, callback, extra):
+        if parent != self._diag:
+            return
+        for child in list(self.diag_children):
+            if child in self.valid:
+                callback(child, extra)
 
     def IsWindowEnabled(self, h):
-        return self.enabled
+        return self.enabled_by_hwnd.get(h, True)
 
     def EnableWindow(self, h, flag):
         self.calls.append(("EnableWindow", h, bool(flag)))
-        self.enabled = bool(flag)
+        self.enabled_by_hwnd[h] = bool(flag)
 
     def GetCursorPos(self):
         return self.cursor

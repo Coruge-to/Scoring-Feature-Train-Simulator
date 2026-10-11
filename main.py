@@ -1938,11 +1938,8 @@ class Overlay(QWidget):
     def _sync_time_position_window_lock(self):
         """Disable the time/position window's child controls while leaving its title bar and close button usable."""
         should_lock = (
-            self.menu_state != 0
-            or (
-                getattr(self, 'is_scoring_mode', False)
-                and not getattr(self, 'is_scoring_finished', False)
-            )
+            getattr(self, 'is_scoring_mode', False)
+            and not getattr(self, 'is_scoring_finished', False)
         )
         try:
             diag_hwnd = win32gui.FindWindow(None, "時刻と位置")

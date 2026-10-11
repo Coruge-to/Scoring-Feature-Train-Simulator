@@ -107,7 +107,7 @@ KEPT_ACROSS_GENERATIONS = frozenset({
     # input hold bookkeeping (released by ManagedInputController / the Overlay's own tick, never "reset" blindly)
     "keys_blocked", "hook_dict", "sys_keys_blocked", "sys_hook_dict", "f8_physically_blocked", "f8_hook_dict", "numeric_router", "numeric_router_hook",
     "key_states", "key_press_timers", "last_left_click", "menu_click_zones", "active_panel_rect", "active_dropdown_rect", "active_help_rect",
-    "is_capturing_screenshot",
+    "is_capturing_screenshot", "time_position_lock_target", "time_position_child_enabled",
     # infrastructure
     "timer", "udp_socket", "udp_bind_ok", "telemetry_gate", "font_normal", "font_big", "font_ui", "font_menu", "font_desc", "last_time_change_real",
     # identity / monotonic counters (the SCENARIO_ID branch and the roll popups use them across scenarios)
@@ -273,8 +273,11 @@ def hold_kinds(overlay):
 
 
 def window_lock_wanted(overlay):
-    """The Overlay locks the "time and position" window while a menu is open or a scoring run is on (the same rule as Overlay._sync_time_position_window_lock)."""
-    return (getattr(overlay, "menu_state", 0) != 0) or (getattr(overlay, "is_scoring_mode", False) and not getattr(overlay, "is_scoring_finished", False))
+    """The Overlay locks the "time and position" controls only during an active scoring run.
+
+    Opening the TS Scoring menu before a run never locks BVE's controls. A pause keeps the scoring run and therefore keeps this lock, while key hooks are released.
+    """
+    return bool(getattr(overlay, "is_scoring_mode", False)) and not bool(getattr(overlay, "is_scoring_finished", False))
 
 
 class ManagedInputController(object):
@@ -401,7 +404,7 @@ class ManagedInputController(object):
         open menu is closed without pressing anything in BVE). Scoring is not aborted and nothing is logged as an abort. When Driving is ON again the first
         step takes the scoring clock from the current BVE time, so the time of the pause is never counted as a step (see _resync_clock). What DOES end a
         scoring session is unchanged: Session OFF, a new ScenarioGeneration, the loss of the state block, the end of the process, the user's own abort."""
-        self.release(reason)
+        self.release(reason, release_window=False)
         self.pauses += 1
         self._resync = True
         self.note("input-pause", scoring="yes" if self._scoring else "no", n=self.pauses)
@@ -450,17 +453,24 @@ class ManagedInputController(object):
             pass
 
     # -- the release -----------------------------------------------------------------------------------------------------------------------
-    def release(self, reason):
-        """Every key hook is removed and the "time and position" window enabled again, in this call. Safe to repeat. Logs one line if something was held."""
+    def release(self, reason, release_window=True):
+        """Release key hooks immediately and optionally restore the "time and position" child controls.
+
+        Pause uses release_window=False because the scoring session remains active: keys and an open TS Scoring menu are released, but arbitrary BVE time/position
+        changes remain blocked. Session end, generation change, state loss and shutdown use the default and release everything. Safe to repeat.
+        """
         o = self._o
         held = release_hooks(o, self._kb)
         lock_released = False
-        if self._lock_wanted_last or window_lock_wanted(o):         # only a window this application locked is unlocked (no window search every tick otherwise)
+        if release_window and (self._lock_wanted_last or window_lock_wanted(o)):
+            lock_released = bool(
+                getattr(o, "time_position_lock_target", None)
+                or getattr(o, "time_position_child_enabled", {})
+            )
             try:
-                diag = self._gui.find_diag_window()
-                if diag and not self._gui.is_enabled(diag):
-                    self._gui.enable(diag)
-                    lock_released = True
+                release_window_lock = getattr(o, "_release_time_position_window_lock", None)
+                if release_window_lock is not None:
+                    release_window_lock()
             except Exception:
                 pass
         if getattr(o, "menu_state", 0) != 0 and reason not in ("telemetry-wait",):
@@ -468,11 +478,11 @@ class ManagedInputController(object):
             o.input_mode_active = False
             o.dropdown_active = False
             o.show_help = False
-        self._lock_wanted_last = False
+        self._lock_wanted_last = window_lock_wanted(o) if not release_window else False
         if held or lock_released or self._hold:
             self.releases += 1
             self.note("input-hold", state="release", reason=reason, kinds="+".join(held + (["diag"] if lock_released else [])) or "none")
-        self._hold = ()
+        self._hold = ("diag",) if not release_window and self._diag_locked() else ()
 
     # -- observation (state changes only) ---------------------------------------------------------------------------------------------------
     def _observe(self):
@@ -504,11 +514,11 @@ class ManagedInputController(object):
             self._hold = hold
 
     def _diag_locked(self):
-        try:
-            diag = self._gui.find_diag_window()
-            return bool(diag) and not self._gui.is_enabled(diag)
-        except Exception:
-            return False
+        o = self._o
+        return bool(
+            getattr(o, "time_position_lock_target", None)
+            and any(getattr(o, "time_position_child_enabled", {}).values())
+        )
 
     def summary_fields(self):
         return dict(in_steps=self.steps, in_releases=self.releases, in_refusals=self.refusals, in_aborts=self.aborts, in_suppressed=self.suppressed)

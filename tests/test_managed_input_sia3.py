@@ -412,6 +412,18 @@ class D_ScoringPauseEndReselectReloadSoftOff(ManagedCase):
         r.tick(2)
         self.assertEqual((o.menu_state, self.held()), (0, []))
 
+    def test_opening_the_menu_before_scoring_does_not_lock_the_time_and_position_window(self):
+        r, o = self.r, self.o
+        self.gui.diag = 777
+        r.go_active(speed=0.0)
+        r.tap("f1")
+        r.tick(2)
+        self.assertNotEqual(o.menu_state, 0)
+        self.assertFalse(o.is_scoring_mode)
+        self.assertTrue(self.gui.enabled)
+        self.assertTrue(self.gui.IsWindowEnabled(777))
+        self.assertEqual(o.time_position_child_enabled, {})
+
     def test_scoring_suppresses_f7_p_and_while_driving_f8_and_the_time_and_position_window(self):
         r, o = self.r, self.o
         self.gui.diag = 777
@@ -570,7 +582,7 @@ class D_ScoringPauseEndReselectReloadSoftOff(ManagedCase):
         r.publish(True, False)
         r.tick()
         self.assertEqual((o.is_scoring_mode, o.score, self.held()), (True, -200, []))
-        self.assertTrue(self.gui.enabled)
+        self.assertFalse(self.gui.enabled)                                  # scoring survives, so the time/position controls remain locked
         self.assertEqual(r.hud.mode, "waiting")
         self.assertEqual(len(o.station_list), 3)
         self.assertEqual(r.events("scoring-abort"), [])
@@ -732,6 +744,22 @@ class E_KeysAndWindowsInManagedMode(ManagedCase):
         self.assertEqual(len(self.posted_keys(R.KEY_F8)), before + 1)
         self.assertEqual(len(r.events("ff-release")), 1)
 
+    def test_driving_off_pause_releases_keys_but_keeps_the_scoring_time_and_position_lock(self):
+        r, o = self.r, self.o
+        self.gui.diag = 777
+        r.go_active(speed=5.0)
+        o.is_scoring_mode = True
+        r.tick(3)
+        self.assertEqual(self.held(), ["f7", "f8", "p"])
+        self.assertFalse(self.gui.enabled)
+        r.publish(True, False)
+        r.tick(2)
+        self.assertEqual(r.hud.mode, "waiting")
+        self.assertTrue(o.is_scoring_mode)
+        self.assertEqual(self.held(), [])
+        self.assertFalse(self.gui.enabled)
+        self.assertTrue(self.gui.IsWindowEnabled(777))
+
     def test_the_time_and_position_window_is_restored_at_once_when_the_scoring_ends_or_the_session_ends(self):
         r, o = self.r, self.o
         self.gui.diag = 777
@@ -742,7 +770,50 @@ class E_KeysAndWindowsInManagedMode(ManagedCase):
         r.publish(False, False)
         r.tick(2)
         self.assertTrue(self.gui.enabled)
-        self.assertEqual([c for c in self.gui.calls if c[0] == "EnableWindow"], [("EnableWindow", 777, False), ("EnableWindow", 777, True)])
+        child_calls = [c for c in self.gui.calls if c[0] == "EnableWindow"]
+        children = [778, 779, 780]
+        self.assertEqual(child_calls, [("EnableWindow", h, False) for h in children] + [("EnableWindow", h, True) for h in children])
+        self.assertTrue(self.gui.IsWindowEnabled(777))                         # the title bar / close button was never disabled
+
+    def test_the_time_and_position_parent_stays_enabled_while_only_its_children_are_locked(self):
+        r, o = self.r, self.o
+        self.gui.diag = 777
+        r.go_active(speed=5.0)
+        o.is_scoring_mode = True
+        r.tick(3)
+        self.assertTrue(self.gui.IsWindowEnabled(777))
+        self.assertTrue(all(not self.gui.IsWindowEnabled(h) for h in (778, 779, 780)))
+        self.assertNotIn(("EnableWindow", 777, False), self.gui.calls)
+        self.assertTrue(any("state=set" in e and "diag" in e for e in r.events("input-hold")))
+
+    def test_the_time_and_position_release_restores_only_children_that_were_enabled_before_the_lock(self):
+        r, o = self.r, self.o
+        self.gui.diag = 777
+        self.gui.set_diag_children((778, 779, 780), initially_disabled=(779,))
+        r.go_active(speed=5.0)
+        o.is_scoring_mode = True
+        r.tick(3)
+        self.assertEqual([self.gui.IsWindowEnabled(h) for h in (778, 779, 780)], [False, False, False])
+        o.is_scoring_finished = True
+        r.tick(2)
+        self.assertEqual([self.gui.IsWindowEnabled(h) for h in (778, 779, 780)], [True, False, True])
+        self.assertTrue(self.gui.IsWindowEnabled(777))
+
+    def test_closing_and_reopening_the_time_and_position_window_uses_new_handles(self):
+        r, o = self.r, self.o
+        self.gui.diag = 777
+        r.go_active(speed=5.0)
+        o.is_scoring_mode = True
+        r.tick(3)
+        self.gui.close_diag()
+        r.tick(2)
+        self.assertIsNone(o.time_position_lock_target)
+        self.assertEqual(o.time_position_child_enabled, {})
+        self.gui.diag = 900
+        r.tick(3)
+        self.assertEqual(o.time_position_lock_target, 900)
+        self.assertTrue(self.gui.IsWindowEnabled(900))
+        self.assertTrue(all(not self.gui.IsWindowEnabled(h) for h in (901, 902, 903)))
 
     def test_the_hud_still_sits_directly_above_the_driving_window(self):
         r = self.r
@@ -1148,6 +1219,7 @@ class K_TruthTable(ManagedCase):
                         self.tearDown()
                         self.setUp()
                         r, o = self.r, self.o
+                        self.gui.diag = 777
                         r.go_active(speed=5.0)
                         o.is_scoring_mode = scoring
                         r.tick(3)
@@ -1160,7 +1232,7 @@ class K_TruthTable(ManagedCase):
                         if live:
                             self.assertEqual((o.is_scoring_mode, self.held()), (scoring, expected_hold))
                         elif session:
-                            self.assertEqual((o.is_scoring_mode, self.held(), self.gui.enabled), (scoring, [], True))    # SI-A4: Driving OFF = pause: kept, input released
+                            self.assertEqual((o.is_scoring_mode, self.held(), self.gui.enabled), (scoring, [], not scoring))    # keys released; active scoring keeps the time/position lock
                         else:
                             self.assertEqual((o.is_scoring_mode, self.held(), self.gui.enabled), (False, [], True))
 
