@@ -277,6 +277,15 @@ class Overlay(QWidget):
         self.bve_brk_max = 8 
         self.is_single_handle = False
         self.all_brk_texts = []
+        # Optional Current-sender generic handle display extension (DREV/DPOW/DBRK/DALLTXT).
+        # Author-defined telemetry remains the scoring and diagnostic source of truth.
+        self.default_rev_text = "切"
+        self.default_pow_text = "N"
+        self.default_brk_text = "N"
+        self.default_max_rev_w = 40
+        self.default_max_pow_w = 40
+        self.default_max_brk_w = 40
+        self.default_handle_text_available = False
         self.bve_current_station_name = "不明な駅"
 
         self.max_rev_w = 40
@@ -527,6 +536,18 @@ class Overlay(QWidget):
                             self.bve_brk_text = vals[1].strip()
                             self.bve_brk_notch = int(vals[2])
                             self.bve_brk_max = int(vals[3])
+                    elif part.startswith("DREV:"):
+                        vals = part.split(':')
+                        if len(vals) >= 3:
+                            self.default_rev_text = vals[1].strip()
+                    elif part.startswith("DPOW:"):
+                        vals = part.split(':')
+                        if len(vals) >= 3:
+                            self.default_pow_text = vals[1].strip()
+                    elif part.startswith("DBRK:"):
+                        vals = part.split(':')
+                        if len(vals) >= 4:
+                            self.default_brk_text = vals[1].strip()
                     elif part.startswith("HTYPE:"): self.is_single_handle = (int(part.split(':')[1]) == 1)
                     elif part.startswith("ALLTXT:"):
                         vals = part.split(':')
@@ -558,7 +579,32 @@ class Overlay(QWidget):
                             # POW欄は powNotch < 0 のとき抑速文字列を表示するので、力行と抑速の最大描画幅で事前確定する（BRK欄には加えない）
                             self.max_pow_w = get_adjusted_max_w(pow_list + hld_list, apply_offset=False)
                             self.max_brk_w = get_adjusted_max_w(brk_eval_list, apply_offset=True)
-                            
+                    elif part.startswith("DALLTXT:"):
+                        vals = part.split(':')
+                        if len(vals) >= 4:
+                            rev_list = [s.strip() for s in vals[1].split('_') if s.strip()]
+                            pow_list = [s.strip() for s in vals[2].split('_') if s.strip()]
+                            brk_list = [s.strip() for s in vals[3].split('_') if s.strip()]
+                            hld_list = [s.strip() for s in vals[4].split('_') if s.strip()] if len(vals) >= 5 else []
+                            fm_local = QFontMetrics(self.font_ui)
+
+                            def get_default_max_w(text_list, apply_offset=False):
+                                adjusted_widths = []
+                                for text_item in text_list:
+                                    width = fm_local.horizontalAdvance(text_item)
+                                    if apply_offset:
+                                        for suffix, offset in KERNING_OFFSETS.items():
+                                            if text_item.endswith(suffix):
+                                                width -= offset
+                                                break
+                                    adjusted_widths.append(width)
+                                return max(adjusted_widths + [40]) if adjusted_widths else 40
+
+                            brk_eval_list = brk_list[1:] if self.is_single_handle and len(brk_list) > 1 else brk_list
+                            self.default_max_rev_w = get_default_max_w(rev_list, apply_offset=False)
+                            self.default_max_pow_w = get_default_max_w(pow_list + hld_list, apply_offset=False)
+                            self.default_max_brk_w = get_default_max_w(brk_eval_list, apply_offset=True)
+                            self.default_handle_text_available = True
                     elif part.startswith("SIGLIMIT:"): self.bve_signal_limit = float(part.split(':')[1])
                     elif part.startswith("TRAINLEN:"): 
                         self.bve_train_length = max(float(part.split(':')[1]), 20.0)

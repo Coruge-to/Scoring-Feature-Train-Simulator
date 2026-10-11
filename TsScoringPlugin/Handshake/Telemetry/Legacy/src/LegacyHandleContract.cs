@@ -81,20 +81,20 @@ namespace TSScoringPlugin.Telemetry
     internal static class LegacyHandleContract
     {
         /// <summary>A layout beyond this is not a vehicle of this product; it also bounds the length of the generated texts.</summary>
-        internal const int MaxNotches = 99;
+        internal const int MaxNotches = GenericHandleTextContract.MaxNotches;
 
         // the Japanese words of the generic display (escaped: the source is read the same way whatever the code page)
-        internal const string RevBack = "後";  // back
-        internal const string RevOff = "切";  // reverser off
-        internal const string RevForward = "前";  // forward
-        internal const string ClRun = "運転";  // Cl brake position 0 (running); also the one-lever Cl handle at rest
-        internal const string ClLap = "重なり";  // lap
-        internal const string ClService = "常用";  // service
-        internal const string ClEmergency = "非常";  // emergency
-        internal const string HoldBrake = "抑速";  // the holding speed BRAKE position (brake position 1); not H1
+        internal const string RevBack = GenericHandleTextContract.RevBack;  // back
+        internal const string RevOff = GenericHandleTextContract.RevOff;  // reverser off
+        internal const string RevForward = GenericHandleTextContract.RevForward;  // forward
+        internal const string ClRun = GenericHandleTextContract.ClRun;  // Cl brake position 0 (running); also the one-lever Cl handle at rest
+        internal const string ClLap = GenericHandleTextContract.ClLap;  // lap
+        internal const string ClService = GenericHandleTextContract.ClService;  // service
+        internal const string ClEmergency = GenericHandleTextContract.ClEmergency;  // emergency
+        internal const string HoldBrake = GenericHandleTextContract.HoldBrake;  // the holding speed BRAKE position (brake position 1); not H1
 
-        internal const string TextNeutral = "N";
-        internal const string TextEmergency = "EB";
+        internal const string TextNeutral = GenericHandleTextContract.TextNeutral;
+        internal const string TextEmergency = GenericHandleTextContract.TextEmergency;
 
         // fixed reason words
         internal const string ReasonSnapshotNull = "snapshot-null";
@@ -134,7 +134,7 @@ namespace TSScoringPlugin.Telemetry
 
         internal static string ReverserText(int position)
         {
-            return position < 0 ? RevBack : position == 0 ? RevOff : RevForward;
+            return GenericHandleTextContract.ReverserText(position);
         }
 
         /// <summary>
@@ -219,10 +219,10 @@ namespace TSScoringPlugin.Telemetry
             l.HandleType = oneLever ? 1 : 2;
             l.RevPos = rev;
             l.RevText = ReverserText(rev);
-            l.AllRev = RevBack + "_" + RevOff + "_" + RevForward;
+            l.AllRev = GenericHandleTextContract.AllReverserTexts();
             l.PowNotch = pow;
-            l.PowText = PowerText(pow, oneLever, cl);
-            l.AllPow = AllPowerTexts(powN, oneLever, cl);
+            l.PowText = GenericHandleTextContract.PowerText(pow, oneLever, cl);
+            l.AllPow = GenericHandleTextContract.AllPowerTexts(powN, oneLever, cl);
             l.BrkNotch = brk;
             l.BrkMax = ebN;
             if (cl)
@@ -230,23 +230,23 @@ namespace TSScoringPlugin.Telemetry
                 // Run, Lap (or the holding speed brake word at position 1), Service, Emergency; one lever: position 0 is the handle at rest (index 0 of the list;
                 // the reader leaves it out of the width of a one-lever handle)
                 string second = holdBrake ? HoldBrake : ClLap;
-                l.BrkText = brk >= ebN ? ClEmergency : brk == 0 ? ClRun : brk == 1 ? second : ClService;
-                l.AllBrk = ClRun + "_" + second + "_" + ClService + "_" + ClEmergency;
+                l.BrkText = GenericHandleTextContract.ClBrakeText(brk, ebN, holdBrake);
+                l.AllBrk = GenericHandleTextContract.AllClBrakeTexts(holdBrake);
             }
             else if (holdBrake)
             {
-                l.BrkText = HoldBrakeBrakeText(brk, ebN, oneLever);
-                l.AllBrk = AllHoldBrakeTexts(ebN, oneLever);
+                l.BrkText = GenericHandleTextContract.HoldBrakeBrakeText(brk, ebN, oneLever);
+                l.AllBrk = GenericHandleTextContract.AllHoldBrakeTexts(ebN, oneLever);
             }
             else
             {
-                l.BrkText = brk >= ebN ? TextEmergency : BrakeText(brk, oneLever);
-                l.AllBrk = AllBrakeTexts(ebN, oneLever);
+                l.BrkText = brk >= ebN ? TextEmergency : GenericHandleTextContract.BrakeText(brk, oneLever);
+                l.AllBrk = GenericHandleTextContract.AllBrakeTexts(ebN, oneLever);
             }
 
             if (independent && holdN > 0)
             {
-                l.AllHold = AllHoldingTexts(holdN);
+                l.AllHold = GenericHandleTextContract.AllHoldingTexts(holdN);
             }
 
             // diagnostic only: the value as the host reports it (-1..-99 = that many notches) and its validity, named in the log of any layout so that a setting that is ignored
@@ -261,97 +261,40 @@ namespace TSScoringPlugin.Telemetry
             return true;
         }
 
-        /// <summary>One lever: position 0 is the neutral N (Ecb / Smee) or the run word (Cl) of the single handle. Two lever: P0..Pn. Below zero (two lever only): H1..Hh.</summary>
+        /// <summary>Compatibility wrappers retained for existing LI tests and callers.</summary>
         internal static string PowerText(int notch, bool oneLever, bool cl)
         {
-            if (notch < 0)
-            {
-                return "H" + TelemetryContract.I(-notch);
-            }
-
-            if (notch == 0 && oneLever)
-            {
-                return cl ? ClRun : TextNeutral;
-            }
-
-            return "P" + TelemetryContract.I(notch);
+            return GenericHandleTextContract.PowerText(notch, oneLever, cl);
         }
 
         internal static string AllPowerTexts(int powN, bool oneLever, bool cl)
         {
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i <= powN; i++)
-            {
-                if (i > 0)
-                {
-                    sb.Append('_');
-                }
-
-                sb.Append(PowerText(i, oneLever, cl));
-            }
-
-            return sb.ToString();
+            return GenericHandleTextContract.AllPowerTexts(powN, oneLever, cl);
         }
 
-        /// <summary>H1_H2_..._Hh: the independent holding speed notches in the order of the handle (the "holding speed texts" of the Current ALLTXT).</summary>
         internal static string AllHoldingTexts(int holdN)
         {
-            StringBuilder sb = new StringBuilder();
-            for (int i = 1; i <= holdN; i++)
-            {
-                if (i > 1)
-                {
-                    sb.Append('_');
-                }
-
-                sb.Append('H').Append(TelemetryContract.I(i));
-            }
-
-            return sb.ToString();
+            return GenericHandleTextContract.AllHoldingTexts(holdN);
         }
 
-        /// <summary>One lever: position 0 is the neutral N of the single handle. Two lever: the brake handle shows B0..B(e-1) (emergency is handled by the caller).</summary>
         internal static string BrakeText(int notch, bool oneLever)
         {
-            return notch == 0 && oneLever ? TextNeutral : "B" + TelemetryContract.I(notch);
+            return GenericHandleTextContract.BrakeText(notch, oneLever);
         }
 
-        /// <summary>One lever N, B1..B(e-1), EB; two lever B0, B1..B(e-1), EB - for the emergency brake notch e.</summary>
         internal static string AllBrakeTexts(int ebN, bool oneLever)
         {
-            StringBuilder sb = new StringBuilder(BrakeText(0, oneLever));
-            for (int i = 1; i < ebN; i++)
-            {
-                sb.Append("_B").Append(TelemetryContract.I(i));
-            }
-
-            sb.Append('_').Append(TextEmergency);
-            return sb.ToString();
+            return GenericHandleTextContract.AllBrakeTexts(ebN, oneLever);
         }
 
-        /// <summary>Ecb / Smee with the holding speed brake: 0 B0 (one lever N), 1 the holding speed brake word, 2..(e-1) B1..B(e-2), e and above EB.</summary>
         internal static string HoldBrakeBrakeText(int brk, int ebN, bool oneLever)
         {
-            if (brk >= ebN)
-            {
-                return TextEmergency;
-            }
-
-            return brk == 0 ? BrakeText(0, oneLever) : brk == 1 ? HoldBrake : "B" + TelemetryContract.I(brk - 1);
+            return GenericHandleTextContract.HoldBrakeBrakeText(brk, ebN, oneLever);
         }
 
-        /// <summary>B0 (one lever N), the holding speed brake word, B1..B(e-2), EB: e + 1 entries, indexed by the brake position.</summary>
         internal static string AllHoldBrakeTexts(int ebN, bool oneLever)
         {
-            StringBuilder sb = new StringBuilder(BrakeText(0, oneLever) + "_");
-            sb.Append(HoldBrake);
-            for (int i = 2; i < ebN; i++)
-            {
-                sb.Append("_B").Append(TelemetryContract.I(i - 1));
-            }
-
-            sb.Append('_').Append(TextEmergency);
-            return sb.ToString();
+            return GenericHandleTextContract.AllHoldBrakeTexts(ebN, oneLever);
         }
     }
 }

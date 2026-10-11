@@ -1,4 +1,4 @@
-﻿using BveEx.PluginHost;
+using BveEx.PluginHost;
 using BveEx.PluginHost.Plugins;
 using BveEx.PluginHost.Plugins.Extensions;
 using System;
@@ -70,6 +70,8 @@ namespace TsScoringPlugin
         private string allPowTexts = "N";
         private string allBrkTexts = "EB";
         private string allHldTexts = "";
+        private int genericPowerNotchCount = 0;
+        private int genericHoldingNotchCount = 0;
 
         // Pythonへ送信するシナリオ情報
         private string metaTitle = "";
@@ -430,6 +432,8 @@ namespace TsScoringPlugin
                             allPowTexts = JoinTexts(pTexts);
                             allBrkTexts = JoinTexts(bTexts);
                             allHldTexts = JoinTexts(hTexts);
+                            genericPowerNotchCount = pTexts != null && pTexts.Length > 0 ? pTexts.Length - 1 : 0;
+                            genericHoldingNotchCount = hTexts != null ? hTexts.Length : 0;
                             isTextsCached = true;
                         }
                         catch { }
@@ -1160,6 +1164,28 @@ namespace TsScoringPlugin
 
                     int holds = hasHoldingBrake ? 1 : 0;
 
+                    bool oneLever = handleType == 1;
+                    bool clBrake = string.Equals(bType, "Cl", StringComparison.Ordinal);
+                    string defaultRevText = TSScoringPlugin.Telemetry.GenericHandleTextContract.ReverserText(revPos);
+                    string defaultPowText = TSScoringPlugin.Telemetry.GenericHandleTextContract.PowerText(powNotch, oneLever, clBrake);
+                    string defaultBrkText = clBrake
+                        ? TSScoringPlugin.Telemetry.GenericHandleTextContract.ClBrakeText(brkNotch, brkMax, hasHoldingBrake)
+                        : hasHoldingBrake
+                            ? TSScoringPlugin.Telemetry.GenericHandleTextContract.HoldBrakeBrakeText(brkNotch, brkMax, oneLever)
+                            : brkNotch >= brkMax
+                                ? TSScoringPlugin.Telemetry.GenericHandleTextContract.TextEmergency
+                                : TSScoringPlugin.Telemetry.GenericHandleTextContract.BrakeText(brkNotch, oneLever);
+                    string defaultAllRevTexts = TSScoringPlugin.Telemetry.GenericHandleTextContract.AllReverserTexts();
+                    string defaultAllPowTexts = TSScoringPlugin.Telemetry.GenericHandleTextContract.AllPowerTexts(genericPowerNotchCount, oneLever, clBrake);
+                    string defaultAllBrkTexts = clBrake
+                        ? TSScoringPlugin.Telemetry.GenericHandleTextContract.AllClBrakeTexts(hasHoldingBrake)
+                        : hasHoldingBrake
+                            ? TSScoringPlugin.Telemetry.GenericHandleTextContract.AllHoldBrakeTexts(brkMax, oneLever)
+                            : TSScoringPlugin.Telemetry.GenericHandleTextContract.AllBrakeTexts(brkMax, oneLever);
+                    string defaultAllHldTexts = handleType == 2
+                        ? TSScoringPlugin.Telemetry.GenericHandleTextContract.AllHoldingTexts(genericHoldingNotchCount)
+                        : string.Empty;
+
                     int terminalFlag = 0;
 
                     if (
@@ -1171,7 +1197,7 @@ namespace TsScoringPlugin
                         terminalFlag = 1;
                     }
 
-                    string data = $"SCENARIO_ID:{scenarioId},SPEED:{speed},TIME:{timeMs},LOCATION:{location},GRADIENT:{finalGradient},NEXTLOC:{nextStationLoc},NEXTTIME:{nextStationTime},ISPASS:{isPass},ISTIMING:{isTiming},MARGINB:{marginBack},MARGINF:{marginFront},REV:{revText}:{revPos},POW:{powText}:{powNotch},BRK:{brkText}:{brkNotch}:{brkMax},HTYPE:{handleType},ALLTXT:{allRevTexts}:{allPowTexts}:{allBrkTexts}:{allHldTexts},SIGLIMIT:{signalLimit},TRAINLEN:{trainLength},MAPLIMITS:{mapLimitsStr},FWDSIGLIMIT:{fwdSigLimit},FWDSIGLOC:{nextSigLoc},DOOR:{(areDoorsClosed ? 0 : 1)},DOORDIR:{currentDoorDir},TERM:{terminalFlag},MAPHEAD:{manualMapHead},MAPTAIL:{manualMapTail},CLEARDIST:{distToClear},CALCG:{currentG:F5},BTYPE:{bType},JUMP:{jumpCounter},CAB:{cabBrakeNotches}:{holds},BCP:{bcPressure:F1},PRATES:{pRatesStr}:{maxPressure:F1},BPP:{bpPressure:F1}:{bpInitialPressure:F1},STATNAME:{currentStationName},DOORTIME:{doorCloseTimeMs}";
+                    string data = $"SCENARIO_ID:{scenarioId},SPEED:{speed},TIME:{timeMs},LOCATION:{location},GRADIENT:{finalGradient},NEXTLOC:{nextStationLoc},NEXTTIME:{nextStationTime},ISPASS:{isPass},ISTIMING:{isTiming},MARGINB:{marginBack},MARGINF:{marginFront},REV:{revText}:{revPos},POW:{powText}:{powNotch},BRK:{brkText}:{brkNotch}:{brkMax},HTYPE:{handleType},ALLTXT:{allRevTexts}:{allPowTexts}:{allBrkTexts}:{allHldTexts},DREV:{defaultRevText}:{revPos},DPOW:{defaultPowText}:{powNotch},DBRK:{defaultBrkText}:{brkNotch}:{brkMax},DALLTXT:{defaultAllRevTexts}:{defaultAllPowTexts}:{defaultAllBrkTexts}:{defaultAllHldTexts},SIGLIMIT:{signalLimit},TRAINLEN:{trainLength},MAPLIMITS:{mapLimitsStr},FWDSIGLIMIT:{fwdSigLimit},FWDSIGLOC:{nextSigLoc},DOOR:{(areDoorsClosed ? 0 : 1)},DOORDIR:{currentDoorDir},TERM:{terminalFlag},MAPHEAD:{manualMapHead},MAPTAIL:{manualMapTail},CLEARDIST:{distToClear},CALCG:{currentG:F5},BTYPE:{bType},JUMP:{jumpCounter},CAB:{cabBrakeNotches}:{holds},BCP:{bcPressure:F1},PRATES:{pRatesStr}:{maxPressure:F1},BPP:{bpPressure:F1}:{bpInitialPressure:F1},STATNAME:{currentStationName},DOORTIME:{doorCloseTimeMs}";
                     lastUdpData = data;
                 }
                 catch { }

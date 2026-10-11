@@ -384,7 +384,26 @@ def draw_hud(self, painter, logical_width):
         gap = 30       
         padding_x = 15 
 
-        total_text_w = self.max_rev_w + gap + max(self.max_pow_w, self.max_brk_w) if self.is_single_handle else self.max_rev_w + gap + self.max_pow_w + gap + self.max_brk_w
+        author_total_text_w = self.max_rev_w + gap + max(self.max_pow_w, self.max_brk_w) if self.is_single_handle else self.max_rev_w + gap + self.max_pow_w + gap + self.max_brk_w
+        author_scale_ratio = min(1.0, LABEL_WIDTH / author_total_text_w) if author_total_text_w > 0 else 1.0
+        use_default_handle_text = author_scale_ratio < 0.75 and getattr(self, "default_handle_text_available", False)
+
+        if use_default_handle_text:
+            display_rev_text = self.default_rev_text
+            display_pow_text = self.default_pow_text
+            display_brk_text = self.default_brk_text
+            display_max_rev_w = self.default_max_rev_w
+            display_max_pow_w = self.default_max_pow_w
+            display_max_brk_w = self.default_max_brk_w
+        else:
+            display_rev_text = self.bve_rev_text
+            display_pow_text = self.bve_pow_text
+            display_brk_text = self.bve_brk_text
+            display_max_rev_w = self.max_rev_w
+            display_max_pow_w = self.max_pow_w
+            display_max_brk_w = self.max_brk_w
+
+        total_text_w = display_max_rev_w + gap + max(display_max_pow_w, display_max_brk_w) if self.is_single_handle else display_max_rev_w + gap + display_max_pow_w + gap + display_max_brk_w
         scale_ratio = min(1.0, LABEL_WIDTH / total_text_w) if total_text_w > 0 else 1.0
 
         bg_h_local, bg_y_offset = ui_step - 2, 5
@@ -408,19 +427,19 @@ def draw_hud(self, painter, logical_width):
         painter.scale(scale_ratio, scale_ratio)
 
         if self.is_single_handle:
-            draw_text_with_stroke(painter, self.bve_rev_text, self.font_ui, rev_color, get_outline_color(rev_color), -max(self.max_pow_w, self.max_brk_w) - gap, offset_to_top, "right")
+            draw_text_with_stroke(painter, display_rev_text, self.font_ui, rev_color, get_outline_color(rev_color), -max(display_max_pow_w, display_max_brk_w) - gap, offset_to_top, "right")
             
-            handle_text = self.bve_pow_text if self.bve_pow_notch != 0 else (self.bve_brk_text if self.bve_brk_notch > 0 else self.bve_pow_text)
+            handle_text = display_pow_text if self.bve_pow_notch != 0 else (display_brk_text if self.bve_brk_notch > 0 else display_pow_text)
             handle_color = pow_color if self.bve_pow_notch != 0 else (brk_color if self.bve_brk_notch > 0 else COLOR_N)
             
             me_offset = get_text_offset(handle_text) if self.bve_brk_notch > 0 else 0
             draw_text_with_stroke(painter, handle_text, self.font_ui, handle_color, get_outline_color(handle_color), 0 + me_offset, offset_to_top, "right")
         else:
-            draw_text_with_stroke(painter, self.bve_rev_text, self.font_ui, rev_color, get_outline_color(rev_color), -self.max_brk_w - gap - self.max_pow_w - gap, offset_to_top, "right")
-            draw_text_with_stroke(painter, self.bve_pow_text, self.font_ui, pow_color, get_outline_color(pow_color), -self.max_brk_w - gap, offset_to_top, "right")
+            draw_text_with_stroke(painter, display_rev_text, self.font_ui, rev_color, get_outline_color(rev_color), -display_max_brk_w - gap - display_max_pow_w - gap, offset_to_top, "right")
+            draw_text_with_stroke(painter, display_pow_text, self.font_ui, pow_color, get_outline_color(pow_color), -display_max_brk_w - gap, offset_to_top, "right")
             
-            brk_offset = get_text_offset(self.bve_brk_text)
-            draw_text_with_stroke(painter, self.bve_brk_text, self.font_ui, brk_color, get_outline_color(brk_color), 0 + brk_offset, offset_to_top, "right")
+            brk_offset = get_text_offset(display_brk_text)
+            draw_text_with_stroke(painter, display_brk_text, self.font_ui, brk_color, get_outline_color(brk_color), 0 + brk_offset, offset_to_top, "right")
         
         painter.restore()
         ui_y += scaled_bg_h + (ui_step - bg_h_local)

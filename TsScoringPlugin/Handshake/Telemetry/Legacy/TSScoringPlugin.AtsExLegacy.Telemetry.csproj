@@ -63,6 +63,9 @@
     <Compile Include="src\LegacyApi.cs" />
     <Compile Include="src\LegacyGroundLimits.cs" />
     <Compile Include="src\LegacyHandleContract.cs" />
+    <Compile Include="..\Shared\GenericHandleTextContract.cs">
+      <Link>Shared\GenericHandleTextContract.cs</Link>
+    </Compile>
     <Compile Include="src\LegacyInputProbe.cs" />
     <Compile Include="src\LegacyInputTelemetry.cs" />
     <Compile Include="src\LegacyScoringProbe.cs" />
