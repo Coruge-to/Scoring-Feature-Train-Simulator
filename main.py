@@ -1657,6 +1657,9 @@ class Overlay(QWidget):
                     win32gui.SetWindowPos(self.bve_hwnd, win32con.HWND_TOP, x, y, w, h, win32con.SWP_NOZORDER | win32con.SWP_FRAMECHANGED | win32con.SWP_SHOWWINDOW)
                     
                     self.is_borderless_fullscreen = True
+                    control = getattr(self, "f11_close_control", None)
+                    if control is not None:
+                        control.set_fullscreen(True)
                     self._emit_input_event("window-fullscreen", state="on")
                 except Exception as e:
                     write_desktop_log(f"[WINDOW] フルスクリーン化エラー: {e}")
@@ -1685,6 +1688,9 @@ class Overlay(QWidget):
                     win32gui.SetWindowPlacement(self.bve_hwnd, self.bve_original_placement)
                 
                 self.is_borderless_fullscreen = False
+                control = getattr(self, "f11_close_control", None)
+                if control is not None:
+                    control.set_fullscreen(False)
                 self._emit_input_event("window-fullscreen", state="off")
             except Exception as e:
                 write_desktop_log(f"[WINDOW] 復元エラー: {e}")
@@ -2392,7 +2398,30 @@ class Overlay(QWidget):
 class _ManagedShutdownBridge(QObject):
     """Hands the stop request of the watcher thread to the UI thread (a queued signal); only the slot touches Qt objects."""
     shutdown_requested = pyqtSignal()
-    before_quit = None        # set by run_managed: closes the result save dialog if one is open, so that its nested event loop returns
+    f11_restore_requested = pyqtSignal()
+    before_quit = None
+    overlay = None
+    f11_control = None        # set by run_managed: closes the result save dialog if one is open, so that its nested event loop returns
+
+    @pyqtSlot()
+    def on_f11_restore_requested(self):
+        control = self.f11_control
+        overlay = self.overlay
+        started = time.perf_counter()
+        log = getattr(self, "f11_log", managed_mode.stderr_log)
+        log("[MANAGED] event=f11-restore-start pid={0}".format(getattr(control, "_pid", 0)))
+        try:
+            if overlay is not None:
+                overlay.restore_bve_window()
+        except Exception as exc:
+            log("[MANAGED] event=f11-restore-failed type={0}".format(type(exc).__name__))
+        finally:
+            try:
+                if control is not None:
+                    control.set_fullscreen(False)
+                    control.complete_restore()
+            finally:
+                log("[MANAGED] event=f11-restore-completed elapsed_ms={0}".format(int((time.perf_counter() - started) * 1000)))
 
     @pyqtSlot()
     def on_shutdown_requested(self):
@@ -2483,6 +2512,7 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
     overlay = None
     bridge = None
     hud = None
+    f11_control = None
 
     def excepthook(exc_type, exc, tb):
         # PyQt6 would abort the process on an unhandled exception in a slot; report it as exit code 1 instead and leave the loop
@@ -2498,8 +2528,15 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
         app = QApplication(argv[:1])
         bridge = _ManagedShutdownBridge()
         bridge.shutdown_requested.connect(bridge.on_shutdown_requested)
+        bridge.f11_restore_requested.connect(bridge.on_f11_restore_requested)
         bridge.before_quit = lambda: getattr(overlay, "close_result_dialog", lambda: None)()
         overlay = (overlay_factory or Overlay)()
+        f11_control = managed_mode.F11CloseControl(args.bve_pid, life._sync, log)
+        overlay.f11_close_control = f11_control
+        bridge.overlay = overlay
+        bridge.f11_control = f11_control
+        bridge.f11_log = log
+        f11_control.start(bridge.f11_restore_requested.emit)
         if not getattr(overlay, 'udp_bind_ok', False):
             life.fail(managed_mode.EXIT_BIND_FAILED, "udp-bind-failed")
         else:
@@ -2526,6 +2563,8 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
         sys.excepthook = previous_hook
         cleanup = (lambda: _release_overlay(overlay, hud)) if overlay is not None else None
         result = life.shutdown(cleanup)
+        if f11_control is not None:
+            f11_control.shutdown()
         # Qt objects go before the QApplication so that nothing is destroyed in an arbitrary order when the function returns
         cleanup = overlay = bridge = hud = None
         if app is not None:

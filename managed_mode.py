@@ -237,6 +237,83 @@ class Win32Sync(object):
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------------
+# Phase F11-A2: BVE-close handshake (PID-scoped named events, no Qt in this module)
+# ---------------------------------------------------------------------------------------------------------------------------------------
+def f11_object_name(bve_pid, leaf):
+    return "Local\\TSScoringPlugin.v1.{0}.F11.{1}".format(int(bve_pid), leaf)
+
+
+class F11CloseControl(object):
+    """Owns the Python side of the F11 close handshake. The watcher only invokes request_callback; UI work stays in Qt."""
+
+    def __init__(self, bve_pid, sync, log):
+        self._pid = int(bve_pid)
+        self._sync = sync
+        self._log = log
+        self._fullscreen, _ = sync.create_event(f11_object_name(self._pid, "FullscreenActive"))
+        self._requested, _ = sync.create_event(f11_object_name(self._pid, "RestoreRequested"))
+        self._completed, _ = sync.create_event(f11_object_name(self._pid, "RestoreCompleted"))
+        self._cancel, _ = sync.create_event(None)
+        self._watcher = None
+        self._ended = False
+        self.set_fullscreen(False)
+        sync.reset_event(self._completed)
+        self._log("[MANAGED] event=f11-control-armed pid={0}".format(self._pid))
+
+    def start(self, request_callback):
+        if self._watcher is not None:
+            return
+        def watch():
+            while not self._ended:
+                index = self._sync.wait_any([self._requested, self._cancel])
+                if index == 1 or self._ended:
+                    return
+                self._sync.reset_event(self._requested)
+                self._log("[MANAGED] event=f11-restore-requested pid={0}".format(self._pid))
+                try:
+                    request_callback()
+                except Exception as exc:
+                    self._log("[MANAGED] event=f11-restore-request-callback-failed type={0}".format(type(exc).__name__))
+                    self.complete_restore()
+        self._watcher = threading.Thread(target=watch, name="TSScoring-F11RestoreWatch")
+        self._watcher.daemon = True
+        self._watcher.start()
+
+    def set_fullscreen(self, active):
+        if self._ended:
+            return
+        if active:
+            self._sync.set_event(self._fullscreen)
+        else:
+            self._sync.reset_event(self._fullscreen)
+        self._log("[MANAGED] event=f11-fullscreen state={0}".format("on" if active else "off"))
+
+    def complete_restore(self):
+        if self._ended:
+            return
+        self._sync.reset_event(self._fullscreen)
+        self._sync.set_event(self._completed)
+
+    def shutdown(self):
+        if self._ended:
+            return
+        self._ended = True
+        try:
+            self._sync.reset_event(self._fullscreen)
+            self._sync.set_event(self._cancel)
+        except Exception:
+            pass
+        if self._watcher is not None:
+            self._watcher.join(_WATCHER_JOIN_SECONDS)
+        for handle in (self._completed, self._requested, self._fullscreen, self._cancel):
+            try:
+                self._sync.close(handle)
+            except Exception:
+                pass
+        self._log("[MANAGED] event=f11-control-ended pid={0}".format(self._pid))
+
+
+# ---------------------------------------------------------------------------------------------------------------------------------------
 # Lifecycle state machine (no Qt)
 # ---------------------------------------------------------------------------------------------------------------------------------------
 STATE_NEW = "new"

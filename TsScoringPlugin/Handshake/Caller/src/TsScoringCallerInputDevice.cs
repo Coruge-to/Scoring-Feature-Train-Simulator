@@ -29,6 +29,8 @@ namespace TSScoringPlugin.Handshake
 
         private readonly int instNo;
         private readonly HandshakeSession session;
+        private BveWindowMessageObserver closeObserver;
+        private bool closeObserverTickRetryDone;
 
         public TsScoringCallerInputDevice()
         {
@@ -43,12 +45,26 @@ namespace TSScoringPlugin.Handshake
         {
             ObservationLog.Write("B", "CALLER_LOAD_BEGIN", "inst=" + instNo);
             try { session.Start(); } catch { }
+            try { closeObserver = BveWindowMessageObserver.TryAttach(instNo); } catch { }
         }
 
         public void Tick()
         {
-            // BVE's input polling stays untouched. Phase M1 / D1: every call does two atomic writes (Tick time, Tick count) and the first
-            // call also raises one flag for the monitor thread - no lock, no I/O, no dialog, no wait, no kernel object.
+            // Phase F11-A1 diagnostic only: Load can run before BVE has published MainWindowHandle.
+            // Retry exactly once on BVE's first Tick, when the main window is already available.
+            if (!closeObserverTickRetryDone)
+            {
+                closeObserverTickRetryDone = true;
+                if (closeObserver == null)
+                {
+                    try { closeObserver = BveWindowMessageObserver.TryAttach(instNo); } catch { }
+                }
+                else
+                {
+                    try { closeObserver.RetryAttach(); } catch { }
+                }
+            }
+
             try { session.NotifyTick(); } catch { }
         }
 
@@ -92,7 +108,11 @@ namespace TSScoringPlugin.Handshake
 
         public void Dispose()
         {
+            ObservationLog.Write("B", "F11_A2_INPUT_DISPOSE_BEGIN", "inst=" + instNo);
             try { session.End(); } catch { }
+            try { if (closeObserver != null) { closeObserver.Dispose(); } } catch { }
+            closeObserver = null;
+            ObservationLog.Write("B", "F11_A2_INPUT_DISPOSE_END", "inst=" + instNo);
         }
     }
 }

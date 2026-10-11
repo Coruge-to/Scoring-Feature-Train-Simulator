@@ -42,6 +42,8 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="src\AppController.cs" />
+    <Compile Include="src\BveWindowMessageObserver.cs" />
+    <Compile Include="src\F11CloseProtocol.cs" />
     <Compile Include="src\AppProcessManager.cs" />
     <Compile Include="src\AppStatePublisher.cs" />
     <Compile Include="src\AssemblyInfo.cs" />
