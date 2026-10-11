@@ -224,6 +224,8 @@ class Overlay(QWidget):
         self.bve_hwnd = None
         self.was_bve_found = False
         self.is_linked = False
+        self.time_position_lock_target = None
+        self.time_position_child_enabled = {}
 
         # Phase L3: which telemetry may be used and which HUD items it can feed. Normal mode only follows the AVAIL part of the telemetry (a sender
         # without AVAIL leaves everything available); managed mode replaces it with a strict, generation-aware gate (managed_hud.create_controller).
@@ -1920,23 +1922,64 @@ class Overlay(QWidget):
             self.f8_hook_dict.clear()
             self.f8_physically_blocked = False
 
+    def _release_time_position_window_lock(self):
+        """Restore only child controls that this process disabled."""
+        for child_hwnd, was_enabled in list(
+            getattr(self, 'time_position_child_enabled', {}).items()
+        ):
+            try:
+                if was_enabled and win32gui.IsWindow(child_hwnd):
+                    win32gui.EnableWindow(child_hwnd, True)
+            except Exception:
+                pass
+        self.time_position_child_enabled = {}
+        self.time_position_lock_target = None
+
     def _sync_time_position_window_lock(self):
-        """The \"time and position\" window of BVE is disabled while a menu is open or a scoring run is on, and enabled again afterwards."""
-        # メニュー表示中または採点中は「時刻と位置」ウィンドウを操作不能にする
+        """Disable the time/position window's child controls while leaving its title bar and close button usable."""
+        should_lock = (
+            self.menu_state != 0
+            or (
+                getattr(self, 'is_scoring_mode', False)
+                and not getattr(self, 'is_scoring_finished', False)
+            )
+        )
         try:
-            # BVEのダイヤグラムウィンドウをタイトルで検索
             diag_hwnd = win32gui.FindWindow(None, "時刻と位置")
-            if diag_hwnd:
-                should_disable_diag = (self.menu_state != 0) or (getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False))
-                is_enabled = win32gui.IsWindowEnabled(diag_hwnd)
-                
-                # 状態が変わる時だけ EnableWindow を呼ぶ（毎フレーム呼ぶと重くなるため）
-                if should_disable_diag and is_enabled:
-                    win32gui.EnableWindow(diag_hwnd, False)
-                elif not should_disable_diag and not is_enabled:
-                    win32gui.EnableWindow(diag_hwnd, True)
-        except Exception:
-            pass
+            if not should_lock or not diag_hwnd or not win32gui.IsWindow(diag_hwnd):
+                self._release_time_position_window_lock()
+                return
+
+            if self.time_position_lock_target != diag_hwnd:
+                self._release_time_position_window_lock()
+                self.time_position_lock_target = diag_hwnd
+
+            child_hwnds = []
+            win32gui.EnumChildWindows(
+                diag_hwnd,
+                lambda child_hwnd, _unused: child_hwnds.append(child_hwnd),
+                None
+            )
+            current_children = set(child_hwnds)
+
+            # Forget controls that were destroyed or recreated.
+            for child_hwnd in list(self.time_position_child_enabled):
+                if child_hwnd not in current_children or not win32gui.IsWindow(child_hwnd):
+                    self.time_position_child_enabled.pop(child_hwnd, None)
+
+            for child_hwnd in child_hwnds:
+                if child_hwnd not in self.time_position_child_enabled:
+                    self.time_position_child_enabled[child_hwnd] = bool(
+                        win32gui.IsWindowEnabled(child_hwnd)
+                    )
+                if win32gui.IsWindowEnabled(child_hwnd):
+                    win32gui.EnableWindow(child_hwnd, False)
+        except Exception as exc:
+            write_desktop_log(
+                f"[TIME_POSITION_LOCK] child-control lock failed: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            self._release_time_position_window_lock()
 
     def _sync_menu_key_suppression(self, is_bve_active):
         """The menu keys are not passed to BVE while a menu is open (BVE in front). Returns whether they are blocked."""
@@ -2361,6 +2404,9 @@ def _release_overlay(overlay, hud=None):
     if router_hook is not None:
         try: keyboard.unhook(router_hook)
         except Exception: pass
+    release_time_position_lock = getattr(overlay, '_release_time_position_window_lock', None)
+    if release_time_position_lock is not None:
+        release_time_position_lock()
     sock = getattr(overlay, 'udp_socket', None)
     if sock is not None:
         sock.close()
