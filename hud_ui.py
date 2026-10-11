@@ -278,13 +278,22 @@ def draw_hud(self, painter, logical_width):
             current_s = self.bve_time_ms // 1000
             target_s = self.bve_next_time // 1000
             diff_s = target_s - current_s
-            if diff_s >= 0:
-                tm, ts = diff_s // 60, diff_s % 60
-                draw_row_local("", COLOR_WHITE, f"{tm:02}:{ts:02}", COLOR_WHITE, ui_y)
+            abs_diff_s = abs(diff_s)
+
+            if abs_diff_s >= 3600:
+                th = abs_diff_s // 3600
+                tm = (abs_diff_s % 3600) // 60
+                ts = abs_diff_s % 60
+                time_left_text = f"{th}:{tm:02}:{ts:02}"
             else:
-                abs_diff = abs(diff_s)
-                tm, ts = abs_diff // 60, abs_diff % 60
-                draw_row_local("", COLOR_WHITE, f"-{tm:02}:{ts:02}", COLOR_B_EMG, ui_y)
+                tm = abs_diff_s // 60
+                ts = abs_diff_s % 60
+                time_left_text = f"{tm:02}:{ts:02}"
+
+            if diff_s >= 0:
+                draw_row_local("", COLOR_WHITE, time_left_text, COLOR_WHITE, ui_y)
+            else:
+                draw_row_local("", COLOR_WHITE, f"-{time_left_text}", COLOR_B_EMG, ui_y)
         else:
             draw_row_local("", COLOR_WHITE, "--:--", COLOR_WHITE, ui_y)
     ui_y += ui_step
