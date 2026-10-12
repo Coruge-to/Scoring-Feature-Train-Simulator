@@ -2440,7 +2440,7 @@ def _attach_managed_hud(overlay, hud, recovery_keys=None):
     Returns False when the managed contract is not met (the Caller's state block is missing or invalid): AppReady must not be published."""
     attach_input = getattr(hud, "attach_input", None)
     if attach_input is not None and hasattr(overlay, "managed_window_step"):
-        controller = managed_input.ManagedInputController(overlay, hud, keyboard, managed_input.GuiInputApi(win32gui))
+        controller = managed_input.ManagedInputController(overlay, hud, keyboard, managed_input.GuiInputApi(win32gui, hud.args.bve_pid))
         managed_input.attach_result_dialog(overlay)
         attach_input(controller)
     attach_recovery = getattr(hud, "attach_recovery", None)

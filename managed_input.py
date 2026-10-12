@@ -190,11 +190,38 @@ class GuiInputApi(object):
     """The two window operations of the input hold ("time and position" window). `gui` is the win32gui module (or a fake with the same functions)."""
     DIAG_TITLE = "時刻と位置"
 
-    def __init__(self, gui):
+    def __init__(self, gui, bve_pid=None):
         self._gui = gui
+        self._bve_pid = int(bve_pid) if bve_pid is not None else None
 
     def find_diag_window(self):
-        return self._gui.FindWindow(None, self.DIAG_TITLE)
+        """Return only the diagnostic window owned by this managed BVE process.
+
+        Several BVE processes, or another application, may expose the same title.
+        A title-only FindWindow lookup can therefore bind the input hold to the wrong
+        process. Managed mode fails closed unless both the title and owner PID match.
+        """
+        if self._bve_pid is None:
+            return self._gui.FindWindow(None, self.DIAG_TITLE)
+        found = []
+
+        def visit(hwnd, _extra):
+            try:
+                if self._gui.GetWindowText(hwnd) != self.DIAG_TITLE:
+                    return True
+                owner_pid = int(self._gui.GetWindowThreadProcessId(hwnd)[1])
+                if owner_pid == self._bve_pid:
+                    found.append(hwnd)
+                    return False
+            except Exception:
+                pass
+            return True
+
+        try:
+            self._gui.EnumWindows(visit, None)
+        except Exception:
+            return 0
+        return found[0] if found else 0
 
     def is_enabled(self, hwnd):
         return bool(self._gui.IsWindowEnabled(hwnd))
