@@ -1758,10 +1758,10 @@ class H_StaticGuards(unittest.TestCase):
             self.assertFalse(imports & {"PyQt6", "keyboard", "main", "win32api", "subprocess", "socket"}, (name, imports))
         self.assertEqual(self.imports_of("managed_state.py") - {"ctypes", "struct", "time"}, set())
         # pywin32 (window handling only) and scoring_logic are imported lazily, never at module import
-        self.assertEqual(self.imports_of("managed_hud.py") - {"time", "managed_state", "managed_mode", "telemetry_gate", "telemetry_contract", "win32con", "win32gui", "win32process", "scoring_logic"}, set())
+        self.assertEqual(self.imports_of("managed_hud.py") - {"time", "managed_state", "managed_mode", "managed_app_directory", "telemetry_gate", "telemetry_contract", "win32con", "win32gui", "win32process", "scoring_logic"}, set())
         # scoring_logic and the window API are imported lazily, inside the functions that need them
         top = [n for n in ast.parse(self.read("managed_hud.py")).body if isinstance(n, (ast.Import, ast.ImportFrom))]
-        self.assertEqual({a.name for n in top for a in n.names if isinstance(n, ast.Import)}, {"time", "managed_state", "telemetry_gate", "telemetry_contract"})
+        self.assertEqual({a.name for n in top for a in n.names if isinstance(n, ast.Import)}, {"time", "managed_state", "managed_app_directory", "telemetry_gate", "telemetry_contract"})
 
     def test_no_forbidden_operation_in_the_hud_modules(self):
         text = self.read("managed_hud.py") + self.read("managed_state.py")

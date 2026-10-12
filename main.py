@@ -2584,8 +2584,16 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
             overlay.timer.stop()  # update_logic never runs in managed mode
             if hud_factory is None:
                 import managed_hud
-                hud_factory = managed_hud.create_controller
-            hud = hud_factory(overlay, args, log)
+                directory_monitor = None
+                if directory_reader is not None:
+                    directory_monitor = managed_app_directory.RuntimeDirectoryMonitor(
+                        directory_reader, args.bve_pid, args.instance, os.getpid()
+                    )
+                hud = managed_hud.create_controller(overlay, args, log, directory_monitor=directory_monitor)
+                if directory_monitor is not None:
+                    directory_reader = None          # ManagedHudController owns and closes the shared reader now.
+            else:
+                hud = hud_factory(overlay, args, log)
             # opens the state block and takes the first reading BEFORE AppReady is published. The block is a required part of the contract:
             # without a valid one the process fails its initialisation (exit code 4) and never publishes AppReady.
             contract_ok = hud is None or _attach_managed_hud(overlay, hud)

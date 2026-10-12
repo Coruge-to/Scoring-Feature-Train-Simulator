@@ -28,6 +28,7 @@ Diagnostics: one `[MANAGED] ...` line per STATE CHANGE (fixed words and numbers;
 import time
 
 import managed_state
+import managed_app_directory
 import telemetry_contract
 import telemetry_gate
 from managed_mode import describe_exception
@@ -135,9 +136,11 @@ class ManagedHudController(object):
                 ScenarioGeneration has been received (and the sender has not moved on to the next scenario); without it (None) nothing is waited for.
     """
 
-    def __init__(self, overlay, reader, window_api, args, log, update_step=hud_update_step, timer=None, clock=time.monotonic, telemetry=None):
+    def __init__(self, overlay, reader, window_api, args, log, update_step=hud_update_step, timer=None, clock=time.monotonic, telemetry=None, directory_monitor=None):
         self._overlay = overlay
         self._telemetry = telemetry
+        self._directory_monitor = directory_monitor
+        self._directory_terminal = None
         self._reader = reader
         self._api = window_api
         self._args = args
@@ -254,7 +257,8 @@ class ManagedHudController(object):
     def input_allowed(self):
         """The gate every input operation of a later phase must pass. Never open without a live ACTIVE state; in the fail-safe it is shut for good.
         (Phase E4 itself has no input operation: managed mode installs no key hook.)"""
-        return self._failsafe is None and not self._shutdown and self.gate.mode == managed_state.MODE_ACTIVE
+        directory_ready = self._directory_monitor is None or self._directory_monitor.mode == managed_app_directory.RUNTIME_MONITORING
+        return self._failsafe is None and directory_ready and not self._shutdown and self.gate.mode == managed_state.MODE_ACTIVE
 
     # -- the timer slot -----------------------------------------------------------------------------------------------------------------
     def tick(self):
@@ -264,6 +268,20 @@ class ManagedHudController(object):
         if self._failsafe is not None:
             return                       # fail-safe: no reading, no update, no window work; only the Stop request ends this process
         try:
+            if self._directory_monitor is not None:
+                directory_result = self._directory_monitor.poll()
+                if directory_result.failed:
+                    self._enter_failsafe("app-directory-" + directory_result.reason, "app-directory-lost")
+                    return
+                if directory_result.terminal:
+                    self._directory_terminal = directory_result.reason
+                    self._closed_seen = True
+                    self._enter_failsafe("app-directory-" + directory_result.reason, "app-directory-terminal")
+                    return
+                if not directory_result.active:
+                    self._set_interval(IDLE_INTERVAL_MS)
+                    self._hide("app-directory-wait")
+                    return
             snapshot = self._reader.poll()
             if self._reader.lost is not None:
                 self._enter_failsafe(self._reader.lost)
@@ -351,23 +369,23 @@ class ManagedHudController(object):
             if drop is not None:
                 drop()
 
-    def _enter_failsafe(self, reason):
+    def _enter_failsafe(self, reason, action_reason="state-lost"):
         """The state block was lost after AppReady (the reader already wrote the one `state-lost` line). The HUD is hidden and no longer
         updated, input stays closed; the process is neither killed nor restarted and the Overlay is neither rebuilt nor destroyed: it waits for
         the Caller's Stop request. The gate is forced OFF so that nothing reads it as active."""
         self._failsafe = reason
         self.failsafes += 1
         if self._recovery is not None:
-            self._recovery.close("state-lost")           # no P from a token once the state block is gone
+            self._recovery.close(action_reason)           # no P from a token once ownership or state is gone
         if self._input is not None:
-            self._input.on_inactive("state-lost")
+            self._input.on_inactive(action_reason)
         was_active = self.gate.mode == managed_state.MODE_ACTIVE
         self.gate.apply(None)
         if was_active:
             self.update_waits += 1
-            self._emit("hud-update-wait", reason="state-lost")
+            self._emit("hud-update-wait", reason=action_reason)
         self._set_interval(IDLE_INTERVAL_MS)
-        self._hide("state-lost")
+        self._hide(action_reason)
 
     def _tick_active(self):
         overlay, api = self._overlay, self._api
@@ -574,10 +592,15 @@ class ManagedHudController(object):
             self._emit("state-withdrawn", mode=self.gate.mode)
         self._hide("shutdown")
         self._reader.close()
+        if self._directory_monitor is not None:
+            try:
+                self._directory_monitor.reader.close()
+            except Exception:
+                pass
         # how the state ended, in words that tell the three cases apart: init-failed (contract never met), state-lost (abnormal loss after
         # AppReady), caller-closed (the Caller withdrew the state first: the normal Dispose), stop-without-closed (Stop arrived with no withdrawal)
-        end = ("init-failed" if self.startup_failure is not None else "state-lost" if self._failsafe is not None
-               else "caller-closed" if self._closed_seen else "stop-without-closed")
+        end = ("init-failed" if self.startup_failure is not None else "caller-closed" if self._directory_terminal is not None
+               else "state-lost" if self._failsafe is not None else "caller-closed" if self._closed_seen else "stop-without-closed")
         self._emit("hud-summary", end=end, failsafes=self.failsafes, ticks=self.ticks, updates=self.updates, shows=self.shows, hides=self.hides, starts=self.update_starts,
                    waits=self.update_waits, state_changes=self.gate.changes, duplicates=self.gate.suppressed, gen_changes=self.gate.generation_changes,
                    coalesced=self.gate.skipped_changes, links=self.link_count, owner_sets=self.owner_sets, errors=self.errors)
@@ -591,11 +614,11 @@ class ManagedHudController(object):
             self.emit_event("recovery-summary", **self._recovery.summary_fields())     # only when a token was ever made: a line of its own (the line budget of the Caller)
 
 
-def create_controller(overlay, args, log):
+def create_controller(overlay, args, log, directory_monitor=None):
     """The production wiring: real mapping source, real window API, the Overlay's own timer."""
     reader = managed_state.StateReader(args, managed_state.Win32StateSource(), log)
     gate = telemetry_gate.TelemetryGate(strict=True)
-    controller = ManagedHudController(overlay, reader, Win32WindowApi(), args, log, timer=getattr(overlay, "timer", None), telemetry=gate)
+    controller = ManagedHudController(overlay, reader, Win32WindowApi(), args, log, timer=getattr(overlay, "timer", None), telemetry=gate, directory_monitor=directory_monitor)
     gate.log = controller.emit_event
     overlay.telemetry_gate = gate           # the Overlay's telemetry intake and its HUD items follow the same gate
     return controller
