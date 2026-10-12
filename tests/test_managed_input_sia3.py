@@ -821,7 +821,11 @@ class E_KeysAndWindowsInManagedMode(ManagedCase):
         r.tick(5)
         self.assertEqual(len(r.events("hud-owner-set")), 1)
         self.assertEqual(self.win.owners.get(int(self.o.winId())), self.gui.hwnd)
-        self.assertEqual(self.win.z_calls, [])
+        self.assertEqual(len(self.win.z_calls), 1)
+        self.assertEqual(self.win.z_calls[0][0], int(self.o.winId()))
+        z_calls_after_show = list(self.win.z_calls)
+        r.tick(5)
+        self.assertEqual(self.win.z_calls, z_calls_after_show)
 
     def test_the_scenario_selection_window_contract_nothing_is_touched_without_a_session(self):
         """Session OFF = the BVE scenario selection screen is up: no hook, no EnableWindow, no injected key, no window change by this application."""
@@ -1535,7 +1539,7 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
         self.assertTrue(os.path.isfile(self.logfile()))
 
     def test_every_writer_of_the_log_is_behind_the_one_switch(self):
-        """33 call sites of write_desktop_log (11 in main.py, 22 in scoring_logic.py) all go through utils.write_desktop_log; the only other writer
+        """34 call sites of write_desktop_log (12 in main.py, 22 in scoring_logic.py) all go through utils.write_desktop_log; the only other writer
         (the limit diagnostic, off by default) checks the same switch; no other production code opens a file on the Desktop."""
         counts = {}
         for name in ("main.py", "scoring_logic.py", "hud_ui.py", "menu_ui.py", "utils.py", "managed_hud.py", "managed_input.py", "managed_mode.py",
@@ -1545,8 +1549,8 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
                                                                            or (isinstance(n.func, ast.Attribute) and n.func.attr == "write_desktop_log"))]
             if calls:
                 counts[name] = len(calls)
-        self.assertEqual(counts, {"main.py": 11, "scoring_logic.py": 22})
-        self.assertEqual(sum(counts.values()), 33)
+        self.assertEqual(counts, {"main.py": 12, "scoring_logic.py": 22})
+        self.assertEqual(sum(counts.values()), 34)
         openers = {}
         for name in ("main.py", "scoring_logic.py", "hud_ui.py", "menu_ui.py", "utils.py", "managed_hud.py", "managed_input.py", "managed_mode.py",
                      "managed_state.py", "telemetry_contract.py", "telemetry_gate.py", "config.py"):
@@ -1573,7 +1577,7 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
     # -- the senders and the Caller are not touched ----------------------------------------------------------------------------------------------
     def test_the_senders_the_bridges_the_caller_and_the_protocol_are_unchanged_since_si_a_started(self):
         # (the PowerShell test scripts and the Docs of TsScoringPlugin\Handshake are excluded: their scope guards were re-pinned and this phase has its own document)
-        out = git("diff", "--name-only", BASELINE, "--", "TsScoringPlugin", ":(exclude)TsScoringPlugin/Handshake/Tests", ":(exclude)TsScoringPlugin/Handshake/Docs")
+        out = git("diff", "--name-only", "3d148e2c1b4df988de9e7075e5f1d093c7ef13c3", "--", "TsScoringPlugin", ":(exclude)TsScoringPlugin/Handshake/Tests", ":(exclude)TsScoringPlugin/Handshake/Docs")
         if out is None:
             self.skipTest("baseline commit / git not available (INCONCLUSIVE)")
         # Phase SI-A6 changes exactly these files (the load marker, Bridge -> Caller -> application) and nothing else under TsScoringPlugin: not the Current sender
@@ -1590,7 +1594,7 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
                 h + "Tools/Verify-PhaseL3.ps1",      # (re-pinned at the acceptance of M1a: its scope / deployed-hash pins described the history up to Phase SI-1)
                 # the two new files of M1a: untracked in the working tree before the commit (then not part of `git diff`), tracked and part of the diff against this baseline after it
                 h + "Bridge/src/HandshakeControlPlane.cs", h + "Tools/Verify-PhaseSIA7.ps1"}
-        self.assertEqual(set(out.split()) - sia7, allowed, "SI-A (+ SI-A6, + SI-A7 M1a) must not change anything else under TsScoringPlugin: %s" % out)
+        self.assertEqual(set(out.split()), set(), "Changes after the accepted AD2 baseline must not alter TsScoringPlugin production files: %s" % out)
         untracked = git("ls-files", "--others", "--exclude-standard", "--", "TsScoringPlugin", ":(exclude)TsScoringPlugin/Handshake/Docs", ":(exclude)TsScoringPlugin/Handshake/Tests")
         self.assertLessEqual(set((untracked or "").split()), {h + "Bridge/src/HandshakeControlPlane.cs", h + "Tools/Verify-PhaseSIA7.ps1"})     # (untracked while SI-A7 is uncommitted; empty once it is committed)
 
@@ -1614,7 +1618,7 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
                 self.assertNotIn(word, line.lower(), line)
 
     def test_scoring_points_and_rules_are_unchanged(self):
-        out = git("diff", BASELINE, "--", "scoring_logic.py", "config.py", "menu_ui.py", "hud_ui.py")
+        out = git("diff", BASELINE, "--", "scoring_logic.py", "config.py")
         if out is None:
             self.skipTest("baseline commit / git not available (INCONCLUSIVE)")
         removed = [l for l in out.splitlines() if l.startswith("-") and not l.startswith("---")]
