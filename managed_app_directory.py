@@ -268,3 +268,99 @@ class DirectoryReader(object):
             self.source.close()
         except Exception:
             pass
+
+RUNTIME_WAIT_READY = "wait-ready-accepted"
+RUNTIME_MONITORING = "monitoring"
+RUNTIME_TERMINAL = "terminal"
+RUNTIME_FAILED = "failed"
+
+
+class RuntimeDirectoryResult(object):
+    __slots__ = ("mode", "reason", "snapshot")
+
+    def __init__(self, mode, reason=None, snapshot=None):
+        self.mode = mode
+        self.reason = reason
+        self.snapshot = snapshot
+
+    @property
+    def active(self):
+        return self.mode == RUNTIME_MONITORING
+
+    @property
+    def terminal(self):
+        return self.mode == RUNTIME_TERMINAL
+
+    @property
+    def failed(self):
+        return self.mode == RUNTIME_FAILED
+
+
+class RuntimeDirectoryMonitor(object):
+    """Latch runtime ownership for one already-open AppDirectory reader.
+
+    Waiting for ReadyAccepted is a normal startup convergence state. Once the
+    flag is accepted it cannot be withdrawn without latching a failure.
+    Withdrawing and Closed are terminal shutdown states, not corruption.
+    """
+    def __init__(self, reader, bve_pid, instance, app_pid):
+        directory_name(bve_pid)
+        if not isinstance(instance, str) or not _INSTANCE_RE.fullmatch(instance):
+            raise ValueError("invalid-instance")
+        if not isinstance(app_pid, int) or isinstance(app_pid, bool) or app_pid <= 0:
+            raise ValueError("invalid-app-pid")
+        self.reader = reader
+        self.bve_pid = bve_pid
+        self.instance = instance
+        self.app_pid = app_pid
+        self.mode = RUNTIME_WAIT_READY
+        self.reason = None
+        self.last = None
+        self.polls = 0
+        self.accepted = False
+
+    def _finish(self, mode, reason, snapshot=None):
+        self.mode = mode
+        self.reason = reason
+        self.last = snapshot
+        return RuntimeDirectoryResult(mode, reason, snapshot)
+
+    def _fail(self, reason, snapshot=None):
+        return self._finish(RUNTIME_FAILED, reason, snapshot)
+
+    def poll(self):
+        if self.mode in (RUNTIME_TERMINAL, RUNTIME_FAILED):
+            return RuntimeDirectoryResult(self.mode, self.reason, self.last)
+        self.polls += 1
+        try:
+            snapshot = self.reader.poll()
+        except Exception as exc:
+            return self._fail("read-error:" + type(exc).__name__)
+        if snapshot is None:
+            reason = getattr(self.reader, "last_rejection", None) or "snapshot-unavailable"
+            return self._fail("read-" + reason)
+        self.last = snapshot
+        if snapshot.closed:
+            return self._finish(RUNTIME_TERMINAL, "closed", snapshot)
+        if snapshot.withdrawing:
+            return self._finish(RUNTIME_TERMINAL, "withdrawing", snapshot)
+        if snapshot.bve_pid != self.bve_pid:
+            return self._fail("bve-pid-mismatch", snapshot)
+        if snapshot.instance != self.instance:
+            return self._fail("instance-mismatch", snapshot)
+        if snapshot.app_pid != self.app_pid:
+            return self._fail("app-pid-mismatch", snapshot)
+        if not snapshot.instance_published:
+            return self._fail("instance-not-published", snapshot)
+        if not snapshot.process_started:
+            return self._fail("process-not-started", snapshot)
+        if snapshot.ready_accepted:
+            self.accepted = True
+            self.mode = RUNTIME_MONITORING
+            self.reason = None
+            return RuntimeDirectoryResult(self.mode, None, snapshot)
+        if self.accepted:
+            return self._fail("ready-revoked", snapshot)
+        self.mode = RUNTIME_WAIT_READY
+        self.reason = None
+        return RuntimeDirectoryResult(self.mode, None, snapshot)
