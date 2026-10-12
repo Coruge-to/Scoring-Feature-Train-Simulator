@@ -28,6 +28,7 @@ from hud_ui import draw_hud
 from utils import write_desktop_log, NumericKeyInputRouter
 import managed_input
 import managed_mode
+import managed_app_directory
 import pause_recovery
 import telemetry_contract
 import telemetry_gate
@@ -2485,7 +2486,38 @@ def _release_overlay(overlay, hud=None):
     overlay.close()
 
 
-def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_log, hud_factory=None):
+def _open_managed_app_directory(args, directory_factory=None):
+    """Caller-owned managed processes must match the PID-scoped AppDirectory before AppReady."""
+    if args.owner != "caller":
+        return None, None
+    factory = directory_factory or managed_app_directory.DirectoryReader
+    reader = factory(args.bve_pid)
+    try:
+        if not reader.open():
+            return reader, reader.open_failure or "block-missing"
+        snapshot = reader.last
+        if snapshot is None:
+            return reader, "snapshot-unavailable"
+        if snapshot.bve_pid != args.bve_pid:
+            return reader, "bve-pid-mismatch"
+        if snapshot.instance != args.instance:
+            return reader, "instance-mismatch"
+        if not snapshot.instance_published:
+            return reader, "instance-not-published"
+        if not snapshot.process_started:
+            return reader, "process-not-started"
+        if snapshot.app_pid != os.getpid():
+            return reader, "app-pid-mismatch"
+        if snapshot.withdrawing:
+            return reader, "withdrawing"
+        if snapshot.closed:
+            return reader, "closed"
+        return reader, None
+    except Exception as exc:
+        return reader, "read-error:" + type(exc).__name__
+
+
+def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_log, hud_factory=None, directory_factory=None):
     """Managed mode (Phase E2 contract, Phase E4 HUD link). Returns the process exit code.
 
     E2: identity, AppReady, stop request, exit code. The Overlay's update_logic never runs here (no Esc quit, no key hooks, no BVE-window quit,
@@ -2507,6 +2539,15 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
     code = life.acquire()
     if code is not None:
         return code
+
+    directory_reader, directory_error = _open_managed_app_directory(args, directory_factory)
+    if directory_error is not None:
+        log("[MANAGED] event=app-directory-refused reason=%s" % directory_error)
+        life.fail(managed_mode.EXIT_INIT_FAILED, "app-directory-" + directory_error)
+        result = life.shutdown(None)
+        if directory_reader is not None:
+            directory_reader.close()
+        return result
 
     app = None
     overlay = None
@@ -2563,6 +2604,8 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
         sys.excepthook = previous_hook
         cleanup = (lambda: _release_overlay(overlay, hud)) if overlay is not None else None
         result = life.shutdown(cleanup)
+        if directory_reader is not None:
+            directory_reader.close()
         if f11_control is not None:
             f11_control.shutdown()
         # Qt objects go before the QApplication so that nothing is destroyed in an arbitrary order when the function returns
