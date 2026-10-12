@@ -173,6 +173,7 @@ namespace TSScoringPlugin.Handshake
         // Phase E4: the Session / Driving state. latest* is the newest state the Caller reported (also while no process exists); the publisher
         // exists from just before Process.Start until the worker leaves.
         private AppStatePublisher statePublisher;
+        private AppDirectoryPublisher directoryPublisher;
         private bool latestKnown;
         private bool latestSession;
         private bool latestDriving;
@@ -443,6 +444,10 @@ namespace TSScoringPlugin.Handshake
             }
 
             Log("APP_SHUTDOWN_BEGIN", "state=" + snapshot + " appPid=" + pidSnapshot);
+            lock (sync)
+            {
+                if (directoryPublisher != null) directoryPublisher.PublishWithdrawing();
+            }
             WithdrawState(); // Phase E4: Session / Driving withdrawn and Closed set BEFORE the application is told to end
             SignalStop("caller-dispose");
             shutdownSignal.Set();
@@ -567,6 +572,21 @@ namespace TSScoringPlugin.Handshake
                     return;
                 }
 
+                AppDirectoryPublisher directory = null;
+                try
+                {
+                    directory = AppDirectoryPublisher.Create(bveProcessId);
+                    directory.PublishInstance(inst);
+                    lock (sync) { directoryPublisher = directory; }
+                }
+                catch (Exception ex)
+                {
+                    if (directory != null) { try { directory.Dispose(); } catch { } }
+                    Log("APP_DIRECTORY_FAILED", "instance=" + inst + " type=" + ex.GetType().Name);
+                    finalState = AppProcessState.Failed;
+                    return;
+                }
+
                 ProcessStartInfo psi = BuildStartInfo(config.Config, bveProcessId, inst);
                 process = new Process();
                 process.StartInfo = psi;
@@ -602,7 +622,11 @@ namespace TSScoringPlugin.Handshake
                 }
 
                 int pid = process.Id;
-                lock (sync) { appPid = pid; }
+                lock (sync)
+                {
+                    appPid = pid;
+                    if (directoryPublisher != null) directoryPublisher.PublishProcessStarted(pid);
+                }
                 Log("APP_PROCESS_STARTED", "appPid=" + pid + " instance=" + inst + " bvePid=" + bveProcessId + " startMs=" + Ms(Stopwatch.GetTimestamp() - startQpc));
                 finalState = Supervise(process, inst, startQpc);
             }
@@ -736,6 +760,7 @@ namespace TSScoringPlugin.Handshake
                             accept = true;
                             state = AppProcessState.Ready;
                             readyAccepted = true;
+                            if (directoryPublisher != null) directoryPublisher.PublishReadyAccepted();
                         }
                     }
 
@@ -884,6 +909,14 @@ namespace TSScoringPlugin.Handshake
                 {
                     statePublisher.Dispose();
                     statePublisher = null;
+                }
+
+                if (directoryPublisher != null)
+                {
+                    try { directoryPublisher.PublishWithdrawing(); } catch { }
+                    try { directoryPublisher.PublishClosed(); } catch { }
+                    try { directoryPublisher.Dispose(); } catch { }
+                    directoryPublisher = null;
                 }
             }
         }
