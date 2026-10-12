@@ -105,7 +105,8 @@ def main():
     for _ in range(50):
         ctl._ensure_z_order()
     result["repeat_calls"] = len(calls)
-    result["foreground_unchanged"] = (win32gui.GetForegroundWindow() == fg0)
+    result["foreground_unchanged_initial"] = (win32gui.GetForegroundWindow() == fg0)
+    result["foreground_unchanged"] = result["foreground_unchanged_initial"]
 
     # 2. the selection window is closed: the same HUD is directly above the driving window
     select.hide()
@@ -131,7 +132,11 @@ def main():
     ctl._ensure_z_order()
     pump()
     result["reshow_after_hide"] = order()
-    result["foreground_unchanged"] = result["foreground_unchanged"] and (win32gui.GetForegroundWindow() == fg1)
+    result["foreground_unchanged_reshow"] = (win32gui.GetForegroundWindow() == fg1)
+    result["foreground_unchanged"] = (
+        result["foreground_unchanged_initial"]
+        and result["foreground_unchanged_reshow"]
+    )
 
     ex = win32gui.GetWindowLong(int(hud.winId()), win32con.GWL_EXSTYLE)
     result["hud_topmost"] = bool(ex & win32con.WS_EX_TOPMOST)

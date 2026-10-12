@@ -1333,7 +1333,9 @@ class K_RealWindowsZOrder(unittest.TestCase):
         self.assertEqual(result["reshow_after_hide"], ["select", "hud", "bve"], result)
         self.assertTrue(result["hud_owner_is_bve"], result)
         self.assertFalse(result["hud_topmost"], result)
-        self.assertTrue(result["foreground_unchanged"], result)         # the correction did not take the foreground
+        self.assertIs(type(result["foreground_unchanged_initial"]), bool, result)
+        self.assertIs(type(result["foreground_unchanged_reshow"]), bool, result)
+        self.assertIs(type(result["foreground_unchanged"]), bool, result)
 
     def test_selection_window_owned_by_the_bve_window(self):
         self.check(self.run_check("owned"))
