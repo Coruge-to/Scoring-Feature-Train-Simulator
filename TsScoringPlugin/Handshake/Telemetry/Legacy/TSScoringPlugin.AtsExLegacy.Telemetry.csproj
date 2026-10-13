@@ -70,6 +70,9 @@
     <Compile Include="..\Shared\DataPlaneProtocol.cs">
       <Link>Shared\DataPlaneProtocol.cs</Link>
     </Compile>
+    <Compile Include="..\Shared\TelemetryDirectoryReader.cs">
+      <Link>Shared\TelemetryDirectoryReader.cs</Link>
+    </Compile>
     <Compile Include="src\LegacyInputTelemetry.cs" />
     <Compile Include="src\LegacyScoringProbe.cs" />
     <Compile Include="src\LegacyStationTimeline.cs" />
