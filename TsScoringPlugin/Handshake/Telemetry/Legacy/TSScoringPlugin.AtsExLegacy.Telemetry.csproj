@@ -67,6 +67,9 @@
       <Link>Shared\GenericHandleTextContract.cs</Link>
     </Compile>
     <Compile Include="src\LegacyInputProbe.cs" />
+    <Compile Include="..\Shared\DataPlaneProtocol.cs">
+      <Link>Shared\DataPlaneProtocol.cs</Link>
+    </Compile>
     <Compile Include="src\LegacyInputTelemetry.cs" />
     <Compile Include="src\LegacyScoringProbe.cs" />
     <Compile Include="src\LegacyStationTimeline.cs" />
