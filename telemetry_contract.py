@@ -40,7 +40,7 @@ TOKEN_KEYS = {
     "siglimit_ahead": ("FWDSIGLIMIT", "FWDSIGLOC"),
     "maplimit": ("MAPHEAD", "MAPTAIL"),
     "maplimit_ahead": ("MAPLIMITS", "CLEARDIST"),
-    "handle": ("REV", "POW", "BRK", "HTYPE", "ALLTXT"),
+    "handle": ("REV", "POW", "BRK", "HTYPE", "ALLTXT", "DREV", "DPOW", "DBRK", "DALLTXT"),
     "brake_type": ("BTYPE",),
     "brake_cab": ("CAB",),
     "prates": ("PRATES",),

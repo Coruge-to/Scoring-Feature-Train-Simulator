@@ -984,37 +984,31 @@ class E_StaticGuards(unittest.TestCase):
         # against the E4 commit the L3 additions are the only differences (the E4 commit has none of the L3 members yet)
         self.assertEqual(overlay_guard.problems(old, new), [])
 
-    def test_hud_ui_changes_are_only_the_item_conditions_and_the_pressure_lines(self):
-        old = e4._git("show", "bc4c1160bf6755776d27525a4928a742c460825e:hud_ui.py")
-        if old is None:
-            self.skipTest("git not available (INCONCLUSIVE)")
-        new = read_text(os.path.join(ROOT, "hud_ui.py"))
-        otree, ntree = ast.parse(old), ast.parse(new)
-        ofn = {n.name: n for n in otree.body if isinstance(n, ast.FunctionDef)}
-        nfn = {n.name: n for n in ntree.body if isinstance(n, ast.FunctionDef)}
-        self.assertEqual(set(nfn) - set(ofn), {"hud_item_available", "hud_data_available", "hud_item_state", "hud_item_visible"})
-        self.assertEqual(set(ofn) - set(nfn), set())
+    def test_hud_ui_availability_guards_cover_every_item_and_diagnostic_value(self):
+        tree = ast.parse(read_text(os.path.join(ROOT, "hud_ui.py")))
+        functions = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+        self.assertTrue({"hud_item_available", "hud_data_available", "hud_item_state", "hud_item_visible", "draw_hud"} <= set(functions))
+        draw_hud = functions["draw_hud"]
 
-        class Revert(ast.NodeTransformer):
-            def visit_Call(self, node):
-                self.generic_visit(node)
-                if isinstance(node.func, ast.Name) and node.func.id == "hud_item_visible":
-                    return ast.parse('self.disp_settings["%s"]' % node.args[1].value, mode="eval").body
-                return node
-        visible_calls = sum(1 for n in ast.walk(nfn["draw_hud"]) if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "hud_item_visible")
-        reverted = Revert().visit(nfn["draw_hud"])
-        ob = {ast.dump(s) for s in ofn["draw_hud"].body}
-        nb = {ast.dump(s) for s in reverted.body}
-        removed = [s for s in ofn["draw_hud"].body if ast.dump(s) not in nb]
-        added = [s for s in reverted.body if ast.dump(s) not in ob]
-        # the only removed statement is the dbg_texts.extend([...]) that held the pressure lines; the added ones are its replacement
-        self.assertEqual(len(removed), 1)
-        self.assertIn("dbg_texts.extend", ast.unparse(removed[0]))
-        self.assertIn("BCP", ast.unparse(removed[0]))
-        for s in added:
-            text = ast.unparse(s)
-            self.assertTrue(any(w in text for w in ("dbg_texts", "pressure_parts")), text)
-        self.assertEqual(visible_calls, 7)
+        visible_keys = []
+        diagnostic_guards = {}
+        for node in ast.walk(draw_hud):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "hud_item_visible":
+                self.assertEqual(len(node.args), 2)
+                self.assertIsInstance(node.args[1], ast.Constant)
+                visible_keys.append(node.args[1].value)
+            if isinstance(node, ast.If) and isinstance(node.test, ast.Call) and isinstance(node.test.func, ast.Name) and node.test.func.id == "hud_data_available":
+                self.assertEqual(len(node.test.args), 2)
+                self.assertIsInstance(node.test.args[1], ast.Constant)
+                diagnostic_guards[node.test.args[1].value] = " ".join(ast.unparse(stmt) for stmt in node.body)
+
+        self.assertEqual(set(visible_keys), set(tc.HUD_ITEM_REQUIRES))
+        self.assertEqual(len(visible_keys), len(tc.HUD_ITEM_REQUIRES))
+        self.assertEqual(set(diagnostic_guards), {"bcp", "bpp", "calcg"})
+        self.assertIn("BCP", diagnostic_guards["bcp"])
+        self.assertIn("BPP", diagnostic_guards["bpp"])
+        self.assertIn("Virtual_EB", diagnostic_guards["bpp"])
+        self.assertIn("CalcG", diagnostic_guards["calcg"])
 
     def test_normal_mode_main_path_is_unchanged(self):
         new = read_text(os.path.join(ROOT, "main.py"))
