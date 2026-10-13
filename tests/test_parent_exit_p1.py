@@ -1,4 +1,4 @@
-"""Parent-exit fix tests: a managed Python started by the Caller (`--owner caller`) ends by itself when the BVE process named by --bve-pid is gone.
+﻿"""Parent-exit fix tests: a managed Python started by the Caller (`--owner caller`) ends by itself when the BVE process named by --bve-pid is gone.
 
     C:\\Python314\\python.exe -m unittest discover -s tests -p "test_parent_exit_p1.py" -v
 
@@ -28,6 +28,7 @@ sys.path.insert(0, ROOT)
 sys.path.insert(0, HERE)
 
 import managed_mode as mm  # noqa: E402
+from app_directory_fixture import AppDirectoryFixture  # noqa: E402
 from test_managed_mode_e2 import (FakeSync, HAS_QT, Log, Owner, StateBlockStandIn, args_for, new_instance, port_54321_is_free,  # noqa: E402
                                   wait_until)
 
@@ -493,9 +494,14 @@ class Scenario(object):
         time.sleep(0.15)
         self.args = args_for(pid=self.bve.pid, owner=owner)
         self.owner = Owner(self.sync, self.args)
+        self.directory = AppDirectoryFixture(self.bve.pid, self.args.instance) if owner == "caller" else None
+        if self.directory is not None:
+            self.directory.publish_instance()
         self.block = StateBlockStandIn(self.args) if with_block else None
         env = {"TSS_P1_PORT": str(port)} if port else None
         self.proc = spawn(script, self.bve.pid, self.args.instance, owner, env)
+        if self.directory is not None:
+            self.directory.publish_process_started(self.proc.pid)
 
     def ready(self, seconds=30):
         return wait_until(self.owner.ready, seconds)
@@ -519,6 +525,8 @@ class Scenario(object):
         kill_and_wait(self.bve)
         if self.block is not None:
             self.block.dispose()
+        if self.directory is not None:
+            self.directory.close()
         self.owner.close()
 
 
@@ -736,7 +744,7 @@ class D_Win32Caller(unittest.TestCase):
     """A 32-bit process plays the 32-bit BVE + Caller: it starts the 64-bit Python with `--owner caller --bve-pid <its own pid>` and then dies."""
 
     SCRIPT = r'''
-param([string]$Py, [string]$Child, [string]$Out, [string]$Inst)
+param([string]$Py, [string]$Child, [string]$Out, [string]$Inst, [string]$Go)
 $ErrorActionPreference = 'Stop'
 $bvePid = $PID
 $stop = New-Object System.Threading.EventWaitHandle($false, [System.Threading.EventResetMode]::ManualReset, "Local\TSScoringPlugin.v1.$bvePid.App.$Inst.Stop")
@@ -747,6 +755,8 @@ $psi.UseShellExecute = $false
 $psi.CreateNoWindow = $true
 $psi.RedirectStandardError = $true
 $psi.RedirectStandardOutput = $true
+Set-Content -LiteralPath ($Out + '.caller') -Value $bvePid -Encoding ASCII
+while (-not (Test-Path -LiteralPath $Go -PathType Leaf)) { Start-Sleep -Milliseconds 10 }
 $p = [System.Diagnostics.Process]::Start($psi)
 Set-Content -Path $Out -Value ("{0} {1} {2}" -f $p.Id, [Environment]::Is64BitProcess, [IntPtr]::Size) -Encoding ASCII
 Start-Sleep -Seconds 600
@@ -756,13 +766,29 @@ Start-Sleep -Seconds 600
         with tempfile.TemporaryDirectory() as tmp:
             script = os.path.join(tmp, "fake32.ps1")
             out = os.path.join(tmp, "info.txt")
+            caller_out = out + ".caller"
+            go = os.path.join(tmp, "go.txt")
             with open(script, "w", encoding="ascii") as f:
                 f.write(self.SCRIPT)
             inst = new_instance()
             ps = subprocess.Popen([WOW64_POWERSHELL, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script, sys.executable,
-                                   SMOKE_CHILD, out, inst], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                                   SMOKE_CHILD, out, inst, go], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
                                   creationflags=CREATE_NO_WINDOW)
             child_pid = None
+
+            def caller_info():
+                try:
+                    with open(caller_out) as f:
+                        return f.read().strip()
+                except OSError:
+                    return ""
+
+            self.assertTrue(wait_until(lambda: caller_info() != "", 30), "the 32-bit caller did not publish its pid")
+            self.assertEqual(int(caller_info()), ps.pid)
+            directory = AppDirectoryFixture(ps.pid, inst)
+            directory.publish_instance()
+            with open(go, "w", encoding="ascii") as f:
+                f.write("go\n")
             try:
                 def info():
                     try:
@@ -774,6 +800,7 @@ Start-Sleep -Seconds 600
                 self.assertTrue(wait_until(lambda: len(info()) == 3, 30), "the 32-bit caller did not start")
                 pid_text, is64, size = info()
                 child_pid = int(pid_text)
+                directory.publish_process_started(child_pid)
                 self.assertEqual((is64, size), ("False", "4"))      # really a 32-bit process
                 self.assertEqual(ctypes.sizeof(ctypes.c_void_p), 8)  # and the application really is the 64-bit Python
                 owner = Owner(mm.Win32Sync(), mm.ManagedArgs(ps.pid, inst, "caller"))
@@ -794,6 +821,7 @@ Start-Sleep -Seconds 600
                     ps.kill()
                 if child_pid is not None and not process_exit_code(child_pid, 0.0)[0]:
                     subprocess.run(["taskkill", "/F", "/PID", str(child_pid)], capture_output=True)
+                directory.close()
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------------

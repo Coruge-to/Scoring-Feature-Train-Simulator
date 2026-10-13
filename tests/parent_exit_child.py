@@ -60,8 +60,9 @@ class _FakeOverlay(object):
         self.udp_socket = QUdpSocket()
         wanted = int(os.environ.get("TSS_P1_PORT", "0"))
         self.udp_bind_ok = self.udp_socket.bind(QHostAddress.SpecialAddress.LocalHost, wanted)
+        self.udp_port = int(self.udp_socket.localPort()) if self.udp_bind_ok else 0
         if self.udp_bind_ok:
-            say("udp-bound port=%d" % self.udp_socket.localPort())
+            say("udp-bound port=%d" % self.udp_port)
         self._window = QWidget()
         self._window.setWindowTitle(WINDOW_TITLE)
         self.visible = False

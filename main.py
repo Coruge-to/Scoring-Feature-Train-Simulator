@@ -32,6 +32,7 @@ import managed_app_directory
 import pause_recovery
 import telemetry_contract
 import telemetry_gate
+import telemetry_receiver_directory
 import utils
 
 KERNING_OFFSETS = {
@@ -41,7 +42,7 @@ KERNING_OFFSETS = {
 }
 
 class Overlay(QWidget):
-    def __init__(self):
+    def __init__(self, udp_port=54321):
         super().__init__()
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowTransparentForInput | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -233,7 +234,8 @@ class Overlay(QWidget):
         self.telemetry_gate = telemetry_gate.TelemetryGate(strict=False)
 
         self.udp_socket = QUdpSocket(self)
-        self.udp_bind_ok = self.udp_socket.bind(QHostAddress.SpecialAddress.LocalHost, 54321)  # normal mode ignores it; managed mode exits with code 2
+        self.udp_bind_ok = self.udp_socket.bind(QHostAddress.SpecialAddress.LocalHost, udp_port)
+        self.udp_port = int(self.udp_socket.localPort()) if self.udp_bind_ok else 0
         self.udp_socket.readyRead.connect(self.read_udp_data)
         
         self.bve_speed = 0.0
@@ -2486,8 +2488,13 @@ def _release_overlay(overlay, hud=None):
     overlay.close()
 
 
-def _open_managed_app_directory(args, directory_factory=None):
-    """Caller-owned managed processes must match the PID-scoped AppDirectory before AppReady."""
+def _open_managed_app_directory(args, directory_factory=None, startup_timeout=1.0, sleep=time.sleep, clock=time.monotonic):
+    """Match a Caller-owned process after the Caller publishes its PID.
+
+    Instance identity is checked immediately. PROCESS_STARTED and App PID may
+    converge only for a short bounded interval because Process.Start must occur
+    before the Caller can know and publish the child PID.
+    """
     if args.owner != "caller":
         return None, None
     factory = directory_factory or managed_app_directory.DirectoryReader
@@ -2495,24 +2502,35 @@ def _open_managed_app_directory(args, directory_factory=None):
     try:
         if not reader.open():
             return reader, reader.open_failure or "block-missing"
-        snapshot = reader.last
-        if snapshot is None:
-            return reader, "snapshot-unavailable"
-        if snapshot.bve_pid != args.bve_pid:
-            return reader, "bve-pid-mismatch"
-        if snapshot.instance != args.instance:
-            return reader, "instance-mismatch"
-        if not snapshot.instance_published:
-            return reader, "instance-not-published"
-        if not snapshot.process_started:
-            return reader, "process-not-started"
-        if snapshot.app_pid != os.getpid():
-            return reader, "app-pid-mismatch"
-        if snapshot.withdrawing:
-            return reader, "withdrawing"
-        if snapshot.closed:
-            return reader, "closed"
-        return reader, None
+        deadline = clock() + max(0.0, float(startup_timeout))
+        while True:
+            snapshot = reader.last
+            if snapshot is None:
+                return reader, "snapshot-unavailable"
+            if snapshot.bve_pid != args.bve_pid:
+                return reader, "bve-pid-mismatch"
+            if snapshot.instance != args.instance:
+                return reader, "instance-mismatch"
+            if not snapshot.instance_published:
+                return reader, "instance-not-published"
+            if snapshot.withdrawing:
+                return reader, "withdrawing"
+            if snapshot.closed:
+                return reader, "closed"
+            if snapshot.process_started:
+                if snapshot.app_pid != os.getpid():
+                    return reader, "app-pid-mismatch"
+                return reader, None
+            if snapshot.app_pid != 0:
+                return reader, "app-pid-before-process-started"
+            if clock() >= deadline:
+                return reader, "process-started-timeout"
+            sleep(0.01)
+            snapshot = reader.poll()
+            if snapshot is None:
+                reason = getattr(reader, "last_rejection", None) or "snapshot-unavailable"
+                return reader, "read-" + reason
+            reader.last = snapshot
     except Exception as exc:
         return reader, "read-error:" + type(exc).__name__
 
@@ -2554,6 +2572,7 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
     bridge = None
     hud = None
     f11_control = None
+    telemetry_directory = None
 
     def excepthook(exc_type, exc, tb):
         # PyQt6 would abort the process on an unhandled exception in a slot; report it as exit code 1 instead and leave the loop
@@ -2571,7 +2590,7 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
         bridge.shutdown_requested.connect(bridge.on_shutdown_requested)
         bridge.f11_restore_requested.connect(bridge.on_f11_restore_requested)
         bridge.before_quit = lambda: getattr(overlay, "close_result_dialog", lambda: None)()
-        overlay = (overlay_factory or Overlay)()
+        overlay = overlay_factory() if overlay_factory is not None else Overlay(0 if args.owner == "caller" else 54321)
         f11_control = managed_mode.F11CloseControl(args.bve_pid, life._sync, log)
         overlay.f11_close_control = f11_control
         bridge.overlay = overlay
@@ -2581,6 +2600,10 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
         if not getattr(overlay, 'udp_bind_ok', False):
             life.fail(managed_mode.EXIT_BIND_FAILED, "udp-bind-failed")
         else:
+            if args.owner == "caller":
+                telemetry_directory = telemetry_receiver_directory.TelemetryDirectoryPublisher(
+                    args.bve_pid, args.instance, os.getpid(), getattr(overlay, 'udp_port', 0)
+                )
             overlay.timer.stop()  # update_logic never runs in managed mode
             if hud_factory is None:
                 import managed_hud
@@ -2601,6 +2624,8 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
                 life.fail(managed_mode.EXIT_INIT_FAILED, "state-contract-" + (getattr(hud, 'startup_failure', None) or "unavailable"))
             else:
                 life.start_stop_watch(bridge.shutdown_requested.emit)
+                if not life.stop_requested and telemetry_directory is not None:
+                    telemetry_directory.publish_ready()
                 if life.publish_ready():
                     if hud is not None:
                         overlay.timer.start()
@@ -2610,7 +2635,16 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
                   "exception:" + managed_mode.describe_exception(e))
     finally:
         sys.excepthook = previous_hook
-        cleanup = (lambda: _release_overlay(overlay, hud)) if overlay is not None else None
+        def cleanup_managed_resources():
+            if telemetry_directory is not None:
+                telemetry_directory.publish_withdrawing()
+            try:
+                if overlay is not None:
+                    _release_overlay(overlay, hud)
+            finally:
+                if telemetry_directory is not None:
+                    telemetry_directory.close()
+        cleanup = cleanup_managed_resources if overlay is not None or telemetry_directory is not None else None
         result = life.shutdown(cleanup)
         if directory_reader is not None:
             directory_reader.close()
