@@ -36,7 +36,11 @@ def run(sequences):
             self.queue = []
 
         def bind(self, address, port):
+            self.port = port
             return True
+
+        def localPort(self):
+            return getattr(self, 'port', 0)
 
         def hasPendingDatagrams(self):
             return bool(self.queue)

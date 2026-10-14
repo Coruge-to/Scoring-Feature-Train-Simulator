@@ -60,6 +60,9 @@ namespace TsScoringPlugin
         private bool pendingJumpComplete = false;
         private string pendingJumpType = "";
         private int pendingJumpStationIndex = -1;
+        // PID-D6: the RequestId of the pending jump (null = a plain command of the normal mode); echoed in the managed JUMP_COMPLETE envelope
+        private byte[] pendingJumpRequestId = null;
+        private TSScoringPlugin.DataPlane.CurrentJumpEndpoint jumpEndpoint;
         private int opStopDelayStartMs = -1;
         private bool initialStaListSent = false;
         private DateTime lastStaListSendTime = DateTime.MinValue;
@@ -97,20 +100,92 @@ namespace TsScoringPlugin
             return string.Join("_", validTexts);
         }
 
+        // PID-D3: the sender's routing (managed DataPlane / normal fixed port), the transport that owns no socket itself, and the per-process diagnostics
+        private TSScoringPlugin.DataPlane.CurrentTelemetryRouter router;
+        private readonly UdpTransport transport = new UdpTransport();
+        private TSScoringPlugin.DataPlane.CurrentTelemetryLogFile diagnostics;
+
+        /// <summary>The datagram transport of the Current sender: the plugin's own UdpClient, detached on Dispose (a send after that fails and is swallowed by the caller).</summary>
+        private sealed class UdpTransport : TSScoringPlugin.DataPlane.ITelemetryTransport
+        {
+            internal volatile UdpClient Client;
+
+            public void Send(byte[] data, IPEndPoint destination)
+            {
+                UdpClient client = Client;
+                if (client == null) throw new ObjectDisposedException("UdpClient");
+                client.Send(data, data.Length, destination);
+            }
+        }
+
+        private static int CurrentProcessId()
+        {
+            using (var process = System.Diagnostics.Process.GetCurrentProcess())
+            {
+                return process.Id;
+            }
+        }
+
         public ScoringPlugin(PluginBuilder builder) : base(builder)
         {
+            int bvePid = 0;
+            try { bvePid = CurrentProcessId(); } catch { }
+
+            // Each part below is independent: one failure never prevents another (PID-D0B-1 contract 15.3, DPC-T-001).
+            Action<string> log = null;
+            try
+            {
+                diagnostics = TSScoringPlugin.DataPlane.CurrentTelemetryLogFile.CreateProduction(bvePid);
+                log = diagnostics.Write;
+                log("event=init pid=" + bvePid);
+            }
+            catch { }
+
             try
             {
                 udpClient = new UdpClient();
                 endPoint = new IPEndPoint(IPAddress.Parse("127.0.0.1"), 54321);
-                udpReceiver = new UdpClient(54322);
-                udpReceiver.Client.Blocking = false;
+                transport.Client = udpClient;
+                router = TSScoringPlugin.DataPlane.CurrentTelemetryRouter.CreateProduction(bvePid, transport, endPoint, log);
+            }
+            catch (Exception ex)
+            {
+                if (log != null) log("event=sender-init-failed error=" + ex.GetType().Name);
+            }
 
+            try
+            {
                 heartbeatTimer = new Timer(50); // 0.5秒間隔
                 heartbeatTimer.Elapsed += HeartbeatTimer_Elapsed;
                 heartbeatTimer.Start();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                if (log != null) log("event=heartbeat-init-failed error=" + ex.GetType().Name);
+            }
+
+            // The jump command receiver (fixed 54322, unchanged by PID-D3). A bind failure (for instance a second BVE) only disables jump commands.
+            try
+            {
+                udpReceiver = new UdpClient(54322);
+                udpReceiver.Client.Blocking = false;
+            }
+            catch (Exception ex)
+            {
+                if (udpReceiver != null) { try { udpReceiver.Close(); } catch { } udpReceiver = null; }
+                if (log != null) log("event=jump-receiver-bind-failed error=" + ex.GetType().Name);
+            }
+
+            // PID-D6: the Current Jump endpoint of the per-PID DataPlane (contract 15.3). A failure only disables managed jump commands.
+            try
+            {
+                jumpEndpoint = TSScoringPlugin.DataPlane.CurrentJumpEndpoint.Create(bvePid, new TSScoringPlugin.DataPlane.ReaderEndpointSource(), log);
+            }
+            catch (Exception ex)
+            {
+                jumpEndpoint = null;
+                if (log != null) log("event=jump-endpoint-failed error=" + ex.GetType().Name);
+            }
         }
         private void HeartbeatTimer_Elapsed(object sender, ElapsedEventArgs e)
         {
@@ -122,25 +197,84 @@ namespace TsScoringPlugin
                     bool isPaused = (DateTime.Now - lastTickTime).TotalMilliseconds > 100;
                     string statusSuffix = isPaused ? "PAUSED" : "RUNNING";
                     byte[] hbBytes = Encoding.UTF8.GetBytes($"STATUS:LOADED:{statusSuffix}");
-                    if (udpClient != null) udpClient.Send(hbBytes, hbBytes.Length, endPoint);
+                    var currentRouter = router;
+                    if (udpClient != null && currentRouter != null) currentRouter.Begin().Send(TSScoringPlugin.DataPlane.DataPlaneMessageTypes.Heartbeat, hbBytes);
                 }
             }
             catch { }
         }
         public override void Dispose()
         {
-            if (heartbeatTimer != null)
+            try
             {
-                heartbeatTimer.Stop();
-                heartbeatTimer.Dispose();
+                if (heartbeatTimer != null)
+                {
+                    heartbeatTimer.Stop();
+                    heartbeatTimer.Dispose();
+                    heartbeatTimer = null;
+                }
             }
-            if (udpClient != null) { udpClient.Close(); udpClient = null; }
-            if (udpReceiver != null) { udpReceiver.Close(); udpReceiver = null; }
+            catch { }
+            try { if (router != null) router.Close(); } catch { }
+            transport.Client = null;
+            try { if (udpClient != null) { udpClient.Close(); udpClient = null; } } catch { }
+            try { if (udpReceiver != null) { udpReceiver.Close(); udpReceiver = null; } } catch { }
+            try { if (jumpEndpoint != null) { jumpEndpoint.Dispose(); jumpEndpoint = null; } } catch { }
         }
+
+        /// <summary>
+        /// The jump commands of this Tick. Normal mode: the plain datagrams of the fixed jump port, exactly as before. Managed mode (and the hold-off): the
+        /// fixed port is drained and NOT executed (no plain fallback); only the validated commands of the Current Jump endpoint (Envelope v1 + RequestId)
+        /// are returned.
+        /// </summary>
+        private List<JumpInput> CollectJumpCommands()
+        {
+            List<JumpInput> commands = new List<JumpInput>();
+            bool normal = false;
+            try { normal = router != null && router.Mode == TSScoringPlugin.DataPlane.CurrentSenderMode.Normal; } catch { }
+            try
+            {
+                if (udpReceiver != null)
+                {
+                    while (udpReceiver.Available > 0)
+                    {
+                        IPEndPoint ep = new IPEndPoint(IPAddress.Any, 0);
+                        byte[] rData = udpReceiver.Receive(ref ep);
+                        if (normal) commands.Add(new JumpInput(Encoding.UTF8.GetString(rData), null));
+                    }
+                }
+            }
+            catch { }
+            try
+            {
+                if (jumpEndpoint != null)
+                {
+                    List<TSScoringPlugin.DataPlane.CurrentJumpCommand> validated = new List<TSScoringPlugin.DataPlane.CurrentJumpCommand>();
+                    jumpEndpoint.Drain(validated);
+                    foreach (var c in validated) commands.Add(new JumpInput(c.Text, c.RequestId));
+                }
+            }
+            catch { }
+            return commands;
+        }
+
+        private sealed class JumpInput
+        {
+            internal readonly string Text;
+            internal readonly byte[] RequestId;
+            internal JumpInput(string text, byte[] requestId) { Text = text; RequestId = requestId; }
+        }
+
+        private bool firstTickNoted;
 
         public override void Tick(TimeSpan elapsed)
         {
             lastTickTime = DateTime.Now;
+            if (!firstTickNoted)
+            {
+                firstTickNoted = true;
+                try { if (router != null) router.NoteTick(); } catch { }
+            }
             if (!BveHacker.IsScenarioCreated)
             {
                 lastUdpData = "";
@@ -194,15 +328,14 @@ namespace TsScoringPlugin
 
                 var bindFlagsAll = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.FlattenHierarchy | System.Reflection.BindingFlags.Static;
 
-                if (udpReceiver != null)
+                if (udpReceiver != null || jumpEndpoint != null)
                 {
                     try
                     {
-                        while (udpReceiver.Available > 0)
+                        foreach (JumpInput jumpInput in CollectJumpCommands())
                         {
-                            IPEndPoint ep = new IPEndPoint(IPAddress.Any, 0);
-                            byte[] rData = udpReceiver.Receive(ref ep);
-                            string msg = Encoding.UTF8.GetString(rData);
+                            string msg = jumpInput.Text;
+                            byte[] jumpRequestId = jumpInput.RequestId;
 
                             // 駅番号によるジャンプを実行し、指定されたBVE時刻へ同期する
                             if (msg.StartsWith("JUMP_STA_TIME:"))
@@ -279,6 +412,7 @@ namespace TsScoringPlugin
                                                 wasTerminalDoorOpened = false;
                                                 // 駅状態の再初期化後にPythonへ完了通知を送る
                                                 pendingJumpComplete = true;
+                                                pendingJumpRequestId = jumpRequestId;
                                                 pendingJumpType = "STA";
                                                 pendingJumpStationIndex = sIdx;
                                             }
@@ -328,6 +462,7 @@ namespace TsScoringPlugin
                                                 }
                                                 // 駅状態の反映後にPythonへ完了通知を送る
                                                 pendingJumpComplete = true;
+                                                pendingJumpRequestId = jumpRequestId;
                                                 pendingJumpType = "LOC";
                                                 pendingJumpStationIndex = -1;
                                             }
@@ -1206,22 +1341,23 @@ namespace TsScoringPlugin
 
                 try
                 {
+                    // PID-D3: one routing snapshot per Tick (managed: Envelope v1 to the Directory endpoint, fail closed; normal: the plain fixed-port text as always).
+                    // A STALIST / META that could not be sent (hold-off, Directory not ready) stays pending and goes out with the next Tick that can send.
+                    var batch = router.Begin();
                     if (!string.IsNullOrEmpty(lastStaListPacket))
                     {
                         byte[] staBytes = Encoding.UTF8.GetBytes(lastStaListPacket);
-                        udpClient.Send(staBytes, staBytes.Length, endPoint);
-                        lastStaListPacket = "";
+                        if (batch.Send(TSScoringPlugin.DataPlane.DataPlaneMessageTypes.StationList, staBytes)) lastStaListPacket = "";
                     }
                     if (!string.IsNullOrEmpty(lastMetaPacket))
                     {
                         byte[] metaBytes = Encoding.UTF8.GetBytes(lastMetaPacket);
-                        udpClient.Send(metaBytes, metaBytes.Length, endPoint);
-                        lastMetaPacket = "";
+                        if (batch.Send(TSScoringPlugin.DataPlane.DataPlaneMessageTypes.Metadata, metaBytes)) lastMetaPacket = "";
                     }
                     if (!string.IsNullOrEmpty(lastUdpData))
                     {
                         byte[] bytes = Encoding.UTF8.GetBytes(lastUdpData);
-                        udpClient.Send(bytes, bytes.Length, endPoint);
+                        batch.Send(TSScoringPlugin.DataPlane.DataPlaneMessageTypes.Telemetry, bytes);
                     }
                     if (pendingJumpComplete && isInitialized)
                     {
@@ -1259,15 +1395,15 @@ namespace TsScoringPlugin
                         byte[] completeBytes =
                             Encoding.UTF8.GetBytes(completeMessage);
 
-                        udpClient.Send(
-                            completeBytes,
-                            completeBytes.Length,
-                            endPoint
-                        );
-
-                        pendingJumpComplete = false;
-                        pendingJumpType = "";
-                        pendingJumpStationIndex = -1;
+                        // Normal mode (plain command, no RequestId): sent plain as always. Managed mode (PID-D6): a type 5 envelope that echoes the RequestId of
+                        // the command. During the hold-off, or while the Telemetry endpoint cannot be resolved, the notice stays pending.
+                        if (batch.SendJumpComplete(completeBytes, pendingJumpRequestId))
+                        {
+                            pendingJumpComplete = false;
+                            pendingJumpRequestId = null;
+                            pendingJumpType = "";
+                            pendingJumpStationIndex = -1;
+                        }
                     }
                 }
                 catch { }

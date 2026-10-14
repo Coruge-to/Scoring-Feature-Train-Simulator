@@ -1622,7 +1622,9 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
         if out is None:
             self.skipTest("baseline commit / git not available (INCONCLUSIVE)")
         removed = [l for l in out.splitlines() if l.startswith("-") and not l.startswith("---")]
-        self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")")], removed)
+        # PID-D6 (on purpose): the one transport line of execute_retry became Overlay.send_jump_command(cmd) (RequestId transport)
+        pid_d6_transport = "self.udp_socket.writeDatagram(cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)"
+        self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport)], removed)
 
     def test_the_scoring_function_bodies_are_ast_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":scoring_logic.py")
@@ -1636,7 +1638,8 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
         a, b = functions(old.replace("\r\n", "\n")), functions(new)
         self.assertEqual(set(a), set(b))
         changed = sorted(n for n in a if a[n] != b[n])
-        self.assertEqual(changed, ["write_limit_debug_log"])                    # only the diagnostic writer got the switch; no score, no rule, no constant
+        # only the diagnostic writer got the switch and (PID-D6) execute_retry's one transport line; no score, no rule, no constant
+        self.assertEqual(changed, ["execute_retry", "write_limit_debug_log"])
 
     def test_the_config_constants_are_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":config.py")

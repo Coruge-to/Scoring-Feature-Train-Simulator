@@ -222,6 +222,9 @@ sys.exit(code if mode == "stop-nonzero" else 0)
 $repoRoot = (git -C $Root rev-parse --show-toplevel) -replace '/', '\'
 $e2Child = Join-Path $repoRoot 'tests\managed_smoke_child.py'
 $mainPy = Join-Path $repoRoot 'main.py'
+# PID-D3: the managed application listens on its own Directory-published loopback port and accepts only Envelope v1 of its owner, so the chain is fed the
+# way the Current sender feeds it: resolve the Directory with the shared reader, wrap the line, send to that port. Nothing is sent to the fixed legacy port.
+Add-Type -Path @((Join-Path $repoRoot 'TsScoringPlugin\Handshake\Telemetry\Shared\DataPlaneProtocol.cs'), (Join-Path $repoRoot 'TsScoringPlugin\Handshake\Telemetry\Shared\TelemetryDirectoryReader.cs'), (Join-Path $repoRoot 'TsScoringPlugin\Handshake\Tests\DataPlaneFeedFixture.cs')) -ReferencedAssemblies @('System.dll', 'System.Core.dll')
 
 # ---------------------------------------------------------------- helpers: config, manager
 function ConfigJson([hashtable]$over = @{}, [string[]]$drop = @()) {
@@ -822,7 +825,8 @@ else {
 $udpBusy = @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveUdpListeners() | Where-Object { $_.Port -eq 54321 }).Count -gt 0
 $mainRunning = $false
 . (Join-Path $PSScriptRoot 'MainProcessGuard.ps1'); $mainRunning = Get-TsScoringMainRunning $mainPy      # only <repo>\main.py counts (another project's main.py is not ours); unknown / relative = safe side
-if ($qtOk -and (-not $udpBusy) -and (-not $mainRunning) -and (Test-Path $mainPy)) {
+# PID-D3: the Caller-launched application binds its own loopback port (Telemetry Directory), never 54321, so a busy 54321 (a normal-mode TS Scoring) does not block this section.
+if ($qtOk -and (-not $mainRunning) -and (Test-Path $mainPy)) {
     SetTestPath $cfgPath
     SetMode 'ok'
     WriteCfg (ConfigJson @{ scriptPath = $mainPy; workingDirectory = $repoRoot })
@@ -831,16 +835,21 @@ if ($qtOk -and (-not $udpBusy) -and (-not $mainRunning) -and (Test-Path $mainPy)
     $rdy = WaitFor { [string](Mg $h 'State') -eq 'Ready' } 30000
     Track $h
     $cp = [int](Mg $h 'AppPid')
-    $udpDuring = @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveUdpListeners() | Where-Object { $_.Port -eq 54321 }).Count -gt 0
+    # the Directory chain exactly as the Current sender resolves it (AppDirectory -> Telemetry Directory), here for this process acting as the BVE process
+    $dirPort = 0; $dirReason = ''; $dirCaps = [uint32]0
+    $probe = $null
+    [void](WaitFor { $script:probe = [DataPlaneFeedFixture]::Prepare($PID, [uint32]1, 'SCENARIO_ID:1', [ref]$script:dirPort, [ref]$script:dirReason, [ref]$script:dirCaps); $script:probe -ne $null } 10000)
+    $udp54321During = @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveUdpListeners() | Where-Object { $_.Port -eq 54321 }).Count -gt 0
+    $dynBoundDuring = @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveUdpListeners() | Where-Object { $_.Port -eq $script:dirPort }).Count -gt 0
     $sw = [Diagnostics.Stopwatch]::StartNew()
     Down $h
     $el = EventLines $h.Sink 'APP_STDERR'
-    Check ('I10 the REAL main.py --managed (real Overlay, real UDP bind, hidden) is started by the manager, reports AppReady, binds UDP 54321 while managed, and leaves with exit code 0 after Stop in ' + $sw.ElapsedMilliseconds + ' ms') ($rdy -and $udpDuring -and ([int](Mg $h 'ExitCode') -eq 0) -and (-not (PidAlive $cp)) -and (-not (Mg $h 'Killed')) -and (@($el | Where-Object { $_ -match 'event=ready-published' }).Count -eq 1))
-    $udpAfter = @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveUdpListeners() | Where-Object { $_.Port -eq 54321 }).Count -gt 0
-    Check 'I11 after Dispose UDP 54321 is free again (nothing of the real application remains)' (-not $udpAfter)
+    Check ('I10 the REAL main.py --managed (real Overlay, real UDP bind, hidden) is started by the manager, reports AppReady, binds its OWN Directory-published loopback port (not 54321; ENVELOPE_V1 + LEGACY_TEXT_PAYLOAD + JUMP_COMPLETE_V1 advertised), and leaves with exit code 0 after Stop in ' + $sw.ElapsedMilliseconds + ' ms') ($rdy -and ($script:probe -ne $null) -and ($script:dirPort -gt 0) -and ($script:dirPort -ne 54321) -and $dynBoundDuring -and ($script:dirCaps -eq 7) -and ((-not $udp54321During) -or $udpBusy) -and ([int](Mg $h 'ExitCode') -eq 0) -and (-not (PidAlive $cp)) -and (-not (Mg $h 'Killed')) -and (@($el | Where-Object { $_ -match 'event=ready-published' }).Count -eq 1))
+    $dynAfter = @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveUdpListeners() | Where-Object { $_.Port -eq $script:dirPort }).Count -gt 0
+    Check 'I11 after Dispose the Directory port is released (nothing of the real application remains)' (($script:dirPort -gt 0) -and (-not $dynAfter))
 }
 else {
-    Skip ('I10-I11 real main.py: not run (PyQt6=' + $qtOk + ', UDP 54321 busy=' + $udpBusy + ', a main.py process present=' + $mainRunning + ')')
+    Skip ('I10-I11 real main.py: not run (PyQt6=' + $qtOk + ', a main.py process present=' + $mainRunning + ')')
 }
 }
 finally {

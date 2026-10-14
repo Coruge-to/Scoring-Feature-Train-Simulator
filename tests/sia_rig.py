@@ -284,7 +284,11 @@ class StubUdp(object):
         self.incoming = []
 
     def bind(self, address, port):
+        self.port = port
         return True
+
+    def localPort(self):
+        return getattr(self, 'port', 0)
 
     def hasPendingDatagrams(self):
         return bool(self.incoming)

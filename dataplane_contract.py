@@ -2,6 +2,15 @@ import re, struct
 TELEMETRY_MAGIC=0x50445453; JUMP_MAGIC=0x4A445453; ENVELOPE_MAGIC=0x31445054
 DIRECTORY_SIZE=128; ENVELOPE_SIZE=96
 PUBLISHED=1; READY=2; WITHDRAWING=4; CLOSED=8
+# Telemetry Receiver Directory capability bits (PID-D0B-1 contract section 8) and the envelope MessageType values (section 11)
+CAP_ENVELOPE_V1=0x1; CAP_LEGACY_TEXT_PAYLOAD=0x2; CAP_JUMP_COMPLETE_V1=0x4
+TELEMETRY_KNOWN_CAPS=CAP_ENVELOPE_V1|CAP_LEGACY_TEXT_PAYLOAD|CAP_JUMP_COMPLETE_V1
+# What the managed Telemetry receiver advertises: since PID-D6 it also accepts the type 5 JUMP_COMPLETE (RequestId echo).
+TELEMETRY_PUBLISHED_CAPS=CAP_ENVELOPE_V1|CAP_LEGACY_TEXT_PAYLOAD|CAP_JUMP_COMPLETE_V1
+# Current Jump Receiver Directory capability bits (contract section 9)
+JUMP_CAP_STATION_TIME=0x1; JUMP_CAP_LOCATION_TIME=0x2; JUMP_CAP_REQUEST_ID=0x4
+MSG_TELEMETRY=1; MSG_HEARTBEAT=2; MSG_STATION_LIST=3; MSG_METADATA=4; MSG_JUMP_COMPLETE=5
+MSG_JUMP_STATION_TIME=0x100; MSG_JUMP_LOCATION_TIME=0x101
 _INST=re.compile(r"^[0-9a-f]{32}$")
 def _pid(v):
     if not isinstance(v,int) or not (1<=v<=0xffffffff): raise ValueError("pid")
@@ -42,7 +51,7 @@ def decode_telemetry_directory(b):
     app,port,gen=struct.unpack_from('<III',b,56);token=b[68:84];change,af,tr,caps=struct.unpack_from('<IIII',b,84);_state(state)
     if af!=4: raise ValueError('address-family')
     if tr!=1: raise ValueError('transport')
-    if caps&~7: raise ValueError('capabilities')
+    if caps&~TELEMETRY_KNOWN_CAPS: raise ValueError('capabilities')
     usable=(state&(PUBLISHED|READY))==(PUBLISHED|READY) and not state&(WITHDRAWING|CLOSED)
     if usable and (not 1<=port<=65535 or not gen or not any(token)): raise ValueError('endpoint')
     if state==CLOSED and (any(b[24:56]) or app or port or gen or any(token) or caps): raise ValueError('closed-fields')

@@ -674,7 +674,7 @@ def execute_retry(self, index, is_bve_advancing):
         cmd = f"JUMP_STA_TIME:{target_bve_sta_idx}:{cp['time_ms']}"
 
     begin_official_jump(self, ideal_loc, cp['time_ms'])
-    self.udp_socket.writeDatagram(cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)
+    self.send_jump_command(cmd)
 
 def add_score_popup(
     self,

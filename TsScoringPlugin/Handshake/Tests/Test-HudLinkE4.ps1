@@ -103,6 +103,9 @@ function FindPython {
 [string]$outFile = Join-Path $fixDir 'child-state.txt'
 $repoRoot = ((& git -C $Root rev-parse --show-toplevel) -replace '/', '\')
 $mainPy = Join-Path $repoRoot 'main.py'
+# PID-D3: the managed application listens on its own Directory-published loopback port and accepts only Envelope v1 of its owner, so the chain is fed the
+# way the Current sender feeds it: resolve the Directory with the shared reader, wrap the line, send to that port. Nothing is sent to the fixed legacy port.
+Add-Type -Path @((Join-Path $repoRoot 'TsScoringPlugin\Handshake\Telemetry\Shared\DataPlaneProtocol.cs'), (Join-Path $repoRoot 'TsScoringPlugin\Handshake\Telemetry\Shared\TelemetryDirectoryReader.cs'), (Join-Path $repoRoot 'TsScoringPlugin\Handshake\Tests\DataPlaneFeedFixture.cs')) -ReferencedAssemblies @('System.dll', 'System.Core.dll')
 $probePy = Join-Path $repoRoot 'tests\managed_state_probe.py'
 $bveWinPy = Join-Path $repoRoot 'tests\fake_bve_window.py'
 
@@ -578,7 +581,8 @@ try { $qtOk = ((& $py -c "import PyQt6.QtWidgets, win32gui, win32process; print(
 $udpBusy = @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveUdpListeners() | Where-Object { $_.Port -eq 54321 }).Count -gt 0
 $mainRunning = $false
 . (Join-Path $PSScriptRoot 'MainProcessGuard.ps1'); $mainRunning = Get-TsScoringMainRunning $mainPy      # only <repo>\main.py counts (another project's main.py is not ours); unknown / relative = safe side
-if ($qtOk -and (-not $udpBusy) -and (-not $mainRunning) -and (Test-Path $mainPy) -and (Test-Path $bveWinPy)) {
+# PID-D3: the managed application binds its own loopback port (published in its Telemetry Directory), not 54321, so a busy 54321 (a normal-mode TS Scoring) no longer blocks this chain.
+if ($qtOk -and (-not $mainRunning) -and (Test-Path $mainPy) -and (Test-Path $bveWinPy)) {
     # the stand-in for the BVE window: its own process, a visible top-level window titled "BVE Trainsim ..."
     $psi = New-Object Diagnostics.ProcessStartInfo
     $psi.FileName = $py
@@ -606,11 +610,20 @@ if ($qtOk -and (-not $udpBusy) -and (-not $mainRunning) -and (Test-Path $mainPy)
     $rdy = WaitFor { [string](Mg $m 'State') -eq 'Ready' } 40000
     Track $m
     $app = [int](Mg $m 'AppPid')
-    # Phase L3: the HUD is only shown once real telemetry of the generation has arrived, so this chain now feeds a minimal valid telemetry line (the core keys only) to UDP 54321
+    # Phase L3: the HUD is only shown once real telemetry of the generation has arrived, so this chain feeds a minimal valid telemetry line (the core keys only)
     # whenever it looks at the window; a new scenario instance (new SCENARIO_ID) goes with every new generation.
+    # PID-D3: the line goes to the application's Directory-published port inside Envelope v1 (DataPlaneFeedFixture = the Current sender's discovery half); nothing is sent when the
+    # Directory is not usable, and never to 54321.
     $telUdp = New-Object Net.Sockets.UdpClient
     $script:telSid = 1000
-    function SendTel { $tb = [Text.Encoding]::UTF8.GetBytes(("SCENARIO_ID:" + $script:telSid + ",SPEED:0,TIME:36000000,LOCATION:0")); [void]$telUdp.Send($tb, $tb.Length, '127.0.0.1', 54321) }
+    $script:telPort = 0
+    $script:telCaps = [uint32]0
+    $script:telSent = 0
+    function SendTel {
+        $port = 0; $reason = ''; $caps = [uint32]0
+        $tb = [DataPlaneFeedFixture]::Prepare($bvePid, [uint32]1, ("SCENARIO_ID:" + $script:telSid + ",SPEED:0,TIME:36000000,LOCATION:0"), [ref]$port, [ref]$reason, [ref]$caps)
+        if ($tb -ne $null) { $script:telPort = $port; $script:telCaps = $caps; $script:telSent++; [void]$telUdp.Send($tb, $tb.Length, '127.0.0.1', $port) }
+    }
     function Overlay { $w = [WinEnum]::OwnedBy($bveHwnd, [uint32]$app); return , $w }
     function OverlayVisible { SendTel; $w = Overlay; return ($w.Count -ge 1 -and [WinEnum]::Visible($w[0])) }
     $vis1 = WaitFor { OverlayVisible } 8000
@@ -635,6 +648,9 @@ if ($qtOk -and (-not $udpBusy) -and (-not $mainRunning) -and (Test-Path $mainPy)
     Check 'I06 reload (generation 2): the HUD is shown again by the SAME process on the SAME window handle; Process.Start was called once in total' ($shown3 -and ((Overlay).Count -eq 1) -and ((Overlay)[0] -eq $h1) -and ([int](Mg $m 'ProcessStartCount') -eq 1) -and ((Mg $m 'AppPid') -eq $app))
     for ($i = 0; $i -lt 3; $i++) { MakeStale $s 2500; Step $s; [void](WaitFor { -not (OverlayVisible) } 4000); Tick $s; Step $s; [void](WaitFor { OverlayVisible } 4000) }
     Check 'I07 three more soft OFF / ON rounds (the Legacy pattern): same process, same window handle, still one Overlay window, HUD visible at the end' ((OverlayVisible) -and ((Overlay).Count -eq 1) -and ((Overlay)[0] -eq $h1) -and ([int](Mg $m 'ProcessStartCount') -eq 1))
+    $udp54321During = @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveUdpListeners() | Where-Object { $_.Port -eq 54321 }).Count -gt 0
+    $portBoundDuring = @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveUdpListeners() | Where-Object { $_.Port -eq $script:telPort }).Count -gt 0
+    Check 'I07b the managed application listens on its own Directory port (not 54321), the Directory advertised ENVELOPE_V1 + LEGACY_TEXT_PAYLOAD + JUMP_COMPLETE_V1 (Phase PID-D6), and every line was fed as Envelope v1' (($script:telPort -gt 0) -and ($script:telPort -ne 54321) -and $portBoundDuring -and ($script:telCaps -eq 7) -and ($script:telSent -gt 0) -and ((-not $udp54321During) -or $udpBusy))
     $sw = [Diagnostics.Stopwatch]::StartNew()
     End $s
     $endMs = $sw.ElapsedMilliseconds
@@ -644,8 +660,8 @@ if ($qtOk -and (-not $udpBusy) -and (-not $mainRunning) -and (Test-Path $mainPy)
     $shows = ([regex]::Matches($stderrText, 'event=hud-show')).Count
     $hides = ([regex]::Matches($stderrText, 'event=hud-hide')).Count
     Check ('I09 the application reported the HUD changes on stderr (state-change lines only, no path): hud-show=' + $shows + ' hud-hide=' + $hides + ' update-start>=3, one hud-summary, one exit line, lines=' + $el.Count + ' (<=200, none dropped)') (($shows -ge 5) -and ($hides -ge 5) -and ([regex]::Matches($stderrText, 'event=hud-update-start')).Count -ge 3 -and ([regex]::Matches($stderrText, 'event=hud-summary')).Count -eq 1 -and ([regex]::Matches($stderrText, 'event=exit ')).Count -eq 1 -and ($el.Count -le 200) -and ($stderrText -notmatch '[A-Za-z]:\\') -and ((EventLines $m.Sink 'APP_STREAMS')[0] -match 'stderrDropped=0'))
-    $udpAfter = @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveUdpListeners() | Where-Object { $_.Port -eq 54321 }).Count -gt 0
-    Check 'I10 after Dispose UDP 54321 is free again and the stand-in BVE window is untouched (still alive)' ((-not $udpAfter) -and (PidAlive $bvePid))
+    $portAfter = @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveUdpListeners() | Where-Object { $_.Port -eq $script:telPort }).Count -gt 0
+    Check 'I10 after Dispose the application''s Directory port is released and the stand-in BVE window is untouched (still alive)' (($script:telPort -gt 0) -and (-not $portAfter) -and (PidAlive $bvePid))
     try { $telUdp.Close() } catch { }
     DisposeBridgeObjs $b
     try { $bveProc.StandardInput.Close() } catch { }
@@ -653,7 +669,7 @@ if ($qtOk -and (-not $udpBusy) -and (-not $mainRunning) -and (Test-Path $mainPy)
     if (-not $bveProc.HasExited) { try { $bveProc.Kill() } catch { } }
 }
 else {
-    Skip ('I01-I10 real main.py chain: not run (PyQt6/pywin32=' + $qtOk + ', UDP 54321 busy=' + $udpBusy + ', a main.py process present=' + $mainRunning + ')')
+    Skip ('I01-I10 real main.py chain: not run (PyQt6/pywin32=' + $qtOk + ', a main.py process present=' + $mainRunning + ')')
 }
 }
 finally {
@@ -708,7 +724,7 @@ $touched = @($changed + $untracked | Sort-Object -Unique)
 $touchedS10 = @($touched | Where-Object { $_ -notmatch '/Telemetry/|Handshake-PhaseL3-|Handshake-PhaseLI0-|Handshake-PhaseLI1-|Handshake-PhaseLI2-' })
 Check 'S10 both Bridges, the Bridge shared sources, the plugin projects, Class1.cs, the scoring / UI Python modules (hud_ui.py excepted: Phase L3) and the Docs of earlier phases are untouched since the E3 commit; the five Phase SI-A6 load-marker sources (tracker, publisher, two AssemblyInfo, HandshakeProtocol) and (Phase SI-A7 M1a) the control plane move, the two adapters and the two Bridge projects excepted' (@($touchedS10 | Where-Object { ($_ -match '/Bridge/|/Shared/|Class1\.cs|AtsLoggerPlugin|\.vcxproj|\.slnx|^menu_ui\.py$|^config\.py$|^network\.py$|/Docs/Handshake-Phase[A-DL-M]|Handshake-PhaseE[123]|launcher\.template') -and ($_ -notmatch 'Handshake/(Bridge/src/(ScenarioReadyTracker|ScenarioReadyPublisher|AssemblyInfo|HandshakeControlPlane|TsScoringBridgePrototype)\.cs|Bridge/Legacy/src/(AssemblyInfo|HandshakeControlPlane|TsScoringLegacyBridge)\.cs|Bridge/(Legacy/)?TSScoringPlugin\.[A-Za-z.]+\.csproj|Shared/HandshakeProtocol\.cs)$') }).Count -eq 0)
 $siaNumstat = RunGit @('-C', $top, 'diff', '--numstat', $E3Commit, '--', 'scoring_logic.py', 'utils.py')
-Check 'S10b Phase SI-A: scoring_logic.py and utils.py differ from the E3 commit only by the Desktop-log switch (scoring_logic.py +3 -0, utils.py +22 -0)' (($siaNumstat -match '(?m)^3\t0\tscoring_logic\.py\s*$') -and ($siaNumstat -match '(?m)^22\t0\tutils\.py\s*$'))
+Check 'S10b Phase SI-A: scoring_logic.py and utils.py differ from the E3 commit only by the Desktop-log switch and (Phase PID-D6) the one jump-command transport line of execute_retry (scoring_logic.py +4 -1, utils.py +22 -0)' (($siaNumstat -match '(?m)^4\t1\tscoring_logic\.py\s*$') -and ($siaNumstat -match '(?m)^22\t0\tutils\.py\s*$'))
 Check 'S11 no build output, DLL, PDB, log, personal launcher.json or EXE among the files of this phase' (@($touched | Where-Object { $_ -match '/out/|/obj/|/dist/|/logs/|build\.log|\.dll$|\.pdb$|\.log$|\.exe$|\.spec$' -or $_ -match '(^|/)launcher\.json$' }).Count -eq 0)
 $runtimeNames = @($env:USERNAME, $env:COMPUTERNAME, $env:USERDOMAIN, (Split-Path $env:USERPROFILE -Leaf)) | Where-Object { $_ -and $_.Length -ge 3 } | Sort-Object -Unique
 $forbidden = @($runtimeNames) + @('C:\Users\', 'Scoring-Feature-Train-Simulator', 'gmail', 'hotmail', 'outlook.com', 'ac.jp')

@@ -108,8 +108,9 @@ KEPT_ACROSS_GENERATIONS = frozenset({
     "keys_blocked", "hook_dict", "sys_keys_blocked", "sys_hook_dict", "f8_physically_blocked", "f8_hook_dict", "numeric_router", "numeric_router_hook",
     "key_states", "key_press_timers", "last_left_click", "menu_click_zones", "active_panel_rect", "active_dropdown_rect", "active_help_rect",
     "is_capturing_screenshot", "time_position_lock_target", "time_position_child_enabled",
-    # infrastructure
-    "timer", "udp_socket", "udp_bind_ok", "telemetry_gate", "font_normal", "font_big", "font_ui", "font_menu", "font_desc", "last_time_change_real",
+    # infrastructure (udp_port: a classification gap left by Phase PID-D2 and completed with PID-D3; dataplane_receiver / dataplane_strict: new in Phase PID-D3;
+    # jump_client: new in Phase PID-D6, the client of the Current jump endpoint - its outstanding request is cancelled at a generation boundary, see below)
+    "timer", "udp_socket", "udp_bind_ok", "udp_port", "dataplane_receiver", "dataplane_strict", "jump_client", "telemetry_gate", "font_normal", "font_big", "font_ui", "font_menu", "font_desc", "last_time_change_real",
     # identity / monotonic counters (the SCENARIO_ID branch and the roll popups use them across scenarios)
     "current_scenario_id", "needs_margin_recalc", "roll_event_id",
     # the generation machinery itself
@@ -117,11 +118,22 @@ KEPT_ACROSS_GENERATIONS = frozenset({
 })
 
 
+def _cancel_outstanding_jump(overlay, reason):
+    """PID-D6: the official jump that belongs to a discarded scoring session / generation can no longer be completed: a late JUMP_COMPLETE for it is stale."""
+    client = getattr(overlay, "jump_client", None)
+    if client is not None:
+        try:
+            client.cancel(reason)
+        except Exception:
+            pass
+
+
 def discard_scoring_session(overlay):
     """The scoring SESSION is over (soft OFF, Session OFF, a generation boundary): scoring inactive, its state discarded. Nothing of the scenario
     itself (station list, the chosen stations and rules, the latest telemetry values, the user's settings) is touched, so the user can start again.
     The menu is closed WITHOUT pressing anything in BVE."""
     from scoring_logic import reset_result_display_state, reset_roll_state, reset_speed_penalty_state, reset_station_evaluation_state
+    _cancel_outstanding_jump(overlay, "session-ended")
     d = generation_defaults()
     for name in (
         "popups", "score", "score_details", "is_scoring_mode", "is_scoring_finished", "is_result_saved", "saved_file_path", "end_message_time", "result_screen_time",
@@ -151,6 +163,7 @@ def discard_generation_state(overlay):
     of decision D-3 (tests/test_scoring_observation_si0.py D3_VARIABLES), the station list and the references into it, the guidance state, the
     kick start state - and the reference of the sender's JUMP counter is taken again from the FIRST accepted telemetry of the generation. The user's
     settings, the infrastructure and the window state are kept. The latest telemetry VALUES are reset by Overlay.reset_telemetry_state."""
+    _cancel_outstanding_jump(overlay, "generation")
     for name, value in generation_defaults().items():
         setattr(overlay, name, value)
     for name in GENERATION_DROP:

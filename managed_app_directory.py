@@ -151,7 +151,8 @@ def parse_directory(data, expected_bve_pid):
 
 class Win32DirectorySource(object):
     """Read-only mapping source for one AppDirectory object."""
-    def __init__(self):
+    def __init__(self, size=DIRECTORY_SIZE):
+        self._size = size          # the AppDirectory is 80 bytes; PID-D6 reuses this source for the 128-byte Current Jump directory
         k = ctypes.WinDLL("kernel32", use_last_error=True)
         k.OpenFileMappingW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
         k.OpenFileMappingW.restype = wintypes.HANDLE
@@ -175,7 +176,7 @@ class Win32DirectorySource(object):
         handle = self._k.OpenFileMappingW(_FILE_MAP_READ, False, name)
         if not handle:
             return False
-        view = self._k.MapViewOfFile(handle, _FILE_MAP_READ, 0, 0, DIRECTORY_SIZE)
+        view = self._k.MapViewOfFile(handle, _FILE_MAP_READ, 0, 0, self._size)
         if not view:
             self._k.CloseHandle(handle)
             return False
@@ -184,7 +185,7 @@ class Win32DirectorySource(object):
         return True
 
     def read(self):
-        return None if self._view is None else ctypes.string_at(self._view, DIRECTORY_SIZE)
+        return None if self._view is None else ctypes.string_at(self._view, self._size)
 
     def close(self):
         view, handle = self._view, self._handle

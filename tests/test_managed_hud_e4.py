@@ -1721,7 +1721,8 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
             return {(n.name if isinstance(n, (ast.FunctionDef, ast.ClassDef)) else ast.dump(n)): ast.dump(n) for n in tree.body}
 
         for name, old, allowed_changed, allowed_added in (
-                ("scoring_logic.py", old_scoring, {"write_limit_debug_log"}, set()),
+                # PID-D6 (on purpose): execute_retry hands its jump command to Overlay.send_jump_command (RequestId transport); no score, no rule, no constant
+                ("scoring_logic.py", old_scoring, {"write_limit_debug_log", "execute_retry"}, set()),
                 ("utils.py", old_utils, {"write_desktop_log"}, {"set_desktop_log_enabled", "desktop_log_enabled", "desktop_log_requested"})):
             with open(os.path.join(ROOT, name), encoding="utf-8") as f:
                 new = f.read()

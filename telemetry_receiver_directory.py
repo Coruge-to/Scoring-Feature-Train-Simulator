@@ -20,8 +20,10 @@ _TAIL_OFFSET = 124
 
 
 class TelemetryDirectoryPublisher(object):
-    def __init__(self, bve_pid, instance, app_pid, port, kernel32=None):
+    def __init__(self, bve_pid, instance, app_pid, port, kernel32=None, capabilities=contract.TELEMETRY_PUBLISHED_CAPS):
         contract.telemetry_name(bve_pid, instance)
+        if not isinstance(capabilities, int) or isinstance(capabilities, bool) or capabilities & ~contract.TELEMETRY_KNOWN_CAPS:
+            raise ValueError("capabilities")
         if not isinstance(app_pid, int) or isinstance(app_pid, bool) or app_pid <= 0:
             raise ValueError("app-pid")
         if not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535:
@@ -30,6 +32,7 @@ class TelemetryDirectoryPublisher(object):
         self.instance = instance
         self.app_pid = app_pid
         self.port = port
+        self.capabilities = capabilities
         self.generation = secrets.randbits(32) or 1
         self.token = secrets.token_bytes(16)
         self.change_count = 0
@@ -88,7 +91,7 @@ class TelemetryDirectoryPublisher(object):
             data = contract.encode_telemetry_directory(self.bve_pid, even, state, "", 0, 0, 0, bytes(16), self.change_count, 0)
         else:
             data = contract.encode_telemetry_directory(self.bve_pid, even, state, self.instance, self.app_pid, self.port,
-                                                       self.generation, self.token, self.change_count, 0)
+                                                       self.generation, self.token, self.change_count, self.capabilities)
         ctypes.memmove(self._view, data[:_HEAD_OFFSET], _HEAD_OFFSET)
         ctypes.memmove(self._view + _HEAD_OFFSET, struct.pack("<I", odd), 4)
         ctypes.memmove(self._view + _HEAD_OFFSET + 4, data[_HEAD_OFFSET + 4:_TAIL_OFFSET + 4], contract.DIRECTORY_SIZE - (_HEAD_OFFSET + 4))

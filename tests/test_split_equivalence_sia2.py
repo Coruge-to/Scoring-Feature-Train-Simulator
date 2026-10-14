@@ -309,7 +309,10 @@ class SiAScopeOfMain(unittest.TestCase):
         "apply_telemetry_text": {"if len(vals) >= 3: self.bve_bp_initial = float(vals[2])",
                                  "self.max_pow_w = get_adjusted_max_w(pow_list, apply_offset=False)"},       # SI-A4: the holding speed texts are width candidates, too
         "take_result_screenshot": {'save_path, _ = QFileDialog.getSaveFileName(self, "採点結果を保存", os.path.join(save_dir, default_name), "JPEG Image (*.jpg);;PNG Image (*.png)")'},
-        "handle_menu_enter": set(), "read_udp_data": set(), "toggle_borderless_fullscreen": set(),
+        # PID-D6 (on purpose): the scoring start's jump command goes through Overlay.send_jump_command (RequestId transport)
+        "handle_menu_enter": {"self.udp_socket.writeDatagram(retry_cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)"},
+        # PID-D6 (on purpose): a JUMP_COMPLETE only counts when its RequestId matches the outstanding command (Overlay._jump_complete_acceptable)
+        "read_udp_data": {"if len(complete_parts) >= 6:"}, "toggle_borderless_fullscreen": set(),
     }
 
     @classmethod

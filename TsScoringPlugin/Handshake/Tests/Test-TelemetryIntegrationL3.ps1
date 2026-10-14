@@ -205,7 +205,11 @@ $mainRunning = $false
 $savedProfile = $env:USERPROFILE
 $savedHome = $env:HOME
 try {
-    if ($qtOk -and (-not $udpBusy) -and (-not $mainRunning) -and (Test-Path $mainPy) -and (Test-Path $bveWinPy) -and (Test-Path (Join-Path $Root 'dist\TSScoringPlugin.Caller.InputDevice.dll'))) {
+    # PID-D3: a Caller-launched (managed) application listens on its own Directory-published port and accepts only Envelope v1 of its owner. The Legacy sender still sends
+    # plain text to the fixed legacy port until PID-D4 migrates it, so this Legacy -> managed live chain has no valid path today. It is reported as SKIP (never as PASS) with that
+    # reason, and it is NOT rewritten with a Current-style sender: the Legacy sender-core sections above and the Legacy offline suites keep running unchanged.
+    $legacyManagedChainApplicable = $false
+    if ($legacyManagedChainApplicable -and $qtOk -and (-not $udpBusy) -and (-not $mainRunning) -and (Test-Path $mainPy) -and (Test-Path $bveWinPy) -and (Test-Path (Join-Path $Root 'dist\TSScoringPlugin.Caller.InputDevice.dll'))) {
         $env:USERPROFILE = $sandbox
         $env:HOME = $sandbox
         $psi = New-Object Diagnostics.ProcessStartInfo
@@ -356,7 +360,7 @@ try {
         [IO.File]::WriteAllText($stderrFile, $text, (New-Object Text.UTF8Encoding($false)))
     }
     else {
-        Skip ('T01-T20 live chain: not run (PyQt6/pywin32=' + $qtOk + ', UDP 54321 busy=' + $udpBusy + ', a main.py process present=' + $mainRunning + ')')
+        Skip ('T01-T20 live chain: not applicable until PID-D4 (managed application = Directory port + Envelope v1; the Legacy sender is still plain text on the legacy port) [applicable=' + $legacyManagedChainApplicable + ', PyQt6/pywin32=' + $qtOk + ', UDP 54321 busy=' + $udpBusy + ', a main.py process present=' + $mainRunning + ']')
     }
 }
 finally {

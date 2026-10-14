@@ -27,6 +27,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 sys.path.insert(0, HERE)
 
+import dataplane_feed  # noqa: E402
 import managed_mode as mm  # noqa: E402
 from app_directory_fixture import AppDirectoryFixture  # noqa: E402
 from test_managed_mode_e2 import (FakeSync, HAS_QT, Log, Owner, StateBlockStandIn, args_for, new_instance, port_54321_is_free,  # noqa: E402
@@ -716,19 +717,24 @@ class C_RealProcesses(unittest.TestCase):
         old.owner.set_stop()
         self.assertEqual(old.finish(8.0)[0], 0)
         self.assertTrue(wait_until(port_54321_is_free, 5))
-        # the fix
+        # the fix. PID-D3: a Caller-owned application binds its OWN loopback port (published in its Telemetry Directory), never 54321; the release check is on that port.
         first = real("caller")
         self.assertTrue(first.ready(), "Ready was not published")
         time.sleep(1.0)
         self.assertIsNone(first.proc.poll())                       # alive owner: keeps running
+        first_dir = dataplane_feed.wait_endpoint(first.bve.pid, first.args.instance, 10)
+        self.assertIsNotNone(first_dir, "the Telemetry Directory was not READY")
+        self.assertNotEqual(first_dir["port"], 54321)
+        self.assertFalse(dataplane_feed.udp_port_is_free(first_dir["port"]), "the application does not hold the port it published")
+        self.assertTrue(port_54321_is_free(), "a Caller-owned application must not bind 54321")
         first.bve.kill()                                           # no Stop
         code, err = first.finish(8.0)
         self.assertEqual(code, 0, err)
         self.assertIn("reason=parent-process-exited", err)
         self.assertIn("ready_published=true", err)
         self.assertNotIn("watcher-join-timeout", err)
-        self.assertTrue(wait_until(port_54321_is_free, 3), "UDP 54321 was not released")
-        second = real("caller")                                    # the next BVE session: must NOT be udp-bind-failed
+        self.assertTrue(wait_until(lambda: dataplane_feed.udp_port_is_free(first_dir["port"]), 3), "the Directory port was not released")
+        second = real("caller")                                    # the next BVE session: must start cleanly (no bind failure)
         self.assertTrue(second.ready(), "the next application could not start")
         self.assertIsNone(second.proc.poll())
         second.owner.set_stop()                                    # and the ordinary Stop still works

@@ -22,6 +22,7 @@ from scoring_logic import (
     reset_speed_penalty_state,
     reset_roll_state,
     begin_official_jump,
+    add_score_popup,
 )
 from menu_ui import draw_menu
 from hud_ui import draw_hud
@@ -31,6 +32,8 @@ import managed_mode
 import managed_app_directory
 import pause_recovery
 import telemetry_contract
+import telemetry_dataplane_receiver
+import current_jump_client
 import telemetry_gate
 import telemetry_receiver_directory
 import utils
@@ -233,6 +236,15 @@ class Overlay(QWidget):
         # without AVAIL leaves everything available); managed mode replaces it with a strict, generation-aware gate (managed_hud.create_controller).
         self.telemetry_gate = telemetry_gate.TelemetryGate(strict=False)
 
+        # PID-D3: managed caller mode only. None + not strict = normal mode (the datagram is the plain UTF-8 text, as always). run_managed marks the
+        # Overlay strict BEFORE any datagram can matter and attaches the receiver once the Telemetry endpoint exists; strict without a receiver
+        # rejects everything (fail closed).
+        self.dataplane_receiver = None
+        self.dataplane_strict = False
+        # PID-D6: managed caller mode only. The client of the Current jump endpoint (RequestId command / JUMP_COMPLETE correlation); None = normal mode,
+        # where the jump command is the plain text to the fixed jump port and JUMP_COMPLETE is the plain text on the telemetry port, as always.
+        self.jump_client = None
+
         self.udp_socket = QUdpSocket(self)
         self.udp_bind_ok = self.udp_socket.bind(QHostAddress.SpecialAddress.LocalHost, udp_port)
         self.udp_port = int(self.udp_socket.localPort()) if self.udp_bind_ok else 0
@@ -364,8 +376,11 @@ class Overlay(QWidget):
                 self.udp_socket.pendingDatagramSize()
             )
             try:
+                datagram = self._unwrap_dataplane(datagram)
+                if datagram is None:
+                    continue
                 text = datagram.decode('utf-8')
-                
+
                 if text.startswith("STALIST:"):
                     sta_data = text.split(':', 1)[1]
                     new_list = []
@@ -415,7 +430,7 @@ class Overlay(QWidget):
                 elif text.startswith("JUMP_COMPLETE:"):
                     complete_parts = text.split(':')
 
-                    if len(complete_parts) >= 6:
+                    if len(complete_parts) >= 6 and self._jump_complete_acceptable():
                         self.pending_jump_complete = {
                             "type": complete_parts[1],
                             "station_index": int(complete_parts[2]),
@@ -447,7 +462,77 @@ class Overlay(QWidget):
             if committed is not None:
                 self.station_list = committed
 
+        self._poll_jump_client()
         self._settle_jump_complete()
+
+    def _jump_complete_acceptable(self):
+        """PID-D6: may the JUMP_COMPLETE that was just unwrapped release the official jump? Normal mode (no DataPlane receiver): yes, as always. Managed
+        caller mode: only when its type 5 envelope echoes the RequestId of THE outstanding jump command; a duplicate, stale, unknown or unsolicited
+        completion is dropped (counted and logged once by the client) and changes nothing."""
+        receiver = self.dataplane_receiver
+        if receiver is None:
+            return not self.dataplane_strict
+        client = self.jump_client
+        if client is None:
+            return False
+        return client.complete(receiver.last_request_id) == current_jump_client.R_OK
+
+    def _poll_jump_client(self):
+        """PID-D6: lets an outstanding jump request notice a lost completion (timeout) or a withdrawn endpoint, and aborts the scoring session whose official jump
+        was left unreleased (refused send, timeout, endpoint gone). No effect in normal mode."""
+        client = getattr(self, 'jump_client', None)
+        if client is not None:
+            client.poll()
+            reason = client.take_unreleased()
+            if reason is not None:
+                self._abort_unreleased_official_jump(reason)
+
+    def _abort_unreleased_official_jump(self, reason):
+        """PID-D6 timeout contract (fail closed, no new state machine): an official jump that can no longer be completed ends THAT scoring session through the
+        same path as the existing illegal-jump abort (scoring_logic: scoring off, warning popups, jump_lock, no result fixed or shown). Nothing is guessed from the
+        telemetry and is_official_jumping is never released on its own (that would resume scoring after an unfinished jump); a completion that arrives later is
+        stale (the request is cancelled here). The next scoring start is a normal start."""
+        if not getattr(self, 'is_official_jumping', False):
+            return                                              # no scoring jump is waiting for this client
+        client = self.jump_client
+        if client is not None:
+            client.cancel("scoring-aborted")
+        # no log line of its own: the client already logged why ([JUMP] event=timeout / send-refused / request-cancelled) and the input controller reports the
+        # scoring abort ([MANAGED] event=scoring-abort reason=jump), so the trail is complete and the write_desktop_log call sites stay as pinned
+        reset_transient_scoring_state(self)
+        self.pending_jump_complete = None
+        if getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False):
+            self.is_scoring_mode = False
+            current_time = self.bve_time_ms / 1000.0
+            add_score_popup(self, 0, "公式ジャンプが完了しませんでした。", COLOR_B_EMG, "big", "警告", current_time, force=True)
+            add_score_popup(self, 0, "採点を中断します。", COLOR_B_EMG, "big", "警告", current_time, force=True)
+        self.is_official_jumping = False
+        self.jump_lock = True
+
+    def _send_jump_datagram(self, data, port):
+        return self.udp_socket.writeDatagram(data, QHostAddress.SpecialAddress.LocalHost, port)
+
+    def send_jump_command(self, command):
+        """The official jump command (JUMP_STA_TIME / JUMP_LOC_TIME) to the sender plugin. Managed caller mode: Envelope v1 + RequestId to the jump endpoint
+        that the plugin publishes (current_jump_client); there is NO plain fixed-port fallback, so a refused send leaves the official jump unreleased and is
+        reported by the client. Normal mode: the plain text to the fixed jump port, unchanged."""
+        if getattr(self, 'dataplane_strict', False) or getattr(self, 'jump_client', None) is not None:
+            client = self.jump_client
+            if client is None:
+                return None
+            return client.send(command)
+        self.udp_socket.writeDatagram(command.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)
+        return None
+
+    def _unwrap_dataplane(self, datagram):
+        """PID-D3: the payload bytes to handle, or None when the datagram is dropped. Normal mode passes the datagram through untouched; managed caller
+        mode accepts only an Envelope v1 datagram of this owner and endpoint (telemetry_dataplane_receiver) and hands on its unchanged UTF-8 payload."""
+        receiver = self.dataplane_receiver
+        if receiver is not None:
+            return receiver.accept(bytes(datagram))
+        if self.dataplane_strict:
+            return None
+        return datagram
 
     def _take_pending_station_list(self, accepted):
         """Managed mode: the STALIST received just before a telemetry line is that line's. Accepted line: it becomes the station list once the line is applied
@@ -1476,7 +1561,7 @@ class Overlay(QWidget):
                 
                 if retry_cmd != "":
                     write_desktop_log(f"[MENU 6] 送信コマンド: {retry_cmd} / 予想時間: {target_time_ms}")
-                    self.udp_socket.writeDatagram(retry_cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)
+                    self.send_jump_command(retry_cmd)
                 self.was_advancing_before_menu = True
                 
                 self.toggle_menu(is_bve_advancing)
@@ -2535,6 +2620,25 @@ def _open_managed_app_directory(args, directory_factory=None, startup_timeout=1.
         return reader, "read-error:" + type(exc).__name__
 
 
+def _managed_jump_log(log, args, limit=24):
+    """PID-D6: the Caller copies only '[MANAGED] ' lines of the application's stderr into its log, so the jump client's '[JUMP] event=...' lines are issued
+    in that form (event=jump-...), a bounded number of them; the closing summary is always issued. Nothing else about the client changes."""
+    state = {"n": 0}
+
+    def emit(line):
+        prefix = "[JUMP] event="
+        if not line.startswith(prefix):
+            log(line)
+            return
+        name, _, rest = line[len(prefix):].partition(" ")
+        if name != "summary":
+            state["n"] += 1
+            if state["n"] > limit:
+                return
+        log("[MANAGED] event=jump-%s inst=%s owner=%s pid=%d%s" % (name, args.instance, args.owner, args.bve_pid, (" " + rest) if rest else ""))
+    return emit
+
+
 def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_log, hud_factory=None, directory_factory=None):
     """Managed mode (Phase E2 contract, Phase E4 HUD link). Returns the process exit code.
 
@@ -2573,6 +2677,8 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
     hud = None
     f11_control = None
     telemetry_directory = None
+    dataplane_receiver = None
+    jump_client = None
 
     def excepthook(exc_type, exc, tb):
         # PyQt6 would abort the process on an unhandled exception in a slot; report it as exit code 1 instead and leave the loop
@@ -2591,6 +2697,8 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
         bridge.f11_restore_requested.connect(bridge.on_f11_restore_requested)
         bridge.before_quit = lambda: getattr(overlay, "close_result_dialog", lambda: None)()
         overlay = overlay_factory() if overlay_factory is not None else Overlay(0 if args.owner == "caller" else 54321)
+        if args.owner == "caller":
+            overlay.dataplane_strict = True          # PID-D3: fail closed until the Telemetry endpoint's receiver is attached below
         f11_control = managed_mode.F11CloseControl(args.bve_pid, life._sync, log)
         overlay.f11_close_control = f11_control
         bridge.overlay = overlay
@@ -2604,6 +2712,15 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
                 telemetry_directory = telemetry_receiver_directory.TelemetryDirectoryPublisher(
                     args.bve_pid, args.instance, os.getpid(), getattr(overlay, 'udp_port', 0)
                 )
+                dataplane_receiver = telemetry_dataplane_receiver.TelemetryDataPlaneReceiver(
+                    args.bve_pid, args.instance, telemetry_directory.generation, telemetry_directory.token, log
+                )
+                overlay.dataplane_receiver = dataplane_receiver
+                # PID-D6: the jump command / JUMP_COMPLETE correlation. It reads the Current Jump directory only when a command is sent.
+                jump_client = current_jump_client.CurrentJumpClient(
+                    args.bve_pid, args.instance, os.getpid(), lambda data, port: overlay._send_jump_datagram(data, port), log=_managed_jump_log(log, args)
+                )
+                overlay.jump_client = jump_client
             overlay.timer.stop()  # update_logic never runs in managed mode
             if hud_factory is None:
                 import managed_hud
@@ -2638,6 +2755,18 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
         def cleanup_managed_resources():
             if telemetry_directory is not None:
                 telemetry_directory.publish_withdrawing()
+            if jump_client is not None:
+                try:
+                    jump_client.close()              # the outstanding request is cancelled with the shutdown (contract 13.2 step 7)
+                    _managed_jump_log(log, args)(jump_client.summary())
+                except Exception:
+                    pass
+            if dataplane_receiver is not None:
+                dataplane_receiver.stop()            # contract 15.2 step 3: nothing is accepted any more; the socket is closed next
+                try:
+                    log(dataplane_receiver.summary())
+                except Exception:
+                    pass
             try:
                 if overlay is not None:
                     _release_overlay(overlay, hud)
