@@ -205,10 +205,11 @@ $mainRunning = $false
 $savedProfile = $env:USERPROFILE
 $savedHome = $env:HOME
 try {
-    # PID-D3: a Caller-launched (managed) application listens on its own Directory-published port and accepts only Envelope v1 of its owner. The Legacy sender still sends
-    # plain text to the fixed legacy port until PID-D4 migrates it, so this Legacy -> managed live chain has no valid path today. It is reported as SKIP (never as PASS) with that
-    # reason, and it is NOT rewritten with a Current-style sender: the Legacy sender-core sections above and the Legacy offline suites keep running unchanged.
-    $legacyManagedChainApplicable = $false
+    # PID-D3: a Caller-launched (managed) application listens on its own Directory-published port and accepts only Envelope v1 of its owner.
+    # PID-D4 Slice 1: the Legacy sender now routes through the per-PID DataPlane (LegacyDataPlaneSink, the linked Current routing core), so this Legacy -> managed live chain has a valid
+    # path again and runs for real: the sender discovers the application's Directory endpoint of the stand-in BVE process (its Ready event / AppDirectory / Telemetry Directory
+    # are the real ones the Caller code creates), sends Envelope v1 there, and sends NOTHING to the fixed legacy port.
+    $legacyManagedChainApplicable = $true
     if ($legacyManagedChainApplicable -and $qtOk -and (-not $udpBusy) -and (-not $mainRunning) -and (Test-Path $mainPy) -and (Test-Path $bveWinPy) -and (Test-Path (Join-Path $Root 'dist\TSScoringPlugin.Caller.InputDevice.dll'))) {
         $env:USERPROFILE = $sandbox
         $env:HOME = $sandbox
@@ -237,7 +238,7 @@ try {
         $m = NewMgr $bvePid (NewOpts 25000 6000 3000)
         $s = NewSession $bvePid $m.Mgr
         # the pseudo Legacy world: a scenario with four stations, driven by the real sender core, sending through the REAL UDP sink
-        $lh = New-Object TsScoringLegacyTelemetryTests.LiveHarness -ArgumentList $withInput
+        $lh = New-Object TsScoringLegacyTelemetryTests.LiveHarness -ArgumentList $withInput, ([int]$bvePid)
         if ($withInput) { $lh.Input.CabName = 'TwoLeverCab'; $lh.Input.HandleTypeValue = 2; $lh.Input.BrakeKindValue = 2; $lh.Api.BrakeKind = 2; $lh.Input.PowN = 4; $lh.Input.BrkN = 9; $lh.Input.EbN = 10; $lh.Input.Rev = 1; $lh.Input.Pow = 2; $lh.Input.Brk = 0; $lh.Input.StoreBc = [double[]]@(120.5); $lh.Input.StoreBp = [double[]]@(490.0) }
         $lh.Api.FreshWrapperEachCall = $true      # the real host: IBveHacker.Scenario is a NEW wrapper object on every Tick (the L3-live defect needs this)
         $lh.Api.SpeedMps = 15.0; $lh.Api.Location = 900.0; $lh.Api.GradientRatio = 0.008
@@ -332,6 +333,7 @@ try {
         Check ('T13 Dispose: exit code 0 in ' + $endMs + ' ms, no Kill, no residual process, the HUD window is gone') (([int](Mg $m 'ExitCode') -eq 0) -and (-not (Mg $m 'Killed')) -and (-not (PidAlive $app)) -and (-not [WinEnum]::Exists($h1)) -and ((EventLines $m.Sink 'APP_STATE_CLOSED').Count -eq 1))
         $udpAfter = @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveUdpListeners() | Where-Object { $_.Port -eq 54321 }).Count -gt 0
         Check 'T14 UDP 54321 is free again and the stand-in BVE window is untouched' ((-not $udpAfter) -and (PidAlive $bvePid))
+        Check ('T14b PID-D4: the Legacy sender ran in MANAGED mode and sent only Envelope v1 to the Directory-published endpoint - fixed 54321 plain sends: 0 (mode=' + $lh.ModeText + ' plain=' + $lh.PlainSent + ' wrapped=' + $lh.WrappedSent + ')') (($lh.ModeText -eq 'managed') -and ($lh.PlainSent -eq 0) -and ($lh.WrappedSent -gt 50))
         $firsts = [regex]::Matches($text, 'event=telemetry-first[^\r\n]*')
         if (-not $withInput) {
             Check ('T15 the application logged the first telemetry of each generation (' + $firsts.Count + ') with the sender''s announcement: explicit AVAIL; the first line has no acceleration reference yet, the next line adds it, and what is missing is exactly what the Legacy API cannot provide') (($firsts.Count -ge 2) -and ($firsts[0].Value -match 'avail=explicit') -and ($firsts[0].Value -match 'missing=bcp\+bpp\+calcg\+doortime\+handle\+jump\+maplimit_ahead\+trainlen') -and ($text -match 'event=telemetry-avail[^\r\n]*missing=bcp\+bpp\+doortime\+handle\+jump\+maplimit_ahead\+trainlen(\s|$)'))
@@ -360,7 +362,7 @@ try {
         [IO.File]::WriteAllText($stderrFile, $text, (New-Object Text.UTF8Encoding($false)))
     }
     else {
-        Skip ('T01-T20 live chain: not applicable until PID-D4 (managed application = Directory port + Envelope v1; the Legacy sender is still plain text on the legacy port) [applicable=' + $legacyManagedChainApplicable + ', PyQt6/pywin32=' + $qtOk + ', UDP 54321 busy=' + $udpBusy + ', a main.py process present=' + $mainRunning + ']')
+        Skip ('T01-T20 live chain: a precondition is missing [applicable=' + $legacyManagedChainApplicable + ', PyQt6/pywin32=' + $qtOk + ', UDP 54321 busy=' + $udpBusy + ', a main.py process present=' + $mainRunning + ', main.py/fake BVE window/Caller dist present]')
     }
 }
 finally {

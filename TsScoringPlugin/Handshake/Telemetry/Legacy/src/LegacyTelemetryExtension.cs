@@ -42,6 +42,10 @@ using BveTypes.ClassWrappers;
 //   Scenario.Vehicle.Dynamics.CarLength / MotorCar.Count / TrailerCar.Count  (FirstCar is not read: it is not part of the length)
 //   Scenario.Route.SpeedLimits (Count, the indexer, MapObjectBase.Location, ValueNode<double>.Value)
 //
+// Phase PID-D4 / Slice 1 (the transport, not the reads): the session's texts go through LegacyDataPlaneSink (src\LegacyDataPlaneSink.cs, host independent). NORMAL mode =
+// the plain text to the fixed legacy port as always; MANAGED mode = an Envelope v1 to the Directory-published endpoint of this BVE process, fail closed, no fixed-port
+// fallback. This file only creates the sink for the BVE process id and hands the diagnostic of the routing core to the per-process log; nothing below reads more of the host.
+//
 // The timer thread (heartbeat) uses the session's own volatile fields only; it never touches BveHacker, a Scenario or any BVE object.
 // No exception ever leaves the constructor, Tick, Dispose, an event handler or the timer.
 // ============================================================================
@@ -52,7 +56,7 @@ namespace TSScoringPlugin.Telemetry
     {
         private const double HeartbeatIntervalMs = 50;
 
-        private readonly UdpTelemetrySink sink;
+        private readonly LegacyDataPlaneSink sink;
         private readonly LegacyTelemetrySession session;
         private readonly FileTelemetryDiag diag = new FileTelemetryDiag();
         private readonly System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
@@ -64,7 +68,17 @@ namespace TSScoringPlugin.Telemetry
         public TsScoringLegacyTelemetryExtension(PluginBuilder builder)
             : base(builder)
         {
-            sink = new UdpTelemetrySink();
+            int bvePid = 0;
+            try
+            {
+                bvePid = FileTelemetryDiag.CurrentProcessId();
+            }
+            catch
+            {
+                bvePid = 0;      // the sink then sends nothing (a router needs a process id) and says so once
+            }
+
+            sink = LegacyDataPlaneSink.Create(bvePid, LegacyDataPlaneSink.FixedLegacyDestination(), delegate (string text) { diag.Event("TEL_DP", text); });
             AtsExLegacyApi api = new AtsExLegacyApi();
             session = new LegacyTelemetrySession(api, sink, delegate { return clock.ElapsedMilliseconds; }, delegate { return DateTime.UtcNow.Ticks; }, diag, api, api, api);
             try
@@ -102,7 +116,7 @@ namespace TSScoringPlugin.Telemetry
             }
 
             diag.Event("TEL_INIT", "ver=" + FileTelemetryDiag.Version + " bitness=" + (IntPtr.Size * 8) + " host=AtsExLegacy identity=" + LegacyScenarioIdentity.KindSourceObject
-                + " events=" + (subscribed ? "yes" : "no") + " heartbeat=" + (heartbeat != null ? "yes" : "no"));
+                + " events=" + (subscribed ? "yes" : "no") + " heartbeat=" + (heartbeat != null ? "yes" : "no") + " sink=dataplane bvepid=" + bvePid);
             try { session.NoteInit("events=" + (subscribed ? "yes" : "no") + " heartbeat=" + (heartbeat != null ? "yes" : "no")); } catch { }
         }
 
@@ -151,7 +165,7 @@ namespace TSScoringPlugin.Telemetry
             }
 
             try { session.OnDispose(); } catch { }
-            diag.Event("TEL_FINAL", "udpSent=" + sink.Sent + " udpFailed=" + sink.Failed);
+            diag.Event("TEL_FINAL", "udpSent=" + sink.Sent + " udpFailed=" + sink.Failed + " mode=" + sink.ModeText);
         }
 
         private void OnHeartbeat(object sender, ElapsedEventArgs e)
@@ -897,24 +911,28 @@ namespace TSScoringPlugin.Telemetry
     }
 
     /// <summary>
-    /// The dedicated diagnostic log of this DLL (state changes and the final totals only - never per Tick): one text file in the Downloads folder of the user
-    /// profile, TSScoring-L3-Telemetry.log. The first line this process writes starts a fresh file (a new BVE process never appends to an older run); the file is
-    /// capped. It is dedicated because the shared observation log belongs to the Handshake control plane and needs its mutex and its named objects, which this
-    /// DLL deliberately does not link. Line: HH:mm:ss.fff P=pid I=instance EVENT key=value ... Only numbers, ids and fixed words are written: no path,
-    /// no scenario / route / vehicle text. Nothing in here can throw into BVE.
+    /// The dedicated diagnostic log of this DLL (state changes and the final totals only - never per Tick): one text file PER BVE PROCESS in the Downloads folder of
+    /// the user profile, TSScoring-LegacyTelemetry-P&lt;pid&gt;-T&lt;start&gt;.log (pid = the BVE process id, start = its start time, UTC, yyyyMMddHHmmss; Phase PID-D4 replaced the
+    /// old fixed name that two BVE processes shared). The first line this process writes starts a fresh file (a new BVE process never appends to an older run, and
+    /// never touches the file of another process); the file is capped. It is dedicated because the shared observation log belongs to the Handshake control plane and
+    /// needs its mutex and its named objects, which this DLL deliberately does not link. Line: HH:mm:ss.fff P=pid I=instance EVENT key=value ... Only numbers, ids and
+    /// fixed words are written: no path, no scenario / route / vehicle text. Nothing in here can throw into BVE.
     /// </summary>
     internal sealed class FileTelemetryDiag : ITelemetryDiag
     {
-        internal const string FileName = "TSScoring-L3-Telemetry.log";
+        internal const string FileNamePrefix = "TSScoring-LegacyTelemetry-";
         private const long MaxBytes = 1024 * 1024;
 
         private static readonly object sync = new object();
         private static readonly HashSet<string> started = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // files this process already began (truncated)
         private static readonly HashSet<string> capped = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static int instances;
+        private static string defaultPathCache;
+        private static int processIdCache;
 
         private readonly int instance;
         private readonly string pathOverride;
+        private readonly int processId;       // 0 = this process (production); a number only for the offline tests of the per-process naming
 
         internal FileTelemetryDiag()
             : this(null)
@@ -931,6 +949,40 @@ namespace TSScoringPlugin.Telemetry
             }
         }
 
+        /// <summary>Offline tests of the per-process naming: the file of an imagined BVE process (its id and start time) in a folder the test owns.</summary>
+        internal FileTelemetryDiag(int processId, DateTime processStartUtc, string directory)
+            : this(System.IO.Path.Combine(directory, NameFor(processId, StartStamp(processStartUtc))))
+        {
+            this.processId = processId;
+        }
+
+        /// <summary>The start time of a process as it appears in the file name (UTC, to the second).</summary>
+        internal static string StartStamp(DateTime startUtc)
+        {
+            return startUtc.ToUniversalTime().ToString("yyyyMMddHHmmss", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>TSScoring-LegacyTelemetry-P&lt;pid&gt;-T&lt;start&gt;.log</summary>
+        internal static string NameFor(int processId, string startStamp)
+        {
+            return FileNamePrefix + "P" + processId.ToString(System.Globalization.CultureInfo.InvariantCulture) + "-T" + startStamp + ".log";
+        }
+
+        internal static int CurrentProcessId()
+        {
+            int cached = processIdCache;
+            if (cached > 0)
+            {
+                return cached;
+            }
+
+            using (System.Diagnostics.Process process = System.Diagnostics.Process.GetCurrentProcess())
+            {
+                processIdCache = process.Id;
+                return processIdCache;
+            }
+        }
+
         internal static string Version
         {
             get
@@ -940,8 +992,15 @@ namespace TSScoringPlugin.Telemetry
             }
         }
 
+        /// <summary>The production path: Downloads\TSScoring-LegacyTelemetry-P&lt;this BVE process id&gt;-T&lt;its start time&gt;.log, worked out once. null when it cannot be (then nothing is logged).</summary>
         internal static string DefaultPath()
         {
+            string cached = defaultPathCache;
+            if (cached != null)
+            {
+                return cached;
+            }
+
             try
             {
                 string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -950,7 +1009,21 @@ namespace TSScoringPlugin.Telemetry
                     return null;
                 }
 
-                return System.IO.Path.Combine(System.IO.Path.Combine(profile, "Downloads"), FileName);
+                string stamp = "0";
+                try
+                {
+                    using (System.Diagnostics.Process process = System.Diagnostics.Process.GetCurrentProcess())
+                    {
+                        stamp = StartStamp(process.StartTime);
+                    }
+                }
+                catch
+                {
+                    stamp = "0";
+                }
+
+                defaultPathCache = System.IO.Path.Combine(System.IO.Path.Combine(profile, "Downloads"), NameFor(CurrentProcessId(), stamp));
+                return defaultPathCache;
             }
             catch
             {
@@ -986,8 +1059,11 @@ namespace TSScoringPlugin.Telemetry
                         return;
                     }
 
-                    int pid = 0;
-                    try { pid = System.Diagnostics.Process.GetCurrentProcess().Id; } catch { }
+                    int pid = processId;
+                    if (pid <= 0)
+                    {
+                        try { pid = CurrentProcessId(); } catch { }
+                    }
                     string line = DateTime.Now.ToString("HH:mm:ss.fff") + " P=" + pid + " I=" + instance + " " + name
                         + (string.IsNullOrEmpty(detail) ? string.Empty : " " + detail) + "\r\n";
                     System.IO.File.AppendAllText(path, line);

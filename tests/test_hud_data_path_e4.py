@@ -42,7 +42,8 @@ def cs_sources():
     for base, dirs, files in os.walk(PLUGIN_ROOT):
         dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
         for name in files:
-            if name.endswith(".cs"):
+            # Phase PID-D4 Slice 1: this test fixture owns loopback receiver sockets of its own (it drives the real Legacy sink against them); it is test code, never shipped
+            if name.endswith(".cs") and name != "LegacyDataPlaneTestFixture.cs":
                 found.append(os.path.join(base, name))
     return sorted(found)
 

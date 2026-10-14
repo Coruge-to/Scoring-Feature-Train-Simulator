@@ -631,28 +631,36 @@ namespace TsScoringLegacyTelemetryTests
         public bool IsDisposed { get { return session.IsDisposed; } }
     }
 
-    /// <summary>The same drive as Harness, but the datagrams go out through the REAL UDP sink to 127.0.0.1:54321 (integration test with the real application).</summary>
+    /// <summary>
+    /// The same drive as Harness, but the datagrams go out through the REAL sink of the product (Phase PID-D4 Slice 1: LegacyDataPlaneSink + the Current routing core) for the
+    /// given BVE process id: in managed mode an Envelope v1 to the Directory-published endpoint of that process (integration test with the real application started by the real Caller).
+    /// </summary>
     public class LiveHarness
     {
         public FakeApi Api = new FakeApi();
-        internal UdpTelemetrySink Sink = new UdpTelemetrySink();
+        internal LegacyDataPlaneSink Sink;
         public long Now = 1000;
         public long Seed = 7000000000L;
         private LegacyTelemetrySession session;
 
         public FakeInputApi Input = null;         // Phase LI1: null = the sender of Phase L3 (no handle group, no pressures)
 
-        public LiveHarness()
+        public LiveHarness(int bvePid)
         {
+            Sink = LegacyDataPlaneSink.Create(bvePid, LegacyDataPlaneSink.FixedLegacyDestination(), null);
             session = new LegacyTelemetrySession(Api, Sink, delegate { return Now; }, delegate { return Seed; });
         }
 
-        /// <summary>withInput: the input surface is wired (a FakeInputApi in Input); the handle group and the pressures go out through the real UDP sink.</summary>
-        public LiveHarness(bool withInput)
+        /// <summary>withInput: the input surface is wired (a FakeInputApi in Input); the handle group and the pressures go out through the real sink.</summary>
+        public LiveHarness(bool withInput, int bvePid)
         {
+            Sink = LegacyDataPlaneSink.Create(bvePid, LegacyDataPlaneSink.FixedLegacyDestination(), null);
             if (withInput) { Input = new FakeInputApi(); }
             session = new LegacyTelemetrySession(Api, Sink, delegate { return Now; }, delegate { return Seed; }, null, Input);
         }
+        public string ModeText { get { return Sink.ModeText; } }
+        public long PlainSent { get { return Sink.Router == null ? 0L : Sink.Router.PlainSent; } }
+        public long WrappedSent { get { return Sink.Router == null ? 0L : Sink.Router.WrappedSent; } }
 
         public void Run(int ticks, int stepMs)
         {
@@ -723,7 +731,8 @@ namespace TsScoringLegacyTelemetryTests
     }
     public static class DiagInfo
     {
-        public static string FileName { get { return FileTelemetryDiag.FileName; } }
+        public static string FileNamePrefix { get { return FileTelemetryDiag.FileNamePrefix; } }
+        public static string NameFor(int pid, string startStamp) { return FileTelemetryDiag.NameFor(pid, startStamp); }
         public static string DefaultPathText { get { return FileTelemetryDiag.DefaultPath(); } }
         public static string Version { get { return FileTelemetryDiag.Version; } }
         public static void Write(string path, string name, string detail) { new FileTelemetryDiag(path).Event(name, detail); }

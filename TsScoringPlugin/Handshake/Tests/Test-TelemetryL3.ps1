@@ -345,7 +345,9 @@ Check 'G21 the diagnostic carries no scenario text and no path' (($diagText -not
 # the REAL file diagnostic (a path this test owns)
 $dpath = Join-Path $testDir 'diag.log'
 $D = $fixAsm.GetType('TsScoringLegacyTelemetryTests.DiagInfo')
-Check 'G22 the dedicated log is TSScoring-L3-Telemetry.log in the Downloads folder of the user profile' (($D.GetProperty('FileName').GetValue($null) -eq 'TSScoring-L3-Telemetry.log') -and ($D.GetProperty('DefaultPathText').GetValue($null) -eq (Join-Path (Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Downloads') 'TSScoring-L3-Telemetry.log')))
+# Phase PID-D4 Slice 1 (J4), re-pinned on purpose: the log is one file per BVE process, TSScoring-LegacyTelemetry-P<pid>-T<start>.log; the fixed name TSScoring-L3-Telemetry.log is gone
+$defaultLog = [string]$D.GetProperty('DefaultPathText').GetValue($null)
+Check 'G22 the dedicated log is TSScoring-LegacyTelemetry-P<pid>-T<start>.log of THIS process in the Downloads folder of the user profile (PID-D4: no fixed name)' (($D.GetProperty('FileNamePrefix').GetValue($null) -eq 'TSScoring-LegacyTelemetry-') -and $defaultLog.StartsWith((Join-Path (Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Downloads') ('TSScoring-LegacyTelemetry-P' + $PID + '-T'))) -and ($defaultLog -match '-T([0-9]{14}|0)\.log$') -and ($defaultLog -notmatch 'L3-Telemetry'))
 [IO.File]::WriteAllText($dpath, "OLD RUN`r`n")
 $h = NewH; $h.UseFileDiag($dpath); $h.Api.FreshWrapperEachCall = $true; $h.Run(1000, 16); $h.Opened($true); $h.Created(); $h.Run(10, 16); $h.Dispose()
 $dl = @([IO.File]::ReadAllLines($dpath))
@@ -511,7 +513,8 @@ Check 'X03 the built DLL references no BveEX assembly' (-not ($refs | Where-Obje
 Check 'X04 the built DLL references only AtsEX, BveTypes and the framework' (-not ($refs | Where-Object { $_ -notmatch '^(mscorlib|System|System\.Core|AtsEx\.PluginHost|BveTypes|FastCaching|FastMember|TypeWrapping)$' }))
 Check 'X05 no Handshake source is linked into the telemetry project' (($allCode -notmatch 'HandshakeProtocol') -and ($allCode -notmatch 'ScenarioReady') -and ($allCode -notmatch 'ObservationLog') -and ($allCode -notmatch 'TSScoringPlugin\.Handshake'))
 $proj = [IO.File]::ReadAllText((Join-Path $Root 'Telemetry\Legacy\TSScoringPlugin.AtsExLegacy.Telemetry.csproj'))
-Check 'X06 the project file links no Handshake / Bridge / Caller file' ($proj -notmatch '\.\.\\Bridge|\.\.\\\.\.\\Shared|Caller|Handshake(Protocol|Control)')
+# (Phase PID-D4 Slice 1: the comments of the project file now describe the Caller-driven managed mode, so the check looks at the Compile items, not at the XML comments)
+Check 'X06 the project file links no Handshake / Bridge / Caller file' (([regex]::Replace($proj, '<!--[\s\S]*?-->', '')) -notmatch '\.\.\\Bridge|\.\.\\\.\.\\Shared|Caller|Handshake(Protocol|Control)')
 $session = [IO.File]::ReadAllText((Join-Path $Root 'Telemetry\Legacy\src\LegacyTelemetrySession.cs'))
 $bad = @(); foreach ($k in @('REV', 'POW', 'BRK', 'HTYPE', 'ALLTXT', 'BCP', 'BPP', 'TRAINLEN', 'DOORTIME', 'MAPLIMITS', 'CLEARDIST', 'JUMP')) { if ($session -match ('"' + $k + '"')) { $bad += $k } }
 Check 'X07 the sender source never names a key of data the Legacy API does not have' ($bad.Count -eq 0)
@@ -533,7 +536,11 @@ $apiCode = [regex]::Replace([IO.File]::ReadAllText((Join-Path $Root 'Telemetry\L
 Check 'X15 the session decides "same scenario" by the reference identity of the ORIGINAL object (identity.Source) and never reads the wrapper' (($sessCode -match 'ReferenceEquals\(identity\.Source, scenarioToken\)') -and ($sessCode -notmatch 'identity\.Wrapper') -and ($sessCode -notmatch 'ReferenceEquals\(scenario,'))
 Check 'X16 the host adapter takes the identity from ClassWrapperBase.Src and never uses the wrapper as the identity' (($hostCode -match 'object source = wrapper\.Src;') -and ($hostCode -match 'identity\.Source = source;') -and ($hostCode -notmatch 'identity\.Source = (wrapper|s)\b') -and ($hostCode -notmatch 'scenario = s;'))
 Check 'X17 the interface has no wrapper-identity member any more (TryScenarioIdentity replaces TryScenario)' (($apiCode -match 'bool TryScenarioIdentity\(') -and ($apiCode -notmatch 'bool TryScenario\('))
-Check 'X18 the diagnostic is dedicated to this DLL: its own file name, no Handshake log, no named kernel object' (($hostCode -match 'TSScoring-L3-Telemetry\.log') -and ($allCode -notmatch 'EventWaitHandle|new Mutex|MemoryMappedFile'))
+# Phase PID-D4 Slice 1 (J2/J4), re-pinned on purpose as an allow-list: the old premise "no named kernel object is used" is gone - managed mode opens the control plane events and the
+# AppDirectory / Telemetry Directory mappings READ ONLY. They are opened only by the linked, unchanged D0B-1 reader (Shared\TelemetryDirectoryReader.cs); the linked Current core
+# (CurrentDataPlane.cs, outside the Telemetry folder) opens the events. Nothing is created, locked or signalled by the Telemetry project.
+$namedFiles = @($srcFiles | Where-Object { ([regex]::Replace([IO.File]::ReadAllText($_.FullName), '//[^\r\n]*', '')) -match 'EventWaitHandle|new Mutex|MemoryMappedFile' } | ForEach-Object { $_.Name } | Sort-Object)
+Check 'X18 the diagnostic is dedicated to this DLL: its own per-process file name (TSScoring-LegacyTelemetry-P<pid>-T<start>.log), no Handshake log, named kernel objects only in the linked D0B-1 reader and none created' (($hostCode -match 'TSScoring-LegacyTelemetry-') -and ($hostCode -notmatch 'L3-Telemetry') -and (($namedFiles -join ',') -eq 'TelemetryDirectoryReader.cs') -and ($allCode -notmatch 'new Mutex|new EventWaitHandle'))
 
 # ---------------------------------------------------------------------------------------------------------------------------------------------
 # W - the real Win32-free sink: loopback delivery to a socket this test owns
