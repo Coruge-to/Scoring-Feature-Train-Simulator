@@ -48,10 +48,16 @@ Check 'B01 CurrentJumpEndpoint.cs holds no fixed 54321 / 54322' (($jumpCode -not
 Check 'B02 CurrentDataPlane.cs still holds no fixed 54321 / 54322 and no UdpClient' (($dpCode -notmatch '54321') -and ($dpCode -notmatch '54322') -and ($dpCode -notmatch 'UdpClient'))
 Check 'B03 CurrentJumpEndpoint.cs references no Caller / Handshake / BveEx / AtsEx / Legacy type' (($jumpCode -cnotmatch 'TSScoringPlugin\.Handshake') -and ($jumpCode -cnotmatch 'BveEx') -and ($jumpCode -cnotmatch 'AtsEx') -and ($jumpCode -cnotmatch 'Legacy'))
 Check 'B04 the new file is a Compile item of the Current project' ((Get-Content $csproj -Raw) -match 'CurrentJumpEndpoint\.cs')
-$legacyProj = Get-Content (Join-Path $plugin 'Handshake\Telemetry\Legacy\TSScoringPlugin.AtsExLegacy.Telemetry.csproj') -Raw
-Check 'B05 the Legacy Telemetry project does not compile the Current jump file' ($legacyProj -notmatch 'CurrentJumpEndpoint')
-$legacySrc = @(Get-ChildItem (Join-Path $plugin 'Handshake\Telemetry') -Recurse -Filter *.cs | Where-Object { $_.FullName -notmatch '\\obj\\' })
-Check 'B06 no Legacy / Telemetry source uses a Current jump type' (@($legacySrc | Where-Object { (Get-Content $_.FullName -Raw) -match 'CurrentJumpEndpoint|JumpCommandValidator|JumpDirectoryPublisher|CurrentJumpCommand' }).Count -eq 0)
+# PID-D4 / LEGACY JUMP 2A-ALPHA (Stage S4): the Legacy Telemetry project links the Current jump file ONCE (one shared Link) only to get the shared types; the type
+# CurrentJumpEndpoint therefore exists in the Legacy DLL, and what is pinned is that no Legacy source names it or calls its Create method.
+$legacyDoc = New-Object System.Xml.XmlDocument
+$legacyDoc.Load((Join-Path $plugin 'Handshake\Telemetry\Legacy\TSScoringPlugin.AtsExLegacy.Telemetry.csproj'))
+$legacyJumpLinks = @($legacyDoc.SelectNodes("//*[local-name()='Compile']") | Where-Object { $_.GetAttribute('Include') -match 'CurrentJumpEndpoint' })
+$legacyJumpLinkOk = ($legacyJumpLinks.Count -eq 1) -and ($legacyJumpLinks[0].GetAttribute('Include') -ceq '..\..\..\TsScoringPlugin\CurrentJumpEndpoint.cs') -and ($legacyJumpLinks[0].SelectSingleNode("*[local-name()='Link']").InnerText -ceq 'Shared\CurrentJumpEndpoint.cs')
+Check 'B05 the Legacy Telemetry project compiles the Current jump file only as the one shared Link (exact Include and Link, exactly once)' $legacyJumpLinkOk
+$legacySrc = @(Get-ChildItem (Join-Path $plugin 'Handshake\Telemetry') -Recurse -Filter *.cs | Where-Object { $_.FullName -notmatch '\\(obj|out)\\' })
+$legacyUsers = @($legacySrc | Where-Object { (Code $_.FullName) -match 'JumpCommandValidator|JumpDirectoryPublisher|CurrentJumpCommand|JumpCapabilities' } | ForEach-Object { $_.Name } | Sort-Object)
+Check 'B06 no Legacy / Telemetry source names CurrentJumpEndpoint or calls its Create method, no Current BveEx API flows in, and the shared types are used only by the three Legacy jump plane files' ((@($legacySrc | Where-Object { (Code $_.FullName) -match 'CurrentJumpEndpoint|BveEx' }).Count -eq 0) -and (($legacyUsers -join ',') -ceq 'LegacyJumpCommandQueue.cs,LegacyJumpControlPlane.cs,LegacyJumpEndpoint.cs'))
 Check 'B07 the shared protocol and reader files are unchanged by this slice' ((git -C $RepositoryRoot status --short -- TsScoringPlugin/Handshake/Telemetry/Shared/DataPlaneProtocol.cs TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs | Measure-Object).Count -eq 0)
 Check 'B08 the fixed jump receiver (54322) still exists for the normal mode' ($class1Code -match 'new UdpClient\(54322\)')
 Check 'B09 plain commands from the fixed port are executed in the normal mode ONLY (no fixed-port fallback in the managed mode)' ($class1Code -match 'if \(normal\) commands\.Add\(')

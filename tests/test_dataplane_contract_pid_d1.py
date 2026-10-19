@@ -11,6 +11,24 @@ def golden():
       'jump_envelope':d.encode_envelope(0x100,12345,23456,8,I,T,R,b'JUMP_STA_TIME:4:43000000')}
 class Tests(unittest.TestCase):
  def test_names(self): self.assertEqual(d.telemetry_name(12345,I),'Local\\TSScoringPlugin.v1.12345.App.'+I+'.Telemetry');self.assertEqual(d.jump_name(12345),'Local\\TSScoringPlugin.v1.12345.CurrentJump')
+ def test_legacy_jump_names_pid_d4_2a(self):
+  # PID-D4 Legacy Jump 2A-alpha (Stage S1, tests first): the Legacy host owns its own Directory name; the Current name is unchanged (STOP-3).
+  for fn in ('legacy_jump_name','jump_directory_names'):
+   if not hasattr(d,fn):self.fail('[contract:name-resolution-api-missing] dataplane_contract.%s does not exist yet'%fn)
+  self.assertEqual(d.legacy_jump_name(12345),'Local\\TSScoringPlugin.v1.12345.LegacyJump')
+  self.assertEqual(d.jump_name(12345),'Local\\TSScoringPlugin.v1.12345.CurrentJump')
+  self.assertEqual(d.jump_directory_names(12345),(d.jump_name(12345),d.legacy_jump_name(12345)))
+  self.assertEqual(d.legacy_jump_name(4294967295),'Local\\TSScoringPlugin.v1.4294967295.LegacyJump')
+  for bad in (0,-1,4294967296,'12345',None):
+   with self.assertRaisesRegex(ValueError,'pid'):d.legacy_jump_name(bad)
+   with self.assertRaisesRegex(ValueError,'pid'):d.jump_directory_names(bad)
+ def test_legacy_and_current_jump_names_differ_only_in_the_suffix_pid_d4_2a(self):
+  for fn in ('legacy_jump_name','jump_directory_names'):
+   if not hasattr(d,fn):self.fail('[contract:name-resolution-api-missing] dataplane_contract.%s does not exist yet'%fn)
+  cur,leg=d.jump_directory_names(777)
+  self.assertEqual(cur.rsplit('.',1)[0],leg.rsplit('.',1)[0])
+  self.assertEqual((cur.rsplit('.',1)[1],leg.rsplit('.',1)[1]),('CurrentJump','LegacyJump'))
+  self.assertNotEqual(cur,leg)
  def test_roundtrip(self):
   g=golden();self.assertEqual(d.decode_telemetry_directory(g['telemetry'])['port'],45001);self.assertEqual(d.decode_jump_directory(g['jump'])['port'],45002);self.assertEqual(d.decode_envelope(g['envelope'])['payload'],b'SCENARIO_ID:1,SPEED:0')
  def test_offsets(self):

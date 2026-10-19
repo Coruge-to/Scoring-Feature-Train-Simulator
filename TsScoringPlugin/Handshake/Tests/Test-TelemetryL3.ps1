@@ -528,7 +528,12 @@ $pluginAttr = $telAsm.GetType('TSScoringPlugin.Telemetry.TsScoringLegacyTelemetr
 Check 'X11 the extension carries the AtsEX Plugin attribute' ($pluginAttr -contains 'PluginAttribute')
 $exts = @($telAsm.GetTypes() | Where-Object { $_.IsPublic })
 Check 'X12 exactly one public type (the extension); the core is internal' (($exts.Count -eq 1) -and ($exts[0].Name -eq 'TsScoringLegacyTelemetryExtension'))
-Check 'X13 the sink is the only network type (no listener, no 54322)' (($allCode -notmatch 'UdpClient\(\s*\d') -and ($allCode -notmatch '54322') -and ($allCode -notmatch 'TcpListener|Receive\('))
+# PID-D4 / Legacy Jump 2A-alpha (Stage S4): the sink is the only SENDING network type and there is no listener, no TCP and no fixed port; the one datagram READ of the product is the Legacy jump endpoint
+# on its OS chosen loopback port. The set of product sources (Telemetry folder, by normalised relative path; test fixtures live elsewhere and are not in it) whose code contains Receive( must be
+# exactly { Legacy\src\LegacyJumpEndpoint.cs }: 0 files or any additional file is a FAIL. Comments (// and /* */) are not code.
+$srcRoot = [IO.Path]::GetFullPath($srcDir).TrimEnd('\') + '\'
+$receiveFiles = @($srcFiles | Where-Object { ([regex]::Replace([regex]::Replace([IO.File]::ReadAllText($_.FullName), '/\*[\s\S]*?\*/', ''), '//[^\r\n]*', '')) -cmatch 'Receive\(' } | ForEach-Object { [IO.Path]::GetFullPath($_.FullName).Substring($srcRoot.Length) } | Sort-Object)
+Check 'X13 the sink is the only sending network type (no TCP, no 54322, no UdpClient with a port number) and the one datagram read is the Legacy jump endpoint (Receive( only in Legacy\src\LegacyJumpEndpoint.cs)' (($allCode -notmatch 'UdpClient\(\s*\d') -and ($allCode -notmatch '54322') -and ($allCode -notmatch 'TcpListener|TcpClient') -and (($receiveFiles -join '|') -ceq 'Legacy\src\LegacyJumpEndpoint.cs'))
 $asm = [IO.File]::ReadAllText((Join-Path $Root 'Telemetry\Legacy\src\AssemblyInfo.cs'))
 Check 'X14 public metadata carries no personal information' (($asm -notmatch '(?i)\\Users\\') -and ($asm -match 'Coruge-to'))
 $sessCode = [regex]::Replace($session, '//[^\r\n]*', '')

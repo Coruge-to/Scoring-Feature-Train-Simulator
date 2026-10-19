@@ -46,6 +46,11 @@ using BveTypes.ClassWrappers;
 // the plain text to the fixed legacy port as always; MANAGED mode = an Envelope v1 to the Directory-published endpoint of this BVE process, fail closed, no fixed-port
 // fallback. This file only creates the sink for the BVE process id and hands the diagnostic of the routing core to the per-process log; nothing below reads more of the host.
 //
+// Phase PID-D4 / Legacy Jump 2A-alpha (wiring only): this file builds the Legacy Jump control plane (src\LegacyJumpControlPlane.cs, host independent, no host type) and calls it from
+// four places, each inside its own try block: Tick (OnHostTick: start once after the managed mode is confirmed and the scenario events are subscribed, and a liveness check),
+// the three scenario events (NoteScenarioBoundary), and Dispose, where the plane is shut down BEFORE the telemetry part (session.OnDispose). The plane runs on a worker of its
+// own; it reads no host value, calls no host method and announces nothing. A failure of the plane switches only the plane off.
+//
 // The timer thread (heartbeat) uses the session's own volatile fields only; it never touches BveHacker, a Scenario or any BVE object.
 // No exception ever leaves the constructor, Tick, Dispose, an event handler or the timer.
 // ============================================================================
@@ -64,6 +69,7 @@ namespace TSScoringPlugin.Telemetry
         private Timer heartbeat;
         private bool subscribed;
         private bool disposedFlag;
+        private LegacyJumpControlPlane jump;
 
         public TsScoringLegacyTelemetryExtension(PluginBuilder builder)
             : base(builder)
@@ -115,6 +121,16 @@ namespace TSScoringPlugin.Telemetry
                 heartbeat = null;
             }
 
+            try
+            {
+                jump = LegacyJumpControlPlane.CreateProduction(bvePid, delegate (string text) { diag.Event("TEL_JUMP", text); });      // builds objects only: no port, no mapping, no thread
+            }
+            catch (Exception ex)
+            {
+                jump = null;      // only the Legacy Jump feature stays off; the telemetry is unaffected
+                diag.Event("TEL_JUMP", "event=jump-plane-unavailable type=" + ex.GetType().Name);
+            }
+
             diag.Event("TEL_INIT", "ver=" + FileTelemetryDiag.Version + " bitness=" + (IntPtr.Size * 8) + " host=AtsExLegacy identity=" + LegacyScenarioIdentity.KindSourceObject
                 + " events=" + (subscribed ? "yes" : "no") + " heartbeat=" + (heartbeat != null ? "yes" : "no") + " sink=dataplane bvepid=" + bvePid);
             try { session.NoteInit("events=" + (subscribed ? "yes" : "no") + " heartbeat=" + (heartbeat != null ? "yes" : "no")); } catch { }
@@ -125,6 +141,18 @@ namespace TSScoringPlugin.Telemetry
             try
             {
                 session.OnTick(elapsed);
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                // the start condition is a fact the telemetry already holds: the sender mode latch says managed. The plane starts once and only then (and only with the events subscribed).
+                if (jump != null)
+                {
+                    jump.OnHostTick(sink.Router != null && sink.Router.Mode == TSScoringPlugin.DataPlane.CurrentSenderMode.Managed, subscribed);
+                }
             }
             catch
             {
@@ -164,6 +192,18 @@ namespace TSScoringPlugin.Telemetry
             {
             }
 
+            try
+            {
+                // decision D-5: the Jump plane is shut down completely (stop, expire, bounded Join, WITHDRAWING, port close, CLOSED, release) before the telemetry shuts down
+                if (jump != null)
+                {
+                    jump.Dispose();
+                }
+            }
+            catch
+            {
+            }
+
             try { session.OnDispose(); } catch { }
             diag.Event("TEL_FINAL", "udpSent=" + sink.Sent + " udpFailed=" + sink.Failed + " mode=" + sink.ModeText);
         }
@@ -193,16 +233,19 @@ namespace TSScoringPlugin.Telemetry
             bool reload = false;
             try { reload = e.IsReload; } catch { }
             try { session.OnScenarioOpened(reload); } catch { }
+            try { if (jump != null) { jump.NoteScenarioBoundary(); } } catch { }
         }
 
         private void OnScenarioClosed(EventArgs e)
         {
             try { session.OnScenarioClosed(); } catch { }
+            try { if (jump != null) { jump.NoteScenarioBoundary(); } } catch { }
         }
 
         private void OnScenarioCreated(ScenarioCreatedEventArgs e)
         {
             try { session.OnScenarioCreated(); } catch { }
+            try { if (jump != null) { jump.NoteScenarioBoundary(); } } catch { }
         }
     }
 

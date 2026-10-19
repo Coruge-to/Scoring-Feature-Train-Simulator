@@ -40,6 +40,7 @@ CLASS1 = os.path.join(PLUGIN, "TsScoringPlugin", "Class1.cs")
 ENDPOINT = os.path.join(PLUGIN, "TsScoringPlugin", "CurrentJumpEndpoint.cs")
 DATAPLANE = os.path.join(PLUGIN, "TsScoringPlugin", "CurrentDataPlane.cs")
 LEGACY_CSPROJ = os.path.join(PLUGIN, "Handshake", "Telemetry", "Legacy", "TSScoringPlugin.AtsExLegacy.Telemetry.csproj")
+CURRENT_CSPROJ = os.path.join(PLUGIN, "TsScoringPlugin", "TsScoringPlugin.csproj")
 
 CLASS1_AUDITED_NORMALISED_SHA256 = "29613E1495667222990B1FB8D197415BE4988869CA3F2C3CFD7810EAAEA1F4F6"
 
@@ -80,6 +81,16 @@ def read_text(path):
 
 def code(path):
     return squash(strip_comments(read_text(path).replace("\r\n", "\n").replace("\r", "\n")))
+
+
+def compile_items(path):
+    """The (Include, Link-or-None) pair of every <Compile> element of an MSBuild project; XML comments are ignored."""
+    text = re.sub(r"<!--.*?-->", "", read_text(path), flags=re.S)
+    items = []
+    for m in re.finditer(r'<Compile\s+Include="([^"]+)"\s*(?:/>|>(.*?)</Compile>)', text, flags=re.S):
+        link = re.search(r"<Link>([^<]*)</Link>", m.group(2) or "")
+        items.append((m.group(1), link.group(1) if link else None))
+    return items
 
 
 def normalised_sha256(path):
@@ -269,17 +280,44 @@ class Pins(unittest.TestCase):
             self.assertNotIn("JumpFailed", text, name)
         self.assertEqual(len(re.findall(r'"JUMP_COMPLETE:', self.c1)), 1)                                      # the only jump message the sender writes
 
-    # -- F32 : the Legacy project's link set -------------------------------------------------------------------------------------------------------
+    # -- F32 : the link sets of the Legacy and the Current project ---------------------------------------------------------------------------------
+    # PID-D4 / LEGACY JUMP 2A-ALPHA (Stage S4): the Legacy project now links the Current jump endpoint source ONCE, as the one shared link that gives it the four
+    # shared types (JumpDirectoryPublisher, JumpCommandValidator, CurrentJumpCommand, JumpCapabilities). The Current project's own reference is the existing contract
+    # and is pinned apart, and the Legacy sources never call CurrentJumpEndpoint.Create. Each expectation below is its own exact count (no short-name total).
+    LEGACY_SHARED_LINK = ("..\\..\\..\\TsScoringPlugin\\CurrentJumpEndpoint.cs", "Shared\\CurrentJumpEndpoint.cs")
+    LEGACY_EXPECTED_ITEMS = sorted([
+        ("src\\AssemblyInfo.cs", None), ("src\\LegacyApi.cs", None), ("..\\..\\..\\TsScoringPlugin\\CurrentDataPlane.cs", "Shared\\CurrentDataPlane.cs"),
+        LEGACY_SHARED_LINK, ("src\\LegacyDataPlaneSink.cs", None), ("src\\LegacyGroundLimits.cs", None), ("src\\LegacyHandleContract.cs", None),
+        ("..\\Shared\\GenericHandleTextContract.cs", "Shared\\GenericHandleTextContract.cs"), ("src\\LegacyInputProbe.cs", None),
+        ("..\\Shared\\DataPlaneProtocol.cs", "Shared\\DataPlaneProtocol.cs"), ("..\\Shared\\TelemetryDirectoryReader.cs", "Shared\\TelemetryDirectoryReader.cs"),
+        ("src\\LegacyInputTelemetry.cs", None), ("src\\LegacyJumpCommandQueue.cs", None), ("src\\LegacyJumpControlPlane.cs", None), ("src\\LegacyJumpEndpoint.cs", None),
+        ("src\\LegacyScoringProbe.cs", None), ("src\\LegacyStationTimeline.cs", None), ("src\\LegacyTelemetrySession.cs", None), ("src\\LegacyTelemetryExtension.cs", None),
+        ("..\\Shared\\TelemetryContract.cs", "Shared\\TelemetryContract.cs")], key=lambda t: t[0])
+
     @jf0("F32", "CURRENT")
-    def test_CURRENT_F32_the_legacy_telemetry_project_links_exactly_this_set_of_sources_and_not_the_current_jump_endpoint(self):
-        text = read_text(LEGACY_CSPROJ)
-        items = sorted(re.findall(r'<Compile Include="([^"]+)"', text))
-        self.assertEqual(items, sorted([
-            "src\\AssemblyInfo.cs", "src\\LegacyApi.cs", "..\\..\\..\\TsScoringPlugin\\CurrentDataPlane.cs", "src\\LegacyDataPlaneSink.cs", "src\\LegacyGroundLimits.cs",
-            "src\\LegacyHandleContract.cs", "..\\Shared\\GenericHandleTextContract.cs", "src\\LegacyInputProbe.cs", "..\\Shared\\DataPlaneProtocol.cs",
-            "..\\Shared\\TelemetryDirectoryReader.cs", "src\\LegacyInputTelemetry.cs", "src\\LegacyScoringProbe.cs", "src\\LegacyStationTimeline.cs",
-            "src\\LegacyTelemetrySession.cs", "src\\LegacyTelemetryExtension.cs", "..\\Shared\\TelemetryContract.cs"]))
-        self.assertNotIn("CurrentJumpEndpoint", re.sub(r"<!--.*?-->", "", text, flags=re.S))
+    def test_CURRENT_F32_the_legacy_project_links_exactly_this_set_of_sources_with_the_one_shared_current_jump_endpoint_link_and_the_current_project_keeps_its_own(self):
+        # (1) the Legacy project: the exact (Include, Link) pairs, 20 of them
+        legacy = compile_items(LEGACY_CSPROJ)
+        self.assertEqual(sorted(legacy, key=lambda t: t[0]), self.LEGACY_EXPECTED_ITEMS)
+        self.assertEqual(len(legacy), 20)
+        # (2) the shared link: exactly one element, exactly this Include and this Link; nothing else of the Current plugin folder besides CurrentDataPlane.cs
+        endpoint_links = [t for t in legacy if t[0].endswith("CurrentJumpEndpoint.cs")]
+        self.assertEqual(endpoint_links, [self.LEGACY_SHARED_LINK])
+        leaving = sorted(t[0] for t in legacy if t[0].startswith("..\\..\\"))
+        self.assertEqual(leaving, ["..\\..\\..\\TsScoringPlugin\\CurrentDataPlane.cs", "..\\..\\..\\TsScoringPlugin\\CurrentJumpEndpoint.cs"])
+        # (3) the Current project: its own plain reference stays (the existing contract) and it links nothing from the Legacy folder
+        current = compile_items(CURRENT_CSPROJ)
+        self.assertEqual([t for t in current if t[0].endswith("CurrentJumpEndpoint.cs")], [("CurrentJumpEndpoint.cs", None)])
+        self.assertEqual([t for t in current if "Legacy" in t[0]], [])
+        # (4) the shared source is the same file for both projects and defines the shared types once (no copy of them in any Legacy-compiled source)
+        shared_types = re.findall(r"\b(?:class|struct|enum|interface)\s+(JumpCapabilities|CurrentJumpCommand|JumpCommandValidator|JumpDirectoryPublisher|CurrentJumpEndpoint)\b", self.ep)
+        self.assertEqual(sorted(shared_types), sorted(["JumpCapabilities", "CurrentJumpCommand", "JumpCommandValidator", "JumpDirectoryPublisher", "CurrentJumpEndpoint"]))
+        for rel in (name for name, link in legacy if link is None):
+            text = code(os.path.join(os.path.dirname(LEGACY_CSPROJ), rel))
+            for shared in shared_types:
+                self.assertIsNone(re.search(r"\b(?:class|struct|enum|interface)\s+" + shared + r"\b", text), (rel, shared))
+            # (5) no Legacy source names the endpoint class or calls its Create method (the type exists in the Legacy DLL, it is never used)
+            self.assertIsNone(re.search(r"\bCurrentJumpEndpoint\b", text), rel)
 
 
 # ==============================================================================================================================================

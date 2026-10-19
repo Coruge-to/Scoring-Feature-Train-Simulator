@@ -22,7 +22,7 @@
 # This script is ASCII-only on purpose and runs on Windows PowerShell 5.1.
 param([string]$Root = (Split-Path $PSScriptRoot -Parent))
 
-$AuditedDllSha256 = '74C62ADAC140889A3C315493F894AB15727E5FCCFB80F493538A7D7FDE683C1B'      # Legacy telemetry 0.4.2.0 (Phase PID-D4 Slice 1 build)
+$AuditedDllSha256 = '08CE368C917D74139B4C4661944A396E3FA651CB7F80A99CE76F098411517721'      # Legacy telemetry 0.5.0.0 (Phase PID-D4 Legacy Jump 2A-alpha Release build with the TEL_DISCONTINUITY diagnostic, DIAG-A)
 $AuditedTimelineSourceSha256 = '23ABFA293D0D15D0978562873B383C85F0C7B81630871B7EDFE3AB61ED437BAE'
 
 $dllPath = Join-Path $Root 'Telemetry\Legacy\out\TSScoringPlugin.AtsExLegacy.Telemetry.dll'
@@ -51,7 +51,7 @@ $dllSha = (Get-FileHash -LiteralPath $dllPath -Algorithm SHA256).Hash
 $srcSha = (Get-FileHash -LiteralPath $srcPath -Algorithm SHA256).Hash
 if ($dllSha -ne $AuditedDllSha256) { Inconclusive ('the DLL is not the audited build (SHA-256 ' + $dllSha + '); re-audit before trusting these checks') }
 if ($srcSha -ne $AuditedTimelineSourceSha256) { Inconclusive ('src\LegacyStationTimeline.cs is not the audited source (SHA-256 ' + $srcSha + ')') }
-Write-Host ('PREFLIGHT the DLL (0.4.2.0, ' + $dllSha.Substring(0, 8) + ') and src\LegacyStationTimeline.cs (' + $srcSha.Substring(0, 8) + ') are the audited ones')
+Write-Host ('PREFLIGHT the DLL (0.5.0.0, ' + $dllSha.Substring(0, 8) + ') and src\LegacyStationTimeline.cs (' + $srcSha.Substring(0, 8) + ') are the audited ones')
 
 $fixtureSource = @'
 using System;

@@ -44,9 +44,15 @@ def read(name):
 
 
 class FakeDirectory(object):
-    """The read-only mapping source of the jump client (a byte buffer the test edits)."""
+    """The read-only mapping source of the jump client (a byte buffer the test edits).
 
-    def __init__(self, port=41000, generation=11, token=JUMP_TOKEN, caps=7):
+    PID-D4 / Legacy Jump 2A-alpha (Stage S4): it is NAME AWARE. It exists under exactly one Directory name (default: the Current name of PID) and answers every other name as
+    absent, so a client that looks at the Current AND the Legacy name finds only the Directory that was published under its own name. The old fake said True to every name,
+    which now reads as two usable Directories (jump-host-ambiguous). Several Directories behind one source: FakeDirectories below."""
+
+    def __init__(self, port=41000, generation=11, token=JUMP_TOKEN, caps=7, name=None):
+        self.name = contract.jump_name(PID) if name is None else name
+        self.requested = []
         self.port, self.generation, self.token, self.caps = port, generation, token, caps
         self.state = contract.PUBLISHED | contract.READY
         self.seq = 0
@@ -71,8 +77,14 @@ class FakeDirectory(object):
     def withdraw(self):
         self.publish(contract.PUBLISHED | contract.READY | contract.WITHDRAWING)
 
+    def make_invalid(self):
+        """The mapping under this name exists but holds a block that is not a Jump Directory (a bad magic)."""
+        self.block = bytes(len(self.block))
+
     def open(self, name):
-        if not self.present:
+        self.requested.append(name)
+        if name != self.name or not self.present:
+            self.opened = False
             return False
         self.opened = True
         return True
@@ -84,6 +96,35 @@ class FakeDirectory(object):
 
     def close(self):
         self.opened = False
+
+
+class FakeDirectories(object):
+    """One read-only source in front of several name-aware FakeDirectory objects: open(name) selects the one published under that name; an unknown name is absent."""
+
+    def __init__(self, *directories):
+        self.by_name = {}
+        for directory in directories:
+            assert directory.name not in self.by_name, "one Directory per name: " + directory.name
+            self.by_name[directory.name] = directory
+        self.selected = None
+        self.requested = []
+
+    def open(self, name):
+        self.requested.append(name)
+        self.close()
+        directory = self.by_name.get(name)
+        if directory is None or not directory.open(name):
+            return False
+        self.selected = directory
+        return True
+
+    def read(self):
+        return None if self.selected is None else self.selected.read()
+
+    def close(self):
+        if self.selected is not None:
+            self.selected.close()
+            self.selected = None
 
 
 class Clock(object):
@@ -972,6 +1013,175 @@ class D_StaticGuards(unittest.TestCase):
         types = dict((m.group(1), int(m.group(2), 16)) for m in re.finditer(r"internal const UInt32 (JumpComplete|JumpStationTime|JumpLocationTime) = (?:0x)?([0-9A-Fa-f]+)U;", plane))
         self.assertEqual(types, {"JumpComplete": 5, "JumpStationTime": 0x100, "JumpLocationTime": 0x101})
         self.assertEqual((contract.MSG_JUMP_COMPLETE, contract.MSG_JUMP_STATION_TIME, contract.MSG_JUMP_LOCATION_TIME), (5, 0x100, 0x101))
+
+
+# ----------------------------------------------------------------------------------------------------------------------------------------------------
+class F_NameAwareFakeSources(unittest.TestCase):
+    """PID-D4 / Legacy Jump 2A-alpha (Stage S4): the fake source answers the Directory NAME it was asked for (the client looks at the Current and the Legacy name).
+
+    Current only, Legacy only, both, neither, one of them invalid; an unknown name is absent; the block that is read is the block of the name that was opened."""
+
+    CURRENT = contract.jump_name(PID)
+    LEGACY = contract.legacy_jump_name(PID)
+
+    def pair(self, current=True, legacy=True):
+        current_dir = FakeDirectory(name=self.CURRENT)
+        legacy_dir = FakeDirectory(port=42000, generation=21, token=bytes(range(201, 217)), name=self.LEGACY)
+        current_dir.present, legacy_dir.present = current, legacy
+        return current_dir, legacy_dir, FakeDirectories(current_dir, legacy_dir)
+
+    def send_via(self, source):
+        client, _directory, wire, _clock, _lines = make_client(directory=source)
+        return client, wire, client.send(STA)
+
+    def test_the_fake_directory_answers_only_the_name_it_was_published_under(self):
+        current_dir, legacy_dir, _source = self.pair()
+        self.assertTrue(current_dir.open(self.CURRENT))
+        self.assertEqual(current_dir.read(), current_dir.block)
+        current_dir.close()
+        self.assertFalse(current_dir.open(self.LEGACY))
+        self.assertIsNone(current_dir.read())                                          # nothing is open: no block is handed out
+        self.assertFalse(legacy_dir.open(self.CURRENT))
+        self.assertFalse(legacy_dir.open("Local\\TSScoringPlugin.v1.%d.SomethingElse" % PID))
+        self.assertTrue(legacy_dir.open(self.LEGACY))
+        legacy_dir.present = False
+        self.assertFalse(legacy_dir.open(self.LEGACY))                                 # absent stays absent under its own name
+
+    def test_the_set_reads_the_block_of_the_name_that_was_opened_and_an_unknown_name_is_absent(self):
+        current_dir, legacy_dir, source = self.pair()
+        self.assertNotEqual(current_dir.block, legacy_dir.block)
+        self.assertTrue(source.open(self.LEGACY))
+        self.assertEqual(source.read(), legacy_dir.block)
+        source.close()
+        self.assertIsNone(source.read())
+        self.assertTrue(source.open(self.CURRENT))
+        self.assertEqual(source.read(), current_dir.block)
+        source.close()
+        self.assertFalse(source.open("Local\\TSScoringPlugin.v1.%d.Unknown" % PID))
+        self.assertIsNone(source.read())
+        self.assertFalse(current_dir.opened or legacy_dir.opened)
+
+    def test_current_only_the_command_goes_to_the_current_port(self):
+        _current_dir, _legacy_dir, source = self.pair(current=True, legacy=False)
+        client, wire, rid = self.send_via(source)
+        self.assertIsNotNone(rid)
+        self.assertEqual([port for _data, port in wire.sent], [41000])
+        self.assertEqual(sorted(set(source.requested)), sorted([self.CURRENT, self.LEGACY]), "both known names were looked at")
+
+    def test_legacy_only_the_command_goes_to_the_legacy_port(self):
+        _current_dir, _legacy_dir, source = self.pair(current=False, legacy=True)
+        client, wire, rid = self.send_via(source)
+        self.assertIsNotNone(rid)
+        self.assertEqual([port for _data, port in wire.sent], [42000])
+
+    def test_both_directories_are_ambiguous_nothing_is_preferred_nothing_is_sent(self):
+        _current_dir, _legacy_dir, source = self.pair(current=True, legacy=True)
+        client, wire, rid = self.send_via(source)
+        self.assertIsNone(rid)
+        self.assertEqual(wire.sent, [])
+        self.assertEqual(client.reasons.get("refused:jump-host-ambiguous"), 1)
+
+    def test_neither_directory_exists_the_command_is_refused_as_missing(self):
+        _current_dir, _legacy_dir, source = self.pair(current=False, legacy=False)
+        client, wire, rid = self.send_via(source)
+        self.assertIsNone(rid)
+        self.assertEqual(wire.sent, [])
+        self.assertEqual(client.reasons.get("refused:jump-directory-missing"), 1)
+
+    def test_one_invalid_directory_does_not_hide_the_other_usable_one(self):
+        for invalid_name, expected_port in ((self.LEGACY, 41000), (self.CURRENT, 42000)):
+            current_dir, legacy_dir, source = self.pair()
+            (legacy_dir if invalid_name == self.LEGACY else current_dir).make_invalid()
+            client, wire, rid = self.send_via(source)
+            self.assertIsNotNone(rid, invalid_name)
+            self.assertEqual([port for _data, port in wire.sent], [expected_port], invalid_name)
+
+    def test_both_invalid_nothing_is_sent(self):
+        current_dir, legacy_dir, source = self.pair()
+        current_dir.make_invalid()
+        legacy_dir.make_invalid()
+        client, wire, rid = self.send_via(source)
+        self.assertIsNone(rid)
+        self.assertEqual(wire.sent, [])
+
+    def test_a_name_blind_fake_would_read_as_two_directories_which_is_why_the_fake_is_name_aware(self):
+        class NameBlind(FakeDirectory):
+            def open(self, name):                                  # the old behaviour: every name is "there"
+                self.opened = self.present
+                return self.present
+
+        client, wire, rid = self.send_via(NameBlind())
+        self.assertIsNone(rid)
+        self.assertEqual(client.reasons.get("refused:jump-host-ambiguous"), 1)
+        client, wire, rid = self.send_via(FakeDirectory())             # the name-aware Current-only fake is not ambiguous
+        self.assertIsNotNone(rid)
+
+
+@unittest.skipUnless(HAS_QT, "PyQt6 is not importable by this interpreter")
+class G_NameAwareRigFake(unittest.TestCase):
+    """The same name-aware contract for the stand-in directory of the rig (tests/d6_rig.py): Current only, Legacy only, both, neither, one invalid."""
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        import d6_rig
+        cls.D = d6_rig
+        cls.CURRENT = contract.jump_name(PID)
+        cls.LEGACY = contract.legacy_jump_name(PID)
+
+    def pair(self, current=True, legacy=True):
+        current_dir = self.D.FakeJumpDirectory(PID)
+        legacy_dir = self.D.FakeJumpDirectory(PID, port=42000, generation=21, token=bytes(range(201, 217)), name=self.LEGACY)
+        current_dir.present, legacy_dir.present = current, legacy
+        return current_dir, legacy_dir, self.D.FakeJumpDirectories(current_dir, legacy_dir)
+
+    def resolve(self, source):
+        client, _directory, wire, _clock, _lines = make_client(directory=source)
+        return client, wire, client.send(STA)
+
+    def test_the_rig_fake_is_the_current_directory_by_default_and_answers_no_other_name(self):
+        directory = self.D.FakeJumpDirectory(PID)
+        self.assertEqual(directory.name, self.CURRENT)
+        self.assertFalse(directory.open(self.LEGACY))
+        self.assertIsNone(directory.read())
+        self.assertTrue(directory.open(self.CURRENT))
+        self.assertEqual(directory.read(), directory.block)
+        directory.close()
+        directory.present = False
+        self.assertFalse(directory.open(self.CURRENT))
+
+    def test_the_rig_set_reads_the_block_of_the_name_that_was_opened(self):
+        current_dir, legacy_dir, source = self.pair()
+        self.assertNotEqual(current_dir.block, legacy_dir.block)
+        self.assertTrue(source.open(self.LEGACY))
+        self.assertEqual(source.read(), legacy_dir.block)
+        source.close()
+        self.assertTrue(source.open(self.CURRENT))
+        self.assertEqual(source.read(), current_dir.block)
+        source.close()
+        self.assertFalse(source.open("Local\\TSScoringPlugin.v1.%d.Unknown" % PID))
+        self.assertIsNone(source.read())
+
+    def test_the_five_worlds_through_the_client(self):
+        worlds = (
+            ("current only", dict(current=True, legacy=False), [41000], None),
+            ("legacy only", dict(current=False, legacy=True), [42000], None),
+            ("both", dict(current=True, legacy=True), [], "refused:jump-host-ambiguous"),
+            ("neither", dict(current=False, legacy=False), [], "refused:jump-directory-missing"),
+        )
+        for label, kw, ports, refusal in worlds:
+            _c, _l, source = self.pair(**kw)
+            client, wire, rid = self.resolve(source)
+            self.assertEqual([port for _data, port in wire.sent], ports, label)
+            self.assertEqual(rid is None, refusal is not None, label)
+            if refusal is not None:
+                self.assertEqual(client.reasons.get(refusal), 1, label)
+        for invalid, expected_port in ((self.LEGACY, 41000), (self.CURRENT, 42000)):
+            current_dir, legacy_dir, source = self.pair()
+            (legacy_dir if invalid == self.LEGACY else current_dir).make_invalid()
+            client, wire, rid = self.resolve(source)
+            self.assertIsNotNone(rid, invalid)
+            self.assertEqual([port for _data, port in wire.sent], [expected_port], invalid)
 
 
 if __name__ == "__main__":

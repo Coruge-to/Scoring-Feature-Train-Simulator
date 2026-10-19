@@ -30,10 +30,15 @@ APP_PID = 55555
 
 
 class FakeJumpDirectory(object):
-    """The read-only mapping source of the jump client: a 128-byte Current Jump Receiver Directory block that the test publishes."""
+    """The read-only mapping source of the jump client: a 128-byte Current Jump Receiver Directory block that the test publishes.
 
-    def __init__(self, bve_pid, port=JUMP_PORT, generation=JUMP_GEN, token=JUMP_TOKEN, caps=contract.JUMP_CAP_STATION_TIME | contract.JUMP_CAP_LOCATION_TIME | contract.JUMP_CAP_REQUEST_ID):
+    PID-D4 / Legacy Jump 2A-alpha (Stage S4): it is NAME AWARE. It exists under exactly one Directory name (default: the Current name of the PID) and every other name is absent,
+    because the client now looks at the Current and the Legacy name. FakeJumpDirectories puts several of them behind one source."""
+
+    def __init__(self, bve_pid, port=JUMP_PORT, generation=JUMP_GEN, token=JUMP_TOKEN, caps=contract.JUMP_CAP_STATION_TIME | contract.JUMP_CAP_LOCATION_TIME | contract.JUMP_CAP_REQUEST_ID, name=None):
         self.bve_pid = bve_pid
+        self.name = contract.jump_name(bve_pid) if name is None else name
+        self.requested = []
         self.port, self.generation, self.token, self.caps = port, generation, token, caps
         self.state = contract.PUBLISHED | contract.READY
         self.sequence = 0
@@ -68,10 +73,15 @@ class FakeJumpDirectory(object):
     def close_directory(self):
         self.publish(contract.CLOSED)
 
+    def make_invalid(self):
+        """The mapping under this name exists but holds a block that is not a Jump Directory (a bad magic)."""
+        self.block = bytes(len(self.block))
+
     # the source interface of managed_app_directory.Win32DirectorySource
     def open(self, name):
-        assert name == contract.jump_name(self.bve_pid), name
-        if not self.present:
+        self.requested.append(name)
+        if name != self.name or not self.present:
+            self.opened = False
             return False
         self.opened = True
         return True
@@ -82,6 +92,35 @@ class FakeJumpDirectory(object):
 
     def close(self):
         self.opened = False
+
+
+class FakeJumpDirectories(object):
+    """One read-only source in front of several name-aware FakeJumpDirectory objects: open(name) selects the one published under that name; an unknown name is absent."""
+
+    def __init__(self, *directories):
+        self.by_name = {}
+        for directory in directories:
+            assert directory.name not in self.by_name, "one Directory per name: " + directory.name
+            self.by_name[directory.name] = directory
+        self.selected = None
+        self.requested = []
+
+    def open(self, name):
+        self.requested.append(name)
+        self.close()
+        directory = self.by_name.get(name)
+        if directory is None or not directory.open(name):
+            return False
+        self.selected = directory
+        return True
+
+    def read(self):
+        return None if self.selected is None else self.selected.read()
+
+    def close(self):
+        if self.selected is not None:
+            self.selected.close()
+            self.selected = None
 
 
 class D6Rig(MR.ManagedRig):

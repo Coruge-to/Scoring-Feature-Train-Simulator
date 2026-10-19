@@ -4,7 +4,7 @@
 # (B) normal mode - the fixed 54321 plain path is byte for byte what the old sink sent, the managed Directory is never adopted; (C) the heartbeat (STATUS:LOADED:PAUSED) and the timer
 # thread racing endpoint switches and Dispose; (D) the per-process diagnostic log name; (E) the real Python receiver, strict gate and Overlay take the Legacy datagrams and the HUD values
 # arrive in the normalised state; (F) invariants - the Current DLL, the Current product sources, the three shared files, the Python product code, the fixed port 54322 and
-# "no Legacy jump" are unchanged.
+# "the Legacy jump plane executes nothing" hold (PID-D4 / Legacy Jump 2A-alpha: only current_jump_client.py and dataplane_contract.py may differ; the three LegacyJump*.cs sources may exist, link the Current jump source once as a shared Link, never call CurrentJumpEndpoint.Create and name the fixed ports only in the one comparison list of LegacyJumpEndpoint.cs).
 # No BVE, no AtsEX runtime, no BveEX. The real built DLL is loaded and driven through the fake Legacy API of Tests\TelemetryTestFixture.cs. The only operating system objects are
 # synthetic named events / mappings of an unused high PID and loopback sockets this test owns; fixed UDP 54321 / 54322 are never bound or sent to. ASCII-only on purpose.
 param(
@@ -15,7 +15,7 @@ param(
 $repo = Split-Path (Split-Path $Root -Parent) -Parent
 $legacyHost = Join-Path $env:PUBLIC 'Documents\BveEx\Legacy'
 if ([string]::IsNullOrEmpty($DllPath)) { $DllPath = Join-Path $Root 'Telemetry\Legacy\out\TSScoringPlugin.AtsExLegacy.Telemetry.dll' }
-$fixtures = @((Join-Path $Root 'Tests\TelemetryTestFixture.cs'), (Join-Path $Root 'Tests\LegacyDataPlaneTestFixture.cs'))
+$fixtures = @((Join-Path $Root 'Tests\TelemetryTestFixture.cs'), (Join-Path $Root 'Tests\LegacyDataPlaneTestFixture.cs'), (Join-Path $Root 'Tests\LegacyIlCallScan.cs'))
 $testDir = Join-Path $Root 'logs\d4-tests'
 if (Test-Path $testDir) { Remove-Item $testDir -Recurse -Force }
 New-Item -ItemType Directory -Force $testDir | Out-Null
@@ -134,7 +134,9 @@ Check 'F04 the three shared files, CurrentDataPlane.cs and CurrentJumpEndpoint.c
 $sharedGit = (& git -C $repo status --porcelain -- TsScoringPlugin/Handshake/Telemetry/Shared/DataPlaneProtocol.cs TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs TsScoringPlugin/Handshake/Telemetry/Shared/GenericHandleTextContract.cs | Out-String).Trim()
 Check 'F05 and git sees no change in them against HEAD' ($sharedGit -eq '')
 $pyChanged = @((& git -C $repo status --porcelain | Out-String) -split "`n" | Where-Object { $_ -match '\.py\s*$' } | ForEach-Object { $_.Substring(3).Trim() } | Where-Object { $_ -notmatch '/' })
-Check ('F06 no Python product module (repository root) differs from HEAD' + $(if ($pyChanged.Count -gt 0) { ': ' + ($pyChanged -join ',') } else { '' })) ($pyChanged.Count -eq 0)
+$pyAllowed = @('current_jump_client.py', 'dataplane_contract.py')      # PID-D4 / Legacy Jump 2A-alpha: the only two Python product modules the slice may change (0 changed files, e.g. after the commit, is a pass too)
+$pyOutside = @($pyChanged | Where-Object { $pyAllowed -cnotcontains $_ })
+Check ('F06 no Python product module (repository root) differs from HEAD except the two allowed ones (' + ($pyAllowed -join ', ') + ')' + $(if ($pyOutside.Count -gt 0) { ': ' + ($pyOutside -join ',') } else { '' })) ($pyOutside.Count -eq 0)
 Check 'F07 scoring_logic.py and managed_input.py are byte-identical to HEAD' ((& git -C $repo status --porcelain -- scoring_logic.py managed_input.py | Out-String).Trim() -eq '')
 $tel = Join-Path $Root 'Telemetry'
 $legacySrc = @(Get-ChildItem (Join-Path $tel 'Legacy\src') -Filter *.cs)
@@ -142,21 +144,47 @@ $legacyCode = ($legacySrc | ForEach-Object { Code ([IO.File]::ReadAllText($_.Ful
 $proj = [IO.File]::ReadAllText((Join-Path $tel 'Legacy\TSScoringPlugin.AtsExLegacy.Telemetry.csproj'))
 $projCode = [regex]::Replace($proj, '<!--[\s\S]*?-->', '')
 Check 'F08 the fixed port 54322 is not used by the Legacy project (no listener, no send)' (($legacyCode -notmatch '54322') -and ((Code ([IO.File]::ReadAllText((Join-Path $tel 'Shared\TelemetryContract.cs')))) -notmatch '54322'))
-Check 'F09 no Legacy jump: the jump endpoint is not linked, no jump command / JUMP_COMPLETE / RequestId / LegacyJump name in the Legacy sources' (($projCode -notmatch 'CurrentJumpEndpoint') -and ($legacyCode -notmatch 'LegacyJump|JumpComplete|JUMP_|JumpStationTime|JumpLocationTime|RequestId|JumpCommandValidator|CurrentJump'))
+# PID-D4 / Legacy Jump 2A-alpha: the Legacy jump plane (LegacyJumpEndpoint / LegacyJumpCommandQueue / LegacyJumpControlPlane) exists, but it executes and announces nothing. The Current jump source
+# is linked exactly once (the shared Link), only the plane files name the shared jump types, only the plane files and the host adapter name a LegacyJump type, nobody names the endpoint class.
+$projDoc = New-Object System.Xml.XmlDocument
+$projDoc.Load((Join-Path $tel 'Legacy\TSScoringPlugin.AtsExLegacy.Telemetry.csproj'))
+$jumpLinks = @($projDoc.SelectNodes("//*[local-name()='Compile']") | Where-Object { $_.GetAttribute('Include') -match 'CurrentJumpEndpoint' })
+$jumpLinkOk = ($jumpLinks.Count -eq 1) -and ($jumpLinks[0].GetAttribute('Include') -ceq '..\..\..\TsScoringPlugin\CurrentJumpEndpoint.cs') -and ($jumpLinks[0].SelectSingleNode("*[local-name()='Link']").InnerText -ceq 'Shared\CurrentJumpEndpoint.cs')
+$planeFiles = @('LegacyJumpCommandQueue.cs', 'LegacyJumpControlPlane.cs', 'LegacyJumpEndpoint.cs')
+$legacyNaming = { param([string]$pattern) @($legacySrc | Where-Object { (Code ([IO.File]::ReadAllText($_.FullName))) -cmatch $pattern } | ForEach-Object { $_.Name } | Sort-Object) -join ',' }
+$namesLegacyJump = & $legacyNaming 'LegacyJump'
+$namesSharedJump = & $legacyNaming 'RequestId|JumpCommandValidator|JumpDirectoryPublisher|CurrentJumpCommand|JumpCapabilities'
+Check 'F09 the Legacy jump plane executes nothing: the Current jump source is linked once (shared Link), no jump command / JUMP_COMPLETE name, CurrentJumpEndpoint is named by no Legacy source, LegacyJump and the shared jump types are named only by the three plane files (and LegacyJump by the host adapter)' ($jumpLinkOk -and ($legacyCode -cnotmatch 'JumpComplete|JUMP_|JumpStationTime|JumpLocationTime|CurrentJumpEndpoint') -and ($namesSharedJump -ceq ($planeFiles -join ',')) -and ($namesLegacyJump -ceq 'LegacyJumpCommandQueue.cs,LegacyJumpControlPlane.cs,LegacyJumpEndpoint.cs,LegacyTelemetryExtension.cs'))
 $types = @(); try { $types = @($telAsm.GetTypes() | ForEach-Object { $_.Name }) } catch [Reflection.ReflectionTypeLoadException] { $types = @($_.Exception.Types | Where-Object { $_ } | ForEach-Object { $_.Name }) }
-Check 'F10 the built DLL holds no jump endpoint type (CurrentJumpEndpoint, JumpCommandValidator)' (($types -notcontains 'CurrentJumpEndpoint') -and ($types -notcontains 'JumpCommandValidator') -and ($types -contains 'CurrentTelemetryRouter') -and ($types -contains 'LegacyDataPlaneSink'))
+# PID-D4 / Legacy Jump 2A-alpha: the shared Link puts the type CurrentJumpEndpoint into the Legacy DLL, which is allowed. What is pinned is that nothing in the DLL calls it: the IL of every
+# type except CurrentJumpEndpoint itself is scanned for a call or newobj of CurrentJumpEndpoint (Create, the constructor). A scan that saw no method or no call would be a vacuous pass and fails.
+$ilScan = $fixAsm.GetType('TsScoringLegacyTelemetryTests.LegacyIlCallScan')
+$ilResult = $ilScan.GetMethod('ScanAllExcept').Invoke($null, [object[]]@($telAsm, [string[]]@('TSScoringPlugin.DataPlane.CurrentJumpEndpoint')))
+$endpointCalls = @($ilResult.Calls | Where-Object { $_.StartsWith('TSScoringPlugin.DataPlane.CurrentJumpEndpoint::', [StringComparison]::Ordinal) })
+$class1Creates = ([regex]::Matches((Code ([IO.File]::ReadAllText((Join-Path $repo 'TsScoringPlugin\TsScoringPlugin\Class1.cs')))), 'CurrentJumpEndpoint\s*\.\s*Create\s*\(')).Count
+Check 'F10 the Legacy DLL may hold the type CurrentJumpEndpoint but nothing in it calls CurrentJumpEndpoint (IL scan: 0 calls to Create or the constructor), the Current plugin keeps its one Create call, and the router and the sink are there' (($ilResult.MethodsScanned -gt 0) -and ($ilResult.CallsSeen -gt 0) -and ($endpointCalls.Count -eq 0) -and ($class1Creates -eq 1) -and ($types -contains 'CurrentTelemetryRouter') -and ($types -contains 'LegacyDataPlaneSink'))
 Check 'F11 the Legacy project links CurrentDataPlane.cs (a link, never a copy) and keeps the shared protocol and reader links' (($proj -match '<Compile Include="\.\.\\\.\.\\\.\.\\TsScoringPlugin\\CurrentDataPlane\.cs">\s*<Link>Shared\\CurrentDataPlane\.cs</Link>') -and ($proj -match 'Shared\\DataPlaneProtocol\.cs') -and ($proj -match 'Shared\\TelemetryDirectoryReader\.cs') -and (-not (Test-Path (Join-Path $tel 'Legacy\src\CurrentDataPlane.cs'))))
 $sinkCode = Code ([IO.File]::ReadAllText((Join-Path $tel 'Legacy\src\LegacyDataPlaneSink.cs')))
 Check 'F12 the sink never writes a datagram itself (only the router does) and never names a fixed port: no transport.Send call, no 54321 literal, no UdpClient with a port' (($sinkCode -notmatch 'transport\.Send\(') -and ($sinkCode -notmatch '54321') -and ($sinkCode -notmatch 'UdpClient\(\s*\d') -and ($sinkCode -match 'TelemetryContract\.Port') -and ($sinkCode -match 'FixedLegacyDestination'))
-$otherUse = @($legacySrc | Where-Object { $_.Name -ne 'LegacyDataPlaneSink.cs' -and (Code ([IO.File]::ReadAllText($_.FullName))) -match 'TelemetryContract\.Port|54321' })
-Check 'F13 the fixed legacy destination is named only in the sink (the normal path) and in the shared contract constant' ($otherUse.Count -eq 0)
+$otherUse = @($legacySrc | Where-Object { $_.Name -ne 'LegacyDataPlaneSink.cs' -and (Code ([IO.File]::ReadAllText($_.FullName))) -match 'TelemetryContract\.Port|54321' } | ForEach-Object { $_.Name } | Sort-Object)
+# PID-D4 / Legacy Jump 2A-alpha (S4 F13 allow-list): besides the sink, EXACTLY ONE source (LegacyJumpEndpoint.cs, by exact name in Legacy\src) may name TelemetryContract.Port, and only to compare an
+# OS assigned port with the two reserved ports (Port, Port + 1) so that a reserved port is discarded before publication. 0 or several such sources is a FAIL; the 54321 / 54322 literals, a bind
+# or a send to a fixed port, and every other use of the list stay forbidden.
+$jumpEndpointCode = Code ([IO.File]::ReadAllText((Join-Path $tel 'Legacy\src\LegacyJumpEndpoint.cs')))
+$portNameCount = ([regex]::Matches($jumpEndpointCode, 'TelemetryContract\.Port')).Count
+$neverBindForm = ([regex]::Matches($jumpEndpointCode, 'NeverBindPorts\s*=\s*new\s+int\[\]\s*\{\s*TelemetryContract\.Port\s*,\s*TelemetryContract\.Port\s*\+\s*1\s*\}')).Count
+$neverBindRest = [regex]::Replace([regex]::Replace([regex]::Replace($jumpEndpointCode, 'NeverBindPorts\s*=\s*new\s+int\[\]', ''), 'NeverBindPorts\.Length', ''), 'NeverBindPorts\[i\]\s*==\s*port', '')
+$jumpPlaneCode = (($planeFiles | ForEach-Object { Code ([IO.File]::ReadAllText((Join-Path $tel ('Legacy\src\' + $_)))) }) -join "`n")
+Check 'F13 the fixed legacy destination is named only in the sink (the normal path), the shared contract constant and, as the one comparison list NeverBindPorts, in LegacyJumpEndpoint.cs alone (no literal, no bind, no send to a fixed port)' ((($otherUse -join ',') -ceq 'LegacyJumpEndpoint.cs') -and ($portNameCount -eq 2) -and ($neverBindForm -eq 1) -and ($neverBindRest -cnotmatch 'NeverBindPorts') -and ($jumpPlaneCode -notmatch '5432[12]') -and ($jumpPlaneCode -notmatch 'UdpClient\(\s*\d') -and ($jumpPlaneCode -notmatch '\.Send\(') -and ($jumpPlaneCode -notmatch 'FixedLegacyDestination'))
 Check 'F14 the old plain sink class is no longer created by any Legacy product source' ($legacyCode -notmatch 'new UdpTelemetrySink')
 Check 'F15 the old fixed diagnostic log name is not in any Legacy product source or in the project' (([IO.File]::ReadAllText((Join-Path $tel 'Legacy\src\LegacyTelemetryExtension.cs')) -notmatch 'L3-Telemetry\.log') -and ($legacyCode -notmatch 'L3-Telemetry'))
 $ext = Code ([IO.File]::ReadAllText((Join-Path $tel 'Legacy\src\LegacyTelemetryExtension.cs')))
 Check 'F16 only the host adapter names AtsEX / BveTypes types (the sink file is host independent)' (-not ($sinkCode -match 'AtsEx|BveTypes') -and ($ext -match 'using AtsEx') -and (@($legacySrc | Where-Object { (Code ([IO.File]::ReadAllText($_.FullName))) -match 'using AtsEx|using BveTypes' }).Count -eq 1))
 Check 'F17 the heartbeat thread still touches no BVE object (OnHeartbeat uses the session heartbeat and the sink only)' (([regex]::Match($ext, 'private void OnHeartbeat[\s\S]*?\r?\n        \}').Value -notmatch 'hacker|BveHacker|Scenario') -and ($ext -match 'sink\.Send\(text\)'))
 $vi = (Get-Item $dllCopy).VersionInfo
-Check 'F18 the built DLL is 0.4.2.0 (0.5.0.0 stays reserved for the Slice 2 jump build), product TS Scoring, provider Coruge-to, and references only the framework, AtsEX (PluginHost) and BveTypes' (($vi.FileVersion -eq '0.4.2.0') -and ($vi.ProductVersion -eq '0.4.2.0') -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.CompanyName -eq 'Coruge-to') -and (-not (@($telAsm.GetReferencedAssemblies() | ForEach-Object { $_.Name }) | Where-Object { $_ -notmatch '^(mscorlib|System|System\.Core|AtsEx\.PluginHost|BveTypes|FastCaching|FastMember|TypeWrapping)$' })))
+$asmInfoText = Code ([IO.File]::ReadAllText((Join-Path $tel 'Legacy\src\AssemblyInfo.cs')))
+$asmInfoOk = (([regex]::Matches($asmInfoText, '\[assembly:\s*Assembly(?:File|Informational)?Version\("([^"]*)"\)\]') | ForEach-Object { $_.Groups[1].Value }) -join ',') -ceq '0.5.0.0,0.5.0.0,0.5.0.0'
+Check 'F18 the source is 0.5.0.0 (Legacy Jump 2A-alpha, all three version attributes); the built DLL is the deployed 0.4.2.0 until the Release build and exactly 0.5.0.0 after it (no other version), product TS Scoring, provider Coruge-to, and references only the framework, AtsEX (PluginHost) and BveTypes' ($asmInfoOk -and (@('0.4.2.0', '0.5.0.0') -ccontains $vi.FileVersion) -and ($vi.ProductVersion -ceq $vi.FileVersion) -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.CompanyName -eq 'Coruge-to') -and (-not (@($telAsm.GetReferencedAssemblies() | ForEach-Object { $_.Name }) | Where-Object { $_ -notmatch '^(mscorlib|System|System\.Core|AtsEx\.PluginHost|BveTypes|FastCaching|FastMember|TypeWrapping)$' })))
 $named = @(Get-ChildItem $tel -Recurse -Filter *.cs | Where-Object { $_.FullName -notmatch '\\(obj|out)\\' -and (Code ([IO.File]::ReadAllText($_.FullName))) -match 'EventWaitHandle|MemoryMappedFile' } | ForEach-Object { $_.Name } | Sort-Object)
 Check ('F19 named kernel objects (events / mappings) are opened only by the linked, unchanged D0B-1 readers: ' + ($named -join ', ')) (($named -join ',') -eq 'TelemetryDirectoryReader.cs')
 $linkedNamed = (Code ([IO.File]::ReadAllText((Join-Path $repo 'TsScoringPlugin\TsScoringPlugin\CurrentDataPlane.cs')))) -match 'EventWaitHandle\.TryOpenExisting'

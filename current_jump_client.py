@@ -19,6 +19,10 @@ Contract:
     was withdrawn / changed while the request was outstanding - are handed to the caller ONCE through take_unreleased() (the application then aborts that
     scoring session through its existing jump-abort path). A cancel that the application itself asks for (session end, generation boundary, shutdown,
     scoring abort) is never reported that way.
+  * PID-D4 (D-8 / D-9): the Directory mapping is never held. Every read is open -> read twice -> close (then decode and judge), when idle and while a request is
+    outstanding, so the publisher can re-create its named mapping at any time. The Directory name is resolved when a command is SENT, over the generic name list
+    of dataplane_contract (jump_directory_names): none usable -> refused, one -> recorded in the request, two -> refused as jump-host-ambiguous (nothing is preferred,
+    no fixed port is tried). An outstanding request reads only its recorded name and never moves to another one.
 """
 import hmac
 import secrets
@@ -44,12 +48,13 @@ R_INVALID = "invalid"
 
 
 class _Request(object):
-    __slots__ = ("request_id", "message_type", "sent_at", "port", "generation", "token", "text")
+    __slots__ = ("request_id", "message_type", "sent_at", "name", "port", "generation", "token", "text")
 
-    def __init__(self, request_id, message_type, sent_at, port, generation, token, text):
+    def __init__(self, request_id, message_type, sent_at, name, port, generation, token, text):
         self.request_id = request_id
         self.message_type = message_type
         self.sent_at = sent_at
+        self.name = name                                  # the Directory name resolved when the command was sent: the ONLY name this request reads (D-9)
         self.port = port
         self.generation = generation
         self.token = token
@@ -72,7 +77,6 @@ class CurrentJumpClient(object):
         self._clock = clock
         self._new_id = id_factory or (lambda: secrets.token_bytes(16))
         self._timeout_s = timeout_s
-        self._attached = False
         self._closed = False
         self._outstanding = None
         self._finished = OrderedDict()                    # request_id -> final state ("completed", "superseded", "timeout", ...)
@@ -112,29 +116,32 @@ class CurrentJumpClient(object):
         return bytes(request_id)[:4].hex()
 
     # -- the directory ---------------------------------------------------------------------------------------------------------------------------
-    def _detach(self):
+    def _release(self):
+        """Closes the mapping source (a no-op when nothing is open). Never raises."""
         if self._source is not None:
             try:
                 self._source.close()
             except Exception:
                 pass
-        self._attached = False
 
-    def _read_directory(self):
-        """(snapshot dict, None) or (None, reason). Never raises."""
+    def _read_named(self, name):
+        """(snapshot dict, None) or (None, reason). Never raises.
+
+        Nothing is kept between two reads (PID-D4 D-8): every attempt is open -> read twice -> close, and only the closed bytes are decoded and judged, so that no exit
+        (a torn read, a bad block, an exception) can leave the mapping open and a Writer can always re-create the name."""
         try:
             if self._source is None:
                 import managed_app_directory
                 self._source = managed_app_directory.Win32DirectorySource(contract.DIRECTORY_SIZE)
-            if not self._attached:
-                if not self._source.open(contract.jump_name(self.bve_pid)):
-                    return None, "jump-directory-missing"
-                self._attached = True
             for _attempt in range(3):
-                first = self._source.read()
-                second = self._source.read()
+                try:
+                    if not self._source.open(name):
+                        return None, "jump-directory-missing"
+                    first = self._source.read()
+                    second = self._source.read()
+                finally:
+                    self._release()
                 if first is None or second is None:
-                    self._detach()
                     return None, "jump-directory-closed"
                 if first != second:
                     continue
@@ -146,8 +153,41 @@ class CurrentJumpClient(object):
                     return None, "jump-directory-invalid:" + str(exc)
             return None, "jump-directory-torn"
         except Exception as exc:
-            self._detach()
             return None, "jump-directory-error:" + type(exc).__name__
+
+    def _resolve(self):
+        """(name, snapshot, None) for the ONE usable Directory among the known names, else (None, None, reason) (PID-D4 D-9).
+
+        Two usable Directories are ambiguous: nothing is preferred and nothing is sent. With no usable one the most telling reason is returned
+        (a bad block, then not-usable, then another BVE process, then missing)."""
+        usable = []
+        failures = []
+        for name in contract.jump_directory_names(self.bve_pid):
+            snapshot, reason = self._read_named(name)
+            if snapshot is None:
+                rank = 3 if reason == "jump-directory-missing" else 0
+            elif snapshot["bve_pid"] != self.bve_pid:
+                reason, rank = "bve-pid-mismatch", 2
+            elif not self._usable(snapshot):
+                reason, rank = "jump-endpoint-not-usable", 1
+            else:
+                usable.append((name, snapshot))
+                continue
+            failures.append((rank, reason))
+        if len(usable) > 1:
+            return None, None, "jump-host-ambiguous"
+        if usable:
+            return usable[0][0], usable[0][1], None
+        return None, None, min(failures, key=lambda item: item[0], default=(3, "jump-directory-missing"))[1]
+
+    def _read_directory(self):
+        """(snapshot, None) of the one usable Directory, or (None, reason): what send() decides on, without sending anything."""
+        _name, snapshot, reason = self._resolve()
+        return snapshot, reason
+
+    def read_directories(self):
+        """[(name, snapshot or None, reason or None), ...] for every known Directory name, in order. Read only: nothing is sent, cancelled or counted."""
+        return [(name,) + self._read_named(name) for name in contract.jump_directory_names(self.bve_pid)]
 
     @staticmethod
     def _usable(snapshot):
@@ -173,14 +213,9 @@ class CurrentJumpClient(object):
                 break
         if kind is None:
             return self._refuse("unknown-command", text)
-        snapshot, reason = self._read_directory()
+        name, snapshot, reason = self._resolve()                       # D-9: the Directory name is resolved now, once per command, and recorded in the request
         if snapshot is None:
             return self._refuse(reason, text)
-        if snapshot["bve_pid"] != self.bve_pid:
-            return self._refuse("bve-pid-mismatch", text)
-        if not self._usable(snapshot):
-            self._detach()                                  # a closed / withdrawn publication: re-open next time (a re-created endpoint is a new mapping)
-            return self._refuse("jump-endpoint-not-usable", text)
         message_type, capability = kind
         if not snapshot["capabilities"] & contract.JUMP_CAP_REQUEST_ID:
             return self._refuse("request-id-unsupported", text)
@@ -200,7 +235,7 @@ class CurrentJumpClient(object):
             accepted = False
         if accepted is False or (isinstance(accepted, int) and accepted < 0):
             return self._refuse("send-failed", text)
-        self._outstanding = _Request(request_id, message_type, self._clock(), snapshot["port"], snapshot["generation"], bytes(snapshot["token"]), text)
+        self._outstanding = _Request(request_id, message_type, self._clock(), name, snapshot["port"], snapshot["generation"], bytes(snapshot["token"]), text)
         self._next_watch = self._clock() + WATCH_INTERVAL_S
         self._unreleased = None                             # a command is on its way again: nothing is left over from an earlier refusal
         self.counts["sent"] += 1
@@ -267,15 +302,14 @@ class CurrentJumpClient(object):
             if now < self._next_watch:
                 return
             self._next_watch = now + WATCH_INTERVAL_S
-            snapshot, reason = self._read_directory()
+            snapshot, reason = self._read_named(request.name)           # D-9: only the name this request was sent through, never a new search
             if snapshot is None:
                 if reason in ("jump-directory-closed", "jump-directory-missing") or reason.startswith("jump-directory-invalid"):
                     self._cancel_unreleased("endpoint-" + reason)
                 return
             if not self._usable(snapshot):
-                self._detach()
                 self._cancel_unreleased("endpoint-withdrawn")
-            elif snapshot["generation"] != request.generation or bytes(snapshot["token"]) != request.token:
+            elif snapshot["bve_pid"] != self.bve_pid or snapshot["generation"] != request.generation or bytes(snapshot["token"]) != request.token:
                 self._cancel_unreleased("endpoint-changed")
         except Exception:
             pass
@@ -301,4 +335,4 @@ class CurrentJumpClient(object):
             return
         self.cancel("shutdown")
         self._closed = True
-        self._detach()
+        self._release()

@@ -37,13 +37,20 @@ def read(path):
         return f.read()
 
 
+# Phase PID-D4 Legacy Jump 2A-alpha (X8): the test kit of the 2A-alpha tests owns the loopback UDP helpers of those tests (it sends the commands and probes the ports of the
+# plane under test); it is test code, never shipped. It is excluded by its EXACT path relative to the plugin root - never by a part of a name, never a directory. Every other file
+# stays audited: the test fixture (LegacyJumpPlaneTestFixture.cs), the product LegacyJump*.cs files, all Handshake product code. The product socket ban is unchanged.
+_TEST_ONLY_SOCKET_FILES = ("Handshake/Tests/LegacyJumpPlaneTestKit.cs",)
+
+
 def cs_sources():
     found = []
     for base, dirs, files in os.walk(PLUGIN_ROOT):
         dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
         for name in files:
+            rel = os.path.relpath(os.path.join(base, name), PLUGIN_ROOT).replace("\\", "/")
             # Phase PID-D4 Slice 1: this test fixture owns loopback receiver sockets of its own (it drives the real Legacy sink against them); it is test code, never shipped
-            if name.endswith(".cs") and name != "LegacyDataPlaneTestFixture.cs":
+            if name.endswith(".cs") and name != "LegacyDataPlaneTestFixture.cs" and rel not in _TEST_ONLY_SOCKET_FILES:
                 found.append(os.path.join(base, name))
     return sorted(found)
 
@@ -113,6 +120,27 @@ class A_StaticAudit(unittest.TestCase):
             code = code_only(read(path))
             for token in ("UdpClient", "System.Net.Sockets", "TcpClient", "54321", "54322"):
                 self.assertNotIn(token, code, (os.path.relpath(path, HANDSHAKE), token))
+
+    def test_the_socket_audit_excludes_exactly_the_two_test_only_files(self):
+        # Phase PID-D4 Legacy Jump 2A-alpha (X8): the exclusion is exact (two files, both under Handshake/Tests), it can not silently become zero or many, and the product stays audited
+        audited = set(cs_sources())
+        every = set()
+        for base, dirs, files in os.walk(PLUGIN_ROOT):
+            dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+            for name in files:
+                if name.endswith(".cs"):
+                    every.add(os.path.join(base, name))
+        excluded = sorted(os.path.relpath(p, PLUGIN_ROOT).replace("\\", "/") for p in every - audited)
+        self.assertEqual(excluded, ["Handshake/Tests/LegacyDataPlaneTestFixture.cs", "Handshake/Tests/LegacyJumpPlaneTestKit.cs"])
+        self.assertEqual(len(_TEST_ONLY_SOCKET_FILES), 1)
+        self.assertTrue(os.path.isfile(os.path.join(PLUGIN_ROOT, *_TEST_ONLY_SOCKET_FILES[0].split("/"))), "the excluded test kit must exist (zero matches would make the exclusion meaningless)")
+        for rel in ("Handshake/Tests/LegacyJumpPlaneTestFixture.cs", "Handshake/Tests/LegacyIlCallScan.cs", "Handshake/Caller/src/HandshakeSession.cs",
+                    "Handshake/Telemetry/Shared/TelemetryContract.cs", "Handshake/Telemetry/Legacy/src/LegacyTelemetrySession.cs", "TsScoringPlugin/Class1.cs"):
+            self.assertIn(os.path.join(PLUGIN_ROOT, *rel.split("/")), audited, rel)
+        for name in ("LegacyJumpEndpoint.cs", "LegacyJumpCommandQueue.cs", "LegacyJumpControlPlane.cs"):
+            path = os.path.join(HANDSHAKE, "Telemetry", "Legacy", "src", name)
+            if os.path.exists(path):                      # absent until Stage S3; once they exist they must be audited like every other product source
+                self.assertIn(path, audited, name)
 
     def test_the_telemetry_plugin_is_not_linked_into_any_handshake_project(self):
         for base, dirs, files in os.walk(HANDSHAKE):

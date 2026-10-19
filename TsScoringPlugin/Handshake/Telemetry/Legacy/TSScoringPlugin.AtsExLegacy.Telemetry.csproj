@@ -4,7 +4,7 @@
   PHASE PID-D4 / SLICE 1: where the telemetry goes depends on the mode. NORMAL mode (no Caller in this BVE process): the plain text to UDP 127.0.0.1:54321, unchanged.
   MANAGED mode (the Caller is active): an Envelope v1 to the loopback endpoint that the managed application publishes in the per-PID Telemetry Directory, and nothing else.
   The routing core is the verified Current sender core ..\..\..\TsScoringPlugin\CurrentDataPlane.cs, LINKED UNCHANGED (never copied, never edited here); it uses the shared
-  DataPlaneProtocol.cs / TelemetryDirectoryReader.cs, which were already linked. The Current jump endpoint source is NOT linked: Slice 1 has no Legacy jump.
+  DataPlaneProtocol.cs / TelemetryDirectoryReader.cs, which were already linked. PHASE PID-D4 / LEGACY JUMP 2A-ALPHA: the Current jump endpoint source ..\..\..\TsScoringPlugin\CurrentJumpEndpoint.cs is linked UNCHANGED, only to use JumpDirectoryPublisher, JumpCommandValidator, CurrentJumpCommand and JumpCapabilities.RequestId; the Legacy jump control plane (src\LegacyJumpEndpoint.cs, src\LegacyJumpCommandQueue.cs, src\LegacyJumpControlPlane.cs, host independent) never calls the Create method of that source and owns its own port, worker and Directory.
   It is still a separate extension from the Legacy Bridge (the CONTROL plane): no Handshake source is linked and no Current (BveEX) API type is referenced. The only named kernel
   objects it opens are the READ-ONLY control plane events Enabled / Ready and the AppDirectory / Telemetry Directory mappings of its own BVE process (managed mode only).
   The AtsEX legacy host assemblies are referenced read-only from the installed legacy host (Private=False: never copied or shipped, never in Git).
@@ -69,6 +69,9 @@
     <Compile Include="..\..\..\TsScoringPlugin\CurrentDataPlane.cs">
       <Link>Shared\CurrentDataPlane.cs</Link>
     </Compile>
+    <Compile Include="..\..\..\TsScoringPlugin\CurrentJumpEndpoint.cs">
+      <Link>Shared\CurrentJumpEndpoint.cs</Link>
+    </Compile>
     <Compile Include="src\LegacyDataPlaneSink.cs" />
     <Compile Include="src\LegacyGroundLimits.cs" />
     <Compile Include="src\LegacyHandleContract.cs" />
@@ -83,6 +86,9 @@
       <Link>Shared\TelemetryDirectoryReader.cs</Link>
     </Compile>
     <Compile Include="src\LegacyInputTelemetry.cs" />
+    <Compile Include="src\LegacyJumpCommandQueue.cs" />
+    <Compile Include="src\LegacyJumpControlPlane.cs" />
+    <Compile Include="src\LegacyJumpEndpoint.cs" />
     <Compile Include="src\LegacyScoringProbe.cs" />
     <Compile Include="src\LegacyStationTimeline.cs" />
     <Compile Include="src\LegacyTelemetrySession.cs" />

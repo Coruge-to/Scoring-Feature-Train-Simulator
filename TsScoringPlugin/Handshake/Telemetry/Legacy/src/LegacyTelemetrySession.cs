@@ -41,6 +41,7 @@ namespace TSScoringPlugin.Telemetry
     internal sealed class LegacyTelemetrySession
     {
         private const double JumpToleranceMs = 300.0;
+        private const int MaxDiscontinuityLines = 64;
         private const long StaListIntervalMs = 1000;
         private const long PausedAfterMs = 100;
 
@@ -86,6 +87,11 @@ namespace TSScoringPlugin.Telemetry
         private bool anyTick;                                       // Tick thread only
         private long prevTickMs;                                    // Tick thread only
         private bool lastCreated;                                   // Tick thread only
+        private long lastSampleMonoMs;                              // Tick thread only: nowMs() at the last valid sample (diagnostic of a discontinuity)
+        private int skippedAtLastSample;                            // Tick thread only: LinesSkipped at the last valid sample
+        private string epochBeginReason = "first-tick";              // Tick thread only: why the active scenario instance began
+        private int discLogged;                                     // Tick thread only: TEL_DISCONTINUITY lines written
+        private bool discLimitNoted;                                // Tick thread only: TEL_DISCONTINUITY_LIMIT written
         private volatile int heartbeatStatus;                       // 0 nothing noted yet, 1 running, 2 paused, 3 idle = no active instance (heartbeat thread writes, the Tick thread resets)
 
         // diagnostics (tests, and a future log)
@@ -283,6 +289,7 @@ namespace TSScoringPlugin.Telemetry
         {
             // an instance still active here means the original Scenario object changed without any lifecycle event
             string reason = epochActive ? "identity-changed" : endReason;
+            epochBeginReason = reason;
             if (epochActive)
             {
                 EndInputProbe();
@@ -487,12 +494,14 @@ namespace TSScoringPlugin.Telemetry
             double speedKmh = TelemetryContract.Kmh(speedMps);
 
             // the simulation time jumped (a jump, a rewind, a hitch): the references of the previous Tick are void
+            long sampleMono = nowMs();
             bool discontinuity = lastTimeMs != 0 && Math.Abs(timeMs - lastTimeMs - elapsed.TotalMilliseconds) > JumpToleranceMs;
             if (discontinuity)
             {
                 Discontinuities++;
                 timeline.MarkDiscontinuity();
                 haveLastSample = false;
+                LogDiscontinuity(sampleMono, timeMs, elapsed);
             }
 
             LineBuilder lb = new LineBuilder();
@@ -766,6 +775,8 @@ namespace TSScoringPlugin.Telemetry
             }
 
             lastTimeMs = timeMs;
+            lastSampleMonoMs = sampleMono;
+            skippedAtLastSample = LinesSkipped;
             lastSpeedMps = speedMps;
             haveLastSample = true;
 
@@ -800,6 +811,45 @@ namespace TSScoringPlugin.Telemetry
             }
         }
 
+        /// <summary>
+        /// Diagnostic only: one TEL_DISCONTINUITY line per discontinuity counted above (never per Tick), at most MaxDiscontinuityLines per process; the next one writes a single
+        /// TEL_DISCONTINUITY_LIMIT line and then nothing. It reads Tick-thread state only, changes no counter and cannot throw out of here. Every value is a fact of this Tick or of
+        /// the previous valid sample; nothing is estimated (no pause word: that state is not known on the Tick thread).
+        /// </summary>
+        private void LogDiscontinuity(long mono, int bveMs, TimeSpan elapsed)
+        {
+            try
+            {
+                if (diag == null)
+                {
+                    return;
+                }
+
+                if (discLogged >= MaxDiscontinuityLines)
+                {
+                    if (!discLimitNoted)
+                    {
+                        discLimitNoted = true;
+                        Log("TEL_DISCONTINUITY_LIMIT", "emitted=" + TelemetryContract.I(discLogged) + " totalAtLimit=" + TelemetryContract.I(Discontinuities) + " epoch=" + TelemetryContract.I(Epochs)
+                            + " scenarioId=" + TelemetryContract.I(scenarioId) + " mono=" + TelemetryContract.D((double)mono));
+                    }
+
+                    return;
+                }
+
+                discLogged++;
+                Log("TEL_DISCONTINUITY", "n=" + TelemetryContract.I(Discontinuities) + " epoch=" + TelemetryContract.I(Epochs) + " scenarioId=" + TelemetryContract.I(scenarioId)
+                    + " epochLines=" + TelemetryContract.I(epochLines) + " epochReason=" + epochBeginReason + " mono=" + TelemetryContract.D((double)mono)
+                    + " prevMono=" + TelemetryContract.D((double)lastSampleMonoMs) + " wallGapMs=" + TelemetryContract.D((double)(mono - lastSampleMonoMs))
+                    + " bveMs=" + TelemetryContract.I(bveMs) + " prevBveMs=" + TelemetryContract.I(lastTimeMs) + " bveDeltaMs=" + TelemetryContract.I(bveMs - lastTimeMs)
+                    + " elapsedMs=" + TelemetryContract.F(elapsed.TotalMilliseconds, "F3") + " residualMs=" + TelemetryContract.F(bveMs - lastTimeMs - elapsed.TotalMilliseconds, "F3")
+                    + " skippedSince=" + TelemetryContract.I(LinesSkipped - skippedAtLastSample));
+            }
+            catch
+            {
+                // a diagnostic can never affect the telemetry or BVE
+            }
+        }
         /// <summary>Phase SI-0: hands the Tick to the scoring observation. Nothing it does can throw out of here or reach the line.</summary>
         private void ObserveScoring(bool coreOk, double location, double? groundMps)
         {

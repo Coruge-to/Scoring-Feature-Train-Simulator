@@ -68,7 +68,9 @@ class LiveEndpoint(unittest.TestCase):
                 self.assertEqual(served, ["JUMP_STA_TIME:2:36000000|" + rid.hex()])
                 self.assertNotEqual(published_port, 54322)
 
-                # the endpoint goes away: the client keeps its handle and sees the CLOSED snapshot, the request is cancelled, no retry
+                # the endpoint goes away. D-8: the Reader keeps no mapping handle (every watch opens, reads and closes). If the watch opens the Writer's WITHDRAWING / CLOSED block before the
+                # mapping is gone, the reason is "endpoint-withdrawn"; if the mapping is already gone at the next open, it is "endpoint-jump-directory-missing". Either way the request is
+                # cancelled, the old endpoint is never used again, and nothing is retried.
                 open(os.path.join(folder, "stop.flag"), "w").close()
                 self.assertTrue(wait_for(os.path.join(folder, "done.txt"), 30), "the endpoint did not close")
                 probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -81,7 +83,9 @@ class LiveEndpoint(unittest.TestCase):
                 client._next_watch = 0.0
                 client.poll()
                 self.assertFalse(client.has_outstanding)
-                self.assertEqual(client.last_failure, "endpoint-withdrawn")
+                # D-8: the Reader keeps no handle, so after the Writer's Dispose either outcome is right: the WITHDRAWING block was still mapped when the watch opened it ("endpoint-withdrawn"),
+                # or the Writer's mapping was already gone ("endpoint-jump-directory-missing"; the next send below accepts the analogous two). Exactly these two, nothing else.
+                self.assertIn(client.last_failure, ("endpoint-withdrawn", "endpoint-jump-directory-missing"))
                 self.assertEqual(client.complete(rid), cjc.R_STALE)
                 self.assertIsNone(client.send("JUMP_STA_TIME:2:36000000"))
                 self.assertIn(client.last_failure, ("send-refused:jump-endpoint-not-usable", "send-refused:jump-directory-missing"))

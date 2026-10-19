@@ -22,6 +22,9 @@ def _token(v,n):
     return v
 def telemetry_name(pid,instance): _pid(pid);_instance(instance);return f"Local\\TSScoringPlugin.v1.{pid}.App.{instance}.Telemetry"
 def jump_name(pid): _pid(pid);return f"Local\\TSScoringPlugin.v1.{pid}.CurrentJump"
+# PID-D4 Legacy Jump 2A-alpha (D-9): the Legacy host owns its own Jump Directory name; jump_directory_names is the generic list of every name a Jump command can be resolved through (Current first, Legacy second).
+def legacy_jump_name(pid): _pid(pid);return f"Local\\TSScoringPlugin.v1.{pid}.LegacyJump"
+def jump_directory_names(pid): return (jump_name(pid),legacy_jump_name(pid))
 def _state(v,usable=False):
     if v&~15: raise ValueError("state-flags")
     if v&READY and not v&PUBLISHED: raise ValueError("state-ready")
