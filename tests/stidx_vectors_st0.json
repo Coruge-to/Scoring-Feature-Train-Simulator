@@ -1,0 +1,299 @@
+{
+ "_comment": "ST-0 shared vector table (pid-stationindex-st0-chartests-v1). Data only; it fixes NO implementation. The words of 'verdict' are the fixed diagnostic words and NOT-READY of 05-Cross-Layer-StationIndex-Contract.md section 5/7/9 of the contract-gap audit. The wire form STIDX:1:<tgt>:<arr>:<arrseq>:<count>:<hash> is the candidate of section 5 (not approved). grace_ms is a parameter of each vector because its value is undecided (OD-NEW-6).",
+ "crc32": [
+  {
+   "id": "H01",
+   "payload": "",
+   "hex": "00000000"
+  },
+  {
+   "id": "H02",
+   "payload": "A=0=0=-1=-1=-1=15000=0=0,B=1=1000=36060000=-1=-1=20000=0=1",
+   "hex": "592BCC9A"
+  },
+  {
+   "id": "H03",
+   "payload": "A=0=0=-1=-1=-1=15000=0=0,B=1=1000=36060000=36080000=-1=20000=0=0,C=1=2000=36200000=36220000=-1=15000=0=0,D=0=3000=36300000=-1=-1=15000=0=1",
+   "hex": "E1D70409"
+  },
+  {
+   "id": "H04",
+   "payload": "\u65b0\u5bbf=0=0=-1=-1=-1=15000=0=0,\u6e0b\u8c37=1=1000.5=36060000=36080000=-1=20000=0=0,\u6c60\u888b=1=2000=36200000=-1=-1=15000=0=1",
+   "hex": "1E094F69"
+  },
+  {
+   "id": "H05",
+   "payload": "A=0=0=-1=-1=-1=15000=0=0,B1=1=1000=36060000=36080000=-1=20000=0=0,B2=1=1000=36060000=36080000=-1=20000=0=0,D=0=3000=36300000=-1=-1=15000=0=1",
+   "hex": "2BF6D1AE"
+  }
+ ],
+ "stidx": [
+  {
+   "id": "V01",
+   "line": "STIDX:1:1:-1:0:4:E1D70409",
+   "nextloc": 1000.0,
+   "station_locations": [
+    0.0,
+    1000.0,
+    2000.0,
+    3000.0
+   ],
+   "list_hash": "E1D70409",
+   "elapsed_since_mismatch_ms": 0,
+   "grace_ms": 3000,
+   "prev_arrseq": -1,
+   "verdict": "stidx-ok"
+  },
+  {
+   "id": "V02",
+   "line": "STIDX:1:-1:-1:0:4:E1D70409",
+   "nextloc": -1.0,
+   "station_locations": [
+    0.0,
+    1000.0,
+    2000.0,
+    3000.0
+   ],
+   "list_hash": "E1D70409",
+   "elapsed_since_mismatch_ms": 0,
+   "grace_ms": 3000,
+   "prev_arrseq": -1,
+   "verdict": "stidx-ok"
+  },
+  {
+   "id": "V03",
+   "line": "STIDX:1:-1:-1:0:0:00000000",
+   "nextloc": -1.0,
+   "station_locations": [],
+   "list_hash": "00000000",
+   "elapsed_since_mismatch_ms": 0,
+   "grace_ms": 3000,
+   "prev_arrseq": -1,
+   "verdict": "stidx-ok"
+  },
+  {
+   "id": "V04",
+   "line": "STIDX:2:1:-1:0:4:E1D70409",
+   "nextloc": 1000.0,
+   "station_locations": [
+    0.0,
+    1000.0,
+    2000.0,
+    3000.0
+   ],
+   "list_hash": "E1D70409",
+   "elapsed_since_mismatch_ms": 0,
+   "grace_ms": 3000,
+   "prev_arrseq": -1,
+   "verdict": "stidx-version"
+  },
+  {
+   "id": "V05",
+   "line": null,
+   "nextloc": 1000.0,
+   "station_locations": [
+    0.0,
+    1000.0,
+    2000.0,
+    3000.0
+   ],
+   "list_hash": "E1D70409",
+   "elapsed_since_mismatch_ms": 0,
+   "grace_ms": 3000,
+   "prev_arrseq": -1,
+   "verdict": "stidx-missing"
+  },
+  {
+   "id": "V06",
+   "line": "STIDX:1:4:-1:0:4:E1D70409",
+   "nextloc": 1000.0,
+   "station_locations": [
+    0.0,
+    1000.0,
+    2000.0,
+    3000.0
+   ],
+   "list_hash": "E1D70409",
+   "elapsed_since_mismatch_ms": 0,
+   "grace_ms": 3000,
+   "prev_arrseq": -1,
+   "verdict": "stidx-range"
+  },
+  {
+   "id": "V07",
+   "line": "STIDX:1:-2:-1:0:4:E1D70409",
+   "nextloc": 1000.0,
+   "station_locations": [
+    0.0,
+    1000.0,
+    2000.0,
+    3000.0
+   ],
+   "list_hash": "E1D70409",
+   "elapsed_since_mismatch_ms": 0,
+   "grace_ms": 3000,
+   "prev_arrseq": -1,
+   "verdict": "stidx-range"
+  },
+  {
+   "id": "V08",
+   "line": "STIDX:1:1:4:0:4:E1D70409",
+   "nextloc": 1000.0,
+   "station_locations": [
+    0.0,
+    1000.0,
+    2000.0,
+    3000.0
+   ],
+   "list_hash": "E1D70409",
+   "elapsed_since_mismatch_ms": 0,
+   "grace_ms": 3000,
+   "prev_arrseq": -1,
+   "verdict": "stidx-range"
+  },
+  {
+   "id": "V09",
+   "line": "STIDX:1:1:-1:0:4:E1D70409",
+   "nextloc": 1500.0,
+   "station_locations": [
+    0.0,
+    1000.0,
+    2000.0,
+    3000.0
+   ],
+   "list_hash": "E1D70409",
+   "elapsed_since_mismatch_ms": 0,
+   "grace_ms": 3000,
+   "prev_arrseq": -1,
+   "verdict": "stidx-nextloc"
+  },
+  {
+   "id": "V10",
+   "line": "STIDX:1:-1:-1:0:4:E1D70409",
+   "nextloc": 1000.0,
+   "station_locations": [
+    0.0,
+    1000.0,
+    2000.0,
+    3000.0
+   ],
+   "list_hash": "E1D70409",
+   "elapsed_since_mismatch_ms": 0,
+   "grace_ms": 3000,
+   "prev_arrseq": -1,
+   "verdict": "stidx-nextloc"
+  },
+  {
+   "id": "V11",
+   "line": "STIDX:1:1:-1:0:4:E1D70409",
+   "nextloc": 1000.005,
+   "station_locations": [
+    0.0,
+    1000.0,
+    2000.0,
+    3000.0
+   ],
+   "list_hash": "E1D70409",
+   "elapsed_since_mismatch_ms": 0,
+   "grace_ms": 3000,
+   "prev_arrseq": -1,
+   "verdict": "stidx-ok"
+  },
+  {
+   "id": "V12",
+   "line": "STIDX:1:1:-1:0:4:E1D70409",
+   "nextloc": 1000.02,
+   "station_locations": [
+    0.0,
+    1000.0,
+    2000.0,
+    3000.0
+   ],
+   "list_hash": "E1D70409",
+   "elapsed_since_mismatch_ms": 0,
+   "grace_ms": 3000,
+   "prev_arrseq": -1,
+   "verdict": "stidx-nextloc"
+  },
+  {
+   "id": "V13",
+   "line": "STIDX:1:1:-1:0:4:DEADBEEF",
+   "nextloc": 1000.0,
+   "station_locations": [
+    0.0,
+    1000.0,
+    2000.0,
+    3000.0
+   ],
+   "list_hash": "E1D70409",
+   "elapsed_since_mismatch_ms": 5000,
+   "grace_ms": 3000,
+   "prev_arrseq": -1,
+   "verdict": "stidx-list-mismatch"
+  },
+  {
+   "id": "V14",
+   "line": "STIDX:1:1:-1:0:4:DEADBEEF",
+   "nextloc": 1000.0,
+   "station_locations": [
+    0.0,
+    1000.0,
+    2000.0,
+    3000.0
+   ],
+   "list_hash": "E1D70409",
+   "elapsed_since_mismatch_ms": 500,
+   "grace_ms": 3000,
+   "prev_arrseq": -1,
+   "verdict": "NOT-READY"
+  },
+  {
+   "id": "V15",
+   "line": "STIDX:1:1:-1:5:4:E1D70409",
+   "nextloc": 1000.0,
+   "station_locations": [
+    0.0,
+    1000.0,
+    2000.0,
+    3000.0
+   ],
+   "list_hash": "E1D70409",
+   "elapsed_since_mismatch_ms": 0,
+   "grace_ms": 3000,
+   "prev_arrseq": 3,
+   "verdict": "stidx-arrseq-gap"
+  },
+  {
+   "id": "V16",
+   "line": "STIDX:1:1:2:4:4:E1D70409",
+   "nextloc": 1000.0,
+   "station_locations": [
+    0.0,
+    1000.0,
+    2000.0,
+    3000.0
+   ],
+   "list_hash": "E1D70409",
+   "elapsed_since_mismatch_ms": 0,
+   "grace_ms": 3000,
+   "prev_arrseq": 3,
+   "verdict": "stidx-ok"
+  },
+  {
+   "id": "V17",
+   "line": "STIDX:1:1:2:3:4:E1D70409",
+   "nextloc": 1000.0,
+   "station_locations": [
+    0.0,
+    1000.0,
+    2000.0,
+    3000.0
+   ],
+   "list_hash": "E1D70409",
+   "elapsed_since_mismatch_ms": 0,
+   "grace_ms": 3000,
+   "prev_arrseq": 3,
+   "verdict": "stidx-ok"
+  }
+ ]
+}
