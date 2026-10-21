@@ -51,6 +51,10 @@ using BveTypes.ClassWrappers;
 // the three scenario events (NoteScenarioBoundary), and Dispose, where the plane is shut down BEFORE the telemetry part (session.OnDispose). The plane runs on a worker of its
 // own; it reads no host value, calls no host method and announces nothing. A failure of the plane switches only the plane off.
 //
+// Phase PID-D4 / Legacy Jump LJX-1 (acceptance build only, behind the build flag LEGACY_JUMP_EXEC): the Tick also runs the Legacy Jump execution. TickPre (claim one accepted
+// command, run its host sequence, read back) runs BEFORE the session writes the row of the Tick, TickPost (the JUMP_COMPLETE) AFTER it. The host jump API is named by
+// AtsExLegacyJumpHost below and nowhere else. In the default build none of this exists at run time: no runner is built, the Directory carries REQUEST_ID only.
+//
 // The timer thread (heartbeat) uses the session's own volatile fields only; it never touches BveHacker, a Scenario or any BVE object.
 // No exception ever leaves the constructor, Tick, Dispose, an event handler or the timer.
 // ============================================================================
@@ -70,6 +74,7 @@ namespace TSScoringPlugin.Telemetry
         private bool subscribed;
         private bool disposedFlag;
         private LegacyJumpControlPlane jump;
+        private LegacyJumpTickRunner jumpRunner;
 
         public TsScoringLegacyTelemetryExtension(PluginBuilder builder)
             : base(builder)
@@ -86,7 +91,31 @@ namespace TSScoringPlugin.Telemetry
 
             sink = LegacyDataPlaneSink.Create(bvePid, LegacyDataPlaneSink.FixedLegacyDestination(), delegate (string text) { diag.Event("TEL_DP", text); });
             AtsExLegacyApi api = new AtsExLegacyApi();
-            session = new LegacyTelemetrySession(api, sink, delegate { return clock.ElapsedMilliseconds; }, delegate { return DateTime.UtcNow.Ticks; }, diag, api, api, api);
+            try
+            {
+                jump = LegacyJumpControlPlane.CreateProduction(bvePid, delegate (string text) { diag.Event("TEL_JUMP", text); });      // builds objects only: no port, no mapping, no thread
+            }
+            catch (Exception ex)
+            {
+                jump = null;      // only the Legacy Jump feature stays off; the telemetry is unaffected
+                diag.Event("TEL_JUMP", "event=jump-plane-unavailable type=" + ex.GetType().Name);
+            }
+
+            // LJX-1: the row may announce the jump group only through the plane (null in the default build, where the execution is off)
+            ILegacyJumpAvailability jumpAvail = null;
+            try
+            {
+                if (jump != null && jump.ExecutionEnabledByBuild)
+                {
+                    jumpAvail = jump;
+                }
+            }
+            catch
+            {
+                jumpAvail = null;
+            }
+
+            session = new LegacyTelemetrySession(api, sink, delegate { return clock.ElapsedMilliseconds; }, delegate { return DateTime.UtcNow.Ticks; }, diag, api, api, api, jumpAvail);
             try
             {
                 api.AttachNative(Native);      // PluginBase.Native: the public route to INative; only held here, read on the Tick thread
@@ -123,12 +152,17 @@ namespace TSScoringPlugin.Telemetry
 
             try
             {
-                jump = LegacyJumpControlPlane.CreateProduction(bvePid, delegate (string text) { diag.Event("TEL_JUMP", text); });      // builds objects only: no port, no mapping, no thread
+                // LJX-1 (acceptance build only): the host adapter and the Tick runner. Without them the plane never announces the execution contract.
+                if (jump != null && jump.ExecutionEnabledByBuild)
+                {
+                    AtsExLegacyJumpHost jumpHost = new AtsExLegacyJumpHost(BveHacker);
+                    jumpRunner = new LegacyJumpTickRunner(jump, new LegacyJumpExecutor(jumpHost, jump.Clock), jumpHost, session, sink);
+                }
             }
             catch (Exception ex)
             {
-                jump = null;      // only the Legacy Jump feature stays off; the telemetry is unaffected
-                diag.Event("TEL_JUMP", "event=jump-plane-unavailable type=" + ex.GetType().Name);
+                jumpRunner = null;
+                diag.Event("TEL_JUMP", "event=jump-runner-unavailable type=" + ex.GetType().Name);
             }
 
             diag.Event("TEL_INIT", "ver=" + FileTelemetryDiag.Version + " bitness=" + (IntPtr.Size * 8) + " host=AtsExLegacy identity=" + LegacyScenarioIdentity.KindSourceObject
@@ -140,7 +174,30 @@ namespace TSScoringPlugin.Telemetry
         {
             try
             {
+                // LJX-1 (acceptance build only): claim, execute and read back BEFORE the session writes the row of this Tick; the completion follows AFTER it
+                if (jumpRunner != null && jump != null && jump.ExecutionActive)
+                {
+                    jumpRunner.TickPre();
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
                 session.OnTick(elapsed);
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                if (jumpRunner != null && jump != null && jump.ExecutionActive)
+                {
+                    jumpRunner.TickPost();
+                }
             }
             catch
             {
@@ -273,6 +330,84 @@ namespace TSScoringPlugin.Telemetry
             identity.Wrapper = wrapper;
             identity.Kind = LegacyScenarioIdentity.KindSourceObject;
             return identity;
+        }
+    }
+
+    /// <summary>
+    /// Phase LJX-1: the host seam of the Legacy Jump executor (ILegacyJumpHost) on the AtsEX Legacy API. THIS TYPE IS THE ONLY PLACE OF THE PROJECT THAT NAMES THE HOST JUMP API:
+    /// Scenario.Initialize(int), Scenario.InitializeTimeAndLocation(double, int) and TimeManager.SetTime(int), one call instruction each (the sequence order and the read back
+    /// were verified on the real host by the SI-B1 probe). Every method is called on the host Tick thread by LegacyJumpExecutor only, which is reachable from Tick only. The
+    /// reads catch everything (null / NaN = not readable); the three calls let the host exception through (the executor turns it into a failed command).
+    /// </summary>
+    internal sealed class AtsExLegacyJumpHost : ILegacyJumpHost
+    {
+        private readonly IBveHacker hacker;
+
+        internal AtsExLegacyJumpHost(IBveHacker hacker)
+        {
+            if (ReferenceEquals(hacker, null))
+            {
+                throw new ArgumentNullException("hacker");
+            }
+
+            this.hacker = hacker;
+        }
+
+        public bool IsScenarioCreated()
+        {
+            try { return hacker.IsScenarioCreated; }
+            catch { return false; }
+        }
+
+        public LegacyJumpReadBack ReadBack()
+        {
+            try
+            {
+                Scenario sc = hacker.Scenario;
+                if (ReferenceEquals(sc, null))
+                {
+                    return null;
+                }
+
+                LegacyJumpReadBack r = new LegacyJumpReadBack();
+                r.TimeMs = sc.TimeManager.TimeMilliseconds;
+                r.Location = sc.LocationManager.Location;
+                r.StationCount = sc.Route.Stations.Count;
+                return r;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public double StationLocation(int index)
+        {
+            try
+            {
+                StationList list = hacker.Scenario.Route.Stations;
+                Station st = list[index] as Station;
+                return ReferenceEquals(st, null) ? double.NaN : st.Location;
+            }
+            catch
+            {
+                return double.NaN;
+            }
+        }
+
+        public void MoveToStation(int index)
+        {
+            hacker.Scenario.Initialize(index);
+        }
+
+        public void MoveToLocation(double location, int timeMs)
+        {
+            hacker.Scenario.InitializeTimeAndLocation(location, timeMs);
+        }
+
+        public void SetClockMs(int timeMs)
+        {
+            hacker.Scenario.TimeManager.SetTime(timeMs);
         }
     }
 

@@ -43,7 +43,7 @@ class A_VocabularyAndScope(unittest.TestCase):
         self.assertRegex(text, r'internal const string TokTrainLen = "trainlen";')
         cs_tokens = set(re.findall(r'internal const string Tok\w+ = "([a-z_]+)"', text))
         self.assertTrue(cs_tokens <= set(tc.KNOWN_TOKENS), cs_tokens - set(tc.KNOWN_TOKENS))
-        self.assertEqual(set(tc.KNOWN_TOKENS) - cs_tokens, {"doortime", "jump"})      # what the Legacy sender still cannot provide
+        self.assertEqual(set(tc.KNOWN_TOKENS) - cs_tokens, {"doortime"})      # what the Legacy sender still cannot provide (Phase LJX-1, pin moved: "jump" is a token of the C# contract now; it is announced only by the acceptance build, behind the build flag)
 
     def test_a_line_with_the_new_tokens_is_understood_by_the_availability_parser(self):
         parsed = tc.parse_telemetry(line(1000, 40, 50, 90, "1500.0=65.0"))

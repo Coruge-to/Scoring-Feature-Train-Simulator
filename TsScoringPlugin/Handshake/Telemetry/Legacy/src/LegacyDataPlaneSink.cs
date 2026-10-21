@@ -103,7 +103,7 @@ namespace TSScoringPlugin.Telemetry
     /// The sink of LegacyTelemetrySession in the PID-D4 world. Thread safe: the Tick thread and the heartbeat timer thread both call Send (the router has its own gate,
     /// the transport serialises the socket). After Close nothing is sent any more.
     /// </summary>
-    internal sealed class LegacyDataPlaneSink : ITelemetrySink
+    internal sealed class LegacyDataPlaneSink : ITelemetrySink, ILegacyJumpCompleteSender
     {
         private readonly CurrentTelemetryRouter router;
         private readonly LegacyUdpTransport transport;
@@ -200,6 +200,37 @@ namespace TSScoringPlugin.Telemetry
             {
                 // nothing may reach BVE; the receiving application may simply not be running (the NORMAL path of the router lets a transport exception through, as before)
                 System.Threading.Interlocked.Increment(ref failed);
+            }
+        }
+
+        /// <summary>
+        /// Phase LJX-1: the JUMP_COMPLETE of an executed official jump, as a type 5 envelope that echoes the RequestId, through the same routing core as every other text (the
+        /// destination is the Directory-published Telemetry endpoint of THIS BVE process and nothing else; there is no fixed-port fallback). It does not go through the
+        /// message classifier (an unclassified text is dropped in managed mode). Returns Sent when a datagram left, Excluded when the core consumed it without one (the
+        /// endpoint has no JUMP_COMPLETE capability, or the sender is in normal mode), Held when nothing was consumed (hold-off, endpoint not resolvable, send failure, closed).
+        /// </summary>
+        public int SendJumpComplete(byte[] payload, byte[] requestId)
+        {
+            try
+            {
+                if (closed || router == null || payload == null || requestId == null)
+                {
+                    return LegacyJumpSend.Held;
+                }
+
+                long sentBefore = router.JumpCompleteSent;
+                CurrentTelemetryRouter.SendBatch batch = router.Begin();
+                if (!batch.SendJumpComplete(payload, requestId))
+                {
+                    return LegacyJumpSend.Held;
+                }
+
+                return router.JumpCompleteSent > sentBefore ? LegacyJumpSend.Sent : LegacyJumpSend.Excluded;
+            }
+            catch
+            {
+                System.Threading.Interlocked.Increment(ref failed);
+                return LegacyJumpSend.Held;
             }
         }
 

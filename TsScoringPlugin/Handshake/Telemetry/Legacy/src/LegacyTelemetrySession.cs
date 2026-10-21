@@ -11,7 +11,8 @@ using System.Threading;
 // sentinels of the telemetry contract, and an AVAIL part that names exactly those data groups. Nothing is guessed, defaulted or carried over:
 //
 //   * a value that cannot be read is not written, and its token is not in AVAIL;
-//   * data that does not exist in the Legacy API (the jump, the door close time) has no token and no key, ever;
+//   * data that does not exist in the Legacy API (the door close time) has no token and no key, ever; the jump group (JUMP) exists only in the acceptance build of the
+//     Legacy Jump execution (LJX-1) and only while the control plane says that its execution contract is open (ILegacyJumpAvailability), all or nothing;
 //   * Phase SI-1: the vehicle length, the ground limit look-ahead and the head limit are DERIVED from public Legacy API values (LegacyGroundTelemetry), each group
 //     all or nothing, and only when the session is given the read surface for it;
 //   * Phase LI1: the handle group (generic texts built from the handle numbers) and the brake pressures (StateStore, kPa) are offered by LegacyInputTelemetry
@@ -38,7 +39,7 @@ namespace TSScoringPlugin.Telemetry
         void Event(string name, string detail);
     }
 
-    internal sealed class LegacyTelemetrySession
+    internal sealed class LegacyTelemetrySession : ILegacyJumpSessionPort
     {
         private const double JumpToleranceMs = 300.0;
         private const int MaxDiscontinuityLines = 64;
@@ -93,6 +94,9 @@ namespace TSScoringPlugin.Telemetry
         private int discLogged;                                     // Tick thread only: TEL_DISCONTINUITY lines written
         private bool discLimitNoted;                                // Tick thread only: TEL_DISCONTINUITY_LIMIT written
         private volatile int heartbeatStatus;                       // 0 nothing noted yet, 1 running, 2 paused, 3 idle = no active instance (heartbeat thread writes, the Tick thread resets)
+        private readonly ILegacyJumpAvailability jumpAvail;          // LJX-1: null = the default build / no execution: the row never carries the jump group
+        private bool officialJumpPending;                           // LJX-1: Tick thread only: the executor just ran an official jump; the next sample resets the station state
+        private int lastLineJumpCount = -1;                         // LJX-1: Tick thread only: the JUMP value of the last row that carried the jump group (-1 = none)
 
         // diagnostics (tests, and a future log)
         internal int Epochs { get; private set; }
@@ -135,7 +139,17 @@ namespace TSScoringPlugin.Telemetry
         /// those is ever written or announced and MAPHEAD stays equal to MAPTAIL (the sender of the earlier phases, byte for byte).
         /// </summary>
         internal LegacyTelemetrySession(ILegacyApi api, ITelemetrySink sink, Func<long> nowMs, Func<long> idSeed, ITelemetryDiag diag, ILegacyInputApi input, ILegacyScoringApi scoring, ILegacyGroundApi groundApi)
+            : this(api, sink, nowMs, idSeed, diag, input, scoring, groundApi, null)
         {
+        }
+
+        /// <summary>
+        /// jumpAvail = Phase LJX-1: whether the row may announce the jump group (AVAIL jump and the JUMP key together). null = never (the default build and every earlier
+        /// phase: the row is byte for byte the row of the earlier sender).
+        /// </summary>
+        internal LegacyTelemetrySession(ILegacyApi api, ITelemetrySink sink, Func<long> nowMs, Func<long> idSeed, ITelemetryDiag diag, ILegacyInputApi input, ILegacyScoringApi scoring, ILegacyGroundApi groundApi, ILegacyJumpAvailability jumpAvail)
+        {
+            this.jumpAvail = jumpAvail;
             this.api = api;
             if (groundApi != null)
             {
@@ -184,6 +198,24 @@ namespace TSScoringPlugin.Telemetry
         internal int ScenarioId { get { return scenarioId; } }
 
         internal bool IsDisposed { get { return disposed; } }
+
+        // -- Phase LJX-1: the port that the Legacy Jump tick runner uses (Tick thread only) ---------------------------------------------------------
+        /// <summary>The executor just ran an official jump: the next sample restarts the station state (the jump counter stays the 300 ms rule).</summary>
+        internal void NoteOfficialJump()
+        {
+            officialJumpPending = true;
+        }
+
+        /// <summary>The JUMP value of the last row that carried the jump group (-1 when the last row did not carry it).</summary>
+        internal int LastLineJumpCount { get { return lastLineJumpCount; } }
+
+        void ILegacyJumpSessionPort.NoteOfficialJump() { NoteOfficialJump(); }
+
+        int ILegacyJumpSessionPort.LinesSent { get { return LinesSent; } }
+
+        int ILegacyJumpSessionPort.LastLineJumpCount { get { return lastLineJumpCount; } }
+
+        bool ILegacyJumpSessionPort.ScenarioActive { get { return scenarioActive; } }
 
         // -- lifecycle events (Tick thread) ---------------------------------------------------------------------------------------------------
         internal void OnScenarioOpened(bool isReload)
@@ -504,6 +536,17 @@ namespace TSScoringPlugin.Telemetry
                 LogDiscontinuity(sampleMono, timeMs, elapsed);
             }
 
+            if (officialJumpPending)
+            {
+                // LJX-1: an official jump was just executed on this Tick: the station state restarts from here whatever the time step was. The counter stays the 300 ms rule.
+                officialJumpPending = false;
+                if (!discontinuity)
+                {
+                    timeline.MarkDiscontinuity();
+                    haveLastSample = false;
+                }
+            }
+
             LineBuilder lb = new LineBuilder();
             lb.Token(TelemetryContract.TokTime);
             lb.Token(TelemetryContract.TokSpeed);
@@ -675,6 +718,21 @@ namespace TSScoringPlugin.Telemetry
             {
             }
 
+            // LJX-1: the jump group, only while the control plane says its execution contract is open; the token and the key appear together or not at all
+            int jumpInRow = -1;
+            try
+            {
+                if (jumpAvail != null && jumpAvail.JumpOpen)
+                {
+                    lb.Group(TelemetryContract.TokJump, "JUMP", TelemetryContract.I(Discontinuities));
+                    jumpInRow = Discontinuities;
+                }
+            }
+            catch
+            {
+                jumpInRow = -1;
+            }
+
             try
             {
                 int notches;
@@ -766,6 +824,7 @@ namespace TSScoringPlugin.Telemetry
 
             sink.Send(line);
             LinesSent++;
+            lastLineJumpCount = jumpInRow;
             epochLines++;
             if (!epochUdpLogged)
             {

@@ -93,12 +93,12 @@ $newFiles = @('LegacyJumpEndpoint.cs', 'LegacyJumpCommandQueue.cs', 'LegacyJumpC
 # K11: the Session pin moved from the 2A-alpha baseline (DFDBF759...47AC9) to the audited TEL_DISCONTINUITY diagnostic edit (owner decision C-1, option C: 14 keys, no hb). The edit is diagnostic only:
 # Test-LegacyDiscontinuityDiag.ps1 PD-21 / PD-22 prove the single increment site, the 300 ms judgement, TEL_DISPOSE and that the diff against 87cf543 is additions of the allowed lines only.
 $k11Pins = [ordered]@{
-    'LegacyTelemetrySession.cs' = '1D796C600BDB628420C43EE1E9FDE360A9D0F4C3945D1CEFCDB0691BBFA9391E'
-    'LegacyDataPlaneSink.cs'    = '112E6B7BD46FA44A13B2FB60F4A2EB17A252F3B027C88D5B4DE06E4FDDDECCA8'
+    'LegacyTelemetrySession.cs' = 'B4693D6453C126C26967ADBD3399DF9EC71871AD783C3B550A99219CFD2F7B5C'      # Phase LJX-1 (pin moved): was 1D796C60... (the audited TEL_DISCONTINUITY edit); the LJX-1 edit of the Session is audited by Test-LegacyJumpExecLJX1.ps1 (S09, LJX-12/16/17/32, golden OFF output)
+    'LegacyDataPlaneSink.cs'    = 'C597672FDD5AC62B6CABAF0A94CCEE6C30C94D5C7B5CDB3B123A0C126AC89EC8'      # Phase LJX-1 (pin moved): was 112E6B7B...; the new SendJumpComplete is audited by LJX-29 and S08
     'LegacyApi.cs'              = 'F9202D8FEB0F9B619C6F788D5B85E330700FAF115812A516B911B3EA9E7F8661'
 }
 $extUsingsBaseline = 9
-$extHostIdentBaseline = 10
+$extHostIdentBaseline = 14      # Phase LJX-1 (pin moved): +4 = the name AtsExLegacyJumpHost (declaration, constructor, creation); the host jump API itself is pinned by Test-LegacyJumpExecLJX1.ps1 S01 / LJX-28
 
 function NewFilesState {
     $missing = @($newFiles | Where-Object { -not (Test-Path (Join-Path $ProductSrcDir $_)) })
@@ -122,14 +122,16 @@ function CountMatches([string]$pattern, [string[]]$names) {
 
 function Run-Static {
     Write-Host '--- Static: K pins of the three new product files'
-    KCheck 'K01' { $n = CountMatches '\bHook\b|Synthetic|StartManual|Isolat|Iso2Aalpha|LegacyJumpIso|RequestRecreate|Executing|Trace\(' $newFiles; @{ Ok = ($n -eq 0); Detail = "isolation-only words: $n" } }
-    KCheck 'K02' { $n = CountMatches 'BveHacker|AtsEx|BveTypes|BveEx|Handshake|\bCaller\b|IInputDevice|\bInitialize\(|InitializeTimeAndLocation|\bSetTime\(|LegacyApi|\bILegacy(?!Jump)|\bAVAIL\b|JUMP_COMPLETE|JumpComplete' $newFiles; @{ Ok = ($n -eq 0); Detail = "BVE / AtsEX / Handshake / Legacy API / AVAIL / JUMP_COMPLETE words: $n" } }
+    KCheck 'K01' { $n = CountMatches '\bHook\b|Synthetic|StartManual|Isolat|Iso2Aalpha|LegacyJumpIso|RequestRecreate|Trace\(' $newFiles;      # Phase LJX-1 (pin moved): the word Executing is the new state of the execution slice and is no longer an isolation-only word
+     @{ Ok = ($n -eq 0); Detail = "isolation-only words: $n" } }
+    KCheck 'K02' { $n = CountMatches 'BveHacker|AtsEx|BveTypes|BveEx|Handshake|\bCaller\b|IInputDevice|\bInitialize\(|InitializeTimeAndLocation|\bSetTime\(|LegacyApi|\bILegacy(?!Jump)|\bAVAIL\b|JUMP_COMPLETE' $newFiles; @{ Ok = ($n -eq 0); Detail = "BVE / AtsEX / Handshake / Legacy API / AVAIL / JUMP_COMPLETE words: $n (Phase LJX-1 pin moved: the seam names ILegacyJumpCompleteSender / SendJumpComplete are the plane's own vocabulary)" } }
     KCheck 'K03' {
         $all = ($newFiles | ForEach-Object { NewCode $_ }) -join "`n"
         $uses = [regex]::Matches($all, 'JumpCapabilities\.(\w+)')
         $bad = @($uses | Where-Object { $_.Groups[1].Value -ne 'RequestId' })
         $bits = ([regex]::Matches($all, '\b0x1U\b|\b0x2U\b')).Count
-        @{ Ok = ($uses.Count -ge 1 -and $bad.Count -eq 0 -and $bits -eq 0); Detail = "capability uses: $($uses.Count), not RequestId: $($bad.Count), raw command bits: $bits" }
+        $published = @($uses | Where-Object { $_.Groups[1].Value -eq 'Published' }).Count      # Phase LJX-1 (pin moved): Published (STA | LOC | REQUEST_ID) appears once, in PublishedCapabilities, which returns it only when the execution is active (LJX-14 / LJX-15 / LJX-16)
+        @{ Ok = ($uses.Count -ge 1 -and ($bad.Count - $published) -eq 0 -and $published -eq 1 -and $bits -eq 0); Detail = "capability uses: $($uses.Count), not RequestId: $($bad.Count) (of which Published: $published), raw command bits: $bits" }
     }
     KCheck 'K04' { $n = CountMatches 'StationIndex|StationList|\bLocation\b|Math\.Abs|\b50\.0\b|\b100\.0\b|Distance|Tolerance' $newFiles; @{ Ok = ($n -eq 0); Detail = "distance / position / StationIndex words: $n" } }
     KCheck 'K05' {
@@ -160,7 +162,7 @@ function Run-Static {
         $shared = @('Telemetry\Shared\DataPlaneProtocol.cs', 'Telemetry\Shared\TelemetryDirectoryReader.cs', 'Telemetry\Shared\TelemetryContract.cs') | ForEach-Object { Join-Path $Root $_ }
         $shared += (Join-Path $repo 'TsScoringPlugin\TsScoringPlugin\CurrentDataPlane.cs')
         $shared += (Join-Path $repo 'TsScoringPlugin\TsScoringPlugin\CurrentJumpEndpoint.cs')
-        $own = $newFiles | ForEach-Object { Join-Path $ProductSrcDir $_ }
+        $own = ($newFiles + 'LegacyJumpExecutor.cs') | ForEach-Object { Join-Path $ProductSrcDir $_ }      # Phase LJX-1 (pin moved): the executor file is part of the host independent plane
         $out = Join-Path $LogDir 'k10-bcl-only.dll'
         Add-Type -Path ($shared + $own) -ReferencedAssemblies @('System.dll', 'System.Core.dll') -OutputAssembly $out -OutputType Library -IgnoreWarnings
         $asm = [Reflection.Assembly]::LoadFrom($out)
@@ -215,7 +217,7 @@ function Run-Static {
     if (Test-Path $ai) {
         $t = ReadText $ai
         $vs = @([regex]::Matches($t, '\[assembly: Assembly(?:File|Informational)?Version\("([^"]+)"\)\]') | ForEach-Object { $_.Groups[1].Value })
-        $ok = ($vs.Count -eq 3 -and @($vs | Where-Object { $_ -ne '0.5.0.0' }).Count -eq 0)
+        $ok = ($vs.Count -eq 3 -and @($vs | Where-Object { $_ -ne '0.5.0.0' -and $_ -ne '0.6.0.0' }).Count -eq 0)      # Phase LJX-1 (pin moved): 0.5.0.0 or 0.6.0.0
         Report 'Static' 'K13' 'NEW' $(if ($ok) { 'PASS' } else { 'RED' }) ('AssemblyInfo versions: ' + ($vs -join ',') + ' (the build with the plane is 0.5.0.0)') $(if ($ok) { '' } else { 'version-not-0.5.0.0' }) 'version-not-0.5.0.0'
     }
     else { Report 'Static' 'K13' 'NEW' 'RED' 'AssemblyInfo.cs absent' 'files-absent' 'files-absent' }

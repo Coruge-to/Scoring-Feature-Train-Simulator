@@ -1070,13 +1070,15 @@ namespace TsScoringLegacyTelemetryTests
             Type st = Pr.T("LegacyJumpCommandState");
             string[] names = Pr.EnumNames(st);
             Array.Sort(names, StringComparer.Ordinal);
-            c.Check(string.Join(",", names) == "Discarded,Queued,Rejected", "the command state has exactly Rejected / Queued / Discarded (no Executing state)", string.Join(",", names));
+            c.Check(string.Join(",", names) == "Abandoned,Completed,CompletionPending,Discarded,Executing,Failed,Queued,Rejected", "the command state has exactly the eight states of the 2A-alpha plane plus the LJX-1 execution (Rejected / Queued / Discarded + Executing / CompletionPending / Completed / Failed / Abandoned)", string.Join(",", names));
             bool claimApi = false;
             foreach (System.Reflection.MethodInfo m in Pr.T("LegacyJumpControlPlane").GetMethods(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic))
             {
+                // Phase LJX-1 (pin moved): the execution entries of the plane are exactly these members (the one claim entry, the report, the flag readouts); any other claim / execute / synthetic member is still a FAIL
+                if (Array.IndexOf(new string[] { "TryClaimForTick", "ReportExecution", "ExecutionActive", "get_ExecutionActive", "ExecutionEnabledByBuild", "get_ExecutionEnabledByBuild", "ExecutionSummary" }, m.Name) >= 0) continue;
                 if (m.Name.IndexOf("Claim", StringComparison.OrdinalIgnoreCase) >= 0 || m.Name.IndexOf("Execut", StringComparison.OrdinalIgnoreCase) >= 0 || m.Name.IndexOf("Synthetic", StringComparison.OrdinalIgnoreCase) >= 0) claimApi = true;
             }
-            c.Check(!claimApi, "the control plane has no claim / execute / synthetic API");
+            c.Check(!claimApi, "the control plane has no claim / execute / synthetic API except the LJX-1 execution entries (one claim entry TryClaimForTick)");
 
             int wrong = 0, rounds = 0;
             long illegalTotal = 0;
@@ -1238,10 +1240,10 @@ namespace TsScoringLegacyTelemetryTests
             int badNames = 0;
             foreach (string n in scan.MemberNames)
             {
-                if (n == "OnHostTick") continue;
+                if (n == "OnHostTick" || n == "TryClaimForTick" || n == "TickPre" || n == "TickPost" || n == "LegacyJumpTickRunner") continue;      // Phase LJX-1 (pin moved): the claim entry and the Tick runner
                 if (System.Text.RegularExpressions.Regex.IsMatch(n, "Tick|BveHacker|BveEx|BveTypes|AtsEx|Handshake|Caller|StationIndex", System.Text.RegularExpressions.RegexOptions.IgnoreCase) || n == "AVAIL") { badNames++; c.Info("suspicious member name: " + n); }
             }
-            c.Check(badNames == 0, "no type or member carries a Tick / BVE / AtsEX / Handshake / Caller / StationIndex name (OnHostTick is the one allowed name)", "bad=" + badNames);
+            c.Check(badNames == 0, "no type or member carries a Tick / BVE / AtsEX / Handshake / Caller / StationIndex name (OnHostTick and, since LJX-1, the claim entry and the Tick runner are the allowed names)", "bad=" + badNames);
             object tm = Pr.New(Pr.T("LegacyJumpTimings"));
             c.Check(Convert.ToInt64(Pr.Get(tm, "TtlMs")) == 0L, "the TTL has no product default: time expiry is off (decision D-2)", "ttl=" + Pr.Get(tm, "TtlMs"));
             c.Check(LegacyIlCallScan.CallsAnyOf(scan, "System.Threading.Thread::Abort") == false, "the product never aborts a thread itself");

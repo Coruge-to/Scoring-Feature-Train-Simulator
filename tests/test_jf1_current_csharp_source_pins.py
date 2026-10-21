@@ -290,16 +290,16 @@ class Pins(unittest.TestCase):
         LEGACY_SHARED_LINK, ("src\\LegacyDataPlaneSink.cs", None), ("src\\LegacyGroundLimits.cs", None), ("src\\LegacyHandleContract.cs", None),
         ("..\\Shared\\GenericHandleTextContract.cs", "Shared\\GenericHandleTextContract.cs"), ("src\\LegacyInputProbe.cs", None),
         ("..\\Shared\\DataPlaneProtocol.cs", "Shared\\DataPlaneProtocol.cs"), ("..\\Shared\\TelemetryDirectoryReader.cs", "Shared\\TelemetryDirectoryReader.cs"),
-        ("src\\LegacyInputTelemetry.cs", None), ("src\\LegacyJumpCommandQueue.cs", None), ("src\\LegacyJumpControlPlane.cs", None), ("src\\LegacyJumpEndpoint.cs", None),
+        ("src\\LegacyInputTelemetry.cs", None), ("src\\LegacyJumpCommandQueue.cs", None), ("src\\LegacyJumpControlPlane.cs", None), ("src\\LegacyJumpEndpoint.cs", None), ("src\\LegacyJumpExecutor.cs", None),      # Phase LJX-1 (pin moved): the executor file
         ("src\\LegacyScoringProbe.cs", None), ("src\\LegacyStationTimeline.cs", None), ("src\\LegacyTelemetrySession.cs", None), ("src\\LegacyTelemetryExtension.cs", None),
         ("..\\Shared\\TelemetryContract.cs", "Shared\\TelemetryContract.cs")], key=lambda t: t[0])
 
     @jf0("F32", "CURRENT")
     def test_CURRENT_F32_the_legacy_project_links_exactly_this_set_of_sources_with_the_one_shared_current_jump_endpoint_link_and_the_current_project_keeps_its_own(self):
-        # (1) the Legacy project: the exact (Include, Link) pairs, 20 of them
+        # (1) the Legacy project: the exact (Include, Link) pairs, 21 of them (20 before Phase LJX-1)
         legacy = compile_items(LEGACY_CSPROJ)
         self.assertEqual(sorted(legacy, key=lambda t: t[0]), self.LEGACY_EXPECTED_ITEMS)
-        self.assertEqual(len(legacy), 20)
+        self.assertEqual(len(legacy), 21)
         # (2) the shared link: exactly one element, exactly this Include and this Link; nothing else of the Current plugin folder besides CurrentDataPlane.cs
         endpoint_links = [t for t in legacy if t[0].endswith("CurrentJumpEndpoint.cs")]
         self.assertEqual(endpoint_links, [self.LEGACY_SHARED_LINK])

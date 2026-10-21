@@ -11,8 +11,12 @@ using TSScoringPlugin.DataPlane;
 // What it does: after the host has confirmed the managed mode, ONE dedicated worker publishes the Legacy Jump Directory of this BVE process (a new dynamic loopback
 // port, a new generation, a new token; CreateNew only), reads the datagrams that arrive, judges them with the shared validator, keeps the accepted command in the
 // depth-1 queue and discards it when it can no longer be trusted (a newer command, a scenario boundary, the owner gone or changed, the endpoint re-created, Dispose,
-// and a time limit only when one is injected). It does NOT execute anything: it calls no host API, announces no jump, and the Directory carries the REQUEST_ID
-// capability only, so a managed application cannot send a command (it refuses with command-unsupported).
+// and a time limit only when one is injected). In the default build (the execution flag OFF) it does NOT execute anything: it calls no host API, announces no jump, and
+// the Directory carries the REQUEST_ID capability only, so a managed application cannot send a command (it refuses with command-unsupported).
+//
+// LJX-1 (the execution flag ON, acceptance build only): the host Tick may claim the accepted command (TryClaimForTick, the one claim entry, never blocking), run it through
+// the executor (LegacyJumpExecutor.cs) and hand the completion over (TryCompleteInPostSession). The worker never executes anything and never claims. The Directory then
+// carries STA | LOC | REQUEST_ID (0x7), and only when every piece of the execution exists (LegacyJumpFeatures.All). The host call itself runs OUTSIDE the gate.
 //
 // Why a worker of its own: the host Tick stops while BVE is paused or loading, and the Directory must stay serviceable then. The worker never touches a BVE or
 // AtsEX object; it uses the clock, the owner source, the port, the writer and the wait that LegacyJumpEnvironment hands it (the production objects, or wrapped by a
@@ -51,6 +55,9 @@ namespace TSScoringPlugin.Telemetry
         internal int RetryMaxMs = 2000;            // Directory creation retry interval: upper bound
         internal int MaxDatagramsPerStep = 32;     // capacity: datagrams read in one step
         internal long TtlMs = 0;                   // 0 = a command never expires by time (decision D-2); a positive value is injected by a test
+        // LJX-1: the age limit of a QUEUED command when the execution is on (owner decision of the O-1 acceptance: 5.0 s; the managed application waits 10.0 s). It is an
+        // abnormal-case limit of the queue, measured from the time the worker read the datagram. It is not a limit of a host call (those are never interrupted).
+        internal const long ExecutionTtlMs = 5000;
     }
 
     /// <summary>Waits for a handle. The production implementation is a plain WaitHandle.WaitOne; a test wraps it.</summary>
@@ -78,11 +85,22 @@ namespace TSScoringPlugin.Telemetry
         internal ILegacyJumpWait Waiter;
         internal Action<string> Log;
         internal LegacyJumpTimings Timings;
+        internal bool ExecutionEnabled;            // LJX-1: the execution flag (false in the default build)
+        internal int FeatureBits;                  // LJX-1: the pieces of the execution that exist (LegacyJumpFeatures); the contract is published only when this is All
 
+        /// <summary>The environment of the product: the execution follows the build flag (OFF in the default build).</summary>
         internal static LegacyJumpEnvironment Production(int bvePid, Action<string> log)
+        {
+            return Production(bvePid, log, LegacyJumpBuild.ExecutionCompiledIn);
+        }
+
+        /// <summary>The same with the execution switched explicitly (the tests and the acceptance wiring). Enabled: all features, the 5.0 s TTL. Disabled: the 2A-alpha environment.</summary>
+        internal static LegacyJumpEnvironment Production(int bvePid, Action<string> log, bool executionEnabled)
         {
             LegacyJumpEnvironment e = new LegacyJumpEnvironment();
             e.BvePid = bvePid;
+            e.ExecutionEnabled = executionEnabled;
+            e.FeatureBits = executionEnabled ? LegacyJumpExecutor.ImplementedFeatures : 0;
             Stopwatch sw = Stopwatch.StartNew();
             e.ClockMs = delegate { return sw.ElapsedMilliseconds; };
             e.Source = new ReaderEndpointSource();
@@ -91,6 +109,7 @@ namespace TSScoringPlugin.Telemetry
             e.Waiter = new LegacyJumpSystemWait();
             e.Log = log;
             e.Timings = new LegacyJumpTimings();
+            if (executionEnabled) e.Timings.TtlMs = LegacyJumpTimings.ExecutionTtlMs;
             return e;
         }
     }
@@ -109,7 +128,7 @@ namespace TSScoringPlugin.Telemetry
         internal LegacyJumpReceipt Queued;
     }
 
-    internal sealed class LegacyJumpControlPlane : IDisposable
+    internal sealed class LegacyJumpControlPlane : IDisposable, ILegacyJumpAvailability
     {
         private readonly object gate = new object();
         private readonly object diag = new object();
@@ -140,6 +159,10 @@ namespace TSScoringPlugin.Telemetry
         private long lastIterationAtMs = -1;
         private int afterDisposeAccess;
         private int refusedNoted;
+        private long claimContended;          // LJX-1: claims that found the gate busy (the Tick never waits)
+        private int consecutiveFailures;      // LJX-1: execution failures in a row (the breaker), valid for the scenario boundary counter in breakerEpoch
+        private int breakerEpoch;
+        private const int BreakerLimit = 3;   // LJX-1: three failures in a row close AVAIL jump (OD-X6 option B; the number is proposed by the implementation, owner decision pending)
 
         // ---- guarded by `gate` ----
         private bool tornDown;
@@ -197,6 +220,52 @@ namespace TSScoringPlugin.Telemetry
         internal int MaxPublishersInside { get { return Thread.VolatileRead(ref maxPublishersInside); } }
         internal long MaxIterationGapMs { get { return Interlocked.Read(ref maxIterationGapMs); } }
         internal int AfterDisposeAccess { get { return Thread.VolatileRead(ref afterDisposeAccess); } }
+
+        // ---- LJX-1: the execution flag and what follows from it (lock free readouts) ----
+        /// <summary>
+        /// True only when the execution is switched on AND every piece of it exists (station jump, location jump, completion, and the Tick runner that claims and executes -
+        /// without that nobody would ever execute what the Directory announces). Otherwise the plane is the 2A-alpha plane.
+        /// </summary>
+        internal bool ExecutionActive { get { return o.ExecutionEnabled && o.FeatureBits == LegacyJumpFeatures.All && runnerAttached; } }
+
+        /// <summary>The build / environment flag alone (the plane may still be inactive because a piece is missing).</summary>
+        internal bool ExecutionEnabledByBuild { get { return o.ExecutionEnabled; } }
+
+        private volatile bool runnerAttached;
+
+        /// <summary>The Tick runner (the only claimer) announces itself when it is built, before the plane is started.</summary>
+        internal void AttachRunner()
+        {
+            runnerAttached = true;
+        }
+
+        /// <summary>The capabilities of the Directory: STA | LOC | REQUEST_ID when the execution is active, REQUEST_ID only otherwise. No other combination is ever published.</summary>
+        internal int PublishedCapabilities { get { return ExecutionActive ? (int)JumpCapabilities.Published : (int)JumpCapabilities.RequestId; } }
+
+        /// <summary>The scenario boundary counter (the host's event thread writes it).</summary>
+        internal int Epoch { get { return Thread.VolatileRead(ref epoch); } }
+
+        internal Func<int> EpochProbe { get { return delegate { return Thread.VolatileRead(ref epoch); }; } }
+
+        /// <summary>The clock of the plane (monotonic milliseconds), for the diagnostic elapsed time of the executor.</summary>
+        internal Func<long> Clock { get { return o.ClockMs; } }
+
+        internal bool BreakerOpen
+        {
+            get { return Thread.VolatileRead(ref consecutiveFailures) >= BreakerLimit && Thread.VolatileRead(ref breakerEpoch) == Thread.VolatileRead(ref epoch); }
+        }
+
+        /// <summary>
+        /// May the telemetry row announce the jump group (AVAIL jump, JUMP key)? Only while the execution is active, the plane is READY (the Directory carries the command
+        /// bits), it is not stopping and the breaker is closed. It becomes false the moment any of these stops holding: the managed application then refuses to start a new
+        /// scoring run (missing-jump) instead of sending a command that nobody will execute.
+        /// </summary>
+        internal bool JumpAvailable
+        {
+            get { return ExecutionActive && !stopRequested && (LegacyJumpState)stateValue == LegacyJumpState.Ready && !BreakerOpen; }
+        }
+
+        bool ILegacyJumpAvailability.JumpOpen { get { return JumpAvailable; } }
 
         private void SetState(LegacyJumpState s)
         {
@@ -265,6 +334,7 @@ namespace TSScoringPlugin.Telemetry
 
         internal long CounterValue(string key)
         {
+            if (key == "claim-contended") return Interlocked.Read(ref claimContended);
             lock (gate)
             {
                 long n;
@@ -331,6 +401,209 @@ namespace TSScoringPlugin.Telemetry
         internal void NoteScenarioBoundary()
         {
             Interlocked.Increment(ref epoch);
+        }
+
+        // ------------------------------------------------------------------ LJX-1: the execution entries (host Tick thread only)
+        /// <summary>
+        /// THE claim entry (the only way a receipt leaves Queued for Executing). Never blocks the Tick: the gate is tried with a zero wait. The state of the plane is checked
+        /// first without a lock (WITHDRAWING, CLOSED, retry: no claim). Under the gate the facts of now are checked in this order - scenario boundary, breaker, age (TTL),
+        /// receiver generation, owner - and a command whose facts are void is Discarded (the host API is never called for it). Only then is the command claimed
+        /// (Queued to Executing, written BEFORE the host call) and a ticket handed out. Returns null when nothing was claimed.
+        /// </summary>
+        internal LegacyJumpClaim TryClaimForTick(LegacyJumpClaimFacts facts)
+        {
+            if (!ExecutionActive || facts == null) return null;
+            if (stopRequested || (LegacyJumpState)stateValue != LegacyJumpState.Ready) return null;
+            if (!Monitor.TryEnter(gate, 0))
+            {
+                Interlocked.Increment(ref claimContended);
+                return null;
+            }
+            LegacyJumpClaim ticket = null;
+            try
+            {
+                if (stopRequested || tornDown || State != LegacyJumpState.Ready) return null;
+                LegacyJumpReceipt q = queue.Queued;
+                if (q == null || q.State != LegacyJumpCommandState.Queued) return null;
+                if (queue.InFlight != null) return null;                       // one command in flight (INV-4): the next one waits
+                long now = Now();
+                string why = null;
+                if (Thread.VolatileRead(ref epoch) != q.ScenarioEpoch) why = "scenario-epoch";
+                else if (BreakerOpen) why = "breaker-open";
+                else if (t.TtlMs > 0 && now - q.ReceivedAtMs > t.TtlMs) why = "ttl";
+                else if (ep == null || ep.Generation != q.ReceiverGeneration) why = "endpoint-recreated";
+                else
+                {
+                    string owner = LegacyJumpCommandQueue.OwnerMismatch(o.Source, o.BvePid, q);
+                    if (owner != null) why = owner == "telemetry-changed" ? "owner-changed" : owner;
+                }
+                if (why != null)
+                {
+                    queue.DiscardQueued(q, why);
+                    return null;
+                }
+                if (!facts.ScenarioCreated || !facts.SessionActive) return null;   // not a fact against the command: it waits for the next Tick (and its TTL)
+                if (!queue.TryClaim(q, now)) return null;
+                ticket = LegacyJumpClaim.From(q);
+            }
+            finally
+            {
+                Monitor.Exit(gate);
+                FlushLog();
+            }
+            return ticket;
+        }
+
+        /// <summary>
+        /// The Tick reports the outcome of the host sequence: Executing to CompletionPending (success) or Failed. Returns 1 when taken, 0 when the gate was busy (report again
+        /// on the next Tick; the command stays Executing meanwhile), -1 when the receipt is no longer Executing (Dispose, endpoint re-creation): nothing is changed then.
+        /// </summary>
+        internal int ReportExecution(LegacyJumpClaim ticket, LegacyJumpExecResult result)
+        {
+            if (ticket == null || ticket.Receipt == null || result == null) return -1;
+            int outcome = -1;
+            bool got = false;
+            try
+            {
+                got = Monitor.TryEnter(gate, 50);
+                if (!got) return 0;
+                LegacyJumpReceipt r = ticket.Receipt;
+                if (r.State != LegacyJumpCommandState.Executing)
+                {
+                    Count("report-after-end");
+                    return -1;
+                }
+                queue.NoteExecuted(r, result.Ok, result.Step, result.ElapsedMs);
+                if (result.Ok)
+                {
+                    queue.Finish(r, LegacyJumpCommandState.CompletionPending, null);
+                    Interlocked.Exchange(ref consecutiveFailures, 0);
+                }
+                else
+                {
+                    queue.Finish(r, LegacyJumpCommandState.Failed, result.Reason ?? "failed");
+                    RegisterFailure();
+                }
+                outcome = 1;
+            }
+            finally
+            {
+                if (got) Monitor.Exit(gate);
+                FlushLog();
+            }
+            return outcome;
+        }
+
+        private void RegisterFailure()
+        {
+            int e = Thread.VolatileRead(ref epoch);
+            if (Thread.VolatileRead(ref breakerEpoch) != e)
+            {
+                Interlocked.Exchange(ref consecutiveFailures, 0);       // a new scenario starts the count again
+                Interlocked.Exchange(ref breakerEpoch, e);
+            }
+            int n = Interlocked.Increment(ref consecutiveFailures);
+            if (n == BreakerLimit) Note("event=jump-breaker-open failures=" + n);
+        }
+
+        /// <summary>Ends the in-flight command of the ticket as Abandoned (the runner found a fact against sending the completion). No effect when it already ended.</summary>
+        internal void AbandonInFlight(LegacyJumpClaim ticket, string reason)
+        {
+            if (ticket == null || ticket.Receipt == null) return;
+            bool got = false;
+            try
+            {
+                got = Monitor.TryEnter(gate, 50);
+                if (!got) return;
+                LegacyJumpCommandState s = ticket.Receipt.State;
+                if (s == LegacyJumpCommandState.Executing || s == LegacyJumpCommandState.CompletionPending) queue.Finish(ticket.Receipt, LegacyJumpCommandState.Abandoned, reason);
+            }
+            finally
+            {
+                if (got) Monitor.Exit(gate);
+                FlushLog();
+            }
+        }
+
+        /// <summary>
+        /// The completion, in the post session part of the Tick (after the row of the execution Tick was written). The facts recorded at the acceptance are compared with those
+        /// of now (comparison only: the destination is always the one the router resolves, never one taken from this comparison); a difference ends the command Abandoned.
+        /// The sender says Sent (Completed), Excluded (Abandoned: consumed without a datagram) or Held (still CompletionPending: the same completion is tried again on the next
+        /// Tick, until a fact changes or the plane stops). Completed is never assumed.
+        /// </summary>
+        internal int TryCompleteInPostSession(LegacyJumpClaim ticket, LegacyJumpClaimFacts facts, ILegacyJumpCompleteSender sender)
+        {
+            if (ticket == null || ticket.Receipt == null || sender == null) return LegacyJumpCompletion.None;
+            int outcome = LegacyJumpCompletion.None;
+            bool got = false;
+            try
+            {
+                got = Monitor.TryEnter(gate, 50);
+                if (!got) return LegacyJumpCompletion.Pending;
+                LegacyJumpReceipt r = ticket.Receipt;
+                if (r.State == LegacyJumpCommandState.Completed) return LegacyJumpCompletion.Done;
+                if (r.State != LegacyJumpCommandState.CompletionPending) return LegacyJumpCompletion.Abandoned;
+                if (stopRequested || tornDown)
+                {
+                    queue.Finish(r, LegacyJumpCommandState.Abandoned, "dispose");
+                    return LegacyJumpCompletion.Abandoned;
+                }
+                if (ticket.Payload == null)
+                {
+                    queue.Finish(r, LegacyJumpCommandState.Abandoned, "completion-no-payload");
+                    return LegacyJumpCompletion.Abandoned;
+                }
+                string why = CompletionMismatchLocked(r);
+                if (why != null)
+                {
+                    queue.Finish(r, LegacyJumpCommandState.Abandoned, why);
+                    return LegacyJumpCompletion.Abandoned;
+                }
+                int sent;
+                try { sent = sender.SendJumpComplete(ticket.Payload, ticket.RequestId); }
+                catch (ThreadAbortException) { throw; }
+                catch (Exception)
+                {
+                    sent = LegacyJumpSend.Held;
+                    Count("complete-send-exception");
+                }
+                if (sent == LegacyJumpSend.Sent)
+                {
+                    queue.Finish(r, LegacyJumpCommandState.Completed, null);
+                    outcome = LegacyJumpCompletion.Done;
+                }
+                else if (sent == LegacyJumpSend.Excluded)
+                {
+                    queue.Finish(r, LegacyJumpCommandState.Abandoned, "completion-excluded");
+                    outcome = LegacyJumpCompletion.Abandoned;
+                }
+                else
+                {
+                    Count("complete-held");
+                    if (!ticket.PendingNoted)
+                    {
+                        ticket.PendingNoted = true;
+                        queue.NoteCompletionPending(r);
+                    }
+                    outcome = LegacyJumpCompletion.Pending;
+                }
+            }
+            finally
+            {
+                if (got) Monitor.Exit(gate);
+                FlushLog();
+            }
+            return outcome;
+        }
+
+        /// <summary>The facts of the acceptance against those of now, for the completion: scenario boundary, receiver generation, owner. null = the completion may be sent.</summary>
+        private string CompletionMismatchLocked(LegacyJumpReceipt r)
+        {
+            if (Thread.VolatileRead(ref epoch) != r.ScenarioEpoch) return "completion-scenario-changed";
+            if (ep == null || ep.Generation != r.ReceiverGeneration) return "completion-jump-generation-changed";
+            string owner = LegacyJumpCommandQueue.OwnerMismatch(o.Source, o.BvePid, r);
+            if (owner == null) return null;
+            return owner == "telemetry-changed" ? "completion-telemetry-changed" : "completion-owner-changed";
         }
 
         /// <summary>Starts the one dedicated worker (once). A second call, or a call after Dispose, does nothing: one instance owns one worker and one endpoint at a time.</summary>
@@ -591,6 +864,7 @@ namespace TSScoringPlugin.Telemetry
         {
             SetState(LegacyJumpState.Withdrawing);
             queue.Expire("endpoint-recreated");
+            queue.AbandonInFlight("endpoint-recreated");
             LegacyJumpEndpoint e = ep;
             if (e != null)
             {
@@ -629,7 +903,7 @@ namespace TSScoringPlugin.Telemetry
                     string key = e.Port + "/" + e.Generation + "/" + Convert.ToBase64String(e.Token);
                     if (!Object.ReferenceEquals(keyOwner, e.Writer)) { keyOwner = e.Writer; keyValue = key; }
                     else if (keyValue != key) Count("rc10-violation");          // RC-10: while one mapping is published its port, generation and token never change
-                    e.Writer.Publish(state, e.Port, e.Generation, e.Token, JumpCapabilities.RequestId);
+                    e.Writer.Publish(state, e.Port, e.Generation, e.Token, (UInt32)PublishedCapabilities);
                 }
                 Note("event=jump-directory state=" + what + " gen=" + e.Generation + " port=" + e.Port);
             }
@@ -713,6 +987,7 @@ namespace TSScoringPlugin.Telemetry
                         if (State != LegacyJumpState.NotStarted || ep != null) SetState(LegacyJumpState.Disposing);
                         DrainRejectLocked("dispose-in-progress");      // a datagram that already arrived is counted as Rejected
                         queue.Expire("dispose");                       // step 2
+                        queue.AbandonInFlight("dispose");              // LJX-1: a command in flight ends Abandoned; the host call that may be running is never interrupted
                     }
                 }
                 else
@@ -787,6 +1062,7 @@ namespace TSScoringPlugin.Telemetry
             tornDown = true;
             if (State != LegacyJumpState.Closed) SetState(LegacyJumpState.Withdrawing);
             queue.Expire("dispose");
+            queue.AbandonInFlight("dispose");
             LegacyJumpEndpoint e = ep;
             if (stopStepRan) shutdownOrder.Append("stop");
             if (joinStepBegun) shutdownOrder.Append(shutdownOrder.Length > 0 ? ",join" : "join");
@@ -810,7 +1086,7 @@ namespace TSScoringPlugin.Telemetry
                 NoteFinal("event=jump-plane-final iterations=" + Thread.VolatileRead(ref iterations) + " maxStepsInside=" + Thread.VolatileRead(ref maxStepsInside)
                     + " maxPublishersInside=" + Thread.VolatileRead(ref maxPublishersInside) + " maxIterationGapMs=" + Interlocked.Read(ref maxIterationGapMs)
                     + " afterDisposeAccess=" + Thread.VolatileRead(ref afterDisposeAccess) + " received=" + received + " accepted=" + queue.CounterValue("queued")
-                    + " rejected=" + queue.RejectedTotal() + " rc10Violations=" + CountOf("rc10-violation") + " shutdown-order=" + shutdownOrder.ToString());
+                    + " rejected=" + queue.RejectedTotal() + " rc10Violations=" + CountOf("rc10-violation") + " shutdown-order=" + shutdownOrder.ToString() + ExecutionSummary());
             }
             try { closedEvent.Set(); } catch { }
         }
@@ -819,6 +1095,15 @@ namespace TSScoringPlugin.Telemetry
         {
             long n;
             return counters.TryGetValue(key, out n) ? n : 0L;
+        }
+
+        /// <summary>The totals of the execution for the final summary line: empty when the execution is not active, so that the line of the default build stays what it was.</summary>
+        private string ExecutionSummary()
+        {
+            if (!ExecutionActive) return string.Empty;
+            return " claimed=" + queue.CounterValue("claimed") + " executed=" + queue.CounterValue("executed") + " failed=" + queue.CounterValue("failed")
+                + " completed=" + queue.CounterValue("completed") + " abandoned=" + queue.CounterValue("abandoned") + " claimContended=" + Interlocked.Read(ref claimContended)
+                + " ageAtClaimMax=" + queue.AgeAtClaimMax + " execElapsedMax=" + queue.ExecElapsedMax;
         }
 
         private void WaitClosed(int milliseconds)

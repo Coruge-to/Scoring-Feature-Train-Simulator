@@ -23,7 +23,7 @@ Write-Host '==== the built DLL ===='
 $outFiles = @(Get-ChildItem $outDir -File -ErrorAction SilentlyContinue)
 Check 'out holds exactly the one telemetry DLL (no PDB, no third-party DLL, no other file)' (($outFiles.Count -eq 1) -and ($outFiles[0].Name -eq 'TSScoringPlugin.AtsExLegacy.Telemetry.dll') -and (@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0))
 $vi = (Get-Item $dllPath).VersionInfo
-Check 'file version 0.3.0.0 (Phase LI2 holding speed handles and one-lever Cl on top of the LI1 handle / pressure sending, the Phase L3 sender and the LI0 observation) or 0.3.1.0 (the Phase SI-0 observation build) or 0.4.0.0 (Phase SI-1: TRAINLEN, MAPLIMITS, CLEARDIST and the head limit of MAPHEAD) or 0.4.2.0 (Phase PID-D4 Slice 1: the per-PID DataPlane transport) or 0.5.0.0 (Phase PID-D4 Legacy Jump 2A-alpha: the Legacy jump control plane), product TS Scoring, provider Coruge-to, description names Phase L3' (($vi.FileVersion -in @('0.3.0.0', '0.3.1.0', '0.4.0.0', '0.4.2.0', '0.5.0.0')) -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.CompanyName -eq 'Coruge-to') -and ($vi.Comments -match 'Phase L3'))
+Check 'file version 0.3.0.0 (Phase LI2 holding speed handles and one-lever Cl on top of the LI1 handle / pressure sending, the Phase L3 sender and the LI0 observation) or 0.3.1.0 (the Phase SI-0 observation build) or 0.4.0.0 (Phase SI-1: TRAINLEN, MAPLIMITS, CLEARDIST and the head limit of MAPHEAD) or 0.4.2.0 (Phase PID-D4 Slice 1: the per-PID DataPlane transport) or 0.5.0.0 (Phase PID-D4 Legacy Jump 2A-alpha: the Legacy jump control plane) or 0.6.0.0 (Phase LJX-1: the Legacy jump execution behind a build flag), product TS Scoring, provider Coruge-to, description names Phase L3' (($vi.FileVersion -in @('0.3.0.0', '0.3.1.0', '0.4.0.0', '0.4.2.0', '0.5.0.0', '0.6.0.0')) -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.CompanyName -eq 'Coruge-to') -and ($vi.Comments -match 'Phase L3'))
 $proj = [IO.File]::ReadAllText((Join-Path $telDir 'Legacy\TSScoringPlugin.AtsExLegacy.Telemetry.csproj'))
 $projCode = [regex]::Replace($proj, '<!--[\s\S]*?-->', '')      # the comments of the project file may name the Bridge
 Add-Type -TypeDefinition @"
@@ -84,7 +84,9 @@ $allTypes = @(); try { $allTypes = @($asm.GetTypes()) } catch [Reflection.Reflec
 $pub = @($allTypes | Where-Object { $_.IsPublic })
 Check 'one public type (the extension); everything else is internal' (($pub.Count -eq 1) -and ($pub[0].Name -eq 'TsScoringLegacyTelemetryExtension'))
 $session = Code ([IO.File]::ReadAllText((Join-Path $telDir 'Legacy\src\LegacyTelemetrySession.cs')))
-$never = @(); foreach ($k in @('REV', 'POW', 'BRK', 'HTYPE', 'ALLTXT', 'BCP', 'BPP', 'TRAINLEN', 'DOORTIME', 'MAPLIMITS', 'CLEARDIST', 'JUMP')) { if ($session -match ('"' + $k + '"')) { $never += $k } }
+# Phase LJX-1 (pin moved): the one JUMP group of the session, written only behind the availability of the plane (acceptance build), is taken out before the scan (Test-LegacyJumpExecLJX1.ps1 S09 pins it)
+$sessionNoJumpGroup = [regex]::Replace($session, 'if \(jumpAvail != null && jumpAvail\.JumpOpen\)\s*\{[\s\S]*?jumpInRow = Discontinuities;\s*\}', '')
+$never = @(); foreach ($k in @('REV', 'POW', 'BRK', 'HTYPE', 'ALLTXT', 'BCP', 'BPP', 'TRAINLEN', 'DOORTIME', 'MAPLIMITS', 'CLEARDIST', 'JUMP')) { if ($sessionNoJumpGroup -match ('"' + $k + '"')) { $never += $k } }
 Check 'the sender never names a key of data the Legacy API does not provide' ($never.Count -eq 0)
 # the gradient unit (finding of the BVE5 live test): the host adapter reads the RAW API ratio, the session converts it to per mille in exactly one place
 $extCode = Code ([IO.File]::ReadAllText((Join-Path $telDir 'Legacy\src\LegacyTelemetryExtension.cs')))
@@ -103,7 +105,7 @@ $unknown = @($csTokens | Where-Object { $_ -notin $pyTokens })
 Check ('every token the C# sender can announce is in the Python vocabulary (' + $csTokens.Count + ' tokens)') (($unknown.Count -eq 0) -and ($csTokens.Count -ge 10))
 Check 'protocol version 1 in both languages' (($contractCs -match 'ProtocolVersion = 1;') -and ((Get-Content (Join-Path $top 'telemetry_contract.py') -Raw) -match 'PROTOCOL_VERSION = 1'))
 $notSent = @($pyTokens | Where-Object { $_ -notin $csTokens })
-Check ('the tokens the Legacy sender never announces are exactly: ' + ($notSent -join ' ') + ' (Phase SI-1 added trainlen and maplimit_ahead to what it announces)') ((($notSent | Sort-Object) -join ',') -eq 'doortime,jump')
+Check ('the tokens the Legacy sender never announces are exactly: ' + ($notSent -join ' ') + ' (Phase SI-1 added trainlen and maplimit_ahead, Phase LJX-1 added jump - behind the build flag - to what it announces)') ((($notSent | Sort-Object) -join ',') -eq 'doortime')
 
 Write-Host '==== repository scope ===='
 $changed = @((RunGit @('-C', $top, 'diff', '--no-renames', '--name-only', $Baseline)) -split "`n" | Where-Object { $_ })      # (no rename detection: the control plane moved from Bridge\Legacy\src to Bridge\src; both paths are files of the change)
@@ -192,7 +194,7 @@ if (-not $SkipDeployedCheck) {
     $genA6 = (($c6 -eq '0F64654F') -and ($c5 -eq '0F64654F') -and ($bc -eq '40376B11') -and ($bl -eq 'E4F3F556'))
     $genM1a = (($c6 -eq '8B677DCD') -and ($c5 -eq '8B677DCD') -and ($bc -eq 'A310AB03') -and ($bl -eq 'CC084CED'))
     Check 'deployed Callers (BVE6 and BVE5) and both Bridges are ONE accepted generation: Phase SI-A6 (Caller 0F64654F, Bridges 40376B11 / E4F3F556) or Phase SI-A7 M1a (Caller 8B677DCD, Bridges A310AB03 / CC084CED) - Phase L3 changes none of them' ($genA6 -or $genM1a)
-    Check 'the Legacy Extensions folder holds no telemetry DLL, a Phase L3 / LI / SI build of it (8BFD06AA 10683A92 1F8AE8D3 A01C80BF 688C11A3 96EA2AF8 3DE98B3E 6CBC3471 995486BE) or this build, and the Current Extensions folder none' ((((H8 (Join-Path $pub 'Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Telemetry.dll')) -in @('8BFD06AA', '10683A92', '1F8AE8D3', 'A01C80BF', '688C11A3', '96EA2AF8', '3DE98B3E', '6CBC3471', '995486BE', 'absent', (H8 $dllPath)))) -and ((H8 (Join-Path $pub 'Documents\BveEx\2.0\Extensions\TSScoringPlugin.AtsExLegacy.Telemetry.dll')) -eq 'absent'))
+    Check 'the Legacy Extensions folder holds no telemetry DLL, a Phase L3 / LI / SI build of it (8BFD06AA 10683A92 1F8AE8D3 A01C80BF 688C11A3 96EA2AF8 3DE98B3E 6CBC3471 995486BE, the 2A-alpha build 08CE368C, the LJX-1 acceptance build A060272C) or this build, and the Current Extensions folder none' ((((H8 (Join-Path $pub 'Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Telemetry.dll')) -in @('8BFD06AA', '10683A92', '1F8AE8D3', 'A01C80BF', '688C11A3', '96EA2AF8', '3DE98B3E', '6CBC3471', '995486BE', '08CE368C', 'A060272C', 'absent', (H8 $dllPath)))) -and ((H8 (Join-Path $pub 'Documents\BveEx\2.0\Extensions\TSScoringPlugin.AtsExLegacy.Telemetry.dll')) -eq 'absent'))
     # Phase SI-A7 M1a changes no telemetry: the built Legacy Telemetry stays 0.4.0.0 (995486BE) and the deployed one is that build or absent
     Check 'Legacy Telemetry 0.4.0.0 is unchanged by Phase SI-A7 M1a: the built DLL is 995486BE and the deployed one is that build (or absent)' (((H8 $dllPath) -eq '995486BE') -and ((H8 (Join-Path $pub 'Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Telemetry.dll')) -in @('995486BE', 'absent')))
     Check 'launcher.json is the E3 one (91471ACC)' ((H8 (Join-Path $env:LOCALAPPDATA 'Coruge-to\TS Scoring\launcher.json')) -eq '91471ACC')

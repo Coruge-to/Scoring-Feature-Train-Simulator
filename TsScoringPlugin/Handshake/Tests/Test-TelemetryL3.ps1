@@ -516,7 +516,9 @@ $proj = [IO.File]::ReadAllText((Join-Path $Root 'Telemetry\Legacy\TSScoringPlugi
 # (Phase PID-D4 Slice 1: the comments of the project file now describe the Caller-driven managed mode, so the check looks at the Compile items, not at the XML comments)
 Check 'X06 the project file links no Handshake / Bridge / Caller file' (([regex]::Replace($proj, '<!--[\s\S]*?-->', '')) -notmatch '\.\.\\Bridge|\.\.\\\.\.\\Shared|Caller|Handshake(Protocol|Control)')
 $session = [IO.File]::ReadAllText((Join-Path $Root 'Telemetry\Legacy\src\LegacyTelemetrySession.cs'))
-$bad = @(); foreach ($k in @('REV', 'POW', 'BRK', 'HTYPE', 'ALLTXT', 'BCP', 'BPP', 'TRAINLEN', 'DOORTIME', 'MAPLIMITS', 'CLEARDIST', 'JUMP')) { if ($session -match ('"' + $k + '"')) { $bad += $k } }
+# Phase LJX-1 (pin moved): the one JUMP group of the session, written only behind the availability of the plane (acceptance build), is taken out before the scan (Test-LegacyJumpExecLJX1.ps1 S09 pins that it exists once and only there)
+$sessionScan = [regex]::Replace($session, 'if \(jumpAvail != null && jumpAvail\.JumpOpen\)\s*\{[\s\S]*?jumpInRow = Discontinuities;\s*\}', '')
+$bad = @(); foreach ($k in @('REV', 'POW', 'BRK', 'HTYPE', 'ALLTXT', 'BCP', 'BPP', 'TRAINLEN', 'DOORTIME', 'MAPLIMITS', 'CLEARDIST', 'JUMP')) { if ($sessionScan -match ('"' + $k + '"')) { $bad += $k } }
 Check 'X07 the sender source never names a key of data the Legacy API does not have' ($bad.Count -eq 0)
 $ext = [IO.File]::ReadAllText((Join-Path $Root 'Telemetry\Legacy\src\LegacyTelemetryExtension.cs'))
 $hostNames = @($srcFiles | Where-Object { [IO.File]::ReadAllText($_.FullName) -match 'using AtsEx|using BveTypes' } | ForEach-Object { $_.Name })

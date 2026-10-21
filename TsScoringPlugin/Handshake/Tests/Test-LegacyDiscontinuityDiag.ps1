@@ -264,7 +264,9 @@ public static class DiscDiagResolver
     $mStart = $ses.IndexOf('private void LogDiscontinuity('); $mEnd = $ses.IndexOf('private void ObserveScoring(')
     $mBody = if (($mStart -ge 0) -and ($mEnd -gt $mStart)) { $ses.Substring($mStart, $mEnd - $mStart) } else { '' }
     Check 'PD-21f the diagnostic method reads no heartbeat state and has no hb key (the field was removed by the owner decision)' (($mBody.Length -gt 200) -and ($mBody -cnotmatch 'heartbeatStatus|hb=|PausedAfterMs|order\b') -and ($sesRaw -cnotmatch '" hb="'))
-    Check 'PD-21g the diagnostic has no lock, thread, timer, task, volatile or Interlocked of its own and names no host type (host independent, no jump / 54322 / hook vocabulary)' (($mBody -cnotmatch 'lock \(|new Thread|Timer|Task|volatile|Interlocked|ThreadPool') -and ($ses -cnotmatch 'AtsEx|BveTypes|BveEx') -and ($ses -cnotmatch '54322|JUMP_|"MAPLIMITS"|"CLEARDIST"|"TRAINLEN"') -and ($ses -cnotmatch '(?i)"jump"'))
+    # Phase LJX-1 (pin moved): the one JUMP group of the session, written only behind the availability of the plane (acceptance build), is not part of the diagnostic vocabulary scan (Test-LegacyJumpExecLJX1.ps1 S09 pins it)
+    $sesNoJumpGroup = [regex]::Replace($ses, 'if \(jumpAvail != null && jumpAvail\.JumpOpen\)\s*\{[\s\S]*?jumpInRow = Discontinuities;\s*\}', '')
+    Check 'PD-21g the diagnostic has no lock, thread, timer, task, volatile or Interlocked of its own and names no host type (host independent, no jump / 54322 / hook vocabulary)' (($mBody -cnotmatch 'lock \(|new Thread|Timer|Task|volatile|Interlocked|ThreadPool') -and ($ses -cnotmatch 'AtsEx|BveTypes|BveEx') -and ($sesNoJumpGroup -cnotmatch '54322|JUMP_|"MAPLIMITS"|"CLEARDIST"|"TRAINLEN"') -and ($sesNoJumpGroup -cnotmatch '(?i)"jump"'))
     $hbA = $sesRaw.IndexOf('internal string ComposeHeartbeat'); $hbB = $sesRaw.IndexOf('internal void OnTick'); $mAt = $sesRaw.IndexOf('private void LogDiscontinuity(')
     Check 'PD-21h the new method lies outside the ComposeHeartbeat .. OnTick region that the SI-0 test slices' (($hbA -ge 0) -and ($hbB -gt $hbA) -and ($mAt -gt $hbB))
     # the diff against the baseline commit: only additions, and only the allowed ones
@@ -274,7 +276,9 @@ public static class DiscDiagResolver
     else {
         $rel = 'TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetrySession.cs'
         $prevEap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-        if ([string]::IsNullOrEmpty($BaselineSessionFile)) { $diff = @(& git -C $top -c core.autocrlf=false -c core.safecrlf=false diff -U0 --no-color $BaselineCommit -- $rel 2>$null) }
+        # Phase LJX-1 (pin moved): the audited edit is the one of the commit bc72cc6 (parent chain: BaselineCommit); the working tree may carry the LJX-1 edit on top of it (audited by Test-LegacyJumpExecLJX1.ps1)
+        $auditedCommit = 'bc72cc6'
+        if ([string]::IsNullOrEmpty($BaselineSessionFile)) { $diff = @(& git -C $top -c core.autocrlf=false -c core.safecrlf=false diff -U0 --no-color $BaselineCommit $auditedCommit -- $rel 2>$null) }
         else { $diff = @(& git -c core.autocrlf=false -c core.safecrlf=false diff --no-index -U0 --no-color $BaselineSessionFile $sesPath 2>$null) }
         $ErrorActionPreference = $prevEap
         $plus = New-Object System.Collections.Generic.List[object]; $minus = 0; $newLn = 0
@@ -284,7 +288,7 @@ public static class DiscDiagResolver
             if ($d.StartsWith('+')) { $plus.Add([pscustomobject]@{ N = $newLn; T = $d.Substring(1) }); $newLn++ }
             elseif ($d.StartsWith('-')) { $minus++ }
         }
-        $allLines = $sesRaw -split "`n"
+        $allLines = if ([string]::IsNullOrEmpty($BaselineSessionFile)) { (@(& git -C $top -c core.autocrlf=false show ($auditedCommit + ':' + $rel) 2>$null) -join "`n") -split "`n" } else { $sesRaw -split "`n" }
         $docStart = -1; for ($i = 0; $i -lt $allLines.Count; $i++) { if ($allLines[$i] -match 'private void LogDiscontinuity\(') { $docStart = $i; break } }
         $mFirst = $docStart; while (($mFirst -gt 0) -and ($allLines[$mFirst - 1] -match '^\s*///')) { $mFirst-- }
         $mLast = $docStart; $depth = 0; $seen = $false

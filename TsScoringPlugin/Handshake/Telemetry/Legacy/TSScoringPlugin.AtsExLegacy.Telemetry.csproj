@@ -39,6 +39,14 @@
     <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
     <AtsExLegacyFolder>$(PUBLIC)\Documents\BveEx\Legacy\</AtsExLegacyFolder>
   </PropertyGroup>
+  <!--
+    PHASE PID-D4 / LEGACY JUMP LJX-1 (the minimal execution slice): the build flag. The DEFAULT build does not define LEGACY_JUMP_EXEC: the Legacy Jump execution is OFF (the
+    Directory carries REQUEST_ID only, nothing is claimed or executed, the telemetry rows are the rows of the earlier build). Only the acceptance build is made with
+    /p:LegacyJumpExec=true; it defines LEGACY_JUMP_EXEC and is the only build that may be deployed for the live acceptance of LJX-1.
+  -->
+  <PropertyGroup Condition="'$(LegacyJumpExec)' == 'true'">
+    <DefineConstants>$(DefineConstants);LEGACY_JUMP_EXEC</DefineConstants>
+  </PropertyGroup>
   <ItemGroup>
     <Reference Include="AtsEx.PluginHost">
       <HintPath>$(AtsExLegacyFolder)AtsEx.PluginHost.dll</HintPath>
@@ -89,6 +97,7 @@
     <Compile Include="src\LegacyJumpCommandQueue.cs" />
     <Compile Include="src\LegacyJumpControlPlane.cs" />
     <Compile Include="src\LegacyJumpEndpoint.cs" />
+    <Compile Include="src\LegacyJumpExecutor.cs" />
     <Compile Include="src\LegacyScoringProbe.cs" />
     <Compile Include="src\LegacyStationTimeline.cs" />
     <Compile Include="src\LegacyTelemetrySession.cs" />

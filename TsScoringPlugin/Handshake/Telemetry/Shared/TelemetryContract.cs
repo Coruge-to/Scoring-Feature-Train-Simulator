@@ -43,6 +43,7 @@ namespace TSScoringPlugin.Telemetry
         internal const string TokPRates = "prates";
         internal const string TokCalcG = "calcg";
         internal const string TokMeta = "meta";
+        internal const string TokJump = "jump";              // Phase LJX-1: JUMP (the counter of the official jumps); announced only while the Legacy Jump execution contract is open
 
         // "no limit" in the km/h of the contract (the value the Python HUD prints as ---)
         internal const double NoLimitKmh = 1000.0;

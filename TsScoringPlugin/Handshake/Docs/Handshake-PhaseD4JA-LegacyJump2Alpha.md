@@ -5,6 +5,10 @@ The real-machine acceptance gate G-3b (cases LJB-1, LJB-2, LJB-3a, LJB-3b, LJB-3
 This slice builds the Legacy side of the per-PID Jump Directory. It does not make the Legacy jump work: the Legacy host still announces no `jump`, so the scoring start in Legacy is still
 refused with `missing-jump`. The items that are not implemented are listed in section 9 and must not be read as done.
 
+Later update (2026-10-21): this document records the 2A-alpha slice as it was, and the text below is kept as written; it is not rewritten to the present state. "Nothing is executed" and "not implemented"
+(the title, this status and section 9) were true of 2A-alpha only. The later slice PID-D4 / Legacy Jump LJX-1 (`Handshake-PhaseD4JA-LegacyJumpLJX1.md`) added the execution and was closed on 2026-10-21 as
+LJX-1 OVERALL ACCEPTED WITH DOCUMENTED RESIDUAL RISK. See "Update after 2A-alpha" at the end of section 9.
+
 ## 1. What changed
 
 | area | change |
@@ -106,3 +110,23 @@ The raw logs, judge output and closure records of these runs are kept outside th
 for Legacy; sending a Legacy jump from Python; claim / execution / completion notice and the exclusion of Queued -> Executing against Queued -> Discarded under one gate (2A-beta entry); a command TTL, an
 age gate and watchdog values (to be decided after the timing measurements); cancel; making `StationIndex` the authoritative jump target, the pseudo turn-back, P-to-P and the stop-time impulse;
 the correction of the F5 target selection and the removal of the 50 m search. The Python files `main.py`, `scoring_logic.py` and `managed_input.py` are unchanged.
+
+**Update after 2A-alpha (2026-10-21).** The paragraph above is the state at 2A-alpha and is kept as history. The slice PID-D4 / Legacy Jump LJX-1 (`Handshake-PhaseD4JA-LegacyJumpLJX1.md`) later added, behind the
+build flag `LEGACY_JUMP_EXEC` (acceptance build: Legacy telemetry DLL 0.6.0.0):
+
+* execution: the host Tick claims one accepted command and runs the station jump or the location jump through a host seam (the Legacy API calls that 2A-alpha did not make). The command states grow by
+  Executing, CompletionPending, Completed, Failed and Abandoned, and the claim is taken under the one gate, so Queued -> Executing and Queued -> Discarded exclude each other;
+* `jump` in AVAIL, the Directory capability `STA | LOC | REQUEST_ID` (0x7) and `JUMP_COMPLETE` for Legacy (RequestId echoed). The managed application's existing client then sends the Legacy jump (Python unchanged);
+* a command TTL of 5.0 s (2A-alpha ran with no TTL, decision D-2) with discard at a scenario boundary, an owner change or loss, and the TTL itself; an age measurement at claim (`ageAtClaim`) and an Executing
+  watchdog as a diagnostic only;
+* safe stop: `Dispose` ends the command in flight as Abandoned, and no claim, host call or completion starts after `Dispose` began;
+* a breaker: three execution failures in a row close AVAIL `jump` (N = 3, approved by the owner on 2026-10-21);
+* Current is not disturbed: the Current product and the shared sources are unchanged, and the Current jump regression with the acceptance DLL deployed (L-12) passed.
+
+LJX-1 was closed on 2026-10-21 as LJX-1 OVERALL ACCEPTED WITH DOCUMENTED RESIDUAL RISK, after the real-machine cases L-01 .. L-14 with no product failure. L-08 was a SPLIT-CLOSE (L-08a PASS, L-08b PASS,
+L-08c BLOCKED-ACCEPTED-RISK): the real-machine joining of an application-driven request held through a Pause until the TTL could not be established, because the scoring start of the managed application
+sends a `P` key that releases the Pause. It is an accepted residual risk, not a product failure and not inconclusive.
+
+The feature flag is OFF in the committed state, which is behaviourally the 2A-alpha build. Whether the acceptance build or a flag default becomes the general default is not decided (OD-X11, a later phase).
+Items of the list above that LJX-1 did not implement (a cancel, StationIndex as the authoritative jump target, the pseudo turn-back, P to P, the stop-time impulse; see section 1 and the "Still not done" list of the
+LJX-1 document) remain not implemented. The correction of the F5 target selection and the removal of the 50 m search were not part of LJX-1 and are not recorded as done.

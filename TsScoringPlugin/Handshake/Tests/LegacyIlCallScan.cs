@@ -96,6 +96,15 @@ namespace TsScoringLegacyTelemetryTests
             return false;
         }
 
+        /// <summary>Phase LJX-1: the call targets of ONE method or constructor body (the call graph of the Legacy Jump execution is built from these).</summary>
+        public static Result ScanMethod(Assembly asm, MethodBase method)
+        {
+            Result r = new Result();
+            string own = asm.GetName().Name;
+            ScanBody(method, own, r, new HashSet<string>(), new HashSet<string>());
+            return r;
+        }
+
         public static Result ScanTypes(Assembly asm, IEnumerable<Type> types)
         {
             Result r = new Result();
