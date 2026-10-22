@@ -15,6 +15,7 @@ for p in (ROOT, HERE):
 import managed_hud as mh  # noqa: E402
 import managed_state as ms  # noqa: E402
 import sia_rig as R  # noqa: E402
+import station_index_contract  # noqa: E402
 import telemetry_gate  # noqa: E402
 import test_managed_hud_e4 as E4  # noqa: E402  (its fixtures only: FakeSource, make_block, FakeWindowApi, FakeTimer, Clock, Log, args_for)
 
@@ -23,12 +24,29 @@ _KEEP = object()
 
 STALIST = "STALIST:A=1=0.0=-1=-1=-1=15000=0=0,B=1=1000.0=-1=-1=-1=15000=0=0,C=0=2500.0=-1=-1=-1=15000=0=1"
 
+# Phase ST-2a: a sender of the supply contract (ST-1) writes the STIDX part next to NEXTLOC: the target of the default line is station B (index 1, at 1000.0), no
+# arrival candidate yet, three stations, the list id of the STALIST above. Without it the identity of a station is not established and a scoring start is refused.
+_AUTO = object()
+DEFAULT_STIDX = "STIDX:1:1:-1:0:3:%s" % station_index_contract.list_id(STALIST.split(":", 1)[1])
+
+
+def stidx(stalist, tgt, arr=-1, seq=0):
+    """The STIDX part a sender of the supply contract writes for the STALIST datagram text `stalist` (with its 'STALIST:' prefix): target, arrival candidate, event number."""
+    payload = stalist.split(":", 1)[1]
+    return "STIDX:1:%d:%d:%d:%d:%s" % (tgt, arr, seq, len(payload.split(",")) if payload else 0, station_index_contract.list_id(payload))
+
 
 def tele(sid, time_ms=36000000, speed=0.0, loc=0.0, avail=None, brk="N:0:8", btype="Ecb", **keys):
-    """One telemetry line of the Current sender (no AVAIL unless given); keys are appended as KEY:value. brk = 'text:notch:max'."""
+    """One telemetry line of the Current sender (no AVAIL unless given); keys are appended as KEY:value. brk = 'text:notch:max'.
+    STIDX= gives the STIDX part (default: the one of the default STALIST and NEXTLOC; None = a sender without one)."""
+    stidx = keys.pop("STIDX", _AUTO)
     parts = ["SCENARIO_ID:%d" % sid, "TIME:%d" % time_ms, "LOCATION:%s" % loc, "SPEED:%s" % speed, "BTYPE:%s" % keys.pop("BTYPE", btype), "BRK:%s" % brk,
              "NEXTLOC:1000.0", "NEXTTIME:%d" % (time_ms + 60000),
              "ISPASS:0", "ISTIMING:1", "DOORDIR:1", "DOOR:0", "TERM:0", "CAB:8:0", "PRATES:0_0.1_0.2_0.3_0.4_0.5_0.6_0.7_0.8:440.0", "JUMP:0"]
+    if stidx is _AUTO:
+        parts.append(DEFAULT_STIDX)
+    elif stidx is not None:
+        parts.append(stidx)
     for k, v in keys.items():
         parts.append("%s:%s" % (k, v))
     if avail is not None:

@@ -72,6 +72,7 @@ class Base(unittest.TestCase):
         """The path of a user: F1, 採点設定, the penalty page, the evaluation page, 採点を開始する. Returns nothing; the Overlay is scoring afterwards."""
         o = self.o
         o.station_list = [R.station("A", 0.0), R.station("B", 1000.0, terminal=True)]
+        R.bind_identity(o)                                                   # Phase ST-2a: a sender that supplies the identity of the stations (the start is refused without it)
         o.bve_time_ms = 36000000
         o.bve_actual_state = "RUNNING" if advancing else "PAUSED"
         self.tap("f1")
@@ -158,13 +159,31 @@ class A_ScoringState(Base):
         self.assertTrue(any(line.startswith("[MENU 6] 送信コマンド: JUMP_STA_TIME:0:36000000") for line in self.log))
 
     def test_the_scoring_start_does_not_check_session_driving_or_telemetry_state(self):
-        """CURRENT: the start only needs the menu to be open. There is no gate (SI-A3 puts the managed gate in FRONT of this path, the manual path is unchanged)."""
-        self.o.station_list = []
+        """CURRENT: the start only needs the menu to be open and a VERIFIED start station. There is no gate on the session / driving / telemetry state (SI-A3 puts the
+        managed gate in FRONT of this path, the manual path is unchanged). Phase ST-2a (inverted for the station): without a verified station the start is refused."""
+        self.o.station_list = [R.station("A", 0.0), R.station("B", 1000.0, terminal=True)]
+        R.bind_identity(self.o)
         self.o.menu_state = 10
         self.o.menu_cursor = 1
         self.o.handle_menu_enter(True)
         self.assertTrue(self.o.is_scoring_mode)
-        self.assertEqual(self.o.udp_socket.written, [])                     # no station to jump to: no command at all
+        self.assertEqual(len(self.o.udp_socket.written), 1)                 # the jump to the start station
+
+    def test_the_scoring_start_without_a_verified_station_is_refused(self):
+        """Phase ST-2a (was: 'no station to jump to: the scoring starts and no command is sent'): no station list, or no verified identity, is no start at all."""
+        for label, prepare in (("no station list", lambda o: None),
+                               ("a list without an identity", lambda o: setattr(o, "station_list", [R.station("A", 0.0), R.station("B", 1000.0, terminal=True)]))):
+            with self.subTest(label):
+                self.rig.close()
+                self.setUp()
+                prepare(self.o)
+                self.o.menu_state = 10
+                self.o.menu_cursor = 1
+                self.o.handle_menu_enter(True)
+                self.assertFalse(self.o.is_scoring_mode)
+                self.assertFalse(self.o.is_official_jumping)
+                self.assertEqual(self.o.save_data, [])
+                self.assertEqual(self.o.udp_socket.written, [])
 
     def test_interrupting_the_scoring_asks_first_and_the_default_is_no(self):
         o = self.o

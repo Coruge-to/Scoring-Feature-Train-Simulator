@@ -108,6 +108,12 @@ ZERO = {"time": 0, "stop": 0, "base_brake": 0, "roll": 0, "jerk": 0, "init_brake
 T0 = 36000000
 
 
+def with_identity(checkpoint, index, location, count=4, role="arrived_station"):
+    """Phase ST-2a: the four identity items a checkpoint carries now (station_index, scope, station_location, role), on top of the seven it always had."""
+    checkpoint.update(station_index=index, scope=(R.SCOPE_SID, R.SCOPE_LIST_ID, count), station_location=location, role=role)
+    return checkpoint
+
+
 @unittest.skipUnless(HAS_QT, "PyQt6 is not importable by this interpreter")
 class Base(unittest.TestCase):
     @classmethod
@@ -173,6 +179,8 @@ class Base(unittest.TestCase):
         o.bve_is_pass = is_pass
         o.bve_doordir = doordir
         o.score = score
+        if not getattr(o, "bve_list_id", ""):                                   # Phase ST-2a: a sender that names the station (a test that binds its own identity is left alone)
+            R.bind_identity(o)
         self.S.create_save_data(o)
         return o.save_data
 
@@ -643,6 +651,8 @@ class R_ExecuteRetry(Base):
 class S_SaveData(Base):
     def _start_through_the_menu(self, start_idx):
         o = self.o
+        if not getattr(o, "bve_list_id", ""):                                   # Phase ST-2a: a sender that supplies the identity (the start is refused without it)
+            R.bind_identity(o)
         o.setting_start_idx = start_idx
         o.menu_state = 10
         o.menu_cursor = 1
@@ -662,9 +672,10 @@ class S_SaveData(Base):
     def test_CURRENT_S01_the_initial_checkpoint_for_the_first_station(self):
         o = self.o
         order = self._start_through_the_menu(0)
-        self.assertEqual(o.save_data, [{"loc": 0.0, "time_ms": T0, "score": 0, "target_loc": 0.0, "station_name": "A", "stop_error": 0.0}])
+        # Phase ST-2a (inverted: was the seven fields without a station_index): the first checkpoint carries the verified identity of the start station on top of them
+        self.assertEqual(o.save_data, [{"loc": 0.0, "time_ms": T0, "score": 0, "target_loc": 0.0, "station_name": "A", "stop_error": 0.0,
+                                        "station_index": 0, "scope": (R.SCOPE_SID, R.SCOPE_LIST_ID, 4), "station_location": 0.0, "role": "scoring_start"}])
         self.assertNotIn("score_details", o.save_data[0])
-        self.assertNotIn("station_index", o.save_data[0])
         self.assertNotIn("scenario_generation", o.save_data[0])
         self.assertEqual(order, [("begin", 0)])                       # begin_official_jump runs BEFORE the check point is appended ...
         self.assertEqual(self.sent(), ["JUMP_STA_TIME:0:%d" % T0])
@@ -672,21 +683,25 @@ class S_SaveData(Base):
         self.assertTrue(self.events[-1][2]["jumping"])
 
     @jf0("S01", "CURRENT")
-    def test_CURRENT_S01_the_initial_checkpoint_for_a_later_start_station_has_no_station_index_either(self):
+    def test_CURRENT_S01_the_initial_checkpoint_for_a_later_start_station_carries_its_station_index(self):
         o = self.o
         self._start_through_the_menu(2)
-        self.assertEqual(o.save_data, [{"loc": 2000.0, "time_ms": T0, "score": 0, "target_loc": 2000.0, "station_name": "C", "stop_error": 0.0}])
+        # Phase ST-2a (inverted: was "has no station_index either")
+        self.assertEqual(o.save_data, [{"loc": 2000.0, "time_ms": T0, "score": 0, "target_loc": 2000.0, "station_name": "C", "stop_error": 0.0,
+                                        "station_index": 2, "scope": (R.SCOPE_SID, R.SCOPE_LIST_ID, 4), "station_location": 2000.0, "role": "scoring_start"}])
         self.assertEqual(self.sent(), ["JUMP_STA_TIME:2:%d" % T0])
 
     # -- S02 / S03 / S04 -------------------------------------------------------------------------------------------------------------------------
     @jf0("S02", "CURRENT")
-    def test_CURRENT_S02_a_normal_checkpoint_has_exactly_these_seven_fields(self):
+    def test_CURRENT_S02_a_normal_checkpoint_has_exactly_these_eleven_fields(self):
         o = self.o
         o.score_details["eb"] = -100
         saves = self.arrive(1000.0, 996.5, t=T0 + 60000, name="B", is_pass=1, score=300)
         self.assertEqual(len(saves), 2)
         new = saves[-1]
-        self.assertEqual(set(new), {"loc", "time_ms", "score", "score_details", "target_loc", "station_name", "stop_error"})
+        # Phase ST-2a (inverted: was exactly the seven fields): the seven keep their meaning, the four of the identity are added
+        self.assertEqual(set(new), {"loc", "time_ms", "score", "score_details", "target_loc", "station_name", "stop_error", "station_index", "scope", "station_location", "role"})
+        self.assertEqual((new["station_index"], new["scope"], new["station_location"], new["role"]), (1, (R.SCOPE_SID, R.SCOPE_LIST_ID, 4), 1000.0, "arrived_station"))
         self.assertEqual((new["loc"], new["time_ms"], new["score"], new["target_loc"], new["station_name"], new["stop_error"]), (996.5, T0 + 60000, 300, 1000.0, "B", 3.5))
         self.assertEqual(new["score_details"], o.score_details)
         self.assertIsNot(new["score_details"], o.score_details)
@@ -698,27 +713,27 @@ class S_SaveData(Base):
         self.assertEqual(len(saves), 2)
 
     @jf0("S03", "CURRENT")
-    def test_CURRENT_S03_the_comparison_is_an_exact_float_equality(self):
+    def test_CURRENT_S03_the_comparison_is_by_scope_and_station_index_not_a_float(self):
         self.arrive(1000.0, 999.0, is_pass=1)
         saves = self.arrive(1000.0000001, 999.0, is_pass=1, saves=self.o.save_data)
-        self.assertEqual(len(saves), 3)
+        self.assertEqual(len(saves), 2)                                # Phase ST-2a (inverted: was 3, the float position decided): the same StationIndex is the same checkpoint
 
     @danger("S04", "the second of two stations at the SAME position is silently dropped: no checkpoint, no log line, no counter",
             "JF-2 (TARGET-A S6: refused with a reason log) / JF-3 (TARGET-B: a separate checkpoint per station_index)", "this assertion is replaced by TARGET_A_S04 / TARGET_B_S04")
-    def test_CURRENT_DANGER_S04_same_position_second_station_is_silently_dropped(self):
+    def test_CURRENT_DANGER_S04_same_position_second_station_gets_its_own_checkpoint(self):
         o = self.o
         o.station_list = [st("A", 0.0), st("B1", 1000.0), st("B2", 1000.0), st("D", 3000.0, terminal=True)]
         self.arrive(1000.0, 999.0, name="B1", is_pass=1)
-        before = len(self.log)
+        o.bve_arr_idx = o.bve_tgt_idx = 2                             # Phase ST-2a (inverted: was "silently dropped"): the sender names the second station of the pair
         saves = self.arrive(1000.0, 999.0, name="B2", is_pass=1, saves=o.save_data)           # the arrival at B2: NEXTLOC did not change
-        self.assertEqual([c["station_name"] for c in saves], ["A", "B1"])
-        self.assertEqual(len(self.log), before)                       # not a single line
+        self.assertEqual([c["station_name"] for c in saves], ["A", "B1", "B2"])
+        self.assertEqual([c.get("station_index") for c in saves[1:]], [1, 2])
 
     # -- S05 / S06 : the 1.0 m station search -----------------------------------------------------------------------------------------------------
     @jf0("S05", "CURRENT")
-    def test_CURRENT_S05_zero_candidates_add_nothing_and_log_nothing(self):
-        saves = self.arrive(500.0, 499.0)                                   # no station at 500: curr_sta_idx = -1
-        self.assertEqual(saves[-1]["time_ms"], T0 + 60000)
+    def test_CURRENT_S05_no_named_station_creates_no_checkpoint_and_adds_no_door_time(self):
+        saves = self.arrive(500.0, 499.0)                                   # no station at 500: the sender names none (arrival index -1)
+        self.assertEqual(len(saves), 1)                                     # Phase ST-2a (inverted: was a checkpoint with the plain time): no identity, no checkpoint
         self.assertEqual(self.door_logs(), [])
 
     @jf0("S05", "CURRENT")
@@ -730,23 +745,28 @@ class S_SaveData(Base):
         self.assertIn("Bにて 4630ms", self.door_logs()[0])
 
     @jf0("S05", "CURRENT")
-    def test_CURRENT_S05_several_candidates_use_the_attributes_of_the_lowest_index_even_for_the_arrival_at_a_later_one(self):
+    def test_CURRENT_S05_several_candidates_use_the_attributes_of_the_station_the_checkpoint_names(self):
         o = self.o
         o.bve_door_close_time_ms = 4630
         o.station_list = [st("A", 0.0), st("B1", 1000.0), st("B2", 1000.0, def_time=99999999), st("D", 3000.0, terminal=True)]
-        saves = self.arrive(1000.0, 999.0, name="B2")                       # B2 would NOT add (def_time later than now); B1 does
-        self.assertEqual(saves[-1]["time_ms"], T0 + 60000 + 4630)
-        self.assertIn("B1にて", self.door_logs()[0])
-        self.assertEqual(saves[-1]["station_name"], "B2")
+        R.bind_identity(o, arr_idx=2)                                       # Phase ST-2a (inverted: the lowest index of a position search decided): the sender names B2
+        o.bve_next_loc = 1000.0
+        saves = self.arrive(1000.0, 999.0, name="B2")                       # B2 does NOT add (def_time later than now)
+        self.assertEqual(saves[-1]["time_ms"], T0 + 60000)
+        self.assertEqual(self.door_logs(), [])
+        self.assertEqual((saves[-1]["station_name"], saves[-1]["station_index"]), ("B2", 2))
 
     @jf0("S06", "CURRENT")
-    def test_CURRENT_S06_the_search_distance_is_strictly_below_1_0_m(self):
-        for p_loc, found in ((1000.999, True), (1001.0, False), (1001.001, False)):
+    def test_CURRENT_S06_the_position_must_agree_with_the_named_station_within_0_01_m(self):
+        for p_loc, found in ((1000.009, True), (1000.011, False), (1001.0, False)):
             with self.subTest(p_loc=p_loc):
                 self.log.clear()
                 self.o.bve_door_close_time_ms = 4630
+                self.o.save_data = [cp(0.0, T0, name="A")]
+                R.bind_identity(self.o, arr_idx=1)                          # Phase ST-2a (inverted: the 1.0 m search of the door-time station): the sender names station B
                 self.arrive(p_loc, 999.0, prev_next_loc=p_loc)
                 self.assertEqual(len(self.door_logs()), 1 if found else 0)
+                self.assertEqual(len(self.o.save_data), 2 if found else 1)
 
     # -- S07 / S08 -------------------------------------------------------------------------------------------------------------------------------
     def _door_station(self, raw_dep=-1, def_time=-1):
@@ -823,14 +843,17 @@ class S_SaveData(Base):
     @jf0("S10", "CURRENT")
     def test_CURRENT_S10_after_a_retry_the_same_station_is_not_saved_again_but_the_next_one_is(self):
         o = self.o
-        self.retry(1, [cp(0.0, T0, name="A"), cp(996.0, T0 + 60000, details=ZERO, name="B", target_loc=1000.0),
-                       cp(1996.0, T0 + 120000, details=ZERO, name="C", target_loc=2000.0)])
+        self.retry(1, [with_identity(cp(0.0, T0, name="A"), 0, 0.0, role="scoring_start"),
+                       with_identity(cp(996.0, T0 + 60000, details=ZERO, name="B", target_loc=1000.0), 1, 1000.0),
+                       with_identity(cp(1996.0, T0 + 120000, details=ZERO, name="C", target_loc=2000.0), 2, 2000.0)])
         self.assertEqual(len(o.save_data), 2)
         o.is_scoring_mode = True
         o.bve_next_loc, o.prev_next_loc, o.bve_location, o.bve_is_pass = 1000.0, 1000.0, 996.0, 1
+        R.bind_identity(o)                                                  # (Phase ST-2a: the sender names station B)
         self.S.create_save_data(o)
         self.assertEqual(len(o.save_data), 2)                              # the retry station: not saved again
         o.bve_next_loc, o.prev_next_loc, o.bve_location = 2000.0, 2000.0, 1996.0
+        R.bind_identity(o)                                                  # (... and then station C)
         self.S.create_save_data(o)
         self.assertEqual(len(o.save_data), 3)
 
@@ -882,19 +905,21 @@ class S_SaveData(Base):
         o.prev_next_loc = o.bve_next_loc = 1000.0
         o.bve_location = 999.0
         o.bve_is_pass = 1
+        R.bind_identity(o)                                                  # (Phase ST-2a: the sender names station B)
         self.S.evaluate_arrival(o, 50.0)
         self.assertEqual(len(o.save_data), 2)
 
     @jf0("S13", "CURRENT")
-    def test_CURRENT_S13_the_saved_target_is_bve_next_loc_while_the_door_time_station_comes_from_prev_next_loc(self):
-        """JF-0 v2 section 4, S13: in a frame where the two differ, the saved checkpoint and the door time refer to different stations. Frequency is an estimate."""
+    def test_CURRENT_S13_the_saved_target_and_the_door_time_station_are_the_checkpoints_station(self):
+        """JF-0 v2 section 4, S13: in a frame where bve_next_loc and prev_next_loc differ, the saved checkpoint and the door time referred to different stations.
+        Phase ST-2a (inverted): both refer to the station the checkpoint names (the StationIndex), whatever prev_next_loc is."""
         o = self.o
         o.bve_door_close_time_ms = 4630
         saves = self.arrive(2000.0, 1999.0, prev_next_loc=1000.0, name="C")
         self.assertEqual(saves[-1]["target_loc"], 2000.0)
         self.assertEqual(saves[-1]["station_name"], "C")
         self.assertEqual(len(self.door_logs()), 1)
-        self.assertIn("Bにて", self.door_logs()[0])                        # the door time was taken from station B (1000), the checkpoint is C's
+        self.assertIn("Cにて", self.door_logs()[0])                        # the door time is taken from station C (2000), the checkpoint's own station
 
     @jf0("S14", "CURRENT")
     def test_CURRENT_S14_score_details_are_a_copy_and_a_missing_name_is_the_default_name(self):
@@ -904,6 +929,7 @@ class S_SaveData(Base):
         self.assertEqual(saves[-1]["score_details"]["eb"], 0)
         del o.bve_current_station_name
         o.bve_next_loc = 2000.0
+        R.bind_identity(o)                                                  # (Phase ST-2a: the sender names station C now)
         self.S.create_save_data(o)
         self.assertEqual(o.save_data[-1]["station_name"], "不明な駅")
 
@@ -950,19 +976,19 @@ class S_SaveData(Base):
     # -- S17 -------------------------------------------------------------------------------------------------------------------------------------
     @danger("S17", "a start station index outside the list is not refused: the official jump state is begun, no command is sent, so nothing can ever end it",
             "JF-2 (TARGET-A V-3: refuse the start, do not call begin_official_jump)", "this assertion is replaced by TARGET_A_S17")
-    def test_CURRENT_DANGER_S17_start_with_out_of_range_start_index_sticks_without_a_command(self):
+    def test_CURRENT_DANGER_S17_start_with_out_of_range_start_index_is_refused_without_a_command(self):
         for idx in (9, -1):
             with self.subTest(idx=idx):
                 self.events.clear()
                 o = self.o
                 o.is_official_jumping = False
                 self._start_through_the_menu(idx)
+                # Phase ST-2a (inverted: the official jump was begun with position 0.0 and nothing could end it): the start is refused, nothing is begun or sent
                 self.assertEqual(self.sent(), [])
-                self.assertTrue(o.is_official_jumping)
-                self.assertEqual((o.expected_target_loc, o.expected_target_time), (0.0, -1))
-                self.assertEqual(len(o.save_data), 1)
-                self.assertEqual(o.save_data[0]["station_name"], "不明な駅")
-                self.assertEqual((o.save_data[0]["loc"], o.save_data[0]["time_ms"]), (0.0, -1))
+                self.assertFalse(o.is_official_jumping)
+                self.assertFalse(o.is_scoring_mode)
+                self.assertEqual((o.expected_target_loc, o.expected_target_time), (-1.0, -1))
+                self.assertEqual(o.save_data, [])
 
     # -- S19 -------------------------------------------------------------------------------------------------------------------------------------
     @danger("S19", "a checkpoint is made WITHOUT the door time while its retry takes the STA route (calc_t < 0, def_t >= 0, time < def_t): the time gain the door time prevents is possible",
@@ -1095,6 +1121,7 @@ class X_Chains(Base):
         self.assertTrue(o.has_departed)
         self.assertFalse(o.is_first_station)
         o.bve_current_station_name, o.bve_is_pass, o.bve_location, o.bve_speed = "B", 1, 999.0, 0.0
+        R.bind_identity(o)                                                     # (Phase ST-2a: the sender names station B)
         self.S.evaluate_arrival(o, 101.0)
         self.assertEqual(len(o.save_data), 2)                                  # the arrival at B adds one checkpoint
 
@@ -1103,12 +1130,14 @@ class X_Chains(Base):
         o = self.o
         o.is_scoring_mode = True
         o.setting_end_idx = 3
-        self.retry(1, [cp(0.0, T0, name="A"), cp(996.0, T0 + 60000, details=ZERO, name="B", target_loc=1000.0)])
+        self.retry(1, [with_identity(cp(0.0, T0, name="A"), 0, 0.0, role="scoring_start"),
+                       with_identity(cp(996.0, T0 + 60000, details=ZERO, name="B", target_loc=1000.0), 1, 1000.0)])
         self._complete(1000.0, index=1, t=T0 + 60000)
         self.assertFalse(o.is_official_jumping)
         self.assertTrue(o.is_official_retry)
         o.bve_next_loc = o.prev_next_loc = 1000.0
         o.bve_location, o.bve_is_pass = 996.0, 1
+        R.bind_identity(o)                                                     # (Phase ST-2a: the sender names station B, which the retry checkpoint already holds)
         self.S.create_save_data(o)
         self.assertEqual(len(o.save_data), 2)
         self.assertTrue(o.is_official_retry)

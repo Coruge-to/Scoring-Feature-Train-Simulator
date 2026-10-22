@@ -134,6 +134,8 @@ class Base(unittest.TestCase):
         o.bve_current_station_name = "B"
         o.jump_lock = False
         o.is_official_jumping = False
+        if not getattr(o, "bve_list_id", ""):                                   # Phase ST-2a: a sender that names the station of the target (a scene that binds its own identity is left alone)
+            R.bind_identity(o)
         return o
 
     def tick(self, n=1):
@@ -213,7 +215,9 @@ class A_NormalStop(Base):
                 self.tick()
                 self.open_doors()
                 self.assertEqual(o.has_scored_stop_this_station, found)
-                self.assertEqual(self.arrivals(), 1 if found else 0)
+                # Phase ST-2a (inverted for the checkpoint only; the 1.0 m search that decides the arrival SCORE is unchanged until ST-4): the checkpoint is created
+                # for the station the sender names, and only when NEXTLOC is that station's position within 0.01 m - none of these four is
+                self.assertEqual(self.arrivals(), 0)
 
 
 # ==============================================================================================================================================

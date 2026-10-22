@@ -71,6 +71,7 @@ ADAPTER_MODULE = "station_index_contract"
 ADAPTER_VERDICT = "verdict"            # verdict(line, nextloc, station_locations, list_hash, elapsed_since_mismatch_ms, grace_ms, prev_arrseq) -> one verdict word of the vector table
 ADAPTER_LIST_ID = "list_id"            # list_id(payload_text) -> 8 upper-case hex digits (CRC-32 of the UTF-8 STALIST payload)
 MIGRATED_TO = "tests/test_stationindex_supply_st1a.py"       # Phase ST-1A: where the six migrated contracts (T21, T22 x2, U12 x3) are executed now
+MIGRATED_TO_ST2A = "tests/test_stationindex_canon_st2.py"    # Phase ST-2a: where the three contracts that ST-2a turns GREEN (T09 initial checkpoint, T05 start, T04 save) are executed now
 SCOPE_SID = 7
 SCOPE_LIST_ID = "A1B2C3D4"
 
@@ -309,7 +310,7 @@ class SaveReds(RedMixin, F1.Base):
         o.menu_cursor = 1
         o.handle_menu_enter(True)
 
-    @red("T09", "INITIAL-CHECKPOINT-HAS-NO-STATION-INDEX", items=(7,), artifact="JF-1 TARGET_A_S01 (its field names are the JF-2 ones; the Cross-Layer fields are 06 section 2)",
+    @migrated("T09", "INITIAL-CHECKPOINT-HAS-NO-STATION-INDEX", MIGRATED_TO_ST2A, items=(7,), artifact="JF-1 TARGET_A_S01 (its field names are the JF-2 ones; the Cross-Layer fields are 06 section 2)",
          note="the scoring start stores station_index = setting_start_idx, the scope, the station position and role scoring_start in the first checkpoint")
     def test_RED_T09_the_scoring_start_stores_the_chosen_start_index_in_the_first_checkpoint(self):
         o = self.o
@@ -322,7 +323,7 @@ class SaveReds(RedMixin, F1.Base):
         ok = (not missing) and first["station_index"] == 2 and first["role"] == "scoring_start" and first["station_location"] == 2000.0
         self.contract(ok, "T09", "INITIAL-CHECKPOINT-HAS-NO-STATION-INDEX", "missing fields %r" % (missing,))
 
-    @red("T05", "START-INDEX-OUT-OF-RANGE-NOT-REFUSED", items=(4,), artifact="JF-1 CURRENT_DANGER_S17 and TARGET_A_S17; 06 section 3-3 (setting_start_idx out of range: the scoring is not started)",
+    @migrated("T05", "START-INDEX-OUT-OF-RANGE-NOT-REFUSED", MIGRATED_TO_ST2A, items=(4,), artifact="JF-1 CURRENT_DANGER_S17 and TARGET_A_S17; 06 section 3-3 (setting_start_idx out of range: the scoring is not started)",
          note="a scoring start whose setting_start_idx is outside the station list is refused: no scoring mode, no official jump, no checkpoint, no command")
     def test_RED_T05_a_scoring_start_with_an_out_of_range_start_index_is_refused(self):
         bind_scope(self.o, self.o.station_list)
@@ -340,7 +341,7 @@ class SaveReds(RedMixin, F1.Base):
                 self.contract(refused, "T05", "START-INDEX-OUT-OF-RANGE-NOT-REFUSED",
                               "scoring=%r official_jump=%r checkpoints=%d commands=%r" % (o.is_scoring_mode, o.is_official_jumping, len(o.save_data), self.sent()))
 
-    @red("T04", "SAME-POSITION-PAIR-DROPPED", items=(3,), artifact="JF-1 CURRENT_DANGER_S04 and TARGET_B_S04 (its attribute bve_next_idx is the JF-3 name; the Cross-Layer name is bve_arr_idx)",
+    @migrated("T04", "SAME-POSITION-PAIR-DROPPED", MIGRATED_TO_ST2A, items=(3,), artifact="JF-1 CURRENT_DANGER_S04 and TARGET_B_S04 (its attribute bve_next_idx is the JF-3 name; the Cross-Layer name is bve_arr_idx)",
          note="the arrival at the second of two same-position stations creates its own checkpoint with its own station_index")
     def test_RED_T04_the_second_same_position_station_gets_its_own_checkpoint(self):
         o = self.o

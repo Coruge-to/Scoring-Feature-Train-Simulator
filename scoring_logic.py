@@ -3,6 +3,7 @@ import os
 from PyQt6.QtNetwork import QHostAddress
 
 from config import *
+import station_identity
 from utils import (
     calculate_apex_speed,
     calculate_warning_distance,
@@ -759,9 +760,41 @@ def apply_stop_score(self, d_m, current_time):
         if x_cm < 1: return True
     return False
 
-def create_save_data(self):
+def note_save_skipped(self, snapshot):
+    """Phase ST-2a: the checkpoint of this arrival was NOT created because the identity of the station is not verified. The scoring goes on, the checkpoints that
+    exist stay as they are. One diagnostic line per change of (reason, candidate index): a refusal that repeats says nothing new."""
+    key = (snapshot.reason, snapshot.station_index)
+    if getattr(self, '_save_skip_key', None) == key:
+        return
+    self._save_skip_key = key
+    note = getattr(self, '_station_identity_note', None)
+    if note is None:
+        return
+    scope = snapshot.scope
+    fields = {"why": snapshot.reason, "idx": snapshot.station_index, "role": snapshot.role, "loc": "none" if snapshot.station_location is None else "%.2f" % snapshot.station_location,
+              "tgt": getattr(self, 'bve_tgt_idx', -1)}                    # the target index is recorded for diagnosis only; it is never a condition of the checkpoint
+    if scope is not None:
+        fields.update({"scn": scope.scenario_id, "list": scope.list_id, "cnt": scope.count})
+    try:
+        note("stidx-save-skip", **fields)
+    except Exception:
+        pass
+
+
+def create_save_data(self, arrival_loc=None):
     if not getattr(self, 'is_scoring_mode', False) or getattr(self, 'is_scoring_finished', False): return
-    if not getattr(self, 'save_data', []) or self.save_data[-1]["target_loc"] != self.bve_next_loc:
+
+    # Phase ST-2a: the station of the checkpoint is the VERIFIED arrival index the sender supplied (never a position that is searched in the station list); when it
+    # is not verified - or does not correspond to the arrival the application judged (arrival_loc: the position the stop was scored against, NEXTLOC when the caller
+    # names none) - no checkpoint is created and none that exists is touched. The sender's TARGET index is not a condition: it may name the next station by now.
+    snapshot = station_identity.arrival_snapshot(
+        getattr(self, 'current_scenario_id', -1), getattr(self, 'bve_list_id', ""), getattr(self, 'station_list', None),
+        getattr(self, 'bve_arr_idx', -1), getattr(self, 'bve_next_loc', None) if arrival_loc is None else arrival_loc)
+    if not snapshot.valid:
+        note_save_skipped(self, snapshot)
+        return
+
+    if not getattr(self, 'save_data', []) or not station_identity.same_station(self.save_data[-1], snapshot):
         stop_error = self.bve_next_loc - self.bve_location
 
         # 基本は現在の時刻をそのまま保存する
@@ -773,42 +806,34 @@ def create_save_data(self):
             # 条件2: 扉が開く駅であること（通過駅や運転停車は除外）
             if getattr(self, 'bve_is_pass', 0) == 0 and getattr(self, 'bve_doordir', 1) != 0:
 
-                # 現在の駅のダイヤ情報を取得する
-                curr_sta_idx = -1
-                p_loc = getattr(self, 'prev_next_loc', getattr(self, 'bve_next_loc', -1.0))
-                for i, st in enumerate(getattr(self, 'station_list', [])):
-                    if abs(st["location"] - p_loc) < 1.0:
-                        curr_sta_idx = i
-                        break
+                # 現在の駅のダイヤ情報を取得する（チェックポイントと同じStationIndexの駅）
+                st = self.station_list[snapshot.station_index]
+                raw_dep = st.get("raw_dep", -1)
+                def_t = st.get("def_time", -1)
+                stop_t = st.get("stop_time", 15000)
 
-                if curr_sta_idx >= 0:
-                    st = getattr(self, 'station_list', [])[curr_sta_idx]
-                    raw_dep = st.get("raw_dep", -1)
-                    def_t = st.get("def_time", -1)
-                    stop_t = st.get("stop_time", 15000)
+                calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1
 
-                    calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1
+                # 条件3: 到着時間が「定刻(calc_t)」より遅れているか？（遅延時のみ加算）
+                is_delayed = (calc_t < 0) or (self.bve_time_ms > calc_t)
 
-                    # 条件3: 到着時間が「定刻(calc_t)」より遅れているか？（遅延時のみ加算）
-                    is_delayed = (calc_t < 0) or (self.bve_time_ms > calc_t)
+                # 条件4: ロールバック時に「新方式(STA)」が使われるか？
+                # (旧方式(LOC)の場合は目の前で扉が開くため加算不要)
+                will_use_sta = (def_t < 0) or (self.bve_time_ms >= def_t)
 
-                    # 条件4: ロールバック時に「新方式(STA)」が使われるか？
-                    # (旧方式(LOC)の場合は目の前で扉が開くため加算不要)
-                    will_use_sta = (def_t < 0) or (self.bve_time_ms >= def_t)
+                # すべての悪条件（ズルできる条件）が揃った時のみ、ドア時間を加算して未来へ進める！
+                if is_delayed and will_use_sta:
+                    door_time = getattr(self, 'bve_door_close_time_ms', 0)
+                    save_time_ms += door_time
 
-                    # すべての悪条件（ズルできる条件）が揃った時のみ、ドア時間を加算して未来へ進める！
-                    if is_delayed and will_use_sta:
-                        door_time = getattr(self, 'bve_door_close_time_ms', 0)
-                        save_time_ms += door_time
+                    # （確認用：後で消してもOKです）
+                    write_desktop_log(
+                        f"[SAVE] 開扉時間を反映: "
+                        f"{st.get('name', '駅')}にて "
+                        f"{door_time}ms をセーブデータ時刻に加算"
+                    )
 
-                        # （確認用：後で消してもOKです）
-                        write_desktop_log(
-                            f"[SAVE] 開扉時間を反映: "
-                            f"{st.get('name', '駅')}にて "
-                            f"{door_time}ms をセーブデータ時刻に加算"
-                        )
-
-        self.save_data.append({
+        checkpoint = {
             "loc": self.bve_location,
             "time_ms": save_time_ms,  # 開扉時間を反映した時刻を保存する
             "score": self.score,
@@ -817,7 +842,10 @@ def create_save_data(self):
             "target_loc": self.bve_next_loc,
             "station_name": getattr(self, 'bve_current_station_name', '不明な駅'),
             "stop_error": stop_error
-        })
+        }
+        checkpoint.update(station_identity.checkpoint_fields(snapshot))
+        self.save_data.append(checkpoint)
+        self._save_skip_key = None
 
 def evaluate_arrival(self, current_time, arrival_target_loc=None):
     if getattr(self, 'is_scoring_finished', False):
@@ -940,7 +968,7 @@ def evaluate_arrival(self, current_time, arrival_target_loc=None):
 
     else:
         if not getattr(self, 'jump_lock', False):
-            create_save_data(self)
+            create_save_data(self, p_loc)
 
 def evaluate_departure(self, current_time):
     if getattr(self, 'is_scoring_finished', False): return

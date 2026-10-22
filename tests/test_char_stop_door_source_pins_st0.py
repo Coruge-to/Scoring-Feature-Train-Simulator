@@ -281,7 +281,8 @@ class Pins(ShortCase):
                     src = ast.unparse(node.left)
                     if "location" in src:
                         sites[fn.name] = sites.get(fn.name, 0) + 1
-        self.assertEqual(sites, {"create_save_data": 1, "evaluate_arrival": 1, "evaluate_departure": 1, "update_physics_and_scoring": 3})
+        # Phase ST-2a (inverted: create_save_data was one of the six): the checkpoint takes its station from the verified StationIndex; the other five are ST-4's
+        self.assertEqual(sites, {"evaluate_arrival": 1, "evaluate_departure": 1, "update_physics_and_scoring": 3})
 
     @st0("T20", "KNOWN-DEFECT-BEHAVIOR", items=(19,), note="C-ID-5: execute_retry picks the retry station by a '< 100.0' search from the check point position (lowest index) and falls back to station 0 when nothing is found")
     def test_PIN_ITEM19_execute_retry_searches_100_m_and_falls_back_to_station_0(self):
@@ -298,9 +299,11 @@ class Pins(ShortCase):
         self.assertIn("if abs(self.bve_next_loc - self.bve_location) > 100.0: self.is_first_station = False self.is_first_udp = False", sl)
 
     @st0("T20", "KNOWN-DEFECT-BEHAVIOR", items=(16, 19), note="C-ID-7: the checkpoint duplicate key is the float equality of target_loc")
-    def test_PIN_ITEM19_the_checkpoint_duplicate_key_is_a_float_position(self):
+    def test_PIN_ITEM19_the_checkpoint_duplicate_key_is_the_station_index_under_its_scope(self):
         sl = re.sub(r"\s+", " ", py_text("scoring_logic.py"))
-        self.assertIn('self.save_data[-1]["target_loc"] != self.bve_next_loc', sl)
+        # Phase ST-2a (inverted: the key was the float equality of target_loc): the key is (scope, StationIndex)
+        self.assertNotIn('self.save_data[-1]["target_loc"] != self.bve_next_loc', sl)
+        self.assertIn("not station_identity.same_station(self.save_data[-1], snapshot)", sl)
 
 
 class Z_Meta(unittest.TestCase):

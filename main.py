@@ -33,6 +33,7 @@ import managed_app_directory
 import pause_recovery
 import telemetry_contract
 import station_index_contract
+import station_identity
 import telemetry_dataplane_receiver
 import current_jump_client
 import telemetry_gate
@@ -268,6 +269,13 @@ class Overlay(QWidget):
 
         self.station_list = []
 
+        # Phase ST-2a: the identity the application publishes for the station list above (written only by _station_identity_apply / _station_identity_clear;
+        # -1 / "" = the sender's station indexes can not be used as the identity of a station)
+        self.bve_tgt_idx = -1
+        self.bve_arr_idx = -1
+        self.bve_arr_seq = -1
+        self.bve_list_id = ""
+
         # シナリオ情報とカテゴリ別の得点内訳
         self.meta_title = ""
         self.meta_route = ""
@@ -385,7 +393,7 @@ class Overlay(QWidget):
                 if text.startswith("STALIST:"):
                     sta_data = text.split(':', 1)[1]
                     self._station_index_note_stalist(sta_data)
-                    new_list = []
+                    new_list = station_identity.StationList(list_id=station_index_contract.list_id(sta_data))
                     if sta_data:
                         for sta_str in sta_data.split(','):
                             parts = sta_str.split('=')
@@ -421,6 +429,7 @@ class Overlay(QWidget):
                             self.pending_station_list = new_list
                         else:
                             self.station_list = new_list
+                            self._station_identity_sync()
 
                 elif text.startswith("META:"):
                     parts = text.split(':')
@@ -463,6 +472,7 @@ class Overlay(QWidget):
             committed = self.__dict__.pop('_station_list_to_commit', None)
             if committed is not None:
                 self.station_list = committed
+            self._station_identity_sync()                    # Phase ST-2a: AFTER the line is applied (and observed) and the station list is adopted, never before
 
         self._poll_jump_client()
         self._settle_jump_complete()
@@ -549,8 +559,9 @@ class Overlay(QWidget):
         elif self.telemetry_gate.last_verdict == "held":
             self.held_station_list = pending
 
-    # -- Phase ST-1A: the STIDX intake. It only RECORDS: the observer is an object of its own; nothing of the scoring, the station list, the checkpoints, the
-    # HUD or the jump state reads it or is written by it (using the index as the identity of a station is a later Stage).
+    # -- Phase ST-1A: the STIDX intake. It only RECORDS: the observer is an object of its own; it reads nothing of the scoring, the station list, the checkpoints, the
+    # HUD or the jump state and writes none of it. (Phase ST-2a: using the index as the identity of a station is _station_identity_sync below, the one reader of the
+    # observer; it takes the observer's PUBLIC snapshot only and publishes a verified result.)
     def _station_index_observer(self):
         observer = self.__dict__.get('_stidx_observer')
         if observer is None:
@@ -587,12 +598,62 @@ class Overlay(QWidget):
         except Exception:
             pass
 
+    # -- Phase ST-2a: the IDENTITY of a station. The observer above only RECORDS; this is where an index becomes the identity of a station, and the only place
+    # (together with _station_identity_clear) that writes bve_tgt_idx / bve_arr_idx / bve_arr_seq / bve_list_id. The observer is read through its PUBLIC snapshot only,
+    # and only AFTER the station list of the line is adopted: an index is compared with the list the application holds, not with the last STALIST that arrived.
+    def _station_identity_sync(self):
+        try:
+            observer = self.__dict__.get('_stidx_observer')
+            observed = observer.snapshot() if observer is not None else None
+            decision = station_identity.decide(observed, getattr(self, 'current_scenario_id', -1), getattr(self, 'station_list', None), getattr(self, 'bve_next_loc', -1.0))
+        except Exception:
+            decision = station_identity.unavailable(station_identity.INTERNAL_ERROR)
+        self._station_identity_apply(decision)
+
+    def _station_identity_apply(self, decision):
+        self.bve_tgt_idx, self.bve_arr_idx, self.bve_arr_seq, self.bve_list_id = station_identity.published_values(decision)
+        previous = self.__dict__.get('_station_identity')
+        self._station_identity = decision
+        if previous is None or previous.usable != decision.usable or previous.reason != decision.reason:
+            fields = {"usable": 1 if decision.usable else 0, "why": decision.reason, "scn": getattr(self, 'current_scenario_id', -1)}
+            if decision.scope is not None:
+                fields.update({"list": decision.scope.list_id, "cnt": decision.scope.count})
+            self._station_identity_note("stidx-identity", **fields)
+
+    def _station_identity_clear(self):
+        """The sender's indexes are void (a new scenario instance / generation): nothing is published until the next sync says otherwise."""
+        self.bve_tgt_idx, self.bve_arr_idx, self.bve_arr_seq, self.bve_list_id = station_identity.published_values(station_identity.unavailable(station_identity.NOT_READY))
+        self._station_identity = None
+
+    def _station_identity_note(self, event, **fields):
+        """One fixed-word diagnostic event of the identity (fixed words and numbers only): the managed application's log line. The normal mode installs no sink; there the
+        reason stays in the state (self._station_identity, the refusals' return values) and nothing is written anywhere."""
+        self._emit_input_event(event, **fields)
+
+    def _scoring_start_snapshot(self):
+        """The verified identity of the station the scoring would start at (setting_start_idx); not valid = the start must be refused. The reason of an identity
+        the sync could not establish is the sync's own reason."""
+        snapshot = station_identity.start_snapshot(getattr(self, 'current_scenario_id', -1), getattr(self, 'bve_list_id', ""), getattr(self, 'station_list', None),
+                                                   getattr(self, 'setting_start_idx', 0))
+        current = self.__dict__.get('_station_identity')
+        if not snapshot.valid and not getattr(self, 'bve_list_id', "") and current is not None and not current.usable:
+            snapshot = snapshot._replace(reason=current.reason)
+        return snapshot
+
+    def _refuse_scoring_start(self, snapshot, is_bve_advancing):
+        """The identity of the start station is not established: no scoring, no jump, no checkpoint. One warning on the HUD, one diagnostic line, the menu closes."""
+        self._station_identity_note("scoring-start-refused", why=snapshot.reason, idx=snapshot.station_index, src="identity",
+                                    scn=getattr(self, 'current_scenario_id', -1), cnt=len(getattr(self, 'station_list', None) or []))
+        add_score_popup(self, 0, "採点を開始できません（駅の識別が確定していません）", COLOR_B_EMG, "big", "警告", self.bve_time_ms / 1000.0, force=True)
+        self.toggle_menu(is_bve_advancing)
+
     def reset_telemetry_state(self):
         """Phase L3: a NEW scenario instance starts: every value that comes from the telemetry line returns to its construction default, so that a
         value of the previous scenario is never read as a value of the new one (an unavailable item is never sent, so it is never overwritten)."""
         for name, value in telemetry_contract.telemetry_state_defaults().items():
             setattr(self, name, value)
         self._station_index_reset()
+        self._station_identity_clear()
 
     def apply_telemetry_text(self, latest_telemetry):
         """Applies one accepted telemetry datagram to the Overlay state (the part of read_udp_data that always was here; Phase L3 only moved it into
@@ -1530,6 +1591,12 @@ class Overlay(QWidget):
                 if start_gate is not None and not start_gate():
                     self.toggle_menu(is_bve_advancing)       # managed mode: refused (one warning was shown); the menu closes, BVE resumes
                     return
+                # Phase ST-2a (managed and normal mode alike): the start station must be a VERIFIED identity - no scoring, no jump and no checkpoint otherwise,
+                # and never a fall-back to station 0, to position 0.0 or to the nearest station
+                start_identity = self._scoring_start_snapshot()
+                if not start_identity.valid:
+                    self._refuse_scoring_start(start_identity, is_bve_advancing)
+                    return
                 self.is_scoring_mode = True
                 reset_result_display_state(self)
                 reset_score_accumulation(self)
@@ -1593,14 +1660,16 @@ class Overlay(QWidget):
                 self.is_bve_loaded = False
                 self.initial_kickstart_done = False
                 
-                getattr(self, 'save_data', []).append({
+                first_checkpoint = {
                     "loc": start_loc,
                     "time_ms": target_time_ms,
                     "score": 0,
-                    "target_loc": start_loc, 
+                    "target_loc": start_loc,
                     "station_name": start_sta_name,
                     "stop_error": 0.0
-                })
+                }
+                first_checkpoint.update(station_identity.checkpoint_fields(start_identity))
+                getattr(self, 'save_data', []).append(first_checkpoint)
                 
                 if retry_cmd != "":
                     write_desktop_log(f"[MENU 6] 送信コマンド: {retry_cmd} / 予想時間: {target_time_ms}")
@@ -2447,6 +2516,7 @@ class Overlay(QWidget):
         """A NEW scenario instance: the scoring session and everything that belongs to the previous scenario is discarded (managed_input.discard_generation_state),
         and a BVE window handle that is no longer valid is forgotten. The user's settings, the infrastructure and a still valid window state are kept."""
         managed_input.discard_generation_state(self)
+        self._station_identity_clear()
         self.forget_stale_bve_window()
 
     def forget_stale_bve_window(self):
@@ -2509,6 +2579,7 @@ class Overlay(QWidget):
         self.held_station_list = None
         if held is not None:
             self.station_list = held
+        self._station_identity_sync()
 
     def drop_held_station_list(self):
         self.held_station_list = None

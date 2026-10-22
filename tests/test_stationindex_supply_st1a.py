@@ -15,6 +15,7 @@ Python unit and its observer, and the SOURCE-SHAPE pins that keep ST-1A what it 
 The C# half (the CRC-32 vectors, the wire helper, the Legacy state machine and the whole Legacy session driven offline) is TsScoringPlugin\\Handshake\\Tests\\
 Test-StationIndexSupplyST1A.ps1. The Current sender (Class1.cs) can not run offline: it is held by the pins of D and judged live in ST-1B.
 """
+import ast
 import importlib.util
 import json
 import os
@@ -944,7 +945,8 @@ class D_Boundary(unittest.TestCase):
         # the three entry points are called once each (the STALIST datagram, the accepted line, the epoch reset); the lazy accessor only by the two that need the observer
         self.assertEqual(sorted(re.findall(r"self\.(_station_index_\w+)\(", main)),
                          sorted(["_station_index_note_stalist", "_station_index_observe", "_station_index_reset", "_station_index_observer", "_station_index_observer"]))
-        self.assertEqual(len(re.findall(r"station_index_contract\b", main)), 2)                      # the import and the constructor
+        # Phase ST-2a (intended update; was 2): the import, the constructor and ONE call of the pure list_id() when a STALIST is adopted (the identity of the adopted list)
+        self.assertEqual(len(re.findall(r"station_index_contract\b", main)), 3)
         for name in os.listdir(ROOT):
             if name.endswith(".py") and name not in ("main.py", "station_index_contract.py"):
                 text = read_text(os.path.join(ROOT, name))
@@ -954,7 +956,24 @@ class D_Boundary(unittest.TestCase):
     def test_the_observer_attribute_is_private_to_the_overlay(self):
         main = read_text(os.path.join(ROOT, "main.py"))
         self.assertEqual(len(re.findall(r"self\._stidx_observer\b", main)), 1)                       # stored once, in the lazy accessor
-        self.assertNotRegex(main, r"(?m)^\s*self\.(bve_tgt_idx|bve_arr_idx|bve_arr_seq|bve_list_id|stidx\w*)\s*=")      # no public attribute: ST-2a decides how the index is used
+        # Phase ST-2a (intended update; was: no public attribute at all). ST-2a decided how the index is used: the observer's values become the published identity
+        # attributes ONLY through the verified sync. Every assignment to them is inside __init__ (the defaults), _station_identity_apply or _station_identity_clear.
+        published = ("bve_tgt_idx", "bve_arr_idx", "bve_arr_seq", "bve_list_id")
+        where = set()
+        tree = ast.parse(main)
+        for cls in [n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Overlay"]:
+            for fn in [n for n in cls.body if isinstance(n, ast.FunctionDef)]:
+                for node in ast.walk(fn):
+                    targets = []
+                    if isinstance(node, ast.Assign):
+                        for t in node.targets:
+                            targets += list(t.elts) if isinstance(t, ast.Tuple) else [t]
+                    for t in targets:
+                        if isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name) and t.value.id == "self" and (t.attr in published or t.attr.startswith("stidx")):
+                            where.add((fn.name, t.attr))
+        self.assertEqual({fn for fn, _attr in where}, {"__init__", "_station_identity_apply", "_station_identity_clear"})
+        self.assertEqual({attr for _fn, attr in where}, set(published))
+        self.assertNotRegex(main, r"(?m)^\s*self\.stidx\w*\s*=")
 
 
 # =============================================================================================================================================

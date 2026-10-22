@@ -67,7 +67,10 @@ def generation_defaults():
         "setting_start_idx": 0, "setting_end_idx": -1, "setting_stop_distance": -1, "setting_initial_brake": "NONE",
         "brake_rules": _default_brake_rules(), "penalty_init_rules": _default_penalty_init_rules(), "user_timing_overrides": {},
         # the station list and the scenario information of that scenario, the scoring clock and the previous-frame values
-        "station_list": [], "pending_station_list": None, "last_update_time": 0.0, "prev_frame_loc": 0.0, "g_history": [], "last_bve_time_ms": 0,
+        "station_list": [], "pending_station_list": None,
+        # Phase ST-2a: the identity published for that station list (-1 / "" = the sender's indexes are not usable); written by Overlay._station_identity_sync only
+        "bve_tgt_idx": -1, "bve_arr_idx": -1, "bve_arr_seq": -1, "bve_list_id": "",
+        "last_update_time": 0.0, "prev_frame_loc": 0.0, "g_history": [], "last_bve_time_ms": 0,
         "meta_title": "", "meta_route": "", "meta_vehicle": "", "meta_author": "", "meta_comment": "",
         "prev_base_limit": 1000.0, "prev_diff_s": 0, "prev_door": 0, "prev_doordir": 1, "prev_is_pass": 0, "prev_is_timing": 0, "prev_next_loc": -1.0,
         "prev_term": 0,

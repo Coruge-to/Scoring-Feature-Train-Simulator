@@ -310,9 +310,11 @@ class SiAScopeOfMain(unittest.TestCase):
                                  "self.max_pow_w = get_adjusted_max_w(pow_list, apply_offset=False)"},       # SI-A4: the holding speed texts are width candidates, too
         "take_result_screenshot": {'save_path, _ = QFileDialog.getSaveFileName(self, "採点結果を保存", os.path.join(save_dir, default_name), "JPEG Image (*.jpg);;PNG Image (*.png)")'},
         # PID-D6 (on purpose): the scoring start's jump command goes through Overlay.send_jump_command (RequestId transport)
-        "handle_menu_enter": {"self.udp_socket.writeDatagram(retry_cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)"},
+        # Phase ST-2a (on purpose): the first checkpoint of a scoring start is built as a dict (first_checkpoint) so that it can carry the verified station identity: the append( { ... } ) opening and closing lines left
+        "handle_menu_enter": {"self.udp_socket.writeDatagram(retry_cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)", "getattr(self, 'save_data', []).append({", "})"},
         # PID-D6 (on purpose): a JUMP_COMPLETE only counts when its RequestId matches the outstanding command (Overlay._jump_complete_acceptable)
-        "read_udp_data": {"if len(complete_parts) >= 6:"}, "toggle_borderless_fullscreen": set(),
+        # Phase ST-2a (on purpose): the station list of a STALIST datagram is a station_identity.StationList that carries the list id (new_list = [] became that constructor call)
+        "read_udp_data": {"if len(complete_parts) >= 6:", "new_list = []"}, "toggle_borderless_fullscreen": set(),
     }
 
     @classmethod

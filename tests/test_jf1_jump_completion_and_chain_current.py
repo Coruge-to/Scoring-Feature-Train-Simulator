@@ -527,7 +527,7 @@ class RX_RetryAndStartChains(Base):
     def _go_with_close_stations(self):
         r = self.r
         r.go_active(with_stations=False)
-        r.send(self.CLOSE_STALIST, self.MR.tele(1, time_ms=T0))
+        r.send(self.CLOSE_STALIST, self.MR.tele(1, time_ms=T0, STIDX=self.MR.stidx(self.CLOSE_STALIST, 2)))       # (Phase ST-2a: the sender names Q, index 2, at NEXTLOC 1000.0)
         r.tick(2)
         self.assertEqual([s["name"] for s in self.o.station_list], ["A", "P", "Q", "E"])
 

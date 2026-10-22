@@ -1624,7 +1624,44 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
         removed = [l for l in out.splitlines() if l.startswith("-") and not l.startswith("---")]
         # PID-D6 (on purpose): the one transport line of execute_retry became Overlay.send_jump_command(cmd) (RequestId transport)
         pid_d6_transport = "self.udp_socket.writeDatagram(cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)"
-        self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport)], removed)
+        # Phase ST-2a (on purpose): the checkpoint of an arrival takes the station from the VERIFIED arrival index (station_identity) instead of searching the station list for the position
+        # (create_save_data) and evaluate_arrival names the judged position in its call. These are the 32 distinct lines (stripped) of the old create_save_data and of that call that left;
+        # no score, no rule and no constant is among them (the points and the arrival evaluation are unchanged; test_the_scoring_function_bodies_are_ast_identical_to_the_baseline pins the changed functions).
+        st2a_checkpoint_identity = (
+            'def create_save_data(self):',
+            'if not getattr(self, \'save_data\', []) or self.save_data[-1]["target_loc"] != self.bve_next_loc:',
+            '# 現在の駅のダイヤ情報を取得する',
+            'curr_sta_idx = -1',
+            "p_loc = getattr(self, 'prev_next_loc', getattr(self, 'bve_next_loc', -1.0))",
+            "for i, st in enumerate(getattr(self, 'station_list', [])):",
+            'if abs(st["location"] - p_loc) < 1.0:',
+            'curr_sta_idx = i',
+            'break',
+            'if curr_sta_idx >= 0:',
+            "st = getattr(self, 'station_list', [])[curr_sta_idx]",
+            'raw_dep = st.get("raw_dep", -1)',
+            'def_t = st.get("def_time", -1)',
+            'stop_t = st.get("stop_time", 15000)',
+            'calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1',
+            '# 条件3: 到着時間が「定刻(calc_t)」より遅れているか？（遅延時のみ加算）',
+            'is_delayed = (calc_t < 0) or (self.bve_time_ms > calc_t)',
+            '# 条件4: ロールバック時に「新方式(STA)」が使われるか？',
+            '# (旧方式(LOC)の場合は目の前で扉が開くため加算不要)',
+            'will_use_sta = (def_t < 0) or (self.bve_time_ms >= def_t)',
+            '# すべての悪条件（ズルできる条件）が揃った時のみ、ドア時間を加算して未来へ進める！',
+            'if is_delayed and will_use_sta:',
+            "door_time = getattr(self, 'bve_door_close_time_ms', 0)",
+            'save_time_ms += door_time',
+            '# （確認用：後で消してもOKです）',
+            'write_desktop_log(',
+            'f"[SAVE] 開扉時間を反映: "',
+            'f"{st.get(\'name\', \'駅\')}にて "',
+            'f"{door_time}ms をセーブデータ時刻に加算"',
+            'self.save_data.append({',
+            '})',
+            'create_save_data(self)',
+        )
+        self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport) + st2a_checkpoint_identity], removed)
 
     def test_the_scoring_function_bodies_are_ast_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":scoring_logic.py")
@@ -1636,10 +1673,12 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
             return {n.name: ast.dump(n) for n in ast.parse(src).body if isinstance(n, ast.FunctionDef)}
 
         a, b = functions(old.replace("\r\n", "\n")), functions(new)
-        self.assertEqual(set(a), set(b))
+        self.assertEqual(set(a) | {"note_save_skipped"}, set(b))      # Phase ST-2a (on purpose): the one new function records a refused checkpoint (a diagnostic line, no score)
         changed = sorted(n for n in a if a[n] != b[n])
         # only the diagnostic writer got the switch and (PID-D6) execute_retry's one transport line; no score, no rule, no constant
-        self.assertEqual(changed, ["execute_retry", "write_limit_debug_log"])
+        # Phase ST-2a (on purpose): create_save_data takes the station of the checkpoint from the verified arrival index, evaluate_arrival names the judged position in its one call of it,
+        # and note_save_skipped (new) records a refusal; the points, the rules and the constants are not among them
+        self.assertEqual(changed, ["create_save_data", "evaluate_arrival", "execute_retry", "write_limit_debug_log"])
 
     def test_the_config_constants_are_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":config.py")

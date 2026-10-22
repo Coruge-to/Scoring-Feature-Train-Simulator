@@ -328,6 +328,25 @@ def station(name, loc=1000.0, timing=True, is_pass=False, terminal=False):
             "is_pass": is_pass, "is_terminal": terminal}
 
 
+SCOPE_SID = 7
+SCOPE_LIST_ID = "A1B2C3D4"
+
+
+def bind_identity(o, arr_idx=None, tgt_idx=None, sid=SCOPE_SID, list_id=SCOPE_LIST_ID):
+    """Phase ST-2a: make the Overlay hold the identity a READY STIDX line would have published for its CURRENT station list (the published attributes the sync writes),
+    so that a scoring start and a checkpoint are not refused for want of an identity. The arrival and the target index default to the LOWEST station at the position of
+    NEXTLOC (what a sender that names the station of the target writes); pass arr_idx / tgt_idx (-1 = none) for any other situation. It does not decide anything
+    for a test: a test that is about the refusal simply does not call it."""
+    stations = list(o.station_list)
+    nextloc = o.bve_next_loc
+    named = next((i for i, s in enumerate(stations) if abs(s["location"] - nextloc) <= 0.01), -1)
+    o.current_scenario_id = sid
+    o.bve_list_id = list_id
+    o.bve_arr_idx = named if arr_idx is None else arr_idx
+    o.bve_tgt_idx = named if tgt_idx is None else tgt_idx
+    return o
+
+
 class Rig(object):
     """One Overlay of module `m` with all seams faked. Use as: rig = Rig(main); ...; rig.close()."""
     HWND = 4242

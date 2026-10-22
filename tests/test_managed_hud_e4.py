@@ -1722,7 +1722,10 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
 
         for name, old, allowed_changed, allowed_added in (
                 # PID-D6 (on purpose): execute_retry hands its jump command to Overlay.send_jump_command (RequestId transport); no score, no rule, no constant
-                ("scoring_logic.py", old_scoring, {"write_limit_debug_log", "execute_retry"}, set()),
+                # Phase ST-2a (on purpose): create_save_data takes the station of the checkpoint from the verified arrival index and evaluate_arrival names the judged position in its one call of it;
+                # note_save_skipped (new) records a refused checkpoint and scoring_logic imports station_identity (the pure identity module); no score, no rule, no constant
+                ("scoring_logic.py", old_scoring, {"write_limit_debug_log", "execute_retry", "create_save_data", "evaluate_arrival"},
+                 {"note_save_skipped", "Import(names=[alias(name='station_identity')])"}),
                 ("utils.py", old_utils, {"write_desktop_log"}, {"set_desktop_log_enabled", "desktop_log_enabled", "desktop_log_requested"})):
             with open(os.path.join(ROOT, name), encoding="utf-8") as f:
                 new = f.read()
