@@ -42,9 +42,15 @@ FIXED_PORTS = (54321, 54322)
 
 PYTHON_PINS = {
     "current_jump_client.py": "C2E41A1DFA47274E527A41926D7FEBC52D070A380124BCC05C2536CA0C1F10EC",
-    "managed_input.py": "6A7B6594FE626C78863ED73E09517A74839D4A0DF3DA7340E583F9E358163851",
-    "telemetry_contract.py": "114DAC75B9D0FB825924926FA28E7033239492BCF7AB7A9A31CCDF35532B0536",
-    "main.py": "F1C9457A9366084D2D53D41F46D5A2AF1A8A8BB5C0F7C72B4A9588EAFAC81B68",
+    # Phase ST-1B Prep (owner decision G-1; the pin moved, was 6A7B6594...): EVENT_LINE_CAPS gained the one entry "stidx": 24 (the Caller line cap of the STIDX detail event). Nothing of the
+    # jump contract or the scoring changed; tests\test_stationindex_supply_st1a.py (class C3) pins the caps and Test-LegacyDataPlaneD4.ps1 (F07) limits the change to that statement.
+    "managed_input.py": "060A958CA831382282C282A17D6C38BF72EFC27D8766A325F5A57A7C2A6234A9",
+    # Phase ST-1A (two pins moved; were 114DAC75... and F1C9457A...): telemetry_contract.py gained the word STIDX in TOKEN_KEYS["station"] (+ a comment); main.py gained the STIDX
+    # intake (one import, four helper methods, three one-line calls). Neither touches the jump contract; tests\test_stationindex_supply_st1a.py (class D) pins the hooks.
+    "telemetry_contract.py": "792B5C6E1D6BE9181088B0020120B2A22A98AABD322A0154B44E9F6FCDBE6C71",
+    # Phase ST-1B Final Summary Fix (the pin moved again, was EC5B501A...): main.py gained the method _station_index_finish and one guarded call of it in the managed clean-up (the STIDX
+    # generation-end summary). Nothing of the jump contract or the scoring changed; tests\test_stationindex_supply_st1a.py (classes F3 / F5) pins the call and its place.
+    "main.py": "4D077792FDD5084C35A8253EE4E8FCA383E4CAEC7DB1ACA83F8559B1F99FB813",
     "dataplane_contract.py": "53D23EA683DE8C6344932DEF5D550C0646B3B95ECC5561A3CDAF66F46D9EF27D",
     "scoring_logic.py": "3A790E478C0A2F10DDC9E28E905A399D736E4DF8AA3D9C646AD76B76D1611945",
     "telemetry_dataplane_receiver.py": "7E651F9E2523F035C9A15ED1AF7A23EC8D373BDAB99B7085A8E9BA26521A44E9",

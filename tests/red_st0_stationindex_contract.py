@@ -8,6 +8,11 @@ set of 30 rows is not touched. Run it with its own runner (which also checks WHY
 The tests are written exactly as the contract states them; they are NEVER weakened and NEVER inverted. When the product meets the contract they simply pass, and from
 that moment the file is renamed to test_*.py (the ST-1 handoff lists the order).
 
+PHASE ST-1A (owner decisions OJ-4 / OJ-5, which replace the renaming above): this file is NOT renamed while a RED is left in it. The six contracts that ST-1A turns GREEN
+(T21, T22 x2, U12 x3) are MIGRATED: their test is executed in tests\\test_stationindex_supply_st1a.py (same contract id and code) and is kept HERE, unchanged, as the
+evidence of the ST-0 RED - marked @migrated, so it is skipped and never counted as a RED. A contract id is executed in exactly one of the two files. Every other RED
+stays a RED and must keep failing for its declared reason (a pass is UNEXPECTED-PASS).
+
 HOW A RED IS VALID (the runner checks all of it):
   * a RED fails with ContractViolation whose .code is the code declared in @red(...)         -> RED-VALID
   * any other failure or error (fixture, import, attribute, path, another assertion)         -> RED-INVALID
@@ -65,6 +70,7 @@ CHECKPOINT_FIELDS = ("station_index", "scope", "station_location", "role")
 ADAPTER_MODULE = "station_index_contract"
 ADAPTER_VERDICT = "verdict"            # verdict(line, nextloc, station_locations, list_hash, elapsed_since_mismatch_ms, grace_ms, prev_arrseq) -> one verdict word of the vector table
 ADAPTER_LIST_ID = "list_id"            # list_id(payload_text) -> 8 upper-case hex digits (CRC-32 of the UTF-8 STALIST payload)
+MIGRATED_TO = "tests/test_stationindex_supply_st1a.py"       # Phase ST-1A: where the six migrated contracts (T21, T22 x2, U12 x3) are executed now
 SCOPE_SID = 7
 SCOPE_LIST_ID = "A1B2C3D4"
 
@@ -91,6 +97,15 @@ def guard(tid, items=(), artifact="", note=""):
     def deco(fn):
         fn.st0red = {"kind": "GUARD", "id": tid, "code": "", "items": tuple(items), "artifact": artifact, "note": note}
         return fn
+    return deco
+
+
+def migrated(tid, code, to, items=(), artifact="", note=""):
+    """Phase ST-1A: a RED whose contract is GREEN now and is executed in `to` (tests\\test_stationindex_supply_st1a.py, same id and code). The original test below stays as the
+    evidence of the ST-0 RED, unchanged, and is SKIPPED here: it is neither a RED nor a GUARD, and a contract id never runs in both files."""
+    def deco(fn):
+        fn.st0red = {"kind": "MIGRATED", "id": tid, "code": code, "items": tuple(items), "artifact": artifact, "note": note, "to": to}
+        return unittest.skip("MIGRATED at ST-1A: %s / %s is executed in %s" % (tid, code, to))(fn)
     return deco
 
 
@@ -422,14 +437,14 @@ class StaticReds(RedMixin, unittest.TestCase):
         fallbacks = re.findall(r"catch \{ sd\.Margin(?:Min|Max) = 5\.0; \}", c1)
         self.contract(not fallbacks, "U10", "CURRENT-MARGIN-FALLBACK-5.0-PRESENT", "%d catch-and-use-5.0 fallbacks remain" % len(fallbacks))
 
-    @red("U12", "CURRENT-EMITS-NO-STIDX", items=(12,), artifact="05 section 5 (STIDX:1:... next to NEXTLOC)",
+    @migrated("U12", "CURRENT-EMITS-NO-STIDX", MIGRATED_TO, items=(12,), artifact="05 section 5 (STIDX:1:... next to NEXTLOC)",
          note="the Current sender's telemetry line carries the versioned STIDX key")
     def test_RED_U12_the_current_sender_emits_stidx(self):
         c1 = cs_code(CLASS1)
         self.assertIn("NEXTLOC:{nextStationLoc}", c1)
         self.contract("STIDX:1:" in c1, "U12", "CURRENT-EMITS-NO-STIDX", "no STIDX:1: in the telemetry string of Class1.cs")
 
-    @red("U12", "LEGACY-EMITS-NO-STIDX", items=(12,), artifact="05 section 5 (STIDX inside the Legacy station group, all-or-nothing)",
+    @migrated("U12", "LEGACY-EMITS-NO-STIDX", MIGRATED_TO, items=(12,), artifact="05 section 5 (STIDX inside the Legacy station group, all-or-nothing)",
          note="the Legacy sender's station group carries the STIDX key")
     def test_RED_U12_the_legacy_sender_emits_stidx(self):
         ls = cs_code(LEGACY_SESSION)
@@ -437,7 +452,7 @@ class StaticReds(RedMixin, unittest.TestCase):
         self.assertIn('"NEXTLOC", TelemetryContract.D(sv.NextLoc)', ls)
         self.contract('"STIDX"' in ls, "U12", "LEGACY-EMITS-NO-STIDX", 'no "STIDX" key in the station group of LegacyTelemetrySession.cs')
 
-    @red("U12", "PYTHON-TOKEN-KEYS-LACK-STIDX", items=(12,), artifact="05 section 5: TOKEN_KEYS['station'] gets STIDX",
+    @migrated("U12", "PYTHON-TOKEN-KEYS-LACK-STIDX", MIGRATED_TO, items=(12,), artifact="05 section 5: TOKEN_KEYS['station'] gets STIDX",
          note="the Python telemetry vocabulary knows STIDX as a key of the station token")
     def test_RED_U12_the_python_vocabulary_knows_stidx(self):
         import telemetry_contract
@@ -445,7 +460,7 @@ class StaticReds(RedMixin, unittest.TestCase):
         self.contract("STIDX" in telemetry_contract.TOKEN_KEYS["station"], "U12", "PYTHON-TOKEN-KEYS-LACK-STIDX", "TOKEN_KEYS['station'] = %r" % (telemetry_contract.TOKEN_KEYS["station"],))
 
     # -- T21 / T22 -------------------------------------------------------------------------------------------------------------------------------
-    @red("T21", "STATION-INDEX-CONTRACT-ABSENT", items=(),
+    @migrated("T21", "STATION-INDEX-CONTRACT-ABSENT", MIGRATED_TO, items=(),
          artifact="11 T21 / 12 ST-1 (station_index_contract.py is the audit's proposal): parse, version, range, NEXTLOC invariant, hash grace",
          note="the pure STIDX unit exists and returns the verdict words of the vector table (the failure while the module is absent is the declared RED reason, not an import error)")
     def test_RED_T21_the_stidx_unit_judges_every_vector(self):
@@ -463,13 +478,13 @@ class StaticReds(RedMixin, unittest.TestCase):
                 wrong.append((v["id"], got, v["verdict"]))
         self.contract(not wrong, "T21", "STATION-INDEX-CONTRACT-ABSENT", "vectors judged differently: %r" % (wrong,))
 
-    @red("T22", "STATION-LIST-IDENTITY-CS-ABSENT", items=(), artifact="11 T22 / 12 ST-1: Telemetry/Shared/StationListIdentity.cs (the C# half of the shared CRC-32 vectors)",
+    @migrated("T22", "STATION-LIST-IDENTITY-CS-ABSENT", MIGRATED_TO, items=(), artifact="11 T22 / 12 ST-1: Telemetry/Shared/StationListIdentity.cs (the C# half of the shared CRC-32 vectors)",
          note="the shared C# StationListIdentity exists (its vector execution is an ST-1 PowerShell test)")
     def test_RED_T22_the_shared_csharp_station_list_identity_exists(self):
         self.assertTrue(os.path.isdir(os.path.join(PLUGIN, "Handshake", "Telemetry")))                # the folder tree is there (a moved tree is RED-INVALID)
         self.contract(os.path.isfile(SHARED_IDENTITY_CS), "T22", "STATION-LIST-IDENTITY-CS-ABSENT", "no %s" % os.path.relpath(SHARED_IDENTITY_CS, ROOT))
 
-    @red("T22", "STATION-LIST-ID-FUNCTION-ABSENT", items=(),
+    @migrated("T22", "STATION-LIST-ID-FUNCTION-ABSENT", MIGRATED_TO, items=(),
          artifact="11 T22 / 05 section 2: list_id = CRC-32 of the UTF-8 STALIST payload (the Python half of the shared vectors)",
          note="the Python unit computes list_id for every shared CRC-32 vector")
     def test_RED_T22_the_python_list_id_matches_the_shared_vectors(self):
@@ -524,12 +539,14 @@ class Guards(unittest.TestCase):
                 meta = getattr(getattr(cls, name), "st0red", None)
                 if meta is None:
                     continue
-                self.assertIn(meta["kind"], ("RED", "GUARD"), name)
-                if meta["kind"] == "RED":
+                self.assertIn(meta["kind"], ("RED", "GUARD", "MIGRATED"), name)
+                if meta["kind"] in ("RED", "MIGRATED"):
                     self.assertRegex(meta["code"], r"^[A-Z0-9.\-]+$", name)
                     self.assertTrue(name.startswith("test_RED_"), name)
                 else:
                     self.assertTrue(name.startswith("test_GUARD_"), name)
+                if meta["kind"] == "MIGRATED":
+                    self.assertTrue(meta["to"].startswith("tests/test_") and meta["to"].endswith(".py"), name)       # Phase ST-1A: it runs in a discovered test file
                 self.assertGreaterEqual(len(meta["note"]), 20, name)
                 seen += 1
         self.assertGreaterEqual(seen, 18)
@@ -583,7 +600,7 @@ class _RedResult(unittest.TestResult):
         super().addSkip(test, reason)
         meta = self._meta(test)
         if meta is not None:
-            self._row(test, "NOT-RUN", "skip: %s" % reason[:120])
+            self._row(test, "MIGRATED" if meta["kind"] == "MIGRATED" else "NOT-RUN", "skip: %s" % reason[:120])
 
     def addSubTest(self, test, subtest, err):
         """A RED with sub-cases is valid only when EVERY sub-case fails for the declared reason: one passing sub-case makes the whole test UNEXPECTED-PASS."""
@@ -616,14 +633,14 @@ def run():
         kind, tid, code, status, detail = result.rows[n]
         counts[status] = counts.get(status, 0) + 1
         print("%-16s %-4s %-5s %-52s %s" % (status, kind, tid, code, n.split(".")[-1]))
-        if status not in ("RED-VALID", "GUARD-OK"):
+        if status not in ("RED-VALID", "GUARD-OK", "MIGRATED"):
             print("                 -> %s" % detail)
     print("")
     print("RESULT %s" % ", ".join("%s=%d" % (k, counts[k]) for k in sorted(counts)))
     other = [(t.id(), str(e)[:160]) for t, e in result.errors + result.failures if t.id().split(" (")[0] not in result.rows]       # (a sub-case id is 'test.id (param=...)')
     for n, e in other:
         print("UNCLASSIFIED %s: %s" % (n, e))
-    bad = sum(v for k, v in counts.items() if k not in ("RED-VALID", "GUARD-OK")) + len(other)
+    bad = sum(v for k, v in counts.items() if k not in ("RED-VALID", "GUARD-OK", "MIGRATED")) + len(other)
     print("RED SUITE: %s" % ("ALL RED FAIL FOR THEIR DECLARED REASON, ALL GUARDS PASS" if bad == 0 else "NOT VALID (%d row(s) need a decision)" % bad))
     return 0 if bad == 0 else 1
 

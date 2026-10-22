@@ -75,6 +75,9 @@
     <Compile Include="..\..\Telemetry\Shared\TelemetryContract.cs">
       <Link>Shared\TelemetryContract.cs</Link>
     </Compile>
+    <Compile Include="..\..\Telemetry\Shared\StationListIdentity.cs">
+      <Link>Shared\StationListIdentity.cs</Link>
+    </Compile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

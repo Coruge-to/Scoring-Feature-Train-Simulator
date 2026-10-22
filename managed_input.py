@@ -356,7 +356,8 @@ class ManagedInputController(object):
     # The Caller copies at most 200 `[MANAGED]` lines of one Python process into its log (and 160 characters of each): this controller keeps to a part of that
     # budget (a cap per event name and a total); what does not fit is only counted (input-summary).
     EVENT_LINE_CAP = 10
-    EVENT_LINE_CAPS = {"input-hold": 24, "input-pause": 6, "input-resume": 6}              # (a menu opened and closed again is two lines)
+    EVENT_LINE_CAPS = {"input-hold": 24, "input-pause": 6, "input-resume": 6,              # (a menu opened and closed again is two lines)
+                       "stidx": 24}                                                         # (Phase ST-1B Prep: the STIDX observer's progress budget 20 + 4 verdict / scope events of one generation; stidx-sum keeps the default 10)
     TOTAL_LINE_BUDGET = 70
 
     def cap_for(self, event):

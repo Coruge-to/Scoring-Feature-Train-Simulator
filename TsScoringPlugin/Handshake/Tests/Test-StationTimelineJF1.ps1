@@ -23,7 +23,7 @@
 param([string]$Root = (Split-Path $PSScriptRoot -Parent))
 
 $AuditedDllSha256 = '43E7B9D35F840FAEF0DFCBEC8F2EDB66F259F42FA9CD62644B1DFD1A45EDF691'      # Legacy telemetry 0.6.0.0 DEFAULT build (flag OFF) of Phase LJX-1 (pin moved from 08CE368C..., the 2A-alpha build): the checks were run again against it; the station timeline source is unchanged
-$AuditedTimelineSourceSha256 = '23ABFA293D0D15D0978562873B383C85F0C7B81630871B7EDFE3AB61ED437BAE'
+$AuditedTimelineSourceSha256 = 'CCAB41A19AE4C1C2A5C6037061F2853BE3EFAEB05EC022956E26004890CC181E'      # Phase ST-1A (pin moved from 23ABFA29...): the source gained ONLY additive, observation-only members for the STIDX part (Index / ArrivalIndex / ArrivalSeq / ListId and their snapshots); no statement of the state machine changed. The DLL above is still the build BEFORE ST-1A: Test-StationIndexSupplyST1A.ps1 proves that the sources of ST-1A write every datagram this DLL writes (plus the STIDX part), and ST-1B moves the DLL pin to the new build and runs these checks again against it
 
 $dllPath = Join-Path $Root 'Telemetry\Legacy\out\TSScoringPlugin.AtsExLegacy.Telemetry.dll'
 $srcPath = Join-Path $Root 'Telemetry\Legacy\src\LegacyStationTimeline.cs'

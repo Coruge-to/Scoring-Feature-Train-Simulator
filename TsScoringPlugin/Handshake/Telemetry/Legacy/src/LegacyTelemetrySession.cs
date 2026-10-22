@@ -595,7 +595,8 @@ namespace TSScoringPlugin.Telemetry
                         "MARGINF", TelemetryContract.D(sv.MarginFront),
                         "DOORDIR", TelemetryContract.I(sv.DoorDir),
                         "TERM", TelemetryContract.I(sv.Term),
-                        "STATNAME", sv.Name == null ? TelemetryContract.StationName(null) : sv.Name.Replace(",", string.Empty));
+                        "STATNAME", sv.Name == null ? TelemetryContract.StationName(null) : sv.Name.Replace(",", string.Empty),
+                        "STIDX", StationIndexWire.Value(sv.Index, timeline.ArrivalIndex, timeline.ArrivalSeq, timeline.Count, timeline.ListId));
                     if (!staListSent || now - lastStaListMs >= StaListIntervalMs)
                     {
                         staList = timeline.ComposeStaList();

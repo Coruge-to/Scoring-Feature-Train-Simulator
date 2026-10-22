@@ -49,6 +49,14 @@ namespace TsScoringPlugin
         private int targetStationIndex = 0;
         private bool hasDoorOpenedAtTarget = false;
         private bool isInitialized = false;
+
+        // Phase ST-1A (observation only; nothing of the state machine or of the scoring reads these): the values of the STIDX part of the telemetry line.
+        private int stidxArrivalIndex = -1;
+        private int stidxArrivalSeq = 0;
+        private string stidxListId = TSScoringPlugin.Telemetry.StationListIdentity.EmptyId;
+        private int stidxListCount = 0;
+        private bool stidxListReady = false;
+
         private int lastTimeMs = 0;
         private double lastSpeedMps = 0.0;
 
@@ -297,6 +305,11 @@ namespace TsScoringPlugin
                 {
                     currentScenario = BveHacker.Scenario;
                     scenarioId = (int)(DateTime.Now.Ticks % 100000000);
+                    stidxArrivalIndex = -1;
+                    stidxArrivalSeq = 0;
+                    stidxListId = TSScoringPlugin.Telemetry.StationListIdentity.EmptyId;
+                    stidxListCount = 0;
+                    stidxListReady = false;
                     lastUdpData = "";
                     lastStaListPacket = "";
                     isInitialized = false;
@@ -480,6 +493,7 @@ namespace TsScoringPlugin
                 double location = 0.0;
                 int timeMs = 0;
                 double finalGradient = 0.0;
+                int stidxTarget = -1;      // Phase ST-1A: the index of the station nextStationLoc belongs to (-1 = none)
                 double nextStationLoc = -1;
                 int nextStationTime = -1;
                 int isPass = 0;
@@ -902,6 +916,11 @@ namespace TsScoringPlugin
                             lastStaListPacket = "STALIST:" + string.Join(",", staInfoList);
                         }
 
+                        // Phase ST-1A: the identity of the list this STALIST describes (the text that is sent, hashed once a second; an empty list is 00000000)
+                        stidxListCount = stationList.Count;
+                        stidxListId = staInfoList.Count > 0 ? TSScoringPlugin.Telemetry.StationListIdentity.Compute(string.Join(",", staInfoList)) : TSScoringPlugin.Telemetry.StationListIdentity.EmptyId;
+                        stidxListReady = true;
+
                         string Sanitize(string s) => string.IsNullOrEmpty(s) ? "" : s.Replace(":", "：").Replace(",", "、").Replace("\r", "").Replace("\n", " ");
                         lastMetaPacket = $"META:{Sanitize(metaTitle)}:{Sanitize(metaRoute)}:{Sanitize(metaVehicle)}:{Sanitize(metaAuthor)}:{Sanitize(metaComment)}";
 
@@ -912,6 +931,7 @@ namespace TsScoringPlugin
                     if (targetStationIndex < stationList.Count)
                     {
                         int stationIndexBeforeAdvance = targetStationIndex;
+                        bool stidxDoorOpenedBefore = hasDoorOpenedAtTarget;      // Phase ST-1A: a read-only snapshot for the STIDX part; the state machine below is unchanged
                         var targetSt = stationList[targetStationIndex];
                         nextStationLoc = targetSt.Location;
                         isPass = targetSt.IsPass ? 1 : 0;
@@ -971,6 +991,15 @@ namespace TsScoringPlugin
                             marginBack = targetSt.MarginMin;
                             marginFront = targetSt.MarginMax;
                             isTerminal = targetSt.IsTerminal;
+                        }
+
+                        // Phase ST-1A: the station the values of this Tick belong to (the new target after a change, the old one when the list ran out), and an arrival
+                        // candidate event = the flag went false -> true for THIS target on this Tick (a flag set by the (re)selection of the target is not an event)
+                        stidxTarget = targetStationIndex < stationList.Count ? targetStationIndex : stationIndexBeforeAdvance;
+                        if (!stidxDoorOpenedBefore && hasDoorOpenedAtTarget && targetStationIndex == stationIndexBeforeAdvance)
+                        {
+                            stidxArrivalIndex = stationIndexBeforeAdvance;
+                            stidxArrivalSeq++;
                         }
 
                         if (isTerminal)
@@ -1333,6 +1362,12 @@ namespace TsScoringPlugin
                     }
 
                     string data = $"SCENARIO_ID:{scenarioId},SPEED:{speed},TIME:{timeMs},LOCATION:{location},GRADIENT:{finalGradient},NEXTLOC:{nextStationLoc},NEXTTIME:{nextStationTime},ISPASS:{isPass},ISTIMING:{isTiming},MARGINB:{marginBack},MARGINF:{marginFront},REV:{revText}:{revPos},POW:{powText}:{powNotch},BRK:{brkText}:{brkNotch}:{brkMax},HTYPE:{handleType},ALLTXT:{allRevTexts}:{allPowTexts}:{allBrkTexts}:{allHldTexts},DREV:{defaultRevText}:{revPos},DPOW:{defaultPowText}:{powNotch},DBRK:{defaultBrkText}:{brkNotch}:{brkMax},DALLTXT:{defaultAllRevTexts}:{defaultAllPowTexts}:{defaultAllBrkTexts}:{defaultAllHldTexts},SIGLIMIT:{signalLimit},TRAINLEN:{trainLength},MAPLIMITS:{mapLimitsStr},FWDSIGLIMIT:{fwdSigLimit},FWDSIGLOC:{nextSigLoc},DOOR:{(areDoorsClosed ? 0 : 1)},DOORDIR:{currentDoorDir},TERM:{terminalFlag},MAPHEAD:{manualMapHead},MAPTAIL:{manualMapTail},CLEARDIST:{distToClear},CALCG:{currentG:F5},BTYPE:{bType},JUMP:{jumpCounter},CAB:{cabBrakeNotches}:{holds},BCP:{bcPressure:F1},PRATES:{pRatesStr}:{maxPressure:F1},BPP:{bpPressure:F1}:{bpInitialPressure:F1},STATNAME:{currentStationName},DOORTIME:{doorCloseTimeMs}";
+                    // Phase ST-1A: the STIDX part, appended as a part of its own (every part above is unchanged). The Legacy sender writes the same part through the same
+                    // shared helper (StationIndexWire). It is written only while the list of this Tick has been described by a STALIST text of this scenario instance.
+                    if (isInitialized && stidxListReady && stidxListCount == stationList.Count)
+                    {
+                        data += ",STIDX:1:" + TSScoringPlugin.Telemetry.StationIndexWire.Fields(stidxTarget, stidxArrivalIndex, stidxArrivalSeq, stidxListCount, stidxListId);
+                    }
                     lastUdpData = data;
                 }
                 catch { }

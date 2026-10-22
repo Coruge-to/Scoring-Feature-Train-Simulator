@@ -32,6 +32,7 @@ import managed_mode
 import managed_app_directory
 import pause_recovery
 import telemetry_contract
+import station_index_contract
 import telemetry_dataplane_receiver
 import current_jump_client
 import telemetry_gate
@@ -383,6 +384,7 @@ class Overlay(QWidget):
 
                 if text.startswith("STALIST:"):
                     sta_data = text.split(':', 1)[1]
+                    self._station_index_note_stalist(sta_data)
                     new_list = []
                     if sta_data:
                         for sta_str in sta_data.split(','):
@@ -547,11 +549,50 @@ class Overlay(QWidget):
         elif self.telemetry_gate.last_verdict == "held":
             self.held_station_list = pending
 
+    # -- Phase ST-1A: the STIDX intake. It only RECORDS: the observer is an object of its own; nothing of the scoring, the station list, the checkpoints, the
+    # HUD or the jump state reads it or is written by it (using the index as the identity of a station is a later Stage).
+    def _station_index_observer(self):
+        observer = self.__dict__.get('_stidx_observer')
+        if observer is None:
+            observer = station_index_contract.StationIndexObserver(log=self._emit_input_event)
+            self._stidx_observer = observer
+        return observer
+
+    def _station_index_note_stalist(self, payload_text):
+        try:
+            self._station_index_observer().note_stalist(payload_text)
+        except Exception:
+            pass
+
+    def _station_index_observe(self, telemetry_text):
+        try:
+            self._station_index_observer().observe(telemetry_text, getattr(self, 'current_scenario_id', None))
+        except Exception:
+            pass
+
+    def _station_index_reset(self):
+        try:
+            observer = self.__dict__.get('_stidx_observer')
+            if observer is not None:
+                observer.reset()
+        except Exception:
+            pass
+
+    def _station_index_finish(self):
+        # the managed application ends: the running generation writes its final summary (never creates the observer: nothing received = nothing to write)
+        try:
+            observer = self.__dict__.get('_stidx_observer')
+            if observer is not None:
+                observer.finish()
+        except Exception:
+            pass
+
     def reset_telemetry_state(self):
         """Phase L3: a NEW scenario instance starts: every value that comes from the telemetry line returns to its construction default, so that a
         value of the previous scenario is never read as a value of the new one (an unavailable item is never sent, so it is never overwritten)."""
         for name, value in telemetry_contract.telemetry_state_defaults().items():
             setattr(self, name, value)
+        self._station_index_reset()
 
     def apply_telemetry_text(self, latest_telemetry):
         """Applies one accepted telemetry datagram to the Overlay state (the part of read_udp_data that always was here; Phase L3 only moved it into
@@ -767,6 +808,8 @@ class Overlay(QWidget):
             if getattr(self, 'jump_baseline_pending', False):
                 self.last_jump_count = self.bve_jump_count
                 self.jump_baseline_pending = False
+
+            self._station_index_observe(latest_telemetry)
 
     def _settle_jump_complete(self):
         if self.pending_jump_complete is not None:
@@ -2755,6 +2798,12 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
         def cleanup_managed_resources():
             if telemetry_directory is not None:
                 telemetry_directory.publish_withdrawing()
+            finish = getattr(overlay, "_station_index_finish", None)     # StationIndex ST-1B: the generation-end summary (final=1), while the HUD controller (the line writer) is alive
+            if finish is not None:
+                try:
+                    finish()
+                except Exception:
+                    pass
             if jump_client is not None:
                 try:
                     jump_client.close()              # the outstanding request is cancelled with the shutdown (contract 13.2 step 7)

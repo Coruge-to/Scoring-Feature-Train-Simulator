@@ -48,6 +48,8 @@ namespace TSScoringPlugin.Telemetry
         internal int DoorDir;
         internal int Term;
         internal string Name;
+        /// <summary>Phase ST-1A: the index of the station the values above belong to (-1 = none). It is the TGT of the STIDX part.</summary>
+        internal int Index;
     }
 
     internal sealed class LegacyStationTimeline
@@ -62,9 +64,24 @@ namespace TSScoringPlugin.Telemetry
         private int terminalFrozenDiffSeconds = -999;
         private bool wasTerminalDoorOpened;
 
+        // Phase ST-1A (observation only, nothing above reads these): the arrival candidate events and the identity of the list of the STIDX part
+        private const string StaListPrefix = "STALIST:";
+        private int arrivalIndex = -1;
+        private int arrivalSeq;
+        private string listId = StationListIdentity.EmptyId;
+
         internal int Count { get { return list.Count; } }
 
         internal int TargetIndex { get { return target; } }
+
+        /// <summary>Phase ST-1A: the station of the last arrival candidate event (the door-open / operational-stop flag went false -> true for the target); -1 = none.</summary>
+        internal int ArrivalIndex { get { return arrivalIndex; } }
+
+        /// <summary>Phase ST-1A: the number of arrival candidate events since the last Reset (the scenario instance).</summary>
+        internal int ArrivalSeq { get { return arrivalSeq; } }
+
+        /// <summary>Phase ST-1A: CRC-32 of the STALIST payload of the list as it was built (00000000 for an empty list).</summary>
+        internal string ListId { get { return listId; } }
 
         internal IList<StationEntry> Entries { get { return list; } }
 
@@ -80,6 +97,9 @@ namespace TSScoringPlugin.Telemetry
             opStopDelayStartMs = -1;
             terminalFrozenDiffSeconds = -999;
             wasTerminalDoorOpened = false;
+            arrivalIndex = -1;
+            arrivalSeq = 0;
+            listId = StationListIdentity.EmptyId;
         }
 
         /// <summary>The simulation time jumped: the next station is chosen again from the vehicle position.</summary>
@@ -122,6 +142,7 @@ namespace TSScoringPlugin.Telemetry
             v.DoorDir = 1;
             v.Term = 0;
             v.Name = null;
+            v.Index = -1;
 
             if (target < list.Count)
             {
@@ -133,6 +154,8 @@ namespace TSScoringPlugin.Telemetry
                 double marginBack = st.MarginMin;
                 double marginFront = st.MarginMax;
                 bool isTerminal = st.IsTerminal;
+                bool doorOpenedBefore = hasDoorOpenedAtTarget;      // Phase ST-1A: read-only snapshots for the STIDX part; nothing of the state machine below changed
+                int shownIndex = before;
 
                 if (st.IsPass)
                 {
@@ -198,6 +221,15 @@ namespace TSScoringPlugin.Telemetry
                     marginBack = st.MarginMin;
                     marginFront = st.MarginMax;
                     isTerminal = st.IsTerminal;
+                    shownIndex = target;
+                }
+
+                // Phase ST-1A: an arrival candidate event = the door-open / operational-stop flag went false -> true for THIS target on this Tick (the flag set by
+                // the (re)selection of the target is not an event: it was already true when the snapshot was taken)
+                if (!doorOpenedBefore && hasDoorOpenedAtTarget && target == before)
+                {
+                    arrivalIndex = before;
+                    arrivalSeq++;
                 }
 
                 int nextStationTime = -1;
@@ -254,6 +286,7 @@ namespace TSScoringPlugin.Telemetry
                 v.IsTiming = isTiming;
                 v.MarginBack = marginBack;
                 v.MarginFront = marginFront;
+                v.Index = shownIndex;
             }
 
             if (list.Count > 0 && target < list.Count)
@@ -515,6 +548,10 @@ namespace TSScoringPlugin.Telemetry
                     list[i].InterpolatedTime = list[i].DepTime;
                 }
             }
+
+            // Phase ST-1A: the identity of the list as the STALIST will state it (the same text, hashed once per build; nothing above reads it)
+            string payload = ComposeStaList();
+            listId = payload == null ? StationListIdentity.EmptyId : StationListIdentity.Compute(payload.Substring(StaListPrefix.Length));
         }
     }
 }

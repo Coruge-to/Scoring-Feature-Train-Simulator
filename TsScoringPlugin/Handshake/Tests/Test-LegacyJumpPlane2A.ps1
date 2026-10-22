@@ -93,7 +93,7 @@ $newFiles = @('LegacyJumpEndpoint.cs', 'LegacyJumpCommandQueue.cs', 'LegacyJumpC
 # K11: the Session pin moved from the 2A-alpha baseline (DFDBF759...47AC9) to the audited TEL_DISCONTINUITY diagnostic edit (owner decision C-1, option C: 14 keys, no hb). The edit is diagnostic only:
 # Test-LegacyDiscontinuityDiag.ps1 PD-21 / PD-22 prove the single increment site, the 300 ms judgement, TEL_DISPOSE and that the diff against 87cf543 is additions of the allowed lines only.
 $k11Pins = [ordered]@{
-    'LegacyTelemetrySession.cs' = 'B4693D6453C126C26967ADBD3399DF9EC71871AD783C3B550A99219CFD2F7B5C'      # Phase LJX-1 (pin moved): was 1D796C60... (the audited TEL_DISCONTINUITY edit); the LJX-1 edit of the Session is audited by Test-LegacyJumpExecLJX1.ps1 (S09, LJX-12/16/17/32, golden OFF output)
+    'LegacyTelemetrySession.cs' = 'DD7AD42CB834EE03DB56DD71D2B5BC86AD96D4D0F89B462DD0BAF974BF45AF7B'      # Phase ST-1A (pin moved): was B4693D64... (the LJX-1 edit); the ST-1A edit is ONE key at the end of the station group (STIDX), audited by Test-StationIndexSupplyST1A.ps1 (every datagram equals the audited DLL except for the STIDX part). Phase LJX-1 (pin moved): was 1D796C60... (the audited TEL_DISCONTINUITY edit); the LJX-1 edit of the Session is audited by Test-LegacyJumpExecLJX1.ps1 (S09, LJX-12/16/17/32, golden OFF output)
     'LegacyDataPlaneSink.cs'    = 'C597672FDD5AC62B6CABAF0A94CCEE6C30C94D5C7B5CDB3B123A0C126AC89EC8'      # Phase LJX-1 (pin moved): was 112E6B7B...; the new SendJumpComplete is audited by LJX-29 and S08
     'LegacyApi.cs'              = 'F9202D8FEB0F9B619C6F788D5B85E330700FAF115812A516B911B3EA9E7F8661'
 }

@@ -16,7 +16,7 @@
 param([string]$Root = (Split-Path $PSScriptRoot -Parent))
 
 $AuditedDllSha256 = '43E7B9D35F840FAEF0DFCBEC8F2EDB66F259F42FA9CD62644B1DFD1A45EDF691'      # Legacy telemetry 0.6.0.0 DEFAULT build (flag OFF), the build Test-StationTimelineJF1.ps1 audits
-$AuditedTimelineSourceSha256 = '23ABFA293D0D15D0978562873B383C85F0C7B81630871B7EDFE3AB61ED437BAE'
+$AuditedTimelineSourceSha256 = 'CCAB41A19AE4C1C2A5C6037061F2853BE3EFAEB05EC022956E26004890CC181E'      # Phase ST-1A (pin moved from 23ABFA29..., see Test-StationTimelineJF1.ps1): additive, observation-only members for the STIDX part; the DLL above is still the build BEFORE ST-1A
 
 $dllPath = Join-Path $Root 'Telemetry\Legacy\out\TSScoringPlugin.AtsExLegacy.Telemetry.dll'
 $srcPath = Join-Path $Root 'Telemetry\Legacy\src\LegacyStationTimeline.cs'

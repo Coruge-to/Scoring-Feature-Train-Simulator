@@ -114,13 +114,15 @@ else {
 
 # ---------------------------------------------------------------------------------------------------------------------------------------------
 Write-Host '--- F: invariants'
-$currentPin = '7D4B97A97A5739C095B3518ED75587805F727A4631EF48AD096EE65E53953856'
+$currentPin = '7D4B97A97A5739C095B3518ED75587805F727A4631EF48AD096EE65E53953856'      # the PID-D6 historical baseline: F02 only (it is never replaced)
+$deployedCurrentPin = '1F504B45E4EE0DD23098BCA74DA0EEFF6AC81362BE730C4B3BCBC9507A19EB02'      # the Current DLL that is DEPLOYED on this machine now (Phase ST-1B build): F01 audits the machine state, not a historical baseline
 $deployedCurrent = Join-Path $env:PUBLIC 'Documents\BveEx\2.0\Extensions\TsScoringPlugin.dll'
 $handoff = 'C:\Users\tsuru\Documents\TS-Scoring-Claude-Handoff\pre-claude-v6-20261014_191918\live-d6\package\TsScoringPlugin.dll'
-Check 'F01 the deployed Current DLL is byte-identical to the accepted PID-D6 DLL (7D4B97A9...3856)' ((Sha $deployedCurrent) -eq $currentPin)
+Check 'F01 the CURRENTLY deployed Current DLL (an audit of the deployed state of this machine, not a historical baseline) is byte-identical to the Phase ST-1B Current build (1F504B45...EB02)' ((Sha $deployedCurrent) -eq $deployedCurrentPin)
 if (Test-Path -LiteralPath $handoff) { Check 'F02 the packaged Current DLL of PID-D6 is byte-identical (7D4B97A9...3856)' ((Sha $handoff) -eq $currentPin) } else { Skip 'F02 the packaged Current DLL is not at the recorded path' }
-$curSrc = (& git -C $repo status --porcelain -- TsScoringPlugin/TsScoringPlugin | Out-String).Trim()
-Check 'F03 Current product source (TsScoringPlugin\TsScoringPlugin) is unchanged against HEAD (no modified, staged or untracked file)' ($curSrc -eq '')
+$st1aCurrent = @('TsScoringPlugin/TsScoringPlugin/Class1.cs', 'TsScoringPlugin/TsScoringPlugin/TsScoringPlugin.csproj')      # Phase ST-1A (J3-G2, observation only): the only two files of the Current plugin folder the STIDX supply may change (0 changed files, e.g. after the commit, is a pass too)
+$curSrcOutside = @((& git -C $repo status --porcelain -- TsScoringPlugin/TsScoringPlugin | Out-String) -split "`n" | Where-Object { $_.Trim() } | Where-Object { $st1aCurrent -cnotcontains $_.Substring(3).Trim().Trim('"') })
+Check 'F03 Current product source (TsScoringPlugin\TsScoringPlugin) is unchanged against HEAD (no modified, staged or untracked file) except the two files of Phase ST-1A (Class1.cs, TsScoringPlugin.csproj)' ($curSrcOutside.Count -eq 0)
 $pins = [ordered]@{
     'TsScoringPlugin\Handshake\Telemetry\Shared\DataPlaneProtocol.cs' = '0F6DE268B785462BD2E32F7161F1BDA69FBFEC4515752A834FBE4DFD242AE13B'
     'TsScoringPlugin\Handshake\Telemetry\Shared\TelemetryDirectoryReader.cs' = '9D6C47493457FD840E8CA5186C8E16181F0B5CF85C10721087C9098DD6644680'
@@ -134,10 +136,13 @@ Check 'F04 the three shared files, CurrentDataPlane.cs and CurrentJumpEndpoint.c
 $sharedGit = (& git -C $repo status --porcelain -- TsScoringPlugin/Handshake/Telemetry/Shared/DataPlaneProtocol.cs TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs TsScoringPlugin/Handshake/Telemetry/Shared/GenericHandleTextContract.cs | Out-String).Trim()
 Check 'F05 and git sees no change in them against HEAD' ($sharedGit -eq '')
 $pyChanged = @((& git -C $repo status --porcelain | Out-String) -split "`n" | Where-Object { $_ -match '\.py\s*$' } | ForEach-Object { $_.Substring(3).Trim() } | Where-Object { $_ -notmatch '/' })
-$pyAllowed = @('current_jump_client.py', 'dataplane_contract.py')      # PID-D4 / Legacy Jump 2A-alpha: the only two Python product modules the slice may change (0 changed files, e.g. after the commit, is a pass too)
+$pyAllowed = @('current_jump_client.py', 'dataplane_contract.py', 'main.py', 'telemetry_contract.py', 'station_index_contract.py', 'managed_input.py')      # PID-D4 / Legacy Jump 2A-alpha: the only two Python product modules the slice may change; Phase ST-1A adds the three of the STIDX intake; Phase ST-1B Prep adds managed_input.py (F07 limits it to the one stidx cap) (0 changed files, e.g. after the commit, is a pass too)
 $pyOutside = @($pyChanged | Where-Object { $pyAllowed -cnotcontains $_ })
 Check ('F06 no Python product module (repository root) differs from HEAD except the two allowed ones (' + ($pyAllowed -join ', ') + ')' + $(if ($pyOutside.Count -gt 0) { ': ' + ($pyOutside -join ',') } else { '' })) ($pyOutside.Count -eq 0)
-Check 'F07 scoring_logic.py and managed_input.py are byte-identical to HEAD' ((& git -C $repo status --porcelain -- scoring_logic.py managed_input.py | Out-String).Trim() -eq '')
+# Phase ST-1B Prep (owner decision G-1): managed_input.py may differ from HEAD only by the EVENT_LINE_CAPS statement (the one "stidx" cap); no change at all (e.g. after the commit) is a pass too
+$miChanged = @((& git -C $repo diff -U0 HEAD -- managed_input.py) | Where-Object { $_ -match '^[+-]' -and $_ -notmatch '^(\+\+\+|---)' })
+$miOutside = @($miChanged | Where-Object { $_ -notmatch 'EVENT_LINE_CAPS|"stidx": 24' })
+Check 'F07 scoring_logic.py is byte-identical to HEAD, and managed_input.py differs from HEAD only in the EVENT_LINE_CAPS statement (the stidx cap)' (((& git -C $repo status --porcelain -- scoring_logic.py | Out-String).Trim() -eq '') -and ($miOutside.Count -eq 0) -and ($miChanged.Count -le 3))
 $tel = Join-Path $Root 'Telemetry'
 $legacySrc = @(Get-ChildItem (Join-Path $tel 'Legacy\src') -Filter *.cs)
 $legacyCode = ($legacySrc | ForEach-Object { Code ([IO.File]::ReadAllText($_.FullName)) }) -join "`n"

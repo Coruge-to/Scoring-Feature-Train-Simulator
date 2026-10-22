@@ -42,7 +42,10 @@ DATAPLANE = os.path.join(PLUGIN, "TsScoringPlugin", "CurrentDataPlane.cs")
 LEGACY_CSPROJ = os.path.join(PLUGIN, "Handshake", "Telemetry", "Legacy", "TSScoringPlugin.AtsExLegacy.Telemetry.csproj")
 CURRENT_CSPROJ = os.path.join(PLUGIN, "TsScoringPlugin", "TsScoringPlugin.csproj")
 
-CLASS1_AUDITED_NORMALISED_SHA256 = "29613E1495667222990B1FB8D197415BE4988869CA3F2C3CFD7810EAAEA1F4F6"
+CLASS1_AUDITED_NORMALISED_SHA256 = "009BA364703FCF5CD8654BA2587D15A862708D7F91FF44D0859E14F17EB90BA8"
+# Phase ST-1A (J3-G2: R1 / R5 / R6 in their observation-only form): the value moved from 29613E14... after the changed lines were re-audited. The change is ADDITIVE and only the
+# STIDX statements read what it adds; every shape pin of this file (C02 ... C17, X06, F11, F12, U1, L1 ... L9) is unchanged and still passes; tests\\test_stationindex_supply_st1a.py
+# (class D) pins who reads the new fields, where the part is written and that no new write of targetStationIndex exists.
 
 OWN_IDS = ["C02", "C03", "C04", "C05", "C06", "C07", "C08", "C09", "C10", "C11", "C12", "C13", "C15", "C16", "C17", "J20", "X06", "F11", "F12", "F32", "DRIFT",
            "L1", "L2", "L3", "L4", "L5", "L6", "L8", "L9", "U1", "F28"]
@@ -292,14 +295,15 @@ class Pins(unittest.TestCase):
         ("..\\Shared\\DataPlaneProtocol.cs", "Shared\\DataPlaneProtocol.cs"), ("..\\Shared\\TelemetryDirectoryReader.cs", "Shared\\TelemetryDirectoryReader.cs"),
         ("src\\LegacyInputTelemetry.cs", None), ("src\\LegacyJumpCommandQueue.cs", None), ("src\\LegacyJumpControlPlane.cs", None), ("src\\LegacyJumpEndpoint.cs", None), ("src\\LegacyJumpExecutor.cs", None),      # Phase LJX-1 (pin moved): the executor file
         ("src\\LegacyScoringProbe.cs", None), ("src\\LegacyStationTimeline.cs", None), ("src\\LegacyTelemetrySession.cs", None), ("src\\LegacyTelemetryExtension.cs", None),
-        ("..\\Shared\\TelemetryContract.cs", "Shared\\TelemetryContract.cs")], key=lambda t: t[0])
+        ("..\\Shared\\TelemetryContract.cs", "Shared\\TelemetryContract.cs"),
+        ("..\\Shared\\StationListIdentity.cs", "Shared\\StationListIdentity.cs")], key=lambda t: t[0])           # Phase ST-1A (pin moved): the one shared file of the STIDX supply
 
     @jf0("F32", "CURRENT")
     def test_CURRENT_F32_the_legacy_project_links_exactly_this_set_of_sources_with_the_one_shared_current_jump_endpoint_link_and_the_current_project_keeps_its_own(self):
-        # (1) the Legacy project: the exact (Include, Link) pairs, 21 of them (20 before Phase LJX-1)
+        # (1) the Legacy project: the exact (Include, Link) pairs, 22 of them (21 before Phase ST-1A, 20 before Phase LJX-1)
         legacy = compile_items(LEGACY_CSPROJ)
         self.assertEqual(sorted(legacy, key=lambda t: t[0]), self.LEGACY_EXPECTED_ITEMS)
-        self.assertEqual(len(legacy), 21)
+        self.assertEqual(len(legacy), 22)
         # (2) the shared link: exactly one element, exactly this Include and this Link; nothing else of the Current plugin folder besides CurrentDataPlane.cs
         endpoint_links = [t for t in legacy if t[0].endswith("CurrentJumpEndpoint.cs")]
         self.assertEqual(endpoint_links, [self.LEGACY_SHARED_LINK])

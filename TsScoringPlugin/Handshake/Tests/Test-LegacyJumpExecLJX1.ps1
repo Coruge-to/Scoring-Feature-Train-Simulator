@@ -160,7 +160,9 @@ function Run-Static {
     }
     SCheck 'S06' {
         # requirement 23 / 32: the Current product, the shared sources and the layout are untouched (git diff against HEAD is empty) and pinned by hash
-        $diff = @(& git -C $repo diff --name-only HEAD -- 'TsScoringPlugin/TsScoringPlugin' 'TsScoringPlugin/Handshake/Telemetry/Shared/DataPlaneProtocol.cs' 'TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs' 'TsScoringPlugin/Handshake/Telemetry/Shared/GenericHandleTextContract.cs' 'TsScoringPlugin/Handshake/Telemetry/Legacy/TSScoringPlugin.AtsExLegacy.Telemetry.l3build.log')
+        # (Phase ST-1A, J3-G2, observation only: Class1.cs and TsScoringPlugin.csproj are the two files of the Current plugin folder that carry the STIDX supply; they may differ from HEAD until the commit - tests\test_stationindex_supply_st1a.py pins what changed)
+        $st1aCurrent = @('TsScoringPlugin/TsScoringPlugin/Class1.cs', 'TsScoringPlugin/TsScoringPlugin/TsScoringPlugin.csproj')
+        $diff = @(& git -C $repo diff --name-only HEAD -- 'TsScoringPlugin/TsScoringPlugin' 'TsScoringPlugin/Handshake/Telemetry/Shared/DataPlaneProtocol.cs' 'TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs' 'TsScoringPlugin/Handshake/Telemetry/Shared/GenericHandleTextContract.cs' 'TsScoringPlugin/Handshake/Telemetry/Legacy/TSScoringPlugin.AtsExLegacy.Telemetry.l3build.log' | Where-Object { $st1aCurrent -cnotcontains $_ })
         $pins = [ordered]@{
             'TsScoringPlugin\Handshake\Telemetry\Shared\DataPlaneProtocol.cs'         = '0F6DE268B785462BD2E32F7161F1BDA69FBFEC4515752A834FBE4DFD242AE13B'
             'TsScoringPlugin\Handshake\Telemetry\Shared\TelemetryDirectoryReader.cs'  = '9D6C47493457FD840E8CA5186C8E16181F0B5CF85C10721087C9098DD6644680'
@@ -171,7 +173,7 @@ function Run-Static {
         $bad = @()
         foreach ($k in $pins.Keys) { if ((Sha (Join-Path $repo $k)) -ne $pins[$k]) { $bad += $k } }
         $c1 = Sha (Join-Path $repo 'TsScoringPlugin\TsScoringPlugin\Class1.cs')
-        $c1Head = (& git -C $repo diff --name-only HEAD -- 'TsScoringPlugin/TsScoringPlugin/Class1.cs')
+        $c1Head = (& git -C $repo diff --name-only HEAD -- 'TsScoringPlugin/TsScoringPlugin/Class1.cs' | Where-Object { $st1aCurrent -cnotcontains $_ })
         $curDll = Join-Path $env:PUBLIC 'Documents\BveEx\2.0\Extensions\TsScoringPlugin.dll'
         $curSha = Sha $curDll
         $diffVal = @(@($diff) + @($bad) | Where-Object { $_ }).Count
@@ -215,11 +217,12 @@ function Run-Static {
         # the Legacy project still has exactly the four Current links of 2A-alpha and no new link outside Telemetry
         $proj = ReadText $projFile
         $links = @([regex]::Matches($proj, '<Compile Include="(\.\.\\[^"]+)"') | ForEach-Object { $_.Groups[1].Value })
-        $okLinks = @('..\..\..\TsScoringPlugin\CurrentDataPlane.cs', '..\..\..\TsScoringPlugin\CurrentJumpEndpoint.cs', '..\Shared\GenericHandleTextContract.cs', '..\Shared\DataPlaneProtocol.cs', '..\Shared\TelemetryDirectoryReader.cs', '..\Shared\TelemetryContract.cs')
+        # (Phase ST-1A adds the one shared link of the STIDX supply: ..\Shared\StationListIdentity.cs)
+        $okLinks = @('..\..\..\TsScoringPlugin\CurrentDataPlane.cs', '..\..\..\TsScoringPlugin\CurrentJumpEndpoint.cs', '..\Shared\GenericHandleTextContract.cs', '..\Shared\DataPlaneProtocol.cs', '..\Shared\TelemetryDirectoryReader.cs', '..\Shared\TelemetryContract.cs', '..\Shared\StationListIdentity.cs')
         $extra = @($links | Where-Object { $okLinks -notcontains $_ })
         $hasExec = $proj -match 'LegacyJumpExecutor\.cs'
         if (-not $hasExec) { return (Absent 'LegacyJumpExecutor.cs is not in the project' 'files-absent') }
-        @{ Ok = ($extra.Count -eq 0 -and $links.Count -eq 6); Detail = "linked files: $($links.Count); unexpected links: $($extra -join ',')" }
+        @{ Ok = ($extra.Count -eq 0 -and $links.Count -eq 7); Detail = "linked files: $($links.Count); unexpected links: $($extra -join ',')" }
     }
     SCheck 'S12' {
         # the executor never creates a thread, a timer or a task; the plane keeps its one worker thread

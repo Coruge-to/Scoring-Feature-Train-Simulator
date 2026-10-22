@@ -34,7 +34,8 @@ TOKEN_KEYS = {
     "speed": ("SPEED",),
     "loc": ("LOCATION",),
     "grad": ("GRADIENT",),
-    "station": ("NEXTLOC", "NEXTTIME", "ISPASS", "ISTIMING", "MARGINB", "MARGINF", "DOORDIR", "TERM", "STATNAME", "STALIST"),
+    # STIDX (Phase ST-1A): the versioned station index part, written inside the same group as NEXTLOC
+    "station": ("NEXTLOC", "NEXTTIME", "ISPASS", "ISTIMING", "MARGINB", "MARGINF", "DOORDIR", "TERM", "STATNAME", "STALIST", "STIDX"),
     "door": ("DOOR",),
     "siglimit": ("SIGLIMIT",),
     "siglimit_ahead": ("FWDSIGLIMIT", "FWDSIGLOC"),
