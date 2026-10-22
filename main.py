@@ -136,6 +136,7 @@ class Overlay(QWidget):
         self.pending_jump_complete = None
 
         self.save_data = []
+        self.retry_pending = None   # Phase ST-2b: the retry that waits for its jump (station_identity.RetryPending); the history is cut by ST-3 only
         self.menu_state = 0   
         self.menu_cursor = 0  
         self.menu_scroll = 0  
@@ -630,6 +631,35 @@ class Overlay(QWidget):
         reason stays in the state (self._station_identity, the refusals' return values) and nothing is written anywhere."""
         self._emit_input_event(event, **fields)
 
+    # -- Phase ST-2b: the retry. The station of a retry is the StationIndex of the chosen checkpoint (scoring_logic.execute_retry); what is left here is the count and the trace.
+    def _retry_count(self, result, position):
+        """The retry count grows by ONE per request that was SENT (a later position than the start only; the start resets it in execute_retry). A refused retry, a request the
+        managed client refused to send (the pending retry stays 'validated') and the same RequestId again add nothing."""
+        pending = getattr(self, 'retry_pending', None)
+        sent = isinstance(pending, station_identity.RetryPending) and pending.state == station_identity.RETRY_SENT and pending.request_id == result.request_id
+        if not (result.accepted and sent and position > 0):
+            return
+        if result.request_id is not None and result.request_id == self.__dict__.get('_retry_counted_request'):
+            return
+        self._retry_counted_request = result.request_id
+        self.total_retry_count += 1
+
+    def _retry_trace(self, result, position, history_before, count_before):
+        """The ONE internal diagnostic line of this retry operation (retry-accepted / retry-rejected): the reason code and the state numbers, fixed words only. Nothing on the
+        screen; the normal mode installs no sink and writes nothing. Never raises."""
+        try:
+            history = getattr(self, 'save_data', [])
+            checkpoint = history[position] if isinstance(position, int) and 0 <= position < len(history) else None
+            station_list = getattr(self, 'station_list', None)
+            sync = self.__dict__.get('_station_identity')
+            event, fields = station_identity.retry_event(
+                result, position, history_before, len(history), count_before, self.total_retry_count, getattr(self, 'retry_pending', None),
+                station_identity.scope_of(getattr(self, 'current_scenario_id', -1), getattr(self, 'bve_list_id', ""), station_list), checkpoint, station_list,
+                sync.reason if (sync is not None and not sync.usable) else "")
+            self._station_identity_note(event, **fields)
+        except Exception:
+            pass
+
     def _scoring_start_snapshot(self):
         """The verified identity of the station the scoring would start at (setting_start_idx); not valid = the start must be refused. The reason of an identity
         the sync could not establish is the sync's own reason."""
@@ -680,6 +710,7 @@ class Overlay(QWidget):
 
                                 reset_score_accumulation(self)
                                 self.save_data.clear()
+                                self.retry_pending = None
                                 self.popups.clear()
                                 self.brake_rules = [{"end_idx": -1, "apply": "階段", "release": "階段"}]
                                 self.setting_start_idx = 0
@@ -1362,12 +1393,19 @@ class Overlay(QWidget):
                 self.menu_cursor = 0
         elif self.menu_state == 3:
             if self.menu_cursor == 0: 
+                # Phase ST-2b: a refused retry changes nothing - not the count, not the history, not the screen (the menu stays where it is) and not the BVE resume flag
+                advancing_before = self.__dict__.get('was_advancing_before_menu', None)
+                history_before, count_before = len(self.save_data), self.total_retry_count
                 self.was_advancing_before_menu = True
-                execute_retry(self, getattr(self, 'target_retry_idx', -1), is_bve_advancing)
-                
-                # 始発駅以外へのリトライをSランク判定用の回数へ加算する
-                if getattr(self, 'target_retry_idx', -1) > 0:
-                    self.total_retry_count += 1 
+                position = getattr(self, 'target_retry_idx', -1)
+                result = execute_retry(self, position, is_bve_advancing)
+                if result.accepted:
+                    self._retry_count(result, position)
+                elif advancing_before is None:
+                    self.__dict__.pop('was_advancing_before_menu', None)
+                else:
+                    self.was_advancing_before_menu = advancing_before
+                self._retry_trace(result, position, history_before, count_before)
                 
             elif self.menu_cursor == 1: 
                 self.menu_state = 2
@@ -1604,6 +1642,7 @@ class Overlay(QWidget):
                 reset_roll_state(self)
 
                 self.total_retry_count = 0 # Sランク判定用のリトライ回数を初期化
+                self.retry_pending = None
                 self.limit_flash_counts = {}
 
                 getattr(self, 'save_data', []).clear()

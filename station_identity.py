@@ -254,3 +254,200 @@ def published_values(decision):
     return (decision.tgt.station_index if decision.tgt.valid else NO_INDEX,
             decision.arr.station_index if decision.arr.valid else NO_INDEX,
             decision.arr_seq, decision.scope.list_id)
+
+
+# ==============================================================================================================================================================
+# Phase PID-D4JA StationIndex ST-2b - the RETRY: the station of a retry is the StationIndex of the checkpoint the user chose, verified against the scope the application holds.
+# Nothing is searched by a position (no distance, no nearest, no station 0, no first of the list); a checkpoint that does not verify is REFUSED with a reason code and
+# nothing is changed. Pure like the rest of this module: the caller (scoring_logic.execute_retry) owns the state and decides what to do with the answer.
+# ==============================================================================================================================================================
+NO_CHECKPOINT = "no-checkpoint"              # there is no checkpoint at the chosen position of the history
+OLD_FORM = "old-form"                        # the checkpoint lacks an item of the contract (no compatibility reader: the station is never rebuilt from its position)
+RETRY_PENDING = "retry-pending"              # a retry is already waiting for its jump
+JUMP_UNAVAILABLE = "jump-unavailable"        # the request can not be made safely (the managed mode has no jump client)
+TIME_INVALID = "time-invalid"                # the time of the checkpoint is not a finite number >= 0
+RETRY_REASONS = (NO_CHECKPOINT, OLD_FORM, RETRY_PENDING, JUMP_UNAVAILABLE, TIME_INVALID)      # (the other reasons of a refusal are the words of REASONS)
+
+RETRY_VALIDATED = "validated"                # the pending retry exists, the request was not sent (yet / the client refused to send it)
+RETRY_SENT = "sent"                          # the request was sent
+RETRY_STATES = (RETRY_VALIDATED, RETRY_SENT)
+
+CHECKPOINT_IDENTITY_KEYS = ("station_index", "scope", "station_location", "role")
+
+
+class RetryResult(NamedTuple):
+    """The answer of one retry operation. `accepted` False = refused and NOTHING was changed (no request, no pending, no count, no history, no score). `request_id` is the
+    RequestId of the sent request (None: not sent / the plain mode has none). `selected_station_index` is the StationIndex of the chosen checkpoint (NO_INDEX when unknown)."""
+    accepted: bool
+    reason: str
+    request_id: Optional[bytes]
+    selected_station_index: int
+
+
+class RetryPending(NamedTuple):
+    """What ST-3 needs to settle a retry after its jump: the chosen checkpoint (the very object, by identity), where it is in the history, its StationIndex and scope (the
+    expectation of the completion's selected index), the RequestId and the size of the history when the request was made. Nothing here changes the history."""
+    selected_save_position: int
+    selected_station_index: int
+    selected_scope: StationScope
+    checkpoint: dict
+    request_id: Optional[bytes]
+    scenario_id: int
+    original_history_length: int
+    state: str
+
+
+def _finite_number(value):
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+
+
+def _saved_index(checkpoint):
+    index = checkpoint.get("station_index") if isinstance(checkpoint, dict) else None
+    return index if _is_int(index) else NO_INDEX
+
+
+def _retry_refused(reason, checkpoint=None):
+    return RetryResult(False, reason, None, _saved_index(checkpoint))
+
+
+def missing_checkpoint_item(checkpoint):
+    """The first item the checkpoint lacks ('' = none): the four identity items, then the score (and the item breakdown when it is there but is not a dict)."""
+    if not isinstance(checkpoint, dict):
+        return "checkpoint"
+    for key in CHECKPOINT_IDENTITY_KEYS + ("score",):
+        if checkpoint.get(key) is None:
+            return key
+    if not _finite_number(checkpoint["score"]):
+        return "score"
+    if "score_details" in checkpoint and not isinstance(checkpoint["score_details"], dict):
+        return "score_details"
+    return ""
+
+
+def check_retry_checkpoint(save_data, position, scenario_id, list_id, station_list, pending_active=False):
+    """Verifies the checkpoint at `position` of the history for a retry; returns a RetryResult (accepted = every check passed; nothing is sent or changed here).
+
+    The first check that fails names the refusal: no checkpoint at the position (no-checkpoint) -> a retry is pending (retry-pending) -> the application holds no station list
+    (no-station-list) or no complete scope (scope-incomplete) -> the checkpoint lacks an item (old-form) -> its scope is not the scope of the application (scenario-mismatch,
+    list-mismatch, count-mismatch) -> its StationIndex is not inside the list (index-negative, index-out-of-range) -> its position is not a finite number (location-invalid)
+    or is not the position of that index in the list, 0.01 m (location-mismatch) -> its role is not the role of its place (role-mismatch: scoring_start at position 0,
+    arrived_station after it) -> its time is not a finite number >= 0 (time-invalid). The StationIndex 0 is an index like any other."""
+    try:
+        return _check_retry_checkpoint(save_data, position, scenario_id, list_id, station_list, pending_active)
+    except Exception:
+        return RetryResult(False, INTERNAL_ERROR, None, NO_INDEX)       # nothing here raises: whatever could not be examined is a refusal
+
+
+def _check_retry_checkpoint(save_data, position, scenario_id, list_id, station_list, pending_active):
+    if not isinstance(save_data, list) or not _is_int(position) or position < 0 or position >= len(save_data):
+        return _retry_refused(NO_CHECKPOINT)
+    checkpoint = save_data[position]
+    if pending_active:
+        return _retry_refused(RETRY_PENDING, checkpoint)
+    if station_list is None or len(station_list) == 0:
+        return _retry_refused(NO_STATION_LIST, checkpoint)
+    current = scope_of(scenario_id, list_id, station_list)
+    if current is None:
+        return _retry_refused(SCOPE_INCOMPLETE, checkpoint)
+    if missing_checkpoint_item(checkpoint) != "":
+        return _retry_refused(OLD_FORM, checkpoint)
+    stored = checkpoint["scope"]
+    saved_scope = make_scope(*stored) if isinstance(stored, (tuple, list)) and len(stored) == 3 else None
+    if saved_scope is None:
+        return _retry_refused(OLD_FORM, checkpoint)
+    if saved_scope.scenario_id != current.scenario_id:
+        return _retry_refused(SCENARIO_MISMATCH, checkpoint)
+    if saved_scope.list_id != current.list_id:
+        return _retry_refused(LIST_MISMATCH, checkpoint)
+    if saved_scope.count != current.count:
+        return _retry_refused(COUNT_MISMATCH, checkpoint)
+    snapshot = build_snapshot(checkpoint["station_index"], current, station_list, ROLE_ARRIVED_STATION)
+    if not snapshot.valid:
+        return _retry_refused(snapshot.reason, checkpoint)
+    if not _finite_number(checkpoint["station_location"]):
+        return _retry_refused(LOCATION_INVALID, checkpoint)
+    if not locations_agree(snapshot.station_location, checkpoint["station_location"]):
+        return _retry_refused(LOCATION_MISMATCH, checkpoint)
+    if checkpoint["role"] != (ROLE_SCORING_START if position == 0 else ROLE_ARRIVED_STATION):
+        return _retry_refused(ROLE_MISMATCH, checkpoint)
+    if not _finite_number(checkpoint.get("time_ms")) or checkpoint["time_ms"] < 0:
+        return _retry_refused(TIME_INVALID, checkpoint)
+    return RetryResult(True, OK, None, snapshot.station_index)
+
+
+def make_retry_pending(save_data, position, request_id=None, state=RETRY_VALIDATED):
+    """The pending retry of a checkpoint that check_retry_checkpoint accepted (None when the arguments do not describe one: nothing here raises)."""
+    try:
+        checkpoint = save_data[position]
+        scope = StationScope(*checkpoint["scope"])
+        if state not in RETRY_STATES:
+            return None
+        return RetryPending(position, checkpoint["station_index"], scope, checkpoint, request_id, scope.scenario_id, len(save_data), state)
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
+def resolve_retry_history(save_data, pending, scenario_id, list_id, station_list):
+    """The history after a retry whose jump COMPLETED as requested: a NEW list holding save_data[0 .. position] (the input is never changed), or None when the pending
+    retry no longer describes this history: it is not a sent pending retry, the element at the position is not the chosen checkpoint (the history was cleared or replaced),
+    the scope of the application is not the scope of the choice. Checkpoints added after the request do not matter: the cut is by position. This module only FIXES the
+    rule; settling a retry (ST-3: the completion's selected index must be the chosen StationIndex) is the caller's."""
+    if not isinstance(pending, RetryPending) or pending.state != RETRY_SENT or not isinstance(save_data, list):
+        return None
+    position = pending.selected_save_position
+    if not _is_int(position) or position < 0 or position >= len(save_data) or save_data[position] is not pending.checkpoint:
+        return None
+    current = scope_of(scenario_id, list_id, station_list)
+    if current is None or tuple(current) != tuple(pending.selected_scope):
+        return None
+    if save_data[position].get("station_index") != pending.selected_station_index:
+        return None
+    return list(save_data[:position + 1])
+
+
+def _scope_text(scope):
+    """scenario:list:count with fixed characters only (the list id is 8 hexadecimal digits; anything else is cut to alphanumerics)."""
+    try:
+        scenario_id, list_id, count = scope
+        return "%d:%s:%d" % (scenario_id, "".join(ch for ch in str(list_id) if ch.isalnum())[:8], count)
+    except (TypeError, ValueError):
+        return "none"
+
+
+def _location_text(value):
+    return "%.2f" % value if _finite_number(value) else "bad"
+
+
+def retry_event(result, position, history_before, history_after, count_before, count_after, pending, current_scope, checkpoint=None, station_list=None, sync_reason=""):
+    """(event name, fields) of the ONE diagnostic line of a retry operation: `retry-accepted` or `retry-rejected`. Fixed words and numbers only (no station name, no path):
+    the line must fit the 160 characters the Caller keeps. h and c are 'before/after' of the history length and of the retry count (a refusal shows the same number twice),
+    pend is the state of the pending retry (none / validated / sent), cur is the scope of the application and sav the scope of the checkpoint (only where they differ).
+    Never raises."""
+    try:
+        accepted = bool(result.accepted)
+        fields = {"pos": position, "idx": result.selected_station_index, "h": "%d/%d" % (history_before, history_after), "c": "%d/%d" % (count_before, count_after),
+                  "pend": pending.state if isinstance(pending, RetryPending) else "none", "cur": _scope_text(current_scope) if current_scope is not None else "none"}
+        if accepted:
+            fields["id"] = result.request_id[:4].hex().upper() if isinstance(result.request_id, (bytes, bytearray)) and result.request_id else "-"
+            return "retry-accepted", fields
+        reason = result.reason
+        fields["why"] = reason
+        if reason in (SCENARIO_MISMATCH, LIST_MISMATCH, COUNT_MISMATCH):
+            fields["sav"] = _scope_text(checkpoint.get("scope")) if isinstance(checkpoint, dict) else "none"
+        elif reason in (LOCATION_INVALID, LOCATION_MISMATCH):
+            listed = None
+            if isinstance(checkpoint, dict) and station_list is not None and _is_int(checkpoint.get("station_index")) and 0 <= checkpoint["station_index"] < len(station_list):
+                listed = _location_of(station_list[checkpoint["station_index"]])
+            fields["loc"] = "%s/%s" % (_location_text(checkpoint.get("station_location") if isinstance(checkpoint, dict) else None), _location_text(listed))
+        elif reason == ROLE_MISMATCH:
+            role = checkpoint.get("role") if isinstance(checkpoint, dict) else None
+            fields["role"] = role if role in ROLES else "other"
+        elif reason == OLD_FORM:
+            fields["miss"] = missing_checkpoint_item(checkpoint) or "scope"
+        elif reason in (NO_STATION_LIST, SCOPE_INCOMPLETE) and sync_reason:
+            fields["sync"] = sync_reason
+        elif reason == RETRY_PENDING and isinstance(pending, RetryPending):
+            fields["ppos"] = pending.selected_save_position
+        return "retry-rejected", fields
+    except Exception:
+        return "retry-rejected", {"why": INTERNAL_ERROR}

@@ -1109,17 +1109,20 @@ class F_TheCheckpointHistory(ContractMixin, F1.Base):
         history = self.arrive(3000.0, 2999.0, name="D", is_pass=1, saves=o.save_data)
         self.assertEqual([dict(c) for c in history], before)                              # the same arrival twice: one checkpoint
 
-    def test_the_history_is_one_ordered_list_owned_by_the_overlay_and_the_retry_cuts_it(self):
-        """The structure the later phases build on (ST-2b / ST-3 change WHEN the cut happens, not the structure): save_data is a plain list of dicts, the retry keeps
-        [0..index]. ST-2a does not touch the retry; this only records that the structure can express 'A B C D -> A B'."""
+    def test_the_history_is_one_ordered_list_owned_by_the_overlay_and_the_retry_request_does_not_cut_it(self):
+        """The structure the later phases build on: save_data is a plain list of dicts. Phase ST-2b changed WHEN the cut happens (ST-2a: the retry request cut it at once):
+        the request keeps 'A B C D' and leaves the pending retry; the cut 'A B' is the pure rule resolve_retry_history that ST-3 applies after the matching completion."""
         o = self.o
         stations = abcde()
         history = []
         for idx, role in ((0, "scoring_start"), (1, "arrived_station"), (2, "arrived_station"), (3, "arrived_station")):
             history.append(F1.with_identity(F1.cp(stations[idx]["location"], T0 + idx, name=stations[idx]["name"]), idx, stations[idx]["location"], count=5, role=role))
         self.assertIs(type(history), list)
+        bind_scope(o, stations)
         self.retry(1, history, stations=stations)
-        self.assertEqual([c["station_name"] for c in o.save_data], ["A", "B"])
+        self.assertIs(o.save_data, history)
+        self.assertEqual([c["station_name"] for c in o.save_data], ["A", "B", "C", "D"])
+        self.assertEqual([c["station_name"] for c in SI.resolve_retry_history(o.save_data, o.retry_pending, SID, LID, stations)], ["A", "B"])
 
 
 # ==============================================================================================================================================
@@ -1265,7 +1268,876 @@ class G_TheCheckpointByKindOfStop(ContractMixin, CH.Base):
         self.assertEqual(o.save_data[-1]["time_ms"], CH.T0 + 60000)
 
 
+# ==============================================================================================================================================
+# H - Phase ST-2b: the RETRY uses the saved StationIndex and nothing else (N-06 .. N-10, N-13 .. N-17)
+#     The retry station is the StationIndex of the CHOSEN checkpoint, verified against the current scope; a checkpoint that does not verify is refused (no request, no
+#     history change, no count, no score change, no exception) and the refusal leaves ONE diagnostic line. The history is not cut by the request (ST-3 cuts it).
+# ==============================================================================================================================================
+def n2b_red(tid, code, note=""):
+    """Declare an ST-2b N-xx contract: its id and the ONE failure code it has against the product of ST-2a (1483b4b)."""
+    def deco(fn):
+        fn.st2b = {"id": tid, "code": code, "note": note}
+        return fn
+    return deco
+
+
+def ck(stations, index, t, role="arrived_station", **override):
+    """A checkpoint of station `index` with the seven old items and the four identity items of ST-2a."""
+    entry = stations[index]
+    c = F1.cp(entry["location"], t, score=10 * index, details=None if role == "scoring_start" else F1.ZERO, name=entry["name"])
+    F1.with_identity(c, index, entry["location"], count=len(stations), role=role)
+    c.update(override)
+    return c
+
+
+def history_of(stations, count):
+    return [ck(stations, i, T0 + 60000 * i, role="scoring_start" if i == 0 else "arrived_station") for i in range(count)]
+
+
+RID1, RID2 = b"\x01" * 16, b"\x02" * 16
+
+
+class RetryBase(ContractMixin, F1.Base):
+    """The history [A, B, C, D] of the list A..E (E is the end station: no checkpoint), under the scope (SID, LID, 5), at the confirmation of the retry."""
+
+    def setUp(self):
+        super().setUp()
+        o = self.o
+        self.stations = abcde()
+        bind_scope(o, self.stations)
+        self.hist = history_of(self.stations, 4)
+        o.save_data = self.hist
+        o.total_retry_count = 2
+        o.score = 77
+        self.lines = []
+        o.input_event_sink = lambda event, **fields: self.lines.append((event, fields))
+
+    def reset(self):
+        self.rig.close()
+        self.setUp()
+
+    def fingerprint(self):
+        """Everything a retry may touch: a refusal must leave ALL of it as it was (the menu, the popups, the count, the history list itself)."""
+        o = self.o
+        return (self.snap(), o.is_official_retry, o.is_first_station, o.total_retry_count, o.has_departed, o.is_first_udp, o.rollback_msg, o.rollback_msg_timer, o.score,
+                dict(o.score_details), [dict(c) for c in o.save_data], id(o.save_data), o.menu_state, o.menu_cursor, len(o.popups), len(self.events),
+                getattr(o, "retry_pending", None), o.__dict__.get("was_advancing_before_menu", "unset"))
+
+    def run_retry(self, position):
+        before = self.fingerprint()
+        result = self.S.execute_retry(self.o, position, True)
+        return result, self.fingerprint() == before, self.sent()
+
+    def control(self, position=1):
+        """The unchanged fixture is accepted by the product (a refusal test is only a refusal test when the same fixture without the fault is retried)."""
+        result, unchanged, cmds = self.run_retry(position)
+        self.assertEqual(cmds, ["JUMP_STA_TIME:%d:%d" % (position, T0 + 60000 * position)])
+        self.reset()
+
+    def refusal(self, mutate, reason, tid, code, position=1):
+        mutate(self.o, self.hist)
+        result, unchanged, cmds = self.run_retry(position)
+        got = getattr(result, "reason", None)
+        self.contract(unchanged and cmds == [] and getattr(result, "accepted", None) is False and got == reason, tid, code,
+                      "state unchanged %r, commands %r, result %r (expected a refusal with reason %s)" % (unchanged, cmds, result, reason))
+
+    def confirm(self, position, advancing=True):
+        o = self.o
+        o.menu_state = 3
+        o.menu_cursor = 0
+        o.target_retry_idx = position
+        o.handle_menu_enter(advancing)
+
+    def managed(self, request_id=RID1):
+        """The managed mode: a jump client exists; the send answers with the RequestId (None = the client refused to send)."""
+        self.o.jump_client = object()
+        self.send_result = request_id
+
+    def events_of(self, name):
+        return [f for e, f in self.lines if e == name]
+
+
+class H_TheRetry(RetryBase):
+    # -- N-06 ---------------------------------------------------------------------------------------------------------------------------------
+    @n2b_red("N-06", "CHECKPOINT-POSITION-CONTRADICTS-INDEX", "the saved station_location must be the position of the saved index in the current list (0.01 m); no position is ever used to find the station")
+    def test_RED_N06_a_checkpoint_position_that_contradicts_its_index_is_refused(self):
+        self.control()
+        for label, value, reason in (("0.5 m away", 1000.5, "location-mismatch"), ("0.02 m away", 1000.02, "location-mismatch"),
+                                     ("not finite", float("nan"), "location-invalid"), ("not a number", "1000", "location-invalid"), ("missing is an old form", None, "old-form")):
+            with self.subTest(label=label):
+                self.reset()
+                if value is None:
+                    self.refusal(lambda o, h: h[1].pop("station_location"), reason, "N-06", "CHECKPOINT-POSITION-CONTRADICTS-INDEX")
+                else:
+                    self.refusal(lambda o, h, v=value: h[1].update(station_location=v), reason, "N-06", "CHECKPOINT-POSITION-CONTRADICTS-INDEX")
+        self.reset()
+        self.hist[1]["station_location"] = 1000.01                                               # exactly the tolerance: still the same station
+        result = self.S.execute_retry(self.o, 1, True)
+        self.assertEqual(self.sent(), ["JUMP_STA_TIME:1:%d" % (T0 + 60000)])
+        if result is not None:                                                                   # (the product of ST-2a returns nothing)
+            self.assertTrue(result.accepted)
+
+    # -- N-07 ---------------------------------------------------------------------------------------------------------------------------------
+    @n2b_red("N-07", "CHECKPOINT-ROLE-MISMATCH", "the role is scoring_start for position 0 and arrived_station for every later position; any other word is refused")
+    def test_RED_N07_a_checkpoint_with_a_wrong_role_is_refused(self):
+        self.control()
+        for label, position, role in (("an unknown word", 1, "foo"), ("a role that is no checkpoint role", 1, "target_station"), ("position 0 is not the start", 0, "arrived_station"),
+                                      ("a later position claims the start", 1, "scoring_start"), ("no role at all", 1, None)):
+            with self.subTest(label=label):
+                self.reset()
+                if role is None:
+                    self.refusal(lambda o, h: h[1].pop("role"), "old-form", "N-07", "CHECKPOINT-ROLE-MISMATCH")
+                else:
+                    self.refusal(lambda o, h, p=position, r=role: h[p].update(role=r), "role-mismatch", "N-07", "CHECKPOINT-ROLE-MISMATCH", position=position)
+
+    # -- N-08 ---------------------------------------------------------------------------------------------------------------------------------
+    @n2b_red("N-08", "RETRY-WHILE-IDENTITY-UNAVAILABLE", "while the application holds no verified list / scenario identity the retry is refused (it never falls back to station 0)")
+    def test_RED_N08_a_retry_while_the_current_identity_is_unavailable_is_refused(self):
+        self.control()
+        for label, mutate, reason in (("no list id", lambda o, h: setattr(o, "bve_list_id", ""), "scope-incomplete"),
+                                      ("unknown scenario", lambda o, h: setattr(o, "current_scenario_id", -1), "scope-incomplete"),
+                                      ("empty station list", lambda o, h: setattr(o, "station_list", []), "no-station-list"),
+                                      ("no station list", lambda o, h: setattr(o, "station_list", None), "no-station-list"),
+                                      ("station list attribute missing", lambda o, h: delattr(o, "station_list"), "no-station-list")):
+            with self.subTest(label=label):
+                self.reset()
+                self.refusal(mutate, reason, "N-08", "RETRY-WHILE-IDENTITY-UNAVAILABLE")
+
+    # -- N-09 ---------------------------------------------------------------------------------------------------------------------------------
+    @n2b_red("N-09", "REFUSED-RETRY-IS-COUNTED", "the retry count grows only by a request that was sent: a refusal, a request that could not be sent and the same request twice add nothing")
+    def test_RED_N09_a_refused_retry_is_not_counted_and_changes_nothing(self):
+        o = self.o
+        self.hist[1]["scope"] = (SID, LID, 6)                                                    # the checkpoint belongs to another list size
+        self.assertNotIn("was_advancing_before_menu", o.__dict__)
+        self.confirm(1)
+        ok = (o.total_retry_count == 2 and self.sent() == [] and o.save_data is self.hist and len(o.save_data) == 4 and o.score == 77 and o.menu_state == 3 and
+              "was_advancing_before_menu" not in o.__dict__ and not o.is_official_jumping)
+        self.contract(ok, "N-09", "REFUSED-RETRY-IS-COUNTED",
+                      "count %r (was 2), commands %r, history %d, menu_state %r, was_advancing set %r" % (o.total_retry_count, self.sent(), len(o.save_data), o.menu_state,
+                                                                                                         "was_advancing_before_menu" in o.__dict__))
+        for label, position, expected in (("a later station", 1, 3), ("the start", 0, 0)):
+            with self.subTest(label=label):
+                self.reset()
+                self.confirm(position)
+                self.assertEqual(o_count(self), expected)
+        self.reset()
+        self.managed(None)                                                                       # the managed client refused to send: the request was never sent
+        self.confirm(1)
+        self.assertEqual(o_count(self), 2)
+        self.reset()
+        self.managed(RID1)
+        self.confirm(1)
+        self.assertEqual(o_count(self), 3)
+        self.o.is_official_jumping = False                                                       # (the jump is over)
+        self.send_result = RID2
+        self.confirm(2)
+        self.assertEqual(o_count(self), 4)                                                       # another request: counted
+        self.o.is_official_jumping = False
+        self.confirm(3)                                                                          # the same RequestId answered again: it is the same request, counted once
+        self.assertEqual(o_count(self), 4)
+
+    # -- N-10 ---------------------------------------------------------------------------------------------------------------------------------
+    @n2b_red("N-10", "SAVE-THEN-RETRY-CHAIN-SAME-POSITION", "an arrival saved at the second of two same-position stations is retried to THAT station")
+    def test_RED_N10_the_second_same_position_station_is_saved_and_retried_as_itself(self):
+        o = self.o
+        stations = [st("A", 0.0), st("B1", 1000.0), st("B2", 1000.0), st("D", 3000.0), st("E", 4000.0, terminal=True)]
+        o.station_list = stations
+        bind_scope(o, stations)
+        o.bve_arr_idx = 1
+        self.arrive(1000.0, 999.0, name="B1", is_pass=1, saves=[ck(stations, 0, T0, role="scoring_start")])
+        o.bve_arr_idx = 2
+        saves = self.arrive(1000.0, 999.0, name="B2", is_pass=1, saves=o.save_data)
+        self.assertEqual([c["station_name"] for c in saves], ["A", "B1", "B2"])                  # (ST-2a: both arrivals have their own checkpoint)
+        self.assertEqual([c["station_index"] for c in saves], [0, 1, 2])
+        self.confirm(2)
+        want = ["JUMP_STA_TIME:2:%d" % saves[2]["time_ms"]]
+        self.contract(self.sent() == want, "N-10", "SAVE-THEN-RETRY-CHAIN-SAME-POSITION", "sent %r, expected %r (B1 and B2 are different stations)" % (self.sent(), want))
+
+
+def o_count(test):
+    return test.o.total_retry_count
+
+
+class I_ThePendingRetry(RetryBase):
+    # -- N-13 ---------------------------------------------------------------------------------------------------------------------------------
+    @n2b_red("N-13", "RETRY-REQUEST-CUTS-THE-HISTORY", "the request alone does not cut the history: [A,B,C,D] stays, the choice is kept as a minimal pending retry (ST-3 cuts it after the matching completion)")
+    def test_RED_N13_the_request_keeps_the_whole_history_and_leaves_a_pending_retry(self):
+        for label, managed, rid in (("normal mode", False, None), ("managed mode", True, RID1)):
+            with self.subTest(label=label):
+                self.reset()
+                o = self.o
+                if managed:
+                    self.managed(rid)
+                self.S.execute_retry(o, 1, True)
+                kept = o.save_data is self.hist and [c["station_name"] for c in o.save_data] == ["A", "B", "C", "D"]
+                self.contract(kept, "N-13", "RETRY-REQUEST-CUTS-THE-HISTORY", "history %r after the request (identical list: %r)" % ([c["station_name"] for c in o.save_data], o.save_data is self.hist))
+                p = getattr(o, "retry_pending", None)
+                ok = (p is not None and p.selected_save_position == 1 and p.selected_station_index == 1 and tuple(p.selected_scope) == (SID, LID, 5) and p.checkpoint is self.hist[1] and
+                      p.request_id == rid and p.scenario_id == SID and p.original_history_length == 4 and p.state == "sent")
+                self.contract(ok, "N-13", "RETRY-REQUEST-CUTS-THE-HISTORY", "pending retry %r" % (p,))
+                self.assertEqual(self.sent(), ["JUMP_STA_TIME:1:%d" % (T0 + 60000)])
+
+    # -- N-14 ---------------------------------------------------------------------------------------------------------------------------------
+    @n2b_red("N-14", "RETRY-WHILE-PENDING-NOT-REFUSED", "while a retry is pending a second one is refused; once the jump is over the stale pending is simply replaced")
+    def test_RED_N14_a_second_retry_while_one_is_pending_is_refused(self):
+        o = self.o
+        self.S.execute_retry(o, 1, True)
+        self.assertTrue(o.is_official_jumping)
+        first = self.sent()
+        result, unchanged, cmds = self.run_retry(2)
+        self.contract(unchanged and cmds == first and getattr(result, "accepted", None) is False and getattr(result, "reason", None) == "retry-pending", "N-14",
+                      "RETRY-WHILE-PENDING-NOT-REFUSED", "second retry: unchanged %r, commands %r, result %r" % (unchanged, cmds, result))
+        self.assertEqual(o.retry_pending.selected_save_position, 1)
+        o.is_official_jumping = False                                                            # the jump is over: the pending is stale
+        result, unchanged, cmds = self.run_retry(2)
+        self.assertTrue(result.accepted)
+        self.assertEqual(o.retry_pending.selected_save_position, 2)
+        self.assertEqual(self.sent(), first + ["JUMP_STA_TIME:2:%d" % (T0 + 120000)])
+
+    # -- N-15 ---------------------------------------------------------------------------------------------------------------------------------
+    @n2b_red("N-15", "PENDING-TRUNCATE-RESOLUTION-ABSENT", "the cut of the history after a matching completion is a pure function of (history, pending, current scope); ST-2b only fixes it, ST-3 wires it")
+    def test_RED_N15_the_truncation_of_a_pending_retry_is_resolved_by_a_pure_function(self):
+        self.contract(hasattr(SI, "resolve_retry_history"), "N-15", "PENDING-TRUNCATE-RESOLUTION-ABSENT", "station_identity has no resolve_retry_history")
+        o = self.o
+        self.managed(RID1)
+        self.S.execute_retry(o, 1, True)
+        pending = o.retry_pending
+        scope = (SID, LID, self.stations)
+
+        absent = object()
+
+        def resolve(history=None, p=absent, current=scope):
+            return SI.resolve_retry_history(self.hist if history is None else history, pending if p is absent else p, current[0], current[1], current[2])
+
+        before = [dict(c) for c in self.hist]
+        cut = resolve()
+        self.assertEqual([c["station_name"] for c in cut], ["A", "B"])
+        self.assertIsNot(cut, self.hist)
+        self.assertEqual([dict(c) for c in self.hist], before)
+        self.assertEqual(len(self.hist), 4)                                                      # the input is never touched
+        self.assertIsNone(resolve(history=self.hist[:1]))                                         # the position is gone
+        self.assertIsNone(resolve(history=[dict(c) for c in self.hist]))                          # another element at the position (cleared / replaced history)
+        self.assertIsNone(resolve(current=(SID + 1, LID, self.stations)))                         # another scenario
+        self.assertIsNone(resolve(current=(SID, "DEADBEEF", self.stations)))                      # another list
+        self.assertIsNone(resolve(current=(SID, LID, self.stations[:3])))                         # another count
+        self.assertIsNone(resolve(p=pending._replace(state="validated")))                         # the request was never sent
+        self.assertIsNone(resolve(p=None))
+        longer = self.hist + [ck(self.stations, 2, T0 + 999, name="C2")]                          # a checkpoint added after the request: the cut is by position
+        self.assertEqual([c["station_name"] for c in resolve(history=longer)], ["A", "B"])
+        self.reset()
+        self.S.execute_retry(self.o, 0, True)
+        zero = self.o.retry_pending
+        self.assertEqual([c["station_name"] for c in SI.resolve_retry_history(self.hist, zero, SID, LID, self.stations)], ["A"])
+
+
+class J_TheRetryHasNoSearch(unittest.TestCase):
+    # -- N-16 ---------------------------------------------------------------------------------------------------------------------------------
+    @n2b_red("N-16", "RETRY-REINFERS-THE-STATION", "execute_retry holds no search over the station list, no distance, no telemetry index and no station-0 constant: the station is the saved StationIndex")
+    def test_RED_N16_execute_retry_does_not_infer_the_station(self):
+        tree = ast.parse(read("scoring_logic.py"))
+        fn = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "execute_retry"]
+        self.assertEqual(len(fn), 1)
+        found = []
+        for node in ast.walk(fn[0]):
+            if isinstance(node, (ast.For, ast.AsyncFor)) and any((isinstance(n, ast.Attribute) and n.attr == "station_list") or (isinstance(n, ast.Name) and n.id == "station_list")
+                                                              for n in ast.walk(node.iter)):
+                found.append("a loop over the station list (line %d)" % node.lineno)
+            if isinstance(node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)) and any(
+                    (isinstance(n, ast.Attribute) and n.attr == "station_list") or (isinstance(n, ast.Name) and n.id == "station_list") for g in node.generators for n in ast.walk(g.iter)):
+                found.append("a comprehension over the station list (line %d)" % node.lineno)
+            if isinstance(node, ast.Name) and node.id in {"enumerate", "min", "max", "abs", "target_bve_sta_idx"}:
+                found.append("%s (line %d)" % (node.id, node.lineno))
+            if isinstance(node, ast.Attribute) and node.attr in {"bve_tgt_idx", "bve_arr_idx", "bve_next_loc", "bve_location", "setting_start_idx"}:
+                found.append("%s (line %d)" % (node.attr, node.lineno))
+            if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant) and type(node.value.value) is int and node.value.value == 0 and
+                    all(isinstance(t, (ast.Name, ast.Attribute)) for t in node.targets)):
+                names = [t.attr if isinstance(t, ast.Attribute) else t.id for t in node.targets]
+                if names != ["total_retry_count"]:
+                    found.append("a constant 0 assigned to %s (line %d)" % (names, node.lineno))
+        self.contract_ok(not found, "N-16", "RETRY-REINFERS-THE-STATION", "execute_retry: %s" % "; ".join(found))
+
+    def contract_ok(self, ok, tid, code, detail=""):
+        if not ok:
+            raise ContractViolation(tid, code, detail)
+
+
+class K_TheRefusalIsDiagnosed(RetryBase):
+    # -- N-17 ---------------------------------------------------------------------------------------------------------------------------------
+    @n2b_red("N-17", "RETRY-REFUSAL-NOT-DIAGNOSED", "ONE structured diagnostic line per retry operation (accepted or refused) in the internal log; nothing on the screen, no repetition, no per-tick output")
+    def test_RED_N17_every_retry_operation_leaves_one_structured_line(self):
+        o = self.o
+        self.hist[1]["scope"] = (SID, LID, 6)
+        popups_before = len(o.popups)
+        self.confirm(1)
+        names = [e for e, f in self.lines if e.startswith("retry-")]
+        rejected = self.events_of("retry-rejected")
+        ok = names == ["retry-rejected"] and len(rejected) == 1 and rejected[0].get("why") == "count-mismatch"
+        self.contract(ok, "N-17", "RETRY-REFUSAL-NOT-DIAGNOSED", "retry events %r" % (names,))
+        f = rejected[0]
+        self.assertEqual((f["pos"], f["idx"], f["h"], f["c"], f["pend"], f["cur"], f["sav"]), (1, 1, "4/4", "2/2", "none", "%d:%s:5" % (SID, LID), "%d:%s:6" % (SID, LID)))
+        self.assertEqual((len(o.popups), o.menu_state), (popups_before, 3))                      # nothing on the screen, the menu is where it was
+        self.confirm(1)                                                                          # a second operation is a second line (none repeated inside one operation)
+        self.assertEqual([e for e, _ in self.lines if e.startswith("retry-")], ["retry-rejected", "retry-rejected"])
+        self.reset()
+        self.managed(RID1)
+        self.confirm(2)
+        accepted = self.events_of("retry-accepted")
+        self.assertEqual([e for e, _ in self.lines if e.startswith("retry-")], ["retry-accepted"])
+        g = accepted[0]
+        self.assertEqual((g["pos"], g["idx"], g["h"], g["c"], g["pend"], g["id"], g["cur"]), (2, 2, "4/4", "2/3", "sent", RID1[:4].hex().upper(), "%d:%s:5" % (SID, LID)))
+
+    def test_the_line_fits_the_caller_cap_for_every_reason_and_names_nothing(self):
+        """The Caller keeps 160 characters of an application line: prefix `[MANAGED] event=retry-rejected pid=1234567 ` + the fields (sorted) must fit, with a
+        station list of 99 stations, a 4-digit scenario and a 15-checkpoint history."""
+        self.assertTrue(hasattr(SI, "RETRY_REASONS"), "PREMISE-MISSING: station_identity.RETRY_REASONS (ST-2b) is not in this product; this test is never skipped")
+        longest = 0
+        for reason, mutate in (("count-mismatch", lambda o, h: h[3].update(scope=(SID, LID, 98))), ("location-mismatch", lambda o, h: h[3].update(station_location=1234.5)),
+                               ("old-form", lambda o, h: h[3].pop("station_location")), ("role-mismatch", lambda o, h: h[3].update(role="x" * 40)),
+                               ("index-out-of-range", lambda o, h: h[3].update(station_index=77)), ("no-station-list", lambda o, h: setattr(o, "station_list", []))):
+            with self.subTest(reason=reason):
+                self.reset()
+                mutate(self.o, self.hist)
+                self.o.current_scenario_id = 7777
+                self.o.total_retry_count = 12
+                self.confirm(3)
+                line = [f for e, f in self.lines if e == "retry-rejected"][0]
+                text = "[MANAGED] event=retry-rejected pid=1234567"
+                for key in sorted(line):
+                    text += " %s=%s" % (key, line[key])
+                longest = max(longest, len(text))
+                self.assertLessEqual(len(text), 160, text)
+                self.assertNotIn("\\", text)
+                self.assertNotIn("B", [w for w in text.split(" ") if w.startswith("name=")])    # no station name is ever a field
+
+
+# ==============================================================================================================================================
+# L - the eight ST-0 REDs that ST-2b turns GREEN (executed here: same contract id, same declared code, same body)
+#     T08 T03 T04 T05 x2 T06 T09 (the retry) and T23 (static). tests/red_st0_stationindex_contract.py keeps the originals, unchanged, as MIGRATED evidence of the RED.
+# ==============================================================================================================================================
+def mst(name, loc, **kw):
+    return CH.sta(name, loc, **kw)
+
+
+def mcp(loc, t, name="X", target_loc=None, score=0, details=None, stop_error=0.0):
+    d = {"loc": loc, "time_ms": t, "score": score, "target_loc": loc if target_loc is None else target_loc, "station_name": name, "stop_error": stop_error}
+    if details is not None:
+        d["score_details"] = dict(details)
+    return d
+
+
+def contract_cp(stations, index, loc, t, name, role="arrived_station", sid=SID, list_id=LID, count=None, details=None, station_location=None):
+    """A checkpoint with ALL the fields of the contract on top of the seven existing ones (the helper of the ST-0 RED file)."""
+    d = mcp(loc, t, name=name, target_loc=stations[index]["location"] if 0 <= index < len(stations) else loc, details=details)
+    d.update(station_index=index, scope=(sid, list_id, len(stations) if count is None else count),
+             station_location=stations[index]["location"] if station_location is None and 0 <= index < len(stations) else station_location, role=role)
+    d["stop_error"] = d["target_loc"] - loc
+    return d
+
+
+class L_MigratedRetry(ContractMixin, F1.Base):
+    def fingerprint(self):
+        o = self.o
+        return (self.snap(), o.is_official_retry, o.is_first_station, o.total_retry_count, o.has_departed, o.is_first_udp, o.rollback_msg, o.rollback_msg_timer,
+                o.score, dict(o.score_details), [dict(c) for c in o.save_data], o.menu_state)
+
+    def positive_control(self, stations):
+        """A checkpoint whose saved index AND position agree is retried: it proves that the fixture of a REFUSAL test is accepted by a product that has no fault to refuse."""
+        o = self.o
+        bind_scope(o, stations)
+        saves = [contract_cp(stations, 0, 0.0, T0, "A", role="scoring_start"), contract_cp(stations, 1, 1000.0, T0 + 60000, "B", details=F1.ZERO)]
+        cmds = self.retry(1, saves, stations)
+        self.assertEqual(cmds, ["JUMP_STA_TIME:1:%d" % (T0 + 60000)])
+        self.events.clear()
+        o.is_official_jumping = False
+
+    def test_RED_T08_the_retry_station_is_the_saved_index_not_a_search_from_the_checkpoint_position(self):
+        o = self.o
+        stations = [mst("A", 0.0), mst("B", 1000.0), mst("C", 2000.0), mst("D", 3000.0, terminal=True)]
+        self.positive_control(stations)
+        bind_scope(o, stations)
+        saved = contract_cp(stations, 2, 1500.0, T0 + 120000, "C", details=F1.ZERO)                     # 500 m from B and from C: a 100 m search finds nothing
+        saves = [contract_cp(stations, 0, 0.0, T0, "A", role="scoring_start"), contract_cp(stations, 1, 1000.0, T0 + 60000, "B", details=F1.ZERO), saved]
+        cmds = self.retry(2, saves, stations)
+        self.contract(cmds == ["JUMP_STA_TIME:2:%d" % (T0 + 120000)], "T08", "RETRY-DOES-NOT-USE-THE-SAVED-INDEX", "sent %r instead of the saved index 2" % (cmds,))
+
+    def test_RED_T03_several_stations_within_100_m_keep_the_saved_index(self):
+        o = self.o
+        stations = [mst("A", 0.0), mst("B", 1000.0), mst("C", 1060.0), mst("D", 3000.0, terminal=True)]
+        self.positive_control(stations)
+        bind_scope(o, stations)
+        saves = [contract_cp(stations, 0, 0.0, T0, "A", role="scoring_start"), contract_cp(stations, 1, 1000.0, T0 + 1000, "B", details=F1.ZERO),
+                 contract_cp(stations, 2, 1050.0, T0 + 60000, "C", details=F1.ZERO)]
+        cmds = self.retry(2, saves, stations)
+        self.contract(cmds == ["JUMP_STA_TIME:2:%d" % (T0 + 60000)], "T03", "RETRY-IGNORES-THE-SAVED-INDEX-AMONG-NEIGHBOURS", "sent %r; the saved index is 2 (C), B is 50 m away" % (cmds,))
+
+    def test_RED_T04_a_retry_to_the_second_of_two_same_position_stations_goes_to_the_second(self):
+        o = self.o
+        stations = [mst("A", 0.0), mst("B1", 1000.0), mst("B2", 1000.0), mst("D", 3000.0, terminal=True)]
+        self.positive_control(stations)
+        bind_scope(o, stations)
+        saves = [contract_cp(stations, 0, 0.0, T0, "A", role="scoring_start"), contract_cp(stations, 1, 1000.0, T0 + 1000, "B1", details=F1.ZERO),
+                 contract_cp(stations, 2, 1000.0, T0 + 60000, "B2", details=F1.ZERO)]
+        cmds = self.retry(2, saves, stations)
+        self.contract(cmds == ["JUMP_STA_TIME:2:%d" % (T0 + 60000)], "T04", "SAME-POSITION-PAIR-NOT-DISTINGUISHED", "sent %r; B1 and B2 are different elements" % (cmds,))
+
+    def refusal_case(self, stations, saved_mutator, tid, code):
+        o = self.o
+        self.positive_control(stations)
+        bind_scope(o, stations)
+        saved = contract_cp(stations, 1, 1000.0, T0 + 60000, "B", details=F1.ZERO)
+        saved_mutator(saved)
+        saves = [contract_cp(stations, 0, 0.0, T0, "A", role="scoring_start"), saved]
+        o.save_data = saves
+        o.station_list = stations
+        self.assertEqual(len(o.save_data), 2)
+        before = self.fingerprint()
+        self.S.execute_retry(o, 1, True)
+        cmds = self.sent()
+        changed = self.fingerprint() != before
+        self.contract((cmds == []) and not changed, tid, code, "commands %r, state changed: %r" % (cmds, changed))
+
+    def test_RED_T05_an_out_of_range_saved_index_is_refused_without_a_command_or_a_state_change(self):
+        stations = [mst("A", 0.0), mst("B", 1000.0), mst("C", 2000.0), mst("D", 3000.0, terminal=True)]
+        for bad in (9, 4, -1):
+            with self.subTest(bad=bad):
+                self.rig.close()
+                self.setUp()
+                self.refusal_case(stations, lambda c, bad=bad: c.update(station_index=bad), "T05", "INVALID-INDEX-NOT-REFUSED")
+
+    def test_RED_T05_an_old_form_checkpoint_without_station_index_is_refused(self):
+        stations = [mst("A", 0.0), mst("B", 1000.0), mst("C", 2000.0), mst("D", 3000.0, terminal=True)]
+        self.refusal_case(stations, lambda c: c.pop("station_index"), "T05", "OLD-FORMAT-CHECKPOINT-NOT-REFUSED")
+
+    def test_RED_T06_a_checkpoint_of_another_generation_or_list_is_refused(self):
+        stations = [mst("A", 0.0), mst("B", 1000.0), mst("C", 2000.0), mst("D", 3000.0, terminal=True)]
+        variants = (("scenario generation", lambda c: c.update(scope=(SID + 1, LID, 4))),
+                    ("station list id", lambda c: c.update(scope=(SID, "DEADBEEF", 4))),
+                    ("station count", lambda c: c.update(scope=(SID, LID, 5))))
+        for label, mutate in variants:
+            with self.subTest(label=label):
+                self.rig.close()
+                self.setUp()
+                self.refusal_case(stations, mutate, "T06", "SCOPE-MISMATCH-NOT-REFUSED")
+
+    def test_RED_T09_the_retry_to_the_initial_checkpoint_uses_the_chosen_start_station(self):
+        o = self.o
+        o.setting_start_idx = 2
+        stations = [mst("A", 0.0), mst("P", 950.0), mst("Q", 1000.0), mst("D", 3000.0, terminal=True)]
+        bind_scope(o, stations)
+        initial = contract_cp(stations, 2, 1000.0, T0, "Q", role="scoring_start")
+        self.assertEqual((initial["station_index"], initial["station_location"]), (2, 1000.0))
+        cmds = self.retry(0, [initial], stations)
+        self.contract(cmds == ["JUMP_STA_TIME:2:%d" % T0] and o.expected_target_loc == 1000.0, "T09", "INITIAL-CHECKPOINT-RETRY-IGNORES-START-INDEX",
+                      "sent %r, expected location %r (the position search lands on P, index 1)" % (cmds, o.expected_target_loc))
+
+    def test_RED_T23_execute_retry_has_no_100_m_position_search(self):
+        tree = ast.parse(read("scoring_logic.py"))
+        fn = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "execute_retry"]
+        self.assertEqual(len(fn), 1)                                                                  # the function exists exactly once (a path problem is not a contract failure)
+        hundreds = [n.value for n in ast.walk(fn[0]) if isinstance(n, ast.Constant) and isinstance(n.value, float) and n.value == 100.0]
+        self.contract(not hundreds, "T23", "EXECUTE-RETRY-HAS-100M-SEARCH", "execute_retry still contains %d float 100.0" % len(hundreds))
+
+
+# ==============================================================================================================================================
+# M - Phase ST-2b: the pure retry layer of station_identity (no Qt, no Overlay) and the retry inside the real Overlay: every reason code, the order of the checks, StationIndex 0,
+#     the first checkpoint and a middle checkpoint through the same path, the pending retry, the count, the diagnostic line
+# ==============================================================================================================================================
+def ck_list(count=4):
+    stations = abcde()
+    return stations, history_of(stations, count)
+
+
+class M_ThePureRetryLayer(unittest.TestCase):
+    def setUp(self):
+        self.stations, self.hist = ck_list()
+        self.list = adopted(self.stations)
+
+    GIVEN = object()
+
+    def check(self, position=1, scenario=SID, list_id=LID, stations=None, pending_active=False, history=GIVEN):
+        return SI.check_retry_checkpoint(self.hist if history is self.GIVEN else history, position, scenario, list_id, self.list if stations is None else stations, pending_active)
+
+    def test_the_types_and_the_vocabulary(self):
+        self.assertEqual(SI.RetryResult._fields, ("accepted", "reason", "request_id", "selected_station_index"))
+        self.assertEqual(SI.RetryPending._fields, ("selected_save_position", "selected_station_index", "selected_scope", "checkpoint", "request_id", "scenario_id",
+                                                   "original_history_length", "state"))
+        self.assertEqual(SI.RETRY_REASONS, ("no-checkpoint", "old-form", "retry-pending", "jump-unavailable", "time-invalid"))
+        self.assertEqual(set(SI.RETRY_REASONS) & set(SI.REASONS), set())                 # new words only: the words of ST-2a are reused, none is duplicated under another name
+        self.assertEqual(SI.RETRY_STATES, ("validated", "sent"))
+        self.assertEqual(SI.REASONS, ("ok", "no-observer", "not-ready", "no-station-list", "scenario-mismatch", "list-mismatch", "count-mismatch", "index-negative",
+                                      "index-out-of-range", "location-invalid", "location-mismatch", "role-mismatch", "scope-incomplete", "internal-error"))     # (ST-2a's tuple is unchanged)
+
+    def test_an_intact_checkpoint_is_accepted_for_every_position_and_the_result_is_immutable(self):
+        for position in range(4):
+            with self.subTest(position=position):
+                result = self.check(position)
+                self.assertEqual(result, SI.RetryResult(True, "ok", None, position))
+                with self.assertRaises(AttributeError):
+                    result.accepted = False
+
+    def test_station_index_0_is_a_station_like_any_other_at_the_start_and_later_in_the_history(self):
+        # a loop line: the start station comes again as a later arrival (index 0, role arrived_station); neither is refused and neither is a fall-back
+        loop = self.hist + [ck(self.stations, 0, T0 + 999999)]
+        self.assertEqual(self.check(0, history=loop), SI.RetryResult(True, "ok", None, 0))
+        self.assertEqual(self.check(4, history=loop), SI.RetryResult(True, "ok", None, 0))
+
+    def test_no_checkpoint(self):
+        for position in (-1, 4, 99, "1", 1.0, True, None):
+            with self.subTest(position=position):
+                self.assertEqual(self.check(position), SI.RetryResult(False, "no-checkpoint", None, -1))
+        for history in (None, (), "abc", {}):
+            self.assertEqual(self.check(0, history=history).reason, "no-checkpoint")
+        self.assertEqual(self.check(0, history=[]).reason, "no-checkpoint")
+
+    def test_the_order_of_the_checks(self):
+        broken = self.hist[1]
+        broken.pop("station_index")                                                      # old form ...
+        broken["role"] = "foo"                                                           # ... and a wrong role ...
+        broken["time_ms"] = -5                                                           # ... and a wrong time
+        self.assertEqual(self.check(1, pending_active=True).reason, "retry-pending")      # pending first (after the position)
+        self.assertEqual(self.check(9, pending_active=True).reason, "no-checkpoint")
+        self.assertEqual(self.check(1, stations=[]).reason, "no-station-list")            # the application's side next
+        self.assertEqual(self.check(1, list_id="").reason, "scope-incomplete")
+        self.assertEqual(self.check(1).reason, "old-form")                                 # then the checkpoint's form
+        broken["station_index"] = 1
+        self.assertEqual(self.check(1).reason, "role-mismatch")                           # the position agrees with index 1, so the role is next
+        broken["role"] = "arrived_station"
+        self.assertEqual(self.check(1).reason, "time-invalid")
+        broken["time_ms"] = T0
+        self.assertEqual(self.check(1), SI.RetryResult(True, "ok", None, 1))
+
+    def test_old_form(self):
+        for key in ("station_index", "scope", "station_location", "role", "score"):
+            with self.subTest(missing=key):
+                self.setUp()
+                self.hist[1].pop(key)
+                self.assertEqual(self.check(1), SI.RetryResult(False, "old-form", None, 1 if key != "station_index" else -1))
+                self.assertEqual(SI.missing_checkpoint_item(self.hist[1]), key)
+        for label, scope in (("two items", (SID, LID)), ("four items", (SID, LID, 5, 1)), ("a string", "7:A1B2C3D4:5"), ("no list id", (SID, "", 5)), ("unknown scenario", (-1, LID, 5)),
+                             ("a bool count", (SID, LID, True)), ("None", None)):
+            with self.subTest(scope=label):
+                self.setUp()
+                self.hist[1]["scope"] = scope
+                self.assertEqual(self.check(1).reason, "old-form")
+        for label, items in (("score is not a number", {"score": "10"}), ("score is a bool", {"score": True}), ("score is NaN", {"score": float("nan")}), ("details are no dict", {"score_details": [1]})):
+            with self.subTest(label=label):
+                self.setUp()
+                self.hist[1].update(items)
+                self.assertEqual(self.check(1).reason, "old-form")
+        self.setUp()
+        self.hist[1] = "not a checkpoint"
+        self.assertEqual(self.check(1).reason, "old-form")
+
+    def test_scope_mismatch_names_the_first_difference_scenario_then_list_then_count(self):
+        self.assertEqual(self.check(1, scenario=SID + 1).reason, "scenario-mismatch")
+        self.assertEqual(self.check(1, list_id="DEADBEEF").reason, "list-mismatch")
+        self.hist[1]["scope"] = (SID, LID, 6)
+        self.assertEqual(self.check(1).reason, "count-mismatch")
+        self.hist[1]["scope"] = (SID + 1, "DEADBEEF", 6)
+        self.assertEqual(self.check(1).reason, "scenario-mismatch")
+        self.hist[1]["scope"] = [SID, LID, 5]                                            # (a stored list is as good as a stored tuple)
+        self.assertEqual(self.check(1).reason, "ok")
+
+    def test_the_index_is_inside_the_list(self):
+        for value, reason in ((-1, "index-negative"), (-9, "index-negative"), ("1", "index-negative"), (True, "index-negative"), (1.0, "index-negative"),
+                              (5, "index-out-of-range"), (99, "index-out-of-range")):
+            with self.subTest(index=value):
+                self.setUp()
+                self.hist[1]["station_index"] = value
+                self.assertEqual(self.check(1).reason, reason)
+
+    def test_the_position_is_a_check_of_the_index_never_a_way_to_find_it(self):
+        self.hist[1]["station_location"] = 1000.0 + 0.01
+        self.assertTrue(self.check(1).accepted)                                           # exactly the tolerance
+        self.hist[1]["station_location"] = 1000.0 + 0.0101
+        self.assertEqual(self.check(1).reason, "location-mismatch")
+        self.hist[1]["station_location"] = 2000.0                                         # the position of ANOTHER station of the list: still a contradiction, never a re-identification
+        self.assertEqual(self.check(1).reason, "location-mismatch")
+        for bad in (float("nan"), float("inf"), "1000", True, [1000.0]):
+            self.hist[1]["station_location"] = bad
+            self.assertEqual(self.check(1).reason, "location-invalid", repr(bad))
+        broken_list = adopted([st("A", 0.0), {"name": "B"}, st("C", 2000.0), st("D", 3000.0), st("E", 4000.0, terminal=True)])
+        self.hist[1]["station_location"] = 1000.0
+        self.assertEqual(self.check(1, stations=broken_list).reason, "location-invalid")  # the list entry has no position
+
+    def test_the_role_is_the_role_of_the_place(self):
+        for position, role, ok in ((0, "scoring_start", True), (0, "arrived_station", False), (1, "arrived_station", True), (1, "scoring_start", False),
+                                   (1, "target_station", False), (1, "", False), (2, 5, False)):
+            with self.subTest(position=position, role=role):
+                self.setUp()
+                self.hist[position]["role"] = role
+                self.assertEqual(self.check(position).accepted, ok)
+                if not ok:
+                    self.assertEqual(self.check(position).reason, "role-mismatch")
+
+    def test_the_time_is_a_finite_number_not_below_zero(self):
+        for value, ok in ((0, True), (T0, True), (0.5, True), (-1, False), (float("nan"), False), (float("inf"), False), ("1", False), (True, False), (None, False)):
+            with self.subTest(time_ms=value):
+                self.setUp()
+                self.hist[1]["time_ms"] = value
+                self.assertEqual(self.check(1).accepted, ok)
+                if not ok:
+                    self.assertEqual(self.check(1).reason, "time-invalid")
+        self.hist[1].pop("time_ms")
+        self.assertEqual(self.check(1).reason, "time-invalid")
+
+    def test_nothing_is_changed_and_nothing_raises(self):
+        junk = (None, 0, "x", [], {}, (), object(), float("nan"), -1, 10 ** 30)
+        before = [dict(c) for c in self.hist]
+        for history in junk + (self.hist,):
+            for position in junk + (0, 1, 3):
+                for stations in junk[:3] + (self.list,):
+                    for scenario in (None, "7", -1, SID):
+                        for list_id in (None, 5, "", LID):
+                            result = SI.check_retry_checkpoint(history, position, scenario, list_id, stations, False)
+                            self.assertIsInstance(result, SI.RetryResult)
+                            if history is self.hist and position in (0, 1, 3) and stations is self.list and scenario == SID and list_id == LID:
+                                self.assertTrue(result.accepted)
+                            else:
+                                self.assertFalse(result.accepted)
+        self.assertEqual([dict(c) for c in self.hist], before)
+
+    def test_the_pending_retry_of_an_accepted_checkpoint(self):
+        pending = SI.make_retry_pending(self.hist, 2)
+        self.assertEqual((pending.selected_save_position, pending.selected_station_index, tuple(pending.selected_scope), pending.request_id, pending.scenario_id,
+                          pending.original_history_length, pending.state), (2, 2, (SID, LID, 5), None, SID, 4, "validated"))
+        self.assertIs(pending.checkpoint, self.hist[2])
+        sent = pending._replace(request_id=b"\x09" * 16, state="sent")
+        self.assertEqual((sent.request_id, sent.state), (b"\x09" * 16, "sent"))
+        self.assertIsNone(SI.make_retry_pending(self.hist, 9))
+        self.assertIsNone(SI.make_retry_pending(None, 0))
+        self.assertIsNone(SI.make_retry_pending(self.hist, 1, state="completed"))             # ST-2b knows validated and sent only
+        self.hist[1].pop("scope")
+        self.assertIsNone(SI.make_retry_pending(self.hist, 1))
+
+    def test_the_diagnostic_event_names_the_reason_and_the_numbers_and_nothing_else(self):
+        scope = SI.StationScope(SID, LID, 5)
+        refused = SI.check_retry_checkpoint(self.hist, 1, SID + 1, LID, self.list)
+        self.hist[1]["station_name"] = "SECRET STATION NAME"
+        event, fields = SI.retry_event(refused, 1, 4, 4, 2, 2, None, SI.StationScope(SID + 1, LID, 5), self.hist[1], self.list)
+        self.assertEqual(event, "retry-rejected")
+        self.assertEqual(fields, {"pos": 1, "idx": 1, "h": "4/4", "c": "2/2", "pend": "none", "cur": "%d:%s:5" % (SID + 1, LID), "why": "scenario-mismatch", "sav": "%d:%s:5" % (SID, LID)})
+        accepted = SI.RetryResult(True, "ok", b"\xab\xcd\xef\x01" + b"\x00" * 12, 2)
+        event, fields = SI.retry_event(accepted, 2, 4, 4, 2, 3, SI.make_retry_pending(self.hist, 2, accepted.request_id, "sent"), scope)
+        self.assertEqual((event, fields["id"], fields["pend"], fields["c"], fields["h"]), ("retry-accepted", "ABCDEF01", "sent", "2/3", "4/4"))
+        self.assertNotIn("SECRET", repr(fields))
+        for result, extra in ((SI.check_retry_checkpoint(self.hist, 1, SID, LID, self.list), {}), (SI.RetryResult(False, "old-form", None, -1), {"miss": "scope"})):
+            self.assertEqual(SI.retry_event(result, 1, 4, 4, 2, 2, None, scope, self.hist[1], self.list)[0], "retry-accepted" if result.accepted else "retry-rejected")
+        # per reason: the one extra item that explains it
+        for mutate, reason, key, expect in ((lambda c: c.update(station_location=1234.5), "location-mismatch", "loc", "1234.50/1000.00"), (lambda c: c.update(role="x" * 40), "role-mismatch", "role", "other"),
+                                            (lambda c: c.pop("station_location"), "old-form", "miss", "station_location"), (lambda c: c.update(role="target_station"), "role-mismatch", "role", "target_station")):
+            self.setUp()
+            mutate(self.hist[1])
+            result = self.check(1)
+            self.assertEqual(result.reason, reason)
+            self.assertEqual(SI.retry_event(result, 1, 4, 4, 2, 2, None, scope, self.hist[1], self.list)[1][key], expect)
+        no_list = SI.RetryResult(False, "no-station-list", None, 1)
+        self.assertEqual(SI.retry_event(no_list, 1, 4, 4, 2, 2, None, None, self.hist[1], [], "no-observer")[1]["sync"], "no-observer")
+        self.assertEqual(SI.retry_event(no_list, 1, 4, 4, 2, 2, None, None, self.hist[1], [])[1]["cur"], "none")
+        waiting = SI.make_retry_pending(self.hist, 1, b"\x01" * 16, "sent")
+        self.assertEqual(SI.retry_event(SI.RetryResult(False, "retry-pending", None, 2), 2, 4, 4, 2, 2, waiting, scope)[1]["ppos"], 1)
+        self.assertEqual(SI.retry_event(object(), 1, 4, 4, 2, 2, None, scope), ("retry-rejected", {"why": "internal-error"}))      # never raises
+
+
+class M2_TheRetryInTheOverlay(RetryBase):
+    def test_the_first_checkpoint_and_a_middle_checkpoint_use_the_same_path_and_their_own_saved_index(self):
+        for position, expected_cmd in ((0, "JUMP_STA_TIME:0:%d" % T0), (2, "JUMP_STA_TIME:2:%d" % (T0 + 120000))):
+            with self.subTest(position=position):
+                self.reset()
+                o = self.o
+                o.setting_start_idx = 3                                                      # what the user has chosen NOW plays no part: the checkpoint carries its station
+                o.bve_tgt_idx, o.bve_arr_idx, o.bve_next_loc, o.bve_location = 4, 4, 4000.0, 3999.0       # nor does what the sender says now, nor where the train is
+                result = self.S.execute_retry(o, position, True)
+                self.assertEqual((result.accepted, result.selected_station_index), (True, position))
+                self.assertEqual(self.sent(), [expected_cmd])
+                self.assertEqual(o.expected_target_loc, self.stations[position]["location"])
+                self.assertEqual(o.is_official_retry, position > 0)
+                self.assertEqual(o.is_first_station, position == 0)
+
+    def test_station_index_0_later_in_the_history_is_retried_to_station_0_not_refused(self):
+        o = self.o
+        o.save_data = self.hist + [ck(self.stations, 0, T0 + 999999)]
+        result = self.S.execute_retry(o, 4, True)
+        self.assertEqual((result.accepted, result.selected_station_index), (True, 0))
+        self.assertEqual(self.sent(), ["JUMP_STA_TIME:0:%d" % (T0 + 999999)])
+        self.assertTrue(o.is_official_retry)                                                 # (a later position is a retry; only position 0 is the first station)
+
+    def test_the_loc_method_condition_is_kept_for_a_middle_station(self):
+        o = self.o
+        self.stations[1].update(def_time=T0 + 100000, raw_dep=T0 + 15000 + 60000)           # defined later than calculated, checkpoint earlier than defined
+        self.hist[1]["time_ms"] = T0 + 60000
+        self.S.execute_retry(o, 1, True)
+        self.assertEqual(self.sent(), ["JUMP_LOC_TIME:1000.0:%d" % (T0 + 60000)])
+
+    def test_the_reasons_of_the_overlay_side(self):
+        o = self.o
+        for label, setup, position, reason in (
+                ("no checkpoint", lambda: None, 9, "no-checkpoint"),
+                ("negative position", lambda: None, -1, "no-checkpoint"),
+                ("time", lambda: self.hist[1].update(time_ms=-1), 1, "time-invalid"),
+                ("no jump client in the managed mode", lambda: setattr(o, "dataplane_strict", True), 1, "jump-unavailable"),
+                ):
+            with self.subTest(label=label):
+                self.reset()
+                o = self.o
+                setup()
+                result, unchanged, cmds = self.run_retry(position)
+                self.assertEqual((result.accepted, result.reason, cmds, unchanged), (False, reason, [], True))
+        self.reset()
+        self.o.save_data = None                                                              # (no list at all: the answer is a refusal, never an exception)
+        self.assertEqual(self.S.execute_retry(self.o, 1, True).reason, "no-checkpoint")
+        self.reset()
+        o = self.o
+        o.save_data = [object()]
+        self.assertEqual(self.S.execute_retry(o, 0, True).reason, "old-form")
+        o.retry_pending = "not a pending retry"                                              # a stale or foreign value never raises: it is no pending retry
+        self.assertEqual(self.S.execute_retry(o, 0, True).reason, "old-form")
+
+    def test_a_refusal_at_the_start_does_not_reset_the_retry_count_an_acceptance_does(self):
+        o = self.o
+        self.hist[0]["role"] = "arrived_station"
+        result, unchanged, cmds = self.run_retry(0)
+        self.assertEqual((result.reason, unchanged, o.total_retry_count), ("role-mismatch", True, 2))
+        self.hist[0]["role"] = "scoring_start"
+        self.S.execute_retry(o, 0, True)
+        self.assertEqual(o.total_retry_count, 0)
+
+    def test_the_request_id_and_the_pending_retry_of_the_managed_mode(self):
+        o = self.o
+        self.managed(RID1)
+        result = self.S.execute_retry(o, 2, True)
+        self.assertEqual((result.accepted, result.request_id), (True, RID1))
+        self.assertEqual((o.retry_pending.request_id, o.retry_pending.state), (RID1, "sent"))
+        self.reset()
+        o = self.o
+        self.managed(None)                                                                  # the client refused to send: accepted, but nothing was sent
+        result = self.S.execute_retry(o, 2, True)
+        self.assertEqual((result.accepted, result.request_id), (True, None))
+        self.assertEqual((o.retry_pending.request_id, o.retry_pending.state), (None, "validated"))
+        self.assertEqual(o.save_data, self.hist)                                             # (still whole)
+        self.reset()
+        o = self.o
+        self.S.execute_retry(o, 2, True)                                                    # the normal mode has no RequestId: the plain send IS the request
+        self.assertEqual((o.retry_pending.request_id, o.retry_pending.state), (None, "sent"))
+
+    def test_the_session_and_the_generation_discard_the_pending_retry(self):
+        import managed_input
+        for discard in (managed_input.discard_scoring_session, managed_input.discard_generation_state):
+            with self.subTest(discard=discard.__name__):
+                self.reset()
+                o = self.o
+                self.S.execute_retry(o, 1, True)
+                self.assertIsNotNone(o.retry_pending)
+                discard(o)
+                self.assertIsNone(o.retry_pending)
+                self.assertEqual(o.save_data, [])
+        self.assertIsNone(managed_input.generation_defaults()["retry_pending"])
+
+    def test_a_new_scoring_start_discards_the_pending_retry(self):
+        o = self.o
+        self.S.execute_retry(o, 1, True)
+        self.assertIsNotNone(o.retry_pending)
+        o.is_official_jumping = False
+        o.setting_start_idx = 1
+        o.menu_state = 10
+        o.menu_cursor = 1
+        o.handle_menu_enter(True)
+        self.assertTrue(o.is_scoring_mode)                                                    # the fixture reached the start of the scoring ...
+        self.assertIsNone(o.retry_pending)                                                    # ... which began a new history: the old choice belongs to the old one
+        self.assertEqual([c["role"] for c in o.save_data], ["scoring_start"])
+
+    def test_a_pending_retry_whose_history_is_gone_is_stale_and_never_blocks_the_next_retry(self):
+        o = self.o
+        self.S.execute_retry(o, 1, True)
+        self.assertTrue(o.is_official_jumping)
+        o.save_data = history_of(self.stations, 4)                                          # another history (a new scoring session): the pending retry points at an object that is not in it
+        o.save_data[1]["time_ms"] = T0 + 61000
+        result = self.S.execute_retry(o, 1, True)
+        self.assertTrue(result.accepted)
+        self.assertIs(o.retry_pending.checkpoint, o.save_data[1])
+
+    def test_the_diagnostic_goes_to_the_sink_only_and_the_normal_mode_without_a_sink_writes_nothing(self):
+        o = self.o
+        o.input_event_sink = None
+        self.hist[1]["scope"] = (SID, LID, 6)
+        self.confirm(1)
+        self.assertEqual((o.total_retry_count, o.menu_state), (2, 3))                         # refused, silently
+        self.assertEqual(self.lines, [])
+        self.assertEqual(self.log, [])                                                       # nor the Desktop log
+
+    def test_the_resume_flag_of_the_menu_is_restored_by_a_refusal_whatever_it_was(self):
+        for before in (None, False, True):
+            with self.subTest(before=before):
+                self.reset()
+                o = self.o
+                if before is not None:
+                    o.was_advancing_before_menu = before
+                self.hist[1]["scope"] = (SID, LID, 6)
+                self.confirm(1, advancing=False)
+                self.assertEqual(o.__dict__.get("was_advancing_before_menu", None), before)
+        self.reset()
+        self.confirm(1, advancing=False)                                                     # an accepted retry resumes BVE (the flag is True) as before
+        self.assertTrue(self.o.was_advancing_before_menu)
+
+    def test_the_trace_and_the_count_are_the_only_new_methods_of_main_and_they_show_nothing_on_the_screen(self):
+        source = read("main.py")
+        tree = ast.parse(source)
+        overlay = [n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Overlay"][0]
+        methods = {n.name: ast.get_source_segment(source, n) for n in overlay.body if isinstance(n, ast.FunctionDef)}
+        for name in ("_retry_count", "_retry_trace"):
+            self.assertIn(name, methods)
+            self.assertNotIn("popup", methods[name].lower())
+            self.assertNotIn("menu_state", methods[name])
+        self.assertNotRegex(read("menu_ui.py") + read("hud_ui.py"), r"retry_notice|retry_pending|retry-rejected")      # no screen text for the refusal: menu_ui.py / hud_ui.py are untouched by ST-2b
+
+    def test_the_diagnostic_budget_of_the_controller_is_unchanged(self):
+        import managed_input
+        self.assertEqual(managed_input.ManagedInputController.EVENT_LINE_CAPS, {"input-hold": 24, "input-pause": 6, "input-resume": 6, "stidx": 24})
+        self.assertEqual((managed_input.ManagedInputController.EVENT_LINE_CAP, managed_input.ManagedInputController.TOTAL_LINE_BUDGET), (10, 70))
+
+
 class Z_Meta(unittest.TestCase):
+    def test_every_st2b_n_red_has_a_declared_code_and_the_eight_retry_reds_are_executed_here_once(self):
+        found = {}
+        for cls in (H_TheRetry, I_ThePendingRetry, J_TheRetryHasNoSearch, K_TheRefusalIsDiagnosed):
+            for name in dir(cls):
+                meta = getattr(getattr(cls, name), "st2b", None)
+                if meta is not None:
+                    self.assertTrue(name.startswith("test_RED_"), name)
+                    self.assertRegex(meta["code"], r"^[A-Z0-9\-]+$")
+                    found.setdefault(meta["id"], set()).add(meta["code"])
+        self.assertEqual(set(found), {"N-06", "N-07", "N-08", "N-09", "N-10", "N-13", "N-14", "N-15", "N-16", "N-17"})
+        for tid, codes in found.items():
+            self.assertEqual(len(codes), 1, tid)
+        self.assertEqual(found["N-06"], {"CHECKPOINT-POSITION-CONTRADICTS-INDEX"})
+        self.assertEqual(found["N-09"], {"REFUSED-RETRY-IS-COUNTED"})
+        self.assertEqual(found["N-13"], {"RETRY-REQUEST-CUTS-THE-HISTORY"})
+        self.assertEqual(found["N-17"], {"RETRY-REFUSAL-NOT-DIAGNOSED"})
+        import red_st0_stationindex_contract as red
+        for name, cls_name, tid, code in (("test_RED_T08_the_retry_station_is_the_saved_index_not_a_search_from_the_checkpoint_position", "RetryReds", "T08", "RETRY-DOES-NOT-USE-THE-SAVED-INDEX"),
+                                          ("test_RED_T03_several_stations_within_100_m_keep_the_saved_index", "RetryReds", "T03", "RETRY-IGNORES-THE-SAVED-INDEX-AMONG-NEIGHBOURS"),
+                                          ("test_RED_T04_a_retry_to_the_second_of_two_same_position_stations_goes_to_the_second", "RetryReds", "T04", "SAME-POSITION-PAIR-NOT-DISTINGUISHED"),
+                                          ("test_RED_T05_an_out_of_range_saved_index_is_refused_without_a_command_or_a_state_change", "RetryReds", "T05", "INVALID-INDEX-NOT-REFUSED"),
+                                          ("test_RED_T05_an_old_form_checkpoint_without_station_index_is_refused", "RetryReds", "T05", "OLD-FORMAT-CHECKPOINT-NOT-REFUSED"),
+                                          ("test_RED_T06_a_checkpoint_of_another_generation_or_list_is_refused", "RetryReds", "T06", "SCOPE-MISMATCH-NOT-REFUSED"),
+                                          ("test_RED_T09_the_retry_to_the_initial_checkpoint_uses_the_chosen_start_station", "RetryReds", "T09", "INITIAL-CHECKPOINT-RETRY-IGNORES-START-INDEX"),
+                                          ("test_RED_T23_execute_retry_has_no_100_m_position_search", "StaticReds", "T23", "EXECUTE-RETRY-HAS-100M-SEARCH")):
+            with self.subTest(name):
+                self.assertTrue(hasattr(L_MigratedRetry, name))                                          # executed here ...
+                meta = getattr(getattr(getattr(red, cls_name), name), "st0red")                           # ... and kept there, skipped, as the evidence of the RED
+                self.assertEqual((meta["kind"], meta["id"], meta["code"], meta["to"]), ("MIGRATED", tid, code, THIS_FILE))
+                self.assertTrue(getattr(getattr(getattr(red, cls_name), name), "__unittest_skip__", False))
+
+    def test_u13_is_a_declared_red_until_st3_and_never_deleted_or_skipped(self):
+        """OD-B2: Python uses the saved index (ST-2b) while the C# senders still re-select by 50 m (ST-3): U13 stays in the RED file as a declared RED (not a GUARD, not
+        skipped); ST-3 turns it back into a GUARD (Current and Legacy) and N-12 takes over the package duty."""
+        import red_st0_stationindex_contract as red
+        fn = red.Guards.test_RED_U13_the_python_saved_index_and_the_csharp_fixed_request_land_together
+        meta = fn.st0red
+        self.assertEqual((meta["kind"], meta["id"], meta["code"]), ("RED", "U13", "PYTHON-AHEAD-OF-CSHARP-REQUEST-FIXING"))
+        self.assertFalse(getattr(fn, "__unittest_skip__", False))
+        self.assertFalse(hasattr(red.Guards, "test_GUARD_U13_the_python_saved_index_and_the_csharp_fixed_request_land_together"))
+
     def test_every_n_red_has_a_declared_code_and_the_five_ids_are_all_there(self):
         found = {}
         for cls in (B_TheSync, C_TheCheckpoints, D_TheScoringStart, D2_TheScoringStartInTheManagedMode):
@@ -1305,33 +2177,33 @@ class Z_Meta(unittest.TestCase):
         tree = ast.parse(logic)
         retry = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "execute_retry"][0]
         hundreds = [n.value for n in ast.walk(retry) if isinstance(n, ast.Constant) and isinstance(n.value, float) and n.value == 100.0]
-        self.assertEqual(len(hundreds), 1)                                              # the 100 m search of the retry is still there: ST-2b removes it
+        self.assertEqual(len(hundreds), 0)                                              # Phase ST-2b: the 100 m search of the retry is gone (the first-station 100 m rule below is ST-2c)
         update = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "update_physics_and_scoring"][0]
         self.assertEqual(len([n for n in ast.walk(update) if isinstance(n, ast.Constant) and isinstance(n.value, float) and n.value == 100.0]), 1)      # ... and so is the first-station 100 m rule (ST-2c)
         create = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "create_save_data"][0]
         ones = [n.value for n in ast.walk(create) if isinstance(n, ast.Constant) and isinstance(n.value, float) and n.value == 1.0]
         self.assertEqual(ones, [])                                                      # the 1 m reverse lookup of the Save is gone ...
         self.assertEqual(len(re.findall(r"abs\(st\[\"location\"\] - [A-Za-z_.]+\) < 1\.0", logic)), 5)                 # ... the five others are ST-4's (arrival, departure, guidance, two lookups of the arrival)
-        for forbidden in ("station_identity", "StationList", "bve_arr_idx", "bve_list_id"):
+        for forbidden in ("StationList", "bve_arr_idx", "bve_tgt_idx"):                 # (Phase ST-2b: the retry reads station_identity and bve_list_id, the verified scope; it never reads the sender's indexes)
             self.assertNotIn(forbidden, ast.get_source_segment(logic, retry))
 
 
 # ==============================================================================================================================================
 # the optional runner: the N-xx REDs against the product of 69077aa
 # ==============================================================================================================================================
-def red_check():
+def red_check(classes=None, attr="st2a"):
     """python -B tests\\test_stationindex_canon_st2.py --red-check   Every N-xx must fail with ContractViolation(declared code) (RED-VALID) against the product BEFORE ST-2a;
     against the product of ST-2a every one passes (UNEXPECTED-PASS here means 'GREEN')."""
     result_rows = []
     loader = unittest.defaultTestLoader
     suite = unittest.TestSuite()
-    for cls in (B_TheSync, C_TheCheckpoints, D_TheScoringStart, D2_TheScoringStartInTheManagedMode):
+    for cls in (classes or (B_TheSync, C_TheCheckpoints, D_TheScoringStart, D2_TheScoringStartInTheManagedMode)):
         for name in sorted(n for n in dir(cls) if n.startswith("test_RED_")):
             suite.addTest(loader.loadTestsFromName(name, cls))
 
     class Result(unittest.TestResult):
         def _meta(self, test):
-            return getattr(getattr(test, test._testMethodName), "st2a")
+            return getattr(getattr(test, test._testMethodName), attr)
 
         def addSuccess(self, test):
             super().addSuccess(test)
@@ -1374,6 +2246,8 @@ def red_check():
 
 
 if __name__ == "__main__":
+    if "--red-check-2b" in sys.argv:
+        sys.exit(red_check((H_TheRetry, I_ThePendingRetry, J_TheRetryHasNoSearch, K_TheRefusalIsDiagnosed), "st2b"))
     if "--red-check" in sys.argv:
         sys.exit(red_check())
     unittest.main()

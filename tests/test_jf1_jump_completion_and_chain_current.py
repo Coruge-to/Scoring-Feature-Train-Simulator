@@ -484,6 +484,12 @@ class N_NormalMode(unittest.TestCase):
 
 # ==============================================================================================================================================
 class RX_RetryAndStartChains(Base):
+    def ident(self, checkpoint, index, role="arrived_station"):
+        """Phase ST-2b FIXTURE: the identity a checkpoint of ST-2a carries (the retry verifies it), in the scope the application holds now."""
+        o = self.o
+        checkpoint.update(station_index=index, scope=(o.current_scenario_id, o.bve_list_id, len(o.station_list)), station_location=o.station_list[index]["location"], role=role)
+        return checkpoint
+
     # -- R22 -------------------------------------------------------------------------------------------------------------------------------------
     @jf0("R22", "CURRENT")
     def test_CURRENT_R22_a_refused_managed_send_of_a_retry_is_turned_into_a_scoring_abort_by_the_next_poll(self):
@@ -492,8 +498,8 @@ class RX_RetryAndStartChains(Base):
         r, o = self.r, self.o
         r.go_active()
         o.is_scoring_mode = True
-        o.save_data = [{"loc": 0.0, "time_ms": T0, "score": 0, "target_loc": 0.0, "station_name": "A", "stop_error": 0.0},
-                       {"loc": 1000.0, "time_ms": T0 + 60000, "score": 10, "score_details": dict(o.score_details), "target_loc": 1000.0, "station_name": "B", "stop_error": 0.0}]
+        o.save_data = [self.ident({"loc": 0.0, "time_ms": T0, "score": 0, "target_loc": 0.0, "station_name": "A", "stop_error": 0.0}, 0, "scoring_start"),
+                       self.ident({"loc": 1000.0, "time_ms": T0 + 60000, "score": 10, "score_details": dict(o.score_details), "target_loc": 1000.0, "station_name": "B", "stop_error": 0.0}, 1)]
         r.jump_dir.present = False
         self.S.execute_retry(o, 1, True)                                      # no exception
         self.assertEqual(o.udp_socket.written, [])                            # nothing was written anywhere: no fixed-port fallback
@@ -549,17 +555,20 @@ class RX_RetryAndStartChains(Base):
         r.complete(cmd["request_id"], location=1000.0, time_ms=T0, index=2)       # the sender really moved to 1000.0 ...
         self.assertFalse(o.is_official_jumping)                                  # ... the completion check is satisfied; nothing is reported
 
-    @jf0("X06", "CURRENT")
-    def test_CURRENT_X06_a_retry_with_a_close_previous_station_selects_the_earlier_station_itself_so_python_and_the_sender_agree(self):
+    @danger("X06", "a RETRY to the checkpoint of Q (index 2) with an earlier station P 40 m behind: since Phase ST-2b Python requests the SAVED index 2 and expects Q's position, so "
+                   "the completion at that position passes the check - while the sender still re-selects P by its 50 m search. Nothing on the Python side can notice (it used to pick P itself, "
+                   "so Python and the sender agreed by accident).",
+            "ST-3 (the sender fixes the requested index in Current and Legacy; the completion's selected index is checked)", "ST-3: the sender keeps the requested index; this assertion is replaced by the ST-3 completion check")
+    def test_CURRENT_DANGER_X06_a_retry_with_a_close_previous_station_requests_the_saved_station_so_python_and_the_sender_disagree_until_st3(self):
         r, o = self.r, self.o
         self._go_with_close_stations()
         o.is_scoring_mode = True
-        o.save_data = [{"loc": 0.0, "time_ms": T0, "score": 0, "target_loc": 0.0, "station_name": "A", "stop_error": 0.0},
-                       {"loc": 999.0, "time_ms": T0 + 60000, "score": 10, "score_details": dict(o.score_details), "target_loc": 1000.0, "station_name": "Q", "stop_error": 1.0}]
+        o.save_data = [self.ident({"loc": 0.0, "time_ms": T0, "score": 0, "target_loc": 0.0, "station_name": "A", "stop_error": 0.0}, 0, "scoring_start"),
+                       self.ident({"loc": 999.0, "time_ms": T0 + 60000, "score": 10, "score_details": dict(o.score_details), "target_loc": 1000.0, "station_name": "Q", "stop_error": 1.0}, 2)]
         self.S.execute_retry(o, 1, True)
         cmd = r.last_command()
-        self.assertEqual(cmd["text"], "JUMP_STA_TIME:1:%d" % (T0 + 60000))        # P (index 1), not Q (index 2)
-        self.assertEqual(o.expected_target_loc, 960.0)
+        self.assertEqual(cmd["text"], "JUMP_STA_TIME:2:%d" % (T0 + 60000))        # Q (index 2), the saved index; the sender re-selects P (index 1) until ST-3
+        self.assertEqual(o.expected_target_loc, 1000.0)
 
 
 # ==============================================================================================================================================
@@ -602,7 +611,7 @@ class Z_Meta(unittest.TestCase):
             self.assertTrue(name.startswith("test_CURRENT_DANGER_" + meta["id"]), name)
             for key, shortest in (("danger", 21), ("phase", 8), ("flip", 21)):
                 self.assertTrue(meta[key] and len(meta[key]) >= shortest, (name, key))
-        self.assertEqual(seen, 6)
+        self.assertEqual(seen, 7)                                       # Phase ST-2b: the retry-side X06 is a danger now (Python asks for Q, the sender still re-selects P until ST-3)
 
     def test_META_every_TARGET_is_skipped_with_a_contract_id_in_the_reason(self):
         seen = 0

@@ -606,7 +606,25 @@ def begin_official_jump(self, target_loc, target_time):
 
 
 def execute_retry(self, index, is_bve_advancing):
-    if index < 0 or index >= len(self.save_data): return
+    """Phase ST-2b: the retry to the checkpoint at position `index` of the history. Returns a station_identity.RetryResult.
+
+    The station is the StationIndex stored in that checkpoint, verified against the scope of the application (station_identity.check_retry_checkpoint); it is never
+    searched by a position. A checkpoint that does not verify is REFUSED: nothing is changed, nothing is sent (the caller counts nothing and shows nothing). An accepted
+    retry sends the jump request, keeps the choice as self.retry_pending and does NOT cut the history (ST-3 cuts it when the jump completed as requested)."""
+    history = getattr(self, 'save_data', None)
+    station_list = getattr(self, 'station_list', None)
+    try:
+        pending = getattr(self, 'retry_pending', None)
+        pending_active = (isinstance(pending, station_identity.RetryPending) and getattr(self, 'is_official_jumping', False) and
+                          0 <= pending.selected_save_position < len(history) and history[pending.selected_save_position] is pending.checkpoint)
+        result = station_identity.check_retry_checkpoint(history, index, getattr(self, 'current_scenario_id', -1), getattr(self, 'bve_list_id', ""), station_list, pending_active)
+    except Exception:
+        return station_identity.RetryResult(False, station_identity.INTERNAL_ERROR, None, station_identity.NO_INDEX)
+    if not result.accepted:
+        return result
+    managed = getattr(self, 'dataplane_strict', False) or getattr(self, 'jump_client', None) is not None
+    if managed and getattr(self, 'jump_client', None) is None:
+        return result._replace(accepted=False, reason=station_identity.JUMP_UNAVAILABLE)
 
     self.is_official_retry = (index > 0)
     self.is_first_station = (index == 0)
@@ -622,9 +640,7 @@ def execute_retry(self, index, is_bve_advancing):
     reset_station_evaluation_state(self)
     self.is_first_udp = True
 
-    self.save_data = self.save_data[:index + 1]
-
-    cp = self.save_data[-1]
+    cp = history[index]
     self.score = cp["score"]
 
     if "score_details" in cp:
@@ -645,37 +661,35 @@ def execute_retry(self, index, is_bve_advancing):
 
     self.toggle_menu(is_bve_advancing)
 
-    target_bve_sta_idx = 0
-    ideal_loc = cp['loc']
-    def_t = -1
-    calc_t = -1  # 比較用の計算時刻
+    station_index = result.selected_station_index
+    station = station_list[station_index]
+    ideal_loc = station["location"]
+    def_t = station.get("def_time", -1)
 
-    if getattr(self, 'station_list', []):
-        for i, st in enumerate(self.station_list):
-            if abs(st["location"] - cp['loc']) < 100.0:
-                target_bve_sta_idx = i
-                ideal_loc = st["location"]
-                def_t = st.get("def_time", -1)
-
-                # 駅データから比較用の計算時刻を求める
-                raw_dep = st.get("raw_dep", -1)
-                stop_t = st.get("stop_time", 15000)
-                calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1
-                break
+    # 駅データから比較用の計算時刻を求める
+    raw_dep = station.get("raw_dep", -1)
+    stop_t = station.get("stop_time", 15000)
+    calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1
 
     # LOC方式を使用する条件
     # 1. 開始駅以外の途中駅である
     # 2. 作者定義時刻が計算時刻より遅い
     # 3. チェックポイント時刻が作者定義時刻より早い
-    use_legacy = (target_bve_sta_idx > 0 and def_t >= 0 and calc_t >= 0 and def_t > calc_t and cp['time_ms'] < def_t)
+    use_loc_method = (station_index > 0 and def_t >= 0 and calc_t >= 0 and def_t > calc_t and cp['time_ms'] < def_t)
 
-    if use_legacy:
+    if use_loc_method:
         cmd = f"JUMP_LOC_TIME:{ideal_loc}:{cp['time_ms']}"
     else:
-        cmd = f"JUMP_STA_TIME:{target_bve_sta_idx}:{cp['time_ms']}"
+        cmd = f"JUMP_STA_TIME:{station_index}:{cp['time_ms']}"
 
     begin_official_jump(self, ideal_loc, cp['time_ms'])
-    self.send_jump_command(cmd)
+    pending = station_identity.make_retry_pending(history, index)
+    self.retry_pending = pending
+    request_id = self.send_jump_command(cmd)
+    # the request was sent: a RequestId (managed mode) or the plain send (normal mode: no id). A managed send the client refused leaves the pending retry 'validated'.
+    if pending is not None and (request_id is not None or not managed):
+        self.retry_pending = pending._replace(request_id=request_id, state=station_identity.RETRY_SENT)
+    return result._replace(request_id=request_id)
 
 def add_score_popup(
     self,

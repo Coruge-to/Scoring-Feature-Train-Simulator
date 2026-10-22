@@ -118,7 +118,9 @@ REGION_PINS = {
         "Overlay.__init__": ("slice", "AF89937BD6344F881A817489A79B4E0C5EF5189C68ED4A3C41C701BCC61E854F", 10),
         "Overlay.read_udp_data": ("slice", "741D5BA4388B552DB6ACB4FCCF5B906CA26985EAED004AAA4A7FD183AEF6F5AF", 5),
         "Overlay.apply_telemetry_text": ("slice", "8DF014098D3DBC5016935829C152E25E2B897B128195751B39A02C503CD977DB", 5),
-        "Overlay.handle_menu_enter": ("slice", "73F4E0A3CE7A71CC793792474289BF5483DD5CAB7CC933020B989A9A25FB753F", 8),
+        # Phase ST-2b (an INTENDED change of the jump contract, owner decision OD-B6): the retry call site became `result = execute_retry(...)` followed by the count of an accepted retry only
+        # and the restore of the BVE resume flag of a refused one (was 73F4E0A3... : `execute_retry(...)` followed by the unconditional `+= 1`); still 8 jump records
+        "Overlay.handle_menu_enter": ("slice", "84E656C2C28CECB0D1DA14F55C8FAB94C79372BC43AD4327050B0697BF0C4405", 8),
         "Overlay._detect_and_release_fast_forward": ("slice", "6E15C0D15405AC3D2025E2EBD501EF36EC8D1D916D56CDA25E9E1D5E7B9092E7", 1),
         "Overlay._advance_scoring_clock_and_score": ("slice", "781559CFFF388EE116614B528F018826B5A1FB0A2280C3D3CA72700C5F23779C", 2),
         "run_managed": ("slice", "CC1590768A62BA11C05F021909315D103B5DC2A4C47AA8F4ECC36EA4F7B6D4B7", 6),
@@ -133,6 +135,11 @@ REGION_PINS = {
         "ManagedInputController._observe": ("slice", "8275B1616287102B6C0054FF447B9A3F4216F1D74EEB652ED56168FC57093781", 1),
     },
 }
+
+# Phase ST-2b (an INTENDED change of the jump contract, owner decision OD-B6): execute_retry takes the station from the saved StationIndex (verified by station_identity), refuses what does not
+# verify, keeps the history whole and leaves a pending retry. It is the one region of scoring_logic.py that is no longer compared with the blob of the formal LJX-1 commit; its new
+# canonical AST is pinned here (begin_official_jump, the other WHOLE region, and every SLICE region are still compared with the blob).
+ST2B_EXECUTE_RETRY_PIN = ("whole", "9226392088B12DEF33099036F18948D627FDEA0F6F03BBB61D0B8820A44359EA", 1)
 
 STATIONS = [0.0, 1000.0, 2000.0, 3000.0]
 SCORING_TOKENS = ["time", "speed", "loc", "station", "door", "handle", "brake_type", "brake_cab", "prates"]
@@ -210,6 +217,8 @@ class A2_TheLegacyJumpContractRegionsOfThePythonSide(unittest.TestCase):
         now, now_undeclared = regions.region_digests(read_source("scoring_logic.py"), spec["whole"], spec["sliced"])
         self.assertEqual(then_undeclared, [])
         self.assertTrue(all(value is not None for value in then.values()), then)
+        self.assertEqual(now.pop("execute_retry"), ST2B_EXECUTE_RETRY_PIN)           # Phase ST-2b: the intended change, pinned on its own
+        then.pop("execute_retry")
         self.assertEqual(now, then)
         self.assertEqual(now_undeclared, [])
 

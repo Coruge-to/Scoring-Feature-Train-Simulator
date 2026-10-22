@@ -43,7 +43,7 @@ def generation_defaults():
         # the scoring session and its result
         "popups": [], "score": 0, "score_details": {key: 0 for key in ("time", "stop", "base_brake", "roll", "jerk", "init_brake", "rel_brake", "eb", "limit", "ats", "bonus")},
         "is_scoring_mode": False, "is_scoring_finished": False, "is_result_saved": False, "saved_file_path": "",
-        "end_message_time": 0.0, "result_screen_time": 0.0, "theoretical_score": 0, "total_retry_count": 0, "save_data": [],
+        "end_message_time": 0.0, "result_screen_time": 0.0, "theoretical_score": 0, "total_retry_count": 0, "save_data": [], "retry_pending": None,
         "rollback_msg": "", "rollback_msg_timer": 0.0,
         "is_speed_limit_exceeded": False, "last_speed_limit_penalty_time": 0.0, "accumulated_speed_penalty": 0,
         # emergency brake (manual EB and Smee virtual EB)
@@ -151,6 +151,7 @@ def discard_scoring_session(overlay):
         "is_first_udp", "is_first_station", "has_departed", "ff_check_real_time", "ff_check_bve_time", "is_fast_forwarding",
     ):
         setattr(overlay, name, d[name])
+    overlay.retry_pending = d["retry_pending"]                  # Phase ST-2b: a retry that waits for its jump belongs to the scoring session (kept out of the tuple above: that header is a pinned jump-contract region)
     reset_result_display_state(overlay)
     reset_speed_penalty_state(overlay)
     reset_roll_state(overlay)

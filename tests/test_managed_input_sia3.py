@@ -1661,7 +1661,29 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
             '})',
             'create_save_data(self)',
         )
-        self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport) + st2a_checkpoint_identity], removed)
+        # Phase ST-2b (on purpose): the retry takes the station from the SAVED StationIndex (station_identity.check_retry_checkpoint) instead of searching the station list for a station within
+        # 100 m of the position of the checkpoint (falling back to station 0), and it no longer cuts the history (ST-3 does). These are the 16 distinct lines (stripped) of that search, of the
+        # cut and of the names that the verified index replaced (use_legacy became use_loc_method: the same LOC-method condition, a name without the word the added-lines test forbids);
+        # no score, no rule and no constant is among them (the 100.0 is a search radius, not a score constant).
+        st2b_retry_by_saved_index = (
+            'if index < 0 or index >= len(self.save_data): return',
+            'self.save_data = self.save_data[:index + 1]',
+            'cp = self.save_data[-1]',
+            'target_bve_sta_idx = 0',
+            "ideal_loc = cp['loc']",
+            'def_t = -1',
+            'calc_t = -1  # 比較用の計算時刻',
+            "if getattr(self, 'station_list', []):",
+            'for i, st in enumerate(self.station_list):',
+            'if abs(st["location"] - cp[\'loc\']) < 100.0:',
+            'target_bve_sta_idx = i',
+            'ideal_loc = st["location"]',
+            '# 駅データから比較用の計算時刻を求める',
+            "use_legacy = (target_bve_sta_idx > 0 and def_t >= 0 and calc_t >= 0 and def_t > calc_t and cp['time_ms'] < def_t)",
+            'if use_legacy:',
+            'cmd = f"JUMP_STA_TIME:{target_bve_sta_idx}:{cp[\'time_ms\']}"',
+        )
+        self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport) + st2a_checkpoint_identity + st2b_retry_by_saved_index], removed)
 
     def test_the_scoring_function_bodies_are_ast_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":scoring_logic.py")

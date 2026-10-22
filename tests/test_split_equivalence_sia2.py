@@ -311,7 +311,11 @@ class SiAScopeOfMain(unittest.TestCase):
         "take_result_screenshot": {'save_path, _ = QFileDialog.getSaveFileName(self, "採点結果を保存", os.path.join(save_dir, default_name), "JPEG Image (*.jpg);;PNG Image (*.png)")'},
         # PID-D6 (on purpose): the scoring start's jump command goes through Overlay.send_jump_command (RequestId transport)
         # Phase ST-2a (on purpose): the first checkpoint of a scoring start is built as a dict (first_checkpoint) so that it can carry the verified station identity: the append( { ... } ) opening and closing lines left
-        "handle_menu_enter": {"self.udp_socket.writeDatagram(retry_cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)", "getattr(self, 'save_data', []).append({", "})"},
+        # Phase ST-2b (on purpose): the retry call keeps its result (`result = execute_retry(...)`), the retry count grows only for an accepted retry that was sent (Overlay._retry_count) and no
+        # longer unconditionally after the call: the call line, the comment and the two lines of the unconditional count left
+        "handle_menu_enter": {"self.udp_socket.writeDatagram(retry_cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)", "getattr(self, 'save_data', []).append({", "})",
+                              "execute_retry(self, getattr(self, 'target_retry_idx', -1), is_bve_advancing)", "# 始発駅以外へのリトライをSランク判定用の回数へ加算する",
+                              "if getattr(self, 'target_retry_idx', -1) > 0:", "self.total_retry_count += 1"},
         # PID-D6 (on purpose): a JUMP_COMPLETE only counts when its RequestId matches the outstanding command (Overlay._jump_complete_acceptable)
         # Phase ST-2a (on purpose): the station list of a STALIST datagram is a station_identity.StationList that carries the list id (new_list = [] became that constructor call)
         "read_udp_data": {"if len(complete_parts) >= 6:", "new_list = []"}, "toggle_borderless_fullscreen": set(),

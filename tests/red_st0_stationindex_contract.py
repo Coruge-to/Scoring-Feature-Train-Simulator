@@ -72,6 +72,7 @@ ADAPTER_VERDICT = "verdict"            # verdict(line, nextloc, station_location
 ADAPTER_LIST_ID = "list_id"            # list_id(payload_text) -> 8 upper-case hex digits (CRC-32 of the UTF-8 STALIST payload)
 MIGRATED_TO = "tests/test_stationindex_supply_st1a.py"       # Phase ST-1A: where the six migrated contracts (T21, T22 x2, U12 x3) are executed now
 MIGRATED_TO_ST2A = "tests/test_stationindex_canon_st2.py"    # Phase ST-2a: where the three contracts that ST-2a turns GREEN (T09 initial checkpoint, T05 start, T04 save) are executed now
+MIGRATED_TO_ST2B = "tests/test_stationindex_canon_st2.py"    # Phase ST-2b: where the eight retry contracts that ST-2b turns GREEN (T08 T03 T04 T05 x2 T06 T09 T23) are executed now
 SCOPE_SID = 7
 SCOPE_LIST_ID = "A1B2C3D4"
 
@@ -204,7 +205,7 @@ class RetryReds(RedMixin, F1.Base):
         self.events.clear()
         o.is_official_jumping = False
 
-    @red("T08", "RETRY-DOES-NOT-USE-THE-SAVED-INDEX", items=(6,), artifact="JF-1 TARGET_A_R04 (the R04 position case can not tell the two apart; this fixture does)",
+    @migrated("T08", "RETRY-DOES-NOT-USE-THE-SAVED-INDEX", MIGRATED_TO_ST2B, items=(6,), artifact="JF-1 TARGET_A_R04 (the R04 position case can not tell the two apart; this fixture does)",
          note="the retry station is the saved station_index even when the checkpoint position is more than 100 m from every station")
     def test_RED_T08_the_retry_station_is_the_saved_index_not_a_search_from_the_checkpoint_position(self):
         o = self.o
@@ -216,7 +217,7 @@ class RetryReds(RedMixin, F1.Base):
         cmds = self.retry(2, saves, stations)
         self.contract(cmds == ["JUMP_STA_TIME:2:%d" % (T0 + 120000)], "T08", "RETRY-DOES-NOT-USE-THE-SAVED-INDEX", "sent %r instead of the saved index 2" % (cmds,))
 
-    @red("T03", "RETRY-IGNORES-THE-SAVED-INDEX-AMONG-NEIGHBOURS", items=(2,), artifact="JF-1 CURRENT_DANGER_R06 / X01 and TARGET_A_R04",
+    @migrated("T03", "RETRY-IGNORES-THE-SAVED-INDEX-AMONG-NEIGHBOURS", MIGRATED_TO_ST2B, items=(2,), artifact="JF-1 CURRENT_DANGER_R06 / X01 and TARGET_A_R04",
          note="two stations within 100 m: the retry goes to the saved index, not to the lowest index of a position search")
     def test_RED_T03_several_stations_within_100_m_keep_the_saved_index(self):
         o = self.o
@@ -228,7 +229,7 @@ class RetryReds(RedMixin, F1.Base):
         cmds = self.retry(2, saves, stations)
         self.contract(cmds == ["JUMP_STA_TIME:2:%d" % (T0 + 60000)], "T03", "RETRY-IGNORES-THE-SAVED-INDEX-AMONG-NEIGHBOURS", "sent %r; the saved index is 2 (C), B is 50 m away" % (cmds,))
 
-    @red("T04", "SAME-POSITION-PAIR-NOT-DISTINGUISHED", items=(3,), artifact="JF-1 CURRENT_DANGER_R07 and TARGET_A_R07",
+    @migrated("T04", "SAME-POSITION-PAIR-NOT-DISTINGUISHED", MIGRATED_TO_ST2B, items=(3,), artifact="JF-1 CURRENT_DANGER_R07 and TARGET_A_R07",
          note="two stations at the SAME position: the retry to the second one goes to the second one")
     def test_RED_T04_a_retry_to_the_second_of_two_same_position_stations_goes_to_the_second(self):
         o = self.o
@@ -256,7 +257,7 @@ class RetryReds(RedMixin, F1.Base):
         changed = self.fingerprint() != before
         self.contract((cmds == []) and not changed, tid, code, "commands %r, state changed: %r" % (cmds, changed))
 
-    @red("T05", "INVALID-INDEX-NOT-REFUSED", items=(4,), artifact="JF-1 TARGET_A_R08 / R09 (their zero-candidate premise belongs to the rejected provisional supply; this is the Cross-Layer case)",
+    @migrated("T05", "INVALID-INDEX-NOT-REFUSED", MIGRATED_TO_ST2B, items=(4,), artifact="JF-1 TARGET_A_R08 / R09 (their zero-candidate premise belongs to the rejected provisional supply; this is the Cross-Layer case)",
          note="a saved station_index outside 0..count-1 is refused: no command, no state change, no fall-back to station 0 (the position would still find station B)")
     def test_RED_T05_an_out_of_range_saved_index_is_refused_without_a_command_or_a_state_change(self):
         stations = [st("A", 0.0), st("B", 1000.0), st("C", 2000.0), st("D", 3000.0, terminal=True)]
@@ -266,13 +267,13 @@ class RetryReds(RedMixin, F1.Base):
                 self.setUp()
                 self.refusal_case(stations, lambda c, bad=bad: c.update(station_index=bad), "T05", "INVALID-INDEX-NOT-REFUSED")
 
-    @red("T05", "OLD-FORMAT-CHECKPOINT-NOT-REFUSED", items=(4,), artifact="06 section 2: a checkpoint without station_index is invalid; no compatibility reader",
+    @migrated("T05", "OLD-FORMAT-CHECKPOINT-NOT-REFUSED", MIGRATED_TO_ST2B, items=(4,), artifact="06 section 2: a checkpoint without station_index is invalid; no compatibility reader",
          note="a checkpoint of the old form (no station_index) is refused, not retried by a position search")
     def test_RED_T05_an_old_form_checkpoint_without_station_index_is_refused(self):
         stations = [st("A", 0.0), st("B", 1000.0), st("C", 2000.0), st("D", 3000.0, terminal=True)]
         self.refusal_case(stations, lambda c: c.pop("station_index"), "T05", "OLD-FORMAT-CHECKPOINT-NOT-REFUSED")
 
-    @red("T06", "SCOPE-MISMATCH-NOT-REFUSED", items=(5,), artifact="06 section 4-2 / 05 section 8 (new test, no JF-1 counterpart)",
+    @migrated("T06", "SCOPE-MISMATCH-NOT-REFUSED", MIGRATED_TO_ST2B, items=(5,), artifact="06 section 4-2 / 05 section 8 (new test, no JF-1 counterpart)",
          note="a checkpoint of ANOTHER scenario generation / station list is refused (fail-closed); the position and the index would both still fit")
     def test_RED_T06_a_checkpoint_of_another_generation_or_list_is_refused(self):
         stations = [st("A", 0.0), st("B", 1000.0), st("C", 2000.0), st("D", 3000.0, terminal=True)]
@@ -285,7 +286,7 @@ class RetryReds(RedMixin, F1.Base):
                 self.setUp()
                 self.refusal_case(stations, mutate, "T06", "SCOPE-MISMATCH-NOT-REFUSED")
 
-    @red("T09", "INITIAL-CHECKPOINT-RETRY-IGNORES-START-INDEX", items=(7,), artifact="JF-1 CURRENT_DANGER_R10 and TARGET_A_R10",
+    @migrated("T09", "INITIAL-CHECKPOINT-RETRY-IGNORES-START-INDEX", MIGRATED_TO_ST2B, items=(7,), artifact="JF-1 CURRENT_DANGER_R10 and TARGET_A_R10",
          note="the retry to the first checkpoint jumps to the station the user chose (setting_start_idx = 2), not to a nearer earlier station")
     def test_RED_T09_the_retry_to_the_initial_checkpoint_uses_the_chosen_start_station(self):
         o = self.o
@@ -411,7 +412,7 @@ class PhysicsReds(RedMixin, C1.Base):
 # static REDs (no Qt)
 # ==============================================================================================================================================
 class StaticReds(RedMixin, unittest.TestCase):
-    @red("T23", "EXECUTE-RETRY-HAS-100M-SEARCH", items=(6,), artifact="11 T23 (AP-9): no 100.0 in execute_retry",
+    @migrated("T23", "EXECUTE-RETRY-HAS-100M-SEARCH", MIGRATED_TO_ST2B, items=(6,), artifact="11 T23 (AP-9): no 100.0 in execute_retry",
          note="execute_retry contains no 100.0 position search")
     def test_RED_T23_execute_retry_has_no_100_m_position_search(self):
         tree = ast.parse(read_text(os.path.join(ROOT, "scoring_logic.py")))
@@ -504,18 +505,24 @@ class StaticReds(RedMixin, unittest.TestCase):
 # ==============================================================================================================================================
 # guards (not REDs)
 # ==============================================================================================================================================
-class Guards(unittest.TestCase):
-    @guard("U13", items=(13,), artifact="OD-NEW-3 / 12 section 0: ST-2a is never accepted alone",
-           note="Python must not use the saved station_index for the retry while the Current sender still re-selects by 50 m: the two land together or not at all")
-    def test_GUARD_U13_the_python_saved_index_and_the_csharp_fixed_request_land_together(self):
+class Guards(RedMixin, unittest.TestCase):          # (Phase ST-2b: U13 is a declared RED here until ST-3 turns it back into a GUARD; the mixin gives it contract())
+    @red("U13", "PYTHON-AHEAD-OF-CSHARP-REQUEST-FIXING", items=(13,), artifact="OD-NEW-3 / 12 section 0: ST-2 is never accepted alone (Phase ST-2b: a DECLARED RED until ST-3)",
+         note="Python uses the saved station_index for the retry (ST-2b) while the Current sender still re-selects by 50 m (ST-3 missing): this state is the declared intermediate violation - no package, no BVE until ST-3 turns it back into a GUARD")
+    def test_RED_U13_the_python_saved_index_and_the_csharp_fixed_request_land_together(self):
+        """Phase ST-2b (owner decision OD-B2): U13 was a GUARD that passed while Python did not use the saved index. Python does use it now (execute_retry verifies the
+        chosen checkpoint with station_identity.check_retry_checkpoint), the C# senders still re-select the target by 50 m, so the condition is violated ON PURPOSE: the
+        test is a declared RED, not deleted and not skipped, and the condition below is unchanged except that the Python side is also detected through the verification
+        function (the string 'station_index' no longer has to appear in execute_retry). ST-3 fixes the request index in Current AND Legacy, turns this back into a GUARD
+        (and adds the Legacy condition) and moves the package-level duty to N-12. ST-2b alone must never be built, deployed or run with BVE."""
         tree = ast.parse(read_text(os.path.join(ROOT, "scoring_logic.py")))
         fn = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "execute_retry"]
         self.assertEqual(len(fn), 1)
-        python_uses_saved_index = any(isinstance(n, ast.Constant) and n.value == "station_index" for n in ast.walk(fn[0]))
+        python_uses_saved_index = any((isinstance(n, ast.Constant) and n.value == "station_index") or (isinstance(n, ast.Attribute) and n.attr == "check_retry_checkpoint")
+                                      for n in ast.walk(fn[0]))
         c1 = cs_code(CLASS1)
         csharp_fixes_request = re.search(r"targetStationIndex = (sIdx|requestedStationIndex|pendingJumpStationIndex)", c1) is not None
-        self.assertFalse(python_uses_saved_index and not csharp_fixes_request,
-                         "ST-2a alone: Python retries by the saved station_index but Class1.cs still re-selects the target by position (ST-3 missing) - Legacy evidence must be added at ST-3")
+        self.contract(not (python_uses_saved_index and not csharp_fixes_request), "U13", "PYTHON-AHEAD-OF-CSHARP-REQUEST-FIXING",
+                      "Python retries by the saved station_index but Class1.cs still re-selects the target by position (ST-3 missing) - Legacy evidence must be added at ST-3")
 
     @guard("T22", items=(), artifact="the vector table is part of the RED validity",
            note="the shared vector table is well formed: unique ids, CRC-32 values equal to the standard library, the verdict words of the audit only")

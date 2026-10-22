@@ -284,14 +284,14 @@ class Pins(ShortCase):
         # Phase ST-2a (inverted: create_save_data was one of the six): the checkpoint takes its station from the verified StationIndex; the other five are ST-4's
         self.assertEqual(sites, {"evaluate_arrival": 1, "evaluate_departure": 1, "update_physics_and_scoring": 3})
 
-    @st0("T20", "KNOWN-DEFECT-BEHAVIOR", items=(19,), note="C-ID-5: execute_retry picks the retry station by a '< 100.0' search from the check point position (lowest index) and falls back to station 0 when nothing is found")
-    def test_PIN_ITEM19_execute_retry_searches_100_m_and_falls_back_to_station_0(self):
+    @st0("T20", "KNOWN-DEFECT-BEHAVIOR", items=(19,), note="C-ID-5 (Phase ST-2b: inverted - it was: execute_retry picks the retry station by a '< 100.0' search from the check point position, lowest index, and falls back to station 0): the retry station is the saved StationIndex")
+    def test_PIN_ITEM19_execute_retry_takes_the_saved_index_and_has_no_100_m_search_and_no_station_0_fallback(self):
         fn = py_function("scoring_logic.py", "execute_retry")
-        self.assertEqual(floats_in(fn).count(100.0), 1)
+        self.assertEqual(floats_in(fn).count(100.0), 0)
         src = ast.unparse(fn)
-        self.assertIn("target_bve_sta_idx = 0", src)
-        self.assertIn("abs(st['location'] - cp['loc']) < 100.0", src)
-        self.assertIn("target_bve_sta_idx = i", src)
+        self.assertNotIn("target_bve_sta_idx", src)
+        self.assertNotIn("< 100.0", src)
+        self.assertIn("station_identity.check_retry_checkpoint", src)
 
     @st0("T20", "KNOWN-DEFECT-BEHAVIOR", items=(20,), note="DS02: is_first_station is cleared by 'abs(NEXTLOC - location) > 100.0' on the first line")
     def test_PIN_ITEM20_is_first_station_is_a_100_m_distance_test(self):
