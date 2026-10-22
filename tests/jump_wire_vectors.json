@@ -1,0 +1,5197 @@
+{
+ "_comment": "ST-3a shared golden vectors of the Jump wire v1 (read only) and v2 (read and write). DATA ONLY: it fixes no implementation; tests/test_stationindex_canon_st3.py (Python) and TsScoringPlugin/Handshake/Tests/Test-JumpWireST3A.ps1 (C#) read the same table. The wire grammar is in the header of jump_wire.py; the Envelope RequestId is NOT part of the body. location_bits is the IEEE-754 bit pattern (hex, big endian) of the PARSED value after the -0.0 -> +0.0 normalisation; `canonical` / `text` is the exact text both writers must produce.",
+ "schema": 1,
+ "limits": {
+  "int32_max": 2147483647,
+  "location_max_abs": "1000000000",
+  "location_min_abs": "1e-09",
+  "location_max_significant_digits": 17,
+  "location_max_abs_bits": "41CDCD6500000000",
+  "location_min_abs_bits": "3E112E0BE826D695"
+ },
+ "reasons": [
+  "empty",
+  "prefix",
+  "field-count",
+  "kind",
+  "station-index-syntax",
+  "selected-idx-syntax",
+  "time-syntax",
+  "scenario-id-syntax",
+  "list-id-syntax",
+  "count-syntax",
+  "location-syntax",
+  "location-precision",
+  "jump-count-syntax",
+  "time-range",
+  "jump-count-range",
+  "scenario-id-range",
+  "count-range",
+  "location-range",
+  "station-index-range",
+  "selected-idx-range",
+  "scope-incomplete"
+ ],
+ "parse": [
+  {
+   "id": "RQ-V2-STA-01",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:2:36060000:12345678:E1D70409:4:1000.5",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "station_index": 2,
+    "time_ms": 36060000,
+    "location_bits": "408F440000000000",
+    "scenario_id": 12345678,
+    "list_id": "E1D70409",
+    "count": 4
+   },
+   "canonical": "JUMP_STA_TIME:2:36060000:12345678:E1D70409:4:1000.5",
+   "note": "typical STA request"
+  },
+  {
+   "id": "RQ-V2-LOC-01",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:2000:36200000:12345678:E1D70409:4:2",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "LOC",
+   "fields": {
+    "station_index": 2,
+    "time_ms": 36200000,
+    "location_bits": "409F400000000000",
+    "scenario_id": 12345678,
+    "list_id": "E1D70409",
+    "count": 4
+   },
+   "canonical": "JUMP_LOC_TIME:2000:36200000:12345678:E1D70409:4:2",
+   "note": "typical LOC request: the index travels on the wire (v1 LOC carried none)"
+  },
+  {
+   "id": "RQ-V2-STA-IDX0",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:0:0:1:592BCC9A:2:0",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "station_index": 0,
+    "time_ms": 0,
+    "location_bits": "0000000000000000",
+    "scenario_id": 1,
+    "list_id": "592BCC9A",
+    "count": 2
+   },
+   "canonical": "JUMP_STA_TIME:0:0:1:592BCC9A:2:0",
+   "note": "StationIndex 0, time 0, location 0"
+  },
+  {
+   "id": "RQ-V2-STA-LAST",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:3:36300000:12345678:E1D70409:4:3000",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "station_index": 3,
+    "time_ms": 36300000,
+    "location_bits": "40A7700000000000",
+    "scenario_id": 12345678,
+    "list_id": "E1D70409",
+    "count": 4
+   },
+   "canonical": "JUMP_STA_TIME:3:36300000:12345678:E1D70409:4:3000",
+   "note": "last valid StationIndex (count-1)"
+  },
+  {
+   "id": "RQ-V2-LOC-LAST",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:3000:36300000:12345678:E1D70409:4:3",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "LOC",
+   "fields": {
+    "station_index": 3,
+    "time_ms": 36300000,
+    "location_bits": "40A7700000000000",
+    "scenario_id": 12345678,
+    "list_id": "E1D70409",
+    "count": 4
+   },
+   "canonical": "JUMP_LOC_TIME:3000:36300000:12345678:E1D70409:4:3",
+   "note": ""
+  },
+  {
+   "id": "RQ-V2-STA-SAMELOC-A",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:7:2BF6D1AE:4:1000",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "station_index": 1,
+    "time_ms": 36060000,
+    "location_bits": "408F400000000000",
+    "scenario_id": 7,
+    "list_id": "2BF6D1AE",
+    "count": 4
+   },
+   "canonical": "JUMP_STA_TIME:1:36060000:7:2BF6D1AE:4:1000",
+   "note": "same-location station A (index 1, location 1000)"
+  },
+  {
+   "id": "RQ-V2-STA-SAMELOC-B",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:2:36060000:7:2BF6D1AE:4:1000",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "station_index": 2,
+    "time_ms": 36060000,
+    "location_bits": "408F400000000000",
+    "scenario_id": 7,
+    "list_id": "2BF6D1AE",
+    "count": 4
+   },
+   "canonical": "JUMP_STA_TIME:2:36060000:7:2BF6D1AE:4:1000",
+   "note": "same-location station B (index 2, location 1000): the index stays 2, not the smallest index with that position"
+  },
+  {
+   "id": "RQ-V2-LOC-SAMELOC-A",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:1000:36060000:7:2BF6D1AE:4:1",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "LOC",
+   "fields": {
+    "station_index": 1,
+    "time_ms": 36060000,
+    "location_bits": "408F400000000000",
+    "scenario_id": 7,
+    "list_id": "2BF6D1AE",
+    "count": 4
+   },
+   "canonical": "JUMP_LOC_TIME:1000:36060000:7:2BF6D1AE:4:1",
+   "note": ""
+  },
+  {
+   "id": "RQ-V2-LOC-SAMELOC-B",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:1000:36060000:7:2BF6D1AE:4:2",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "LOC",
+   "fields": {
+    "station_index": 2,
+    "time_ms": 36060000,
+    "location_bits": "408F400000000000",
+    "scenario_id": 7,
+    "list_id": "2BF6D1AE",
+    "count": 4
+   },
+   "canonical": "JUMP_LOC_TIME:1000:36060000:7:2BF6D1AE:4:2",
+   "note": "LOC at the shared position asks for index 2"
+  },
+  {
+   "id": "RQ-V2-STA-NEAR-A",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:3:0A0B0C0D:3:1000",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "station_index": 1,
+    "time_ms": 36060000,
+    "location_bits": "408F400000000000",
+    "scenario_id": 3,
+    "list_id": "0A0B0C0D",
+    "count": 3
+   },
+   "canonical": "JUMP_STA_TIME:1:36060000:3:0A0B0C0D:3:1000",
+   "note": "nearby station A (1000)"
+  },
+  {
+   "id": "RQ-V2-STA-NEAR-B",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:2:36060000:3:0A0B0C0D:3:1040.5",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "station_index": 2,
+    "time_ms": 36060000,
+    "location_bits": "4090420000000000",
+    "scenario_id": 3,
+    "list_id": "0A0B0C0D",
+    "count": 3
+   },
+   "canonical": "JUMP_STA_TIME:2:36060000:3:0A0B0C0D:3:1040.5",
+   "note": "nearby station B (1040.5, 40.5 m after A): the index stays 2"
+  },
+  {
+   "id": "RQ-V2-LOC-NEAR-A",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:1000:36060000:3:0A0B0C0D:3:1",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "LOC",
+   "fields": {
+    "station_index": 1,
+    "time_ms": 36060000,
+    "location_bits": "408F400000000000",
+    "scenario_id": 3,
+    "list_id": "0A0B0C0D",
+    "count": 3
+   },
+   "canonical": "JUMP_LOC_TIME:1000:36060000:3:0A0B0C0D:3:1",
+   "note": ""
+  },
+  {
+   "id": "RQ-V2-LOC-NEAR-B",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:1040.5:36060000:3:0A0B0C0D:3:2",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "LOC",
+   "fields": {
+    "station_index": 2,
+    "time_ms": 36060000,
+    "location_bits": "4090420000000000",
+    "scenario_id": 3,
+    "list_id": "0A0B0C0D",
+    "count": 3
+   },
+   "canonical": "JUMP_LOC_TIME:1040.5:36060000:3:0A0B0C0D:3:2",
+   "note": ""
+  },
+  {
+   "id": "RQ-V2-LOC-ZERO",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:0:0:1:592BCC9A:2:0",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "LOC",
+   "fields": {
+    "station_index": 0,
+    "time_ms": 0,
+    "location_bits": "0000000000000000",
+    "scenario_id": 1,
+    "list_id": "592BCC9A",
+    "count": 2
+   },
+   "canonical": "JUMP_LOC_TIME:0:0:1:592BCC9A:2:0",
+   "note": "location 0"
+  },
+  {
+   "id": "RQ-V2-LOC-ZERO-DOT",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:0.0:0:1:592BCC9A:2:0",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "LOC",
+   "fields": {
+    "station_index": 0,
+    "time_ms": 0,
+    "location_bits": "0000000000000000",
+    "scenario_id": 1,
+    "list_id": "592BCC9A",
+    "count": 2
+   },
+   "canonical": "JUMP_LOC_TIME:0:0:1:592BCC9A:2:0",
+   "note": "0.0 is the Python spelling; the canonical text is 0"
+  },
+  {
+   "id": "RQ-V2-LOC-NEGZERO",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:-0.0:0:1:592BCC9A:2:0",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "LOC",
+   "fields": {
+    "station_index": 0,
+    "time_ms": 0,
+    "location_bits": "0000000000000000",
+    "scenario_id": 1,
+    "list_id": "592BCC9A",
+    "count": 2
+   },
+   "canonical": "JUMP_LOC_TIME:0:0:1:592BCC9A:2:0",
+   "note": "-0.0 is normalised to +0.0 (bits 0): a signed zero has no meaning for a jump position"
+  },
+  {
+   "id": "RQ-V2-LOC-NEGZERO-INT",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:-0:0:1:592BCC9A:2:0",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "LOC",
+   "fields": {
+    "station_index": 0,
+    "time_ms": 0,
+    "location_bits": "0000000000000000",
+    "scenario_id": 1,
+    "list_id": "592BCC9A",
+    "count": 2
+   },
+   "canonical": "JUMP_LOC_TIME:0:0:1:592BCC9A:2:0",
+   "note": "-0 likewise"
+  },
+  {
+   "id": "RQ-V2-LOC-NEG",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:-50.5:36000000:12345678:E1D70409:4:0",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "LOC",
+   "fields": {
+    "station_index": 0,
+    "time_ms": 36000000,
+    "location_bits": "C049400000000000",
+    "scenario_id": 12345678,
+    "list_id": "E1D70409",
+    "count": 4
+   },
+   "canonical": "JUMP_LOC_TIME:-50.5:36000000:12345678:E1D70409:4:0",
+   "note": "a negative position is allowed (the contract range is |x| <= 1e9)"
+  },
+  {
+   "id": "RQ-V2-STA-DECIMAL",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1234.5678",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "station_index": 1,
+    "time_ms": 36060000,
+    "location_bits": "40934A456D5CFAAD",
+    "scenario_id": 12345678,
+    "list_id": "E1D70409",
+    "count": 4
+   },
+   "canonical": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1234.5678",
+   "note": "typical decimal"
+  },
+  {
+   "id": "RQ-V2-STA-BIGKM",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:123456.789",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "station_index": 1,
+    "time_ms": 36060000,
+    "location_bits": "40FE240C9FBE76C9",
+    "scenario_id": 12345678,
+    "list_id": "E1D70409",
+    "count": 4
+   },
+   "canonical": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:123456.789",
+   "note": "large kilometrage"
+  },
+  {
+   "id": "RQ-V2-STA-MAXLOC",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1000000000",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "station_index": 1,
+    "time_ms": 36060000,
+    "location_bits": "41CDCD6500000000",
+    "scenario_id": 12345678,
+    "list_id": "E1D70409",
+    "count": 4
+   },
+   "canonical": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1000000000",
+   "note": "the largest accepted position, 1e9, is inclusive"
+  },
+  {
+   "id": "RQ-V2-STA-MINLOC",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1e-09",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "station_index": 1,
+    "time_ms": 36060000,
+    "location_bits": "3E112E0BE826D695",
+    "scenario_id": 12345678,
+    "list_id": "E1D70409",
+    "count": 4
+   },
+   "canonical": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1E-09",
+   "note": "the smallest non-zero magnitude, 1e-9, is inclusive; exponent spelling is accepted, the canonical text is upper case"
+  },
+  {
+   "id": "RQ-V2-LOC-EXP",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:1.5E-05:0:12345678:E1D70409:4:1",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "LOC",
+   "fields": {
+    "station_index": 1,
+    "time_ms": 0,
+    "location_bits": "3EEF75104D551D69",
+    "scenario_id": 12345678,
+    "list_id": "E1D70409",
+    "count": 4
+   },
+   "canonical": "JUMP_LOC_TIME:1.5E-05:0:12345678:E1D70409:4:1",
+   "note": "exponent form"
+  },
+  {
+   "id": "RQ-V2-LOC-17DIG",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:1.2345678901234567:0:12345678:E1D70409:4:1",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "LOC",
+   "fields": {
+    "station_index": 1,
+    "time_ms": 0,
+    "location_bits": "3FF3C0CA428C59FB",
+    "scenario_id": 12345678,
+    "list_id": "E1D70409",
+    "count": 4
+   },
+   "canonical": "JUMP_LOC_TIME:1.2345678901234567:0:12345678:E1D70409:4:1",
+   "note": "17 significant digits (the longest accepted)"
+  },
+  {
+   "id": "RQ-V2-LOC-TRAILING-ZEROS",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:1000.000000000000000000:0:12345678:E1D70409:4:1",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "LOC",
+   "fields": {
+    "station_index": 1,
+    "time_ms": 0,
+    "location_bits": "408F400000000000",
+    "scenario_id": 12345678,
+    "list_id": "E1D70409",
+    "count": 4
+   },
+   "canonical": "JUMP_LOC_TIME:1000:0:12345678:E1D70409:4:1",
+   "note": "trailing zeros are not significant digits"
+  },
+  {
+   "id": "RQ-V2-LOC-INETEXP",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:1e3:0:12345678:E1D70409:4:1",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "LOC",
+   "fields": {
+    "station_index": 1,
+    "time_ms": 0,
+    "location_bits": "408F400000000000",
+    "scenario_id": 12345678,
+    "list_id": "E1D70409",
+    "count": 4
+   },
+   "canonical": "JUMP_LOC_TIME:1000:0:12345678:E1D70409:4:1",
+   "note": "1e3 = 1000"
+  },
+  {
+   "id": "RQ-V2-SCEN-0",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:0:0:0:592BCC9A:1:5",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "station_index": 0,
+    "time_ms": 0,
+    "location_bits": "4014000000000000",
+    "scenario_id": 0,
+    "list_id": "592BCC9A",
+    "count": 1
+   },
+   "canonical": "JUMP_STA_TIME:0:0:0:592BCC9A:1:5",
+   "note": "scenario_id 0 and count 1 are the smallest valid values"
+  },
+  {
+   "id": "RQ-V2-SCEN-MAX",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:0:2147483647:2147483647:592BCC9A:2147483647:5",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "station_index": 0,
+    "time_ms": 2147483647,
+    "location_bits": "4014000000000000",
+    "scenario_id": 2147483647,
+    "list_id": "592BCC9A",
+    "count": 2147483647
+   },
+   "canonical": "JUMP_STA_TIME:0:2147483647:2147483647:592BCC9A:2147483647:5",
+   "note": "Int32 maximum for time, scenario_id and count"
+  },
+  {
+   "id": "RQ-V2-LISTID-ZERO",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:0:0:5:00000000:1:5",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "station_index": 0,
+    "time_ms": 0,
+    "location_bits": "4014000000000000",
+    "scenario_id": 5,
+    "list_id": "00000000",
+    "count": 1
+   },
+   "canonical": "JUMP_STA_TIME:0:0:5:00000000:1:5",
+   "note": "an all-zero list id is a well formed id"
+  },
+  {
+   "id": "RQ-X-EMPTY",
+   "dir": "request",
+   "raw": "",
+   "valid": false,
+   "reason": "empty",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-PREFIX-ONLY",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME",
+   "valid": false,
+   "reason": "field-count",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-PREFIX-UNKNOWN",
+   "dir": "request",
+   "raw": "JUMP_XXX_TIME:1:2:3:E1D70409:4:5",
+   "valid": false,
+   "reason": "prefix",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-PREFIX-LOWER",
+   "dir": "request",
+   "raw": "jump_sta_time:1:36060000:12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "prefix",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-PREFIX-SPACE",
+   "dir": "request",
+   "raw": " JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "prefix",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-PREFIX-COMPLETE",
+   "dir": "request",
+   "raw": "JUMP_COMPLETE:STA:1:1000:36060000:0:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "prefix",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "a completion is not a request"
+  },
+  {
+   "id": "RQ-X-FC-2",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1",
+   "valid": false,
+   "reason": "field-count",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-FC-4",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678",
+   "valid": false,
+   "reason": "field-count",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-FC-5",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409",
+   "valid": false,
+   "reason": "field-count",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-FC-6",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "field-count",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-FC-8",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1000:1",
+   "valid": false,
+   "reason": "field-count",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-FC-11",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1000:1:2:3:4",
+   "valid": false,
+   "reason": "field-count",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "a hypothetical wire version 3: not recognised, never guessed"
+  },
+  {
+   "id": "RQ-X-RID-APPENDED",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1000:0123456789ABCDEF0123456789ABCDEF",
+   "valid": false,
+   "reason": "field-count",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "the RequestId lives in the Envelope, never in the body: a body that carries one is a different grammar"
+  },
+  {
+   "id": "RQ-X-TRAILING-COLON",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1000:",
+   "valid": false,
+   "reason": "field-count",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-DUP-SEP-A",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME::1:36060000:12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "field-count",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "8 fields (an empty field was inserted)"
+  },
+  {
+   "id": "RQ-X-DUP-SEP-B",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1::12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "time-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "7 fields, the time is empty"
+  },
+  {
+   "id": "RQ-X-DUP-SEP-C",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000::E1D70409:4:1000",
+   "valid": false,
+   "reason": "scenario-id-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-EMPTY-IDX",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME::36060000:12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "station-index-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-EMPTY-LISTID",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678::4:1000",
+   "valid": false,
+   "reason": "list-id-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-EMPTY-COUNT",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409::1000",
+   "valid": false,
+   "reason": "count-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-EMPTY-LOC",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-IDX-ALPHA",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:x:36060000:12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "station-index-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-IDX-DECIMAL",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1.5:36060000:12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "station-index-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-IDX-PLUS",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:+1:36060000:12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "station-index-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-IDX-LEADING-ZERO",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:01:36060000:12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "station-index-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-IDX-NEGZERO",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:-0:36060000:12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "station-index-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-IDX-SPACE",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME: 1:36060000:12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "station-index-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-IDX-HEX",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:0x1:36060000:12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "station-index-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-IDX-EQ-COUNT",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:4:36060000:12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "station-index-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "index == count"
+  },
+  {
+   "id": "RQ-X-IDX-ABOVE-COUNT",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:9:36060000:12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "station-index-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-IDX-NEGATIVE",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:-1:36060000:12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "station-index-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "-1 is not a station: no fallback to station 0"
+  },
+  {
+   "id": "RQ-X-IDX-OVERFLOW",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:99999999999:36060000:12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "station-index-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOCIDX-EQ-COUNT",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:1000:36060000:12345678:E1D70409:4:4",
+   "valid": false,
+   "reason": "station-index-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOCIDX-NEGATIVE",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:1000:36060000:12345678:E1D70409:4:-1",
+   "valid": false,
+   "reason": "station-index-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "a LOC request that carries -1 (the v1 'no index') is refused"
+  },
+  {
+   "id": "RQ-X-TIME-NEGATIVE",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:-1:12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "time-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-TIME-OVERFLOW",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:2147483648:12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "time-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-TIME-ALPHA",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:abc:12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "time-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-TIME-DECIMAL",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000.5:12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "time-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-SCEN-NEGATIVE",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:-1:E1D70409:4:1000",
+   "valid": false,
+   "reason": "scenario-id-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "an unknown scenario (-1) is never a scope"
+  },
+  {
+   "id": "RQ-X-SCEN-OVERFLOW",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:2147483648:E1D70409:4:1000",
+   "valid": false,
+   "reason": "scenario-id-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-SCEN-ALPHA",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:abc:E1D70409:4:1000",
+   "valid": false,
+   "reason": "scenario-id-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-SCEN-LEADING-ZERO",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:01:E1D70409:4:1000",
+   "valid": false,
+   "reason": "scenario-id-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-COUNT-ZERO",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:0:36060000:12345678:E1D70409:0:1000",
+   "valid": false,
+   "reason": "count-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "an empty list has no station"
+  },
+  {
+   "id": "RQ-X-COUNT-NEGATIVE",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:0:36060000:12345678:E1D70409:-1:1000",
+   "valid": false,
+   "reason": "count-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-COUNT-OVERFLOW",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:0:36060000:12345678:E1D70409:2147483648:1000",
+   "valid": false,
+   "reason": "count-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-COUNT-ALPHA",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:0:36060000:12345678:E1D70409:four:1000",
+   "valid": false,
+   "reason": "count-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LISTID-LOWER",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:e1d70409:4:1000",
+   "valid": false,
+   "reason": "list-id-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "the list id is 8 UPPER case hex digits"
+  },
+  {
+   "id": "RQ-X-LISTID-MIXED",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1d70409:4:1000",
+   "valid": false,
+   "reason": "list-id-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LISTID-SHORT",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D7040:4:1000",
+   "valid": false,
+   "reason": "list-id-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LISTID-LONG",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D704099:4:1000",
+   "valid": false,
+   "reason": "list-id-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LISTID-NONHEX",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D7040G:4:1000",
+   "valid": false,
+   "reason": "list-id-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LISTID-SPACE",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D7040 :4:1000",
+   "valid": false,
+   "reason": "list-id-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-NAN",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:NaN",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-NAN-LOWER",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:nan",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-INF",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:Infinity",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-NEGINF",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:-Infinity",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-INF-SHORT",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:inf",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "Python repr(float('inf'))"
+  },
+  {
+   "id": "RQ-X-LOC-COMMA",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1234,5",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "a locale decimal comma"
+  },
+  {
+   "id": "RQ-X-LOC-TRAILING-GARBAGE",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1000abc",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-TRAILING-SPACE",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1000 ",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-TRAILING-LF",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1000\n",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "a trailing newline is garbage (not a line terminator of the grammar)"
+  },
+  {
+   "id": "RQ-X-LOC-TRAILING-CRLF",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1000\r\n",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-LEADING-SPACE",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:  1000",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-TAB",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:\t1000",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-TWO-DOTS",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1000.5.5",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-EXP-NODIGITS",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1e",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "malformed exponent"
+  },
+  {
+   "id": "RQ-X-LOC-EXP-SIGN-ONLY",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1e+",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-EXP-NOMANTISSA",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:e5",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-EXP-DECIMAL",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1e5.5",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-EXP-DOUBLE-E",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1ee5",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-EXP-DOUBLE-SIGN",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1e+-5",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-DOT-LEAD",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:.5",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-DOT-TRAIL",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:5.",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-PLUS",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:+5",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-HEX",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:0x10",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-UNDERSCORE",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1_000",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "Python float() would accept it"
+  },
+  {
+   "id": "RQ-X-LOC-LEADING-ZERO",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:007.5",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-FULLWIDTH",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:\uff11\uff10\uff10\uff10",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "full width digits: Python float() would accept them"
+  },
+  {
+   "id": "RQ-X-LOC-PRECISION-18",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1234.56789012345678",
+   "valid": false,
+   "reason": "location-precision",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "18 significant digits: no formatter writes them"
+  },
+  {
+   "id": "RQ-X-LOC-RANGE-ABOVE",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1000000001",
+   "valid": false,
+   "reason": "location-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-RANGE-ABOVE-NEG",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:-1000000001",
+   "valid": false,
+   "reason": "location-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-RANGE-HUGE-EXP",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1e999",
+   "valid": false,
+   "reason": "location-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-RANGE-HUGE-EXP-LONG",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1e99999999999999",
+   "valid": false,
+   "reason": "location-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-RANGE-DBLMAX",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1.7976931348623157e308",
+   "valid": false,
+   "reason": "location-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "double max: outside the position contract"
+  },
+  {
+   "id": "RQ-X-LOC-RANGE-BELOW",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1e-10",
+   "valid": false,
+   "reason": "location-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "a non-zero magnitude below 1e-9 is not silently turned into 0"
+  },
+  {
+   "id": "RQ-X-LOC-RANGE-DENORM",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:5e-324",
+   "valid": false,
+   "reason": "location-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-RANGE-JUST-ABOVE",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1000000000.0000001",
+   "valid": false,
+   "reason": "location-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-ORDER-SYNTAX-BEFORE-RANGE",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:9:-1:12345678:E1D70409:4:zzz",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "index/time are only range errors; the location is a syntax error: syntax phase first"
+  },
+  {
+   "id": "RQ-X-ORDER-TIME-BEFORE-IDX",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:9:-1:12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "time-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "range phase order: time, scenario, count, location, index"
+  },
+  {
+   "id": "RQ-X-ORDER-SCEN-BEFORE-COUNT",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:9:36060000:-1:E1D70409:0:1000",
+   "valid": false,
+   "reason": "scenario-id-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-ORDER-COUNT-BEFORE-IDX",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:9:36060000:12345678:E1D70409:0:1000",
+   "valid": false,
+   "reason": "count-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-ORDER-LOC-BEFORE-IDX",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:9:36060000:12345678:E1D70409:4:2000000000",
+   "valid": false,
+   "reason": "location-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-FIRST-ALPHA",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:abc:36060000:12345678:E1D70409:4:1",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-IDX-ALPHA",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:1000:36060000:12345678:E1D70409:4:x",
+   "valid": false,
+   "reason": "station-index-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-IDX-EMPTY",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:1000:36060000:12345678:E1D70409:4:",
+   "valid": false,
+   "reason": "station-index-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-X-LOC-SWAPPED",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:1:36060000:12345678:E1D70409:4:1000.5",
+   "valid": false,
+   "reason": "station-index-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "STA field order used for a LOC request"
+  },
+  {
+   "id": "RQ-V1-STA-01",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:2:36060000",
+   "valid": true,
+   "reason": null,
+   "version": 1,
+   "kind": "STA",
+   "fields": {
+    "station_index": 2,
+    "time_ms": 36060000,
+    "location_bits": null,
+    "scenario_id": null,
+    "list_id": null,
+    "count": null
+   },
+   "canonical": null,
+   "note": "v1: three fields, no scope, no location"
+  },
+  {
+   "id": "RQ-V1-STA-ZERO",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:0:0",
+   "valid": true,
+   "reason": null,
+   "version": 1,
+   "kind": "STA",
+   "fields": {
+    "station_index": 0,
+    "time_ms": 0,
+    "location_bits": null,
+    "scenario_id": null,
+    "list_id": null,
+    "count": null
+   },
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-V1-STA-NEGATIVE-IDX",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:-1:36060000",
+   "valid": true,
+   "reason": null,
+   "version": 1,
+   "kind": "STA",
+   "fields": {
+    "station_index": -1,
+    "time_ms": 36060000,
+    "location_bits": null,
+    "scenario_id": null,
+    "list_id": null,
+    "count": null
+   },
+   "canonical": null,
+   "note": "v1 has no count: the syntax is checked, the range belongs to the executor (which refuses it)"
+  },
+  {
+   "id": "RQ-V1-STA-NEGATIVE-TIME",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:2:-1",
+   "valid": true,
+   "reason": null,
+   "version": 1,
+   "kind": "STA",
+   "fields": {
+    "station_index": 2,
+    "time_ms": -1,
+    "location_bits": null,
+    "scenario_id": null,
+    "list_id": null,
+    "count": null
+   },
+   "canonical": null,
+   "note": "v1 accepted any Int32 time (the sender ignores a negative one)"
+  },
+  {
+   "id": "RQ-V1-LOC-01",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:1000.5:36060000",
+   "valid": true,
+   "reason": null,
+   "version": 1,
+   "kind": "LOC",
+   "fields": {
+    "station_index": null,
+    "time_ms": 36060000,
+    "location_bits": "408F440000000000",
+    "scenario_id": null,
+    "list_id": null,
+    "count": null
+   },
+   "canonical": null,
+   "note": "v1 LOC carries NO index"
+  },
+  {
+   "id": "RQ-V1-LOC-ZERO",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:0.0:36060000",
+   "valid": true,
+   "reason": null,
+   "version": 1,
+   "kind": "LOC",
+   "fields": {
+    "station_index": null,
+    "time_ms": 36060000,
+    "location_bits": "0000000000000000",
+    "scenario_id": null,
+    "list_id": null,
+    "count": null
+   },
+   "canonical": null,
+   "note": "the Python f-string spelling of 0.0"
+  },
+  {
+   "id": "RQ-V1-LOC-NEGZERO",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:-0.0:36060000",
+   "valid": true,
+   "reason": null,
+   "version": 1,
+   "kind": "LOC",
+   "fields": {
+    "station_index": null,
+    "time_ms": 36060000,
+    "location_bits": "0000000000000000",
+    "scenario_id": null,
+    "list_id": null,
+    "count": null
+   },
+   "canonical": null,
+   "note": "-0.0 normalised"
+  },
+  {
+   "id": "RQ-V1-LOC-PYEXP",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:1e-05:0",
+   "valid": true,
+   "reason": null,
+   "version": 1,
+   "kind": "LOC",
+   "fields": {
+    "station_index": null,
+    "time_ms": 0,
+    "location_bits": "3EE4F8B588E368F1",
+    "scenario_id": null,
+    "list_id": null,
+    "count": null
+   },
+   "canonical": null,
+   "note": "Python repr exponent form"
+  },
+  {
+   "id": "RQ-V1-LOC-17DIG",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:98765.43210987654:0",
+   "valid": true,
+   "reason": null,
+   "version": 1,
+   "kind": "LOC",
+   "fields": {
+    "station_index": null,
+    "time_ms": 0,
+    "location_bits": "40F81CD6E9EC0BC0",
+    "scenario_id": null,
+    "list_id": null,
+    "count": null
+   },
+   "canonical": null,
+   "note": "Python repr of a 16 digit value"
+  },
+  {
+   "id": "RQ-V1-X-LOC-NAN",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:nan:0",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-V1-X-LOC-INF",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:inf:0",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-V1-X-LOC-RANGE",
+   "dir": "request",
+   "raw": "JUMP_LOC_TIME:1e300:0",
+   "valid": false,
+   "reason": "location-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-V1-X-STA-ALPHA",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:x:0",
+   "valid": false,
+   "reason": "station-index-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-V1-X-TIME-OVERFLOW",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:2147483648",
+   "valid": false,
+   "reason": "time-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-V1-X-TIME-EMPTY",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:1:",
+   "valid": false,
+   "reason": "time-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "RQ-V1-X-SPACE",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME: 1:0",
+   "valid": false,
+   "reason": "station-index-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "the old C# parser (NumberStyles.Integer) accepted the space: an ambiguous input, not kept"
+  },
+  {
+   "id": "RQ-V1-X-PLUS",
+   "dir": "request",
+   "raw": "JUMP_STA_TIME:+1:0",
+   "valid": false,
+   "reason": "station-index-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "likewise"
+  },
+  {
+   "id": "CP-V2-STA-CURRENT",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:2:1000.5:36060000:1:12345678:E1D70409:4",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "selected_idx": 2,
+    "location_bits": "408F440000000000",
+    "time_ms": 36060000,
+    "jump_count": 1,
+    "scenario_id": 12345678,
+    "list_id": "E1D70409",
+    "count": 4
+   },
+   "canonical": "JUMP_COMPLETE:STA:2:1000.5:36060000:1:12345678:E1D70409:4",
+   "note": "Current style completion (STA)"
+  },
+  {
+   "id": "CP-V2-LOC-CURRENT",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:LOC:2:2000:36200000:3:12345678:E1D70409:4",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "LOC",
+   "fields": {
+    "selected_idx": 2,
+    "location_bits": "409F400000000000",
+    "time_ms": 36200000,
+    "jump_count": 3,
+    "scenario_id": 12345678,
+    "list_id": "E1D70409",
+    "count": 4
+   },
+   "canonical": "JUMP_COMPLETE:LOC:2:2000:36200000:3:12345678:E1D70409:4",
+   "note": "LOC completion carries the VERIFIED index (v1 carried -1)"
+  },
+  {
+   "id": "CP-V2-STA-LEGACY",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:123456.789:36060123:0:99999999:592BCC9A:2",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "selected_idx": 1,
+    "location_bits": "40FE240C9FBE76C9",
+    "time_ms": 36060123,
+    "jump_count": 0,
+    "scenario_id": 99999999,
+    "list_id": "592BCC9A",
+    "count": 2
+   },
+   "canonical": "JUMP_COMPLETE:STA:1:123456.789:36060123:0:99999999:592BCC9A:2",
+   "note": "Legacy style completion (R / Invariant text, jump count 0)"
+  },
+  {
+   "id": "CP-V2-LOC-LEGACY",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:LOC:0:0:0:0:1:592BCC9A:1",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "LOC",
+   "fields": {
+    "selected_idx": 0,
+    "location_bits": "0000000000000000",
+    "time_ms": 0,
+    "jump_count": 0,
+    "scenario_id": 1,
+    "list_id": "592BCC9A",
+    "count": 1
+   },
+   "canonical": "JUMP_COMPLETE:LOC:0:0:0:0:1:592BCC9A:1",
+   "note": ""
+  },
+  {
+   "id": "CP-V2-STA-IDX0",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:0:0:36000000:2:5:00000000:1",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "selected_idx": 0,
+    "location_bits": "0000000000000000",
+    "time_ms": 36000000,
+    "jump_count": 2,
+    "scenario_id": 5,
+    "list_id": "00000000",
+    "count": 1
+   },
+   "canonical": "JUMP_COMPLETE:STA:0:0:36000000:2:5:00000000:1",
+   "note": "selected index 0"
+  },
+  {
+   "id": "CP-V2-STA-LAST",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:3:3000:36300000:2:12345678:E1D70409:4",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "selected_idx": 3,
+    "location_bits": "40A7700000000000",
+    "time_ms": 36300000,
+    "jump_count": 2,
+    "scenario_id": 12345678,
+    "list_id": "E1D70409",
+    "count": 4
+   },
+   "canonical": "JUMP_COMPLETE:STA:3:3000:36300000:2:12345678:E1D70409:4",
+   "note": "last valid selected index"
+  },
+  {
+   "id": "CP-V2-STA-SAMELOC-B",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:2:1000:36060000:1:7:2BF6D1AE:4",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "selected_idx": 2,
+    "location_bits": "408F400000000000",
+    "time_ms": 36060000,
+    "jump_count": 1,
+    "scenario_id": 7,
+    "list_id": "2BF6D1AE",
+    "count": 4
+   },
+   "canonical": "JUMP_COMPLETE:STA:2:1000:36060000:1:7:2BF6D1AE:4",
+   "note": "same-location station B selected: the position alone cannot tell it from A (index 1)"
+  },
+  {
+   "id": "CP-V2-STA-SAMELOC-A",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000:36060000:1:7:2BF6D1AE:4",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "selected_idx": 1,
+    "location_bits": "408F400000000000",
+    "time_ms": 36060000,
+    "jump_count": 1,
+    "scenario_id": 7,
+    "list_id": "2BF6D1AE",
+    "count": 4
+   },
+   "canonical": "JUMP_COMPLETE:STA:1:1000:36060000:1:7:2BF6D1AE:4",
+   "note": ""
+  },
+  {
+   "id": "CP-V2-STA-NEAR-B",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:2:1040.5:36060000:1:3:0A0B0C0D:3",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "selected_idx": 2,
+    "location_bits": "4090420000000000",
+    "time_ms": 36060000,
+    "jump_count": 1,
+    "scenario_id": 3,
+    "list_id": "0A0B0C0D",
+    "count": 3
+   },
+   "canonical": "JUMP_COMPLETE:STA:2:1040.5:36060000:1:3:0A0B0C0D:3",
+   "note": "nearby station B selected"
+  },
+  {
+   "id": "CP-V2-NEGZERO",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:0:-0.0:0:0:1:592BCC9A:2",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "selected_idx": 0,
+    "location_bits": "0000000000000000",
+    "time_ms": 0,
+    "jump_count": 0,
+    "scenario_id": 1,
+    "list_id": "592BCC9A",
+    "count": 2
+   },
+   "canonical": "JUMP_COMPLETE:STA:0:0:0:0:1:592BCC9A:2",
+   "note": "-0.0 normalised"
+  },
+  {
+   "id": "CP-V2-NEG-LOC",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:LOC:0:-50.5:36000000:1:12345678:E1D70409:4",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "LOC",
+   "fields": {
+    "selected_idx": 0,
+    "location_bits": "C049400000000000",
+    "time_ms": 36000000,
+    "jump_count": 1,
+    "scenario_id": 12345678,
+    "list_id": "E1D70409",
+    "count": 4
+   },
+   "canonical": "JUMP_COMPLETE:LOC:0:-50.5:36000000:1:12345678:E1D70409:4",
+   "note": ""
+  },
+  {
+   "id": "CP-V2-EXP-LOC",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1.5E-05:0:0:12345678:E1D70409:4",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "selected_idx": 1,
+    "location_bits": "3EEF75104D551D69",
+    "time_ms": 0,
+    "jump_count": 0,
+    "scenario_id": 12345678,
+    "list_id": "E1D70409",
+    "count": 4
+   },
+   "canonical": "JUMP_COMPLETE:STA:1:1.5E-05:0:0:12345678:E1D70409:4",
+   "note": ""
+  },
+  {
+   "id": "CP-V2-MAX",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:0:1000000000:2147483647:2147483647:2147483647:592BCC9A:2147483647",
+   "valid": true,
+   "reason": null,
+   "version": 2,
+   "kind": "STA",
+   "fields": {
+    "selected_idx": 0,
+    "location_bits": "41CDCD6500000000",
+    "time_ms": 2147483647,
+    "jump_count": 2147483647,
+    "scenario_id": 2147483647,
+    "list_id": "592BCC9A",
+    "count": 2147483647
+   },
+   "canonical": "JUMP_COMPLETE:STA:0:1000000000:2147483647:2147483647:2147483647:592BCC9A:2147483647",
+   "note": ""
+  },
+  {
+   "id": "CP-X-EMPTY",
+   "dir": "completion",
+   "raw": "",
+   "valid": false,
+   "reason": "empty",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-PREFIX",
+   "dir": "completion",
+   "raw": "JUMP_COMPLET:STA:1:1000:0:0:1:E1D70409:4",
+   "valid": false,
+   "reason": "prefix",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-PREFIX-REQUEST",
+   "dir": "completion",
+   "raw": "JUMP_STA_TIME:1:36060000:12345678:E1D70409:4:1000",
+   "valid": false,
+   "reason": "prefix",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "a request is not a completion"
+  },
+  {
+   "id": "CP-X-PREFIX-LOWER",
+   "dir": "completion",
+   "raw": "jump_complete:STA:1:1000:0:0:1:E1D70409:4",
+   "valid": false,
+   "reason": "prefix",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-FC-1",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE",
+   "valid": false,
+   "reason": "field-count",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-FC-5",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000:36060000",
+   "valid": false,
+   "reason": "field-count",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-FC-7",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000:36060000:1:12345678",
+   "valid": false,
+   "reason": "field-count",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-FC-8",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000:36060000:1:12345678:E1D70409",
+   "valid": false,
+   "reason": "field-count",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-FC-10",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000:36060000:1:12345678:E1D70409:4:9",
+   "valid": false,
+   "reason": "field-count",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "an extra field: the old Python read >= 6 fields and ignored the rest; v2 is exact"
+  },
+  {
+   "id": "CP-X-TRAILING-COLON",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000:36060000:1:12345678:E1D70409:4:",
+   "valid": false,
+   "reason": "field-count",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-KIND-SKIP",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:SKIP:1:1000:36060000:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "kind",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "invalid completion status"
+  },
+  {
+   "id": "CP-X-KIND-LOWER",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:sta:1:1000:36060000:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "kind",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-KIND-OK",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:OK:1:1000:36060000:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "kind",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-KIND-EMPTY",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE::1:1000:36060000:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "kind",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-KIND-SPACE",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA :1:1000:36060000:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "kind",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-SEL-NEGATIVE",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:LOC:-1:1000:36060000:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "selected-idx-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "the v1 LOC completion carried -1; a v2 completion never does"
+  },
+  {
+   "id": "CP-X-SEL-EQ-COUNT",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:4:1000:36060000:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "selected-idx-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-SEL-ALPHA",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:x:1000:36060000:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "selected-idx-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-SEL-EMPTY",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA::1000:36060000:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "selected-idx-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-SEL-LEADING-ZERO",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:01:1000:36060000:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "selected-idx-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-LOC-NAN",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:NaN:36060000:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-LOC-INF",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:Infinity:36060000:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-LOC-NEGINF",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:-Infinity:36060000:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-LOC-COMMA",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000,5:36060000:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "what the Current G format wrote under a comma culture"
+  },
+  {
+   "id": "CP-X-LOC-TRAILING-GARBAGE",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000.5abc:36060000:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-LOC-EMPTY",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1::36060000:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-LOC-RANGE-HUGE-EXP",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1e400:36060000:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "location-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-LOC-EXP",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1e:36060000:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-LOC-RANGE",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000000001:36060000:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "location-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-LOC-PRECISION",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1234.56789012345678:36060000:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "location-precision",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-TIME-NEGATIVE",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000:-1:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "time-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "the sender reads -1 when the time is unreadable: not a completion"
+  },
+  {
+   "id": "CP-X-TIME-ALPHA",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000:abc:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "time-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-JC-NEGATIVE",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000:36060000:-1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "jump-count-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-JC-ALPHA",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000:36060000:x:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "jump-count-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-JC-EMPTY",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000:36060000::12345678:E1D70409:4",
+   "valid": false,
+   "reason": "jump-count-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-SCEN-NEGATIVE",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000:36060000:1:-1:E1D70409:4",
+   "valid": false,
+   "reason": "scenario-id-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-SCEN-OVERFLOW",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000:36060000:1:2147483648:E1D70409:4",
+   "valid": false,
+   "reason": "scenario-id-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-SCEN-ALPHA",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000:36060000:1:abc:E1D70409:4",
+   "valid": false,
+   "reason": "scenario-id-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-LISTID-LOWER",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000:36060000:1:12345678:e1d70409:4",
+   "valid": false,
+   "reason": "list-id-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-LISTID-SHORT",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000:36060000:1:12345678:E1D7040:4",
+   "valid": false,
+   "reason": "list-id-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-LISTID-EMPTY",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000:36060000:1:12345678::4",
+   "valid": false,
+   "reason": "list-id-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-COUNT-ZERO",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:0:1000:36060000:1:12345678:E1D70409:0",
+   "valid": false,
+   "reason": "count-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-COUNT-OVERFLOW",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:0:1000:36060000:1:12345678:E1D70409:2147483648",
+   "valid": false,
+   "reason": "count-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-COUNT-ALPHA",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:0:1000:36060000:1:12345678:E1D70409:four",
+   "valid": false,
+   "reason": "count-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-LF",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000:36060000:1:12345678:E1D70409:4\n",
+   "valid": false,
+   "reason": "count-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": "a trailing newline sticks to the last field"
+  },
+  {
+   "id": "CP-X-DUP-SEP",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000:36060000::1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "field-count",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-ORDER-TIME-BEFORE-SEL",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:9:1000:-1:1:12345678:E1D70409:4",
+   "valid": false,
+   "reason": "time-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-X-ORDER-JC-BEFORE-SCEN",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:9:1000:36060000:-1:-1:E1D70409:4",
+   "valid": false,
+   "reason": "jump-count-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-V1-STA-01",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:2:1000.5:36060000:1",
+   "valid": true,
+   "reason": null,
+   "version": 1,
+   "kind": "STA",
+   "fields": {
+    "selected_idx": 2,
+    "location_bits": "408F440000000000",
+    "time_ms": 36060000,
+    "jump_count": 1,
+    "scenario_id": null,
+    "list_id": null,
+    "count": null
+   },
+   "canonical": null,
+   "note": "v1: six fields, no scope"
+  },
+  {
+   "id": "CP-V1-LOC-MINUS1",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:LOC:-1:2000:36200000:3",
+   "valid": true,
+   "reason": null,
+   "version": 1,
+   "kind": "LOC",
+   "fields": {
+    "selected_idx": -1,
+    "location_bits": "409F400000000000",
+    "time_ms": 36200000,
+    "jump_count": 3,
+    "scenario_id": null,
+    "list_id": null,
+    "count": null
+   },
+   "canonical": null,
+   "note": "v1 LOC completion: selected index -1"
+  },
+  {
+   "id": "CP-V1-STA-LEGACY-R",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:123456.789:36060123:0",
+   "valid": true,
+   "reason": null,
+   "version": 1,
+   "kind": "STA",
+   "fields": {
+    "selected_idx": 1,
+    "location_bits": "40FE240C9FBE76C9",
+    "time_ms": 36060123,
+    "jump_count": 0,
+    "scenario_id": null,
+    "list_id": null,
+    "count": null
+   },
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-V1-NEGZERO",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:0:-0.0:0:0",
+   "valid": true,
+   "reason": null,
+   "version": 1,
+   "kind": "STA",
+   "fields": {
+    "selected_idx": 0,
+    "location_bits": "0000000000000000",
+    "time_ms": 0,
+    "jump_count": 0,
+    "scenario_id": null,
+    "list_id": null,
+    "count": null
+   },
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-V1-X-LOC-NAN",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:NaN:36060000:1",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-V1-X-KIND",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:XYZ:1:1000:36060000:1",
+   "valid": false,
+   "reason": "kind",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-V1-X-SEL",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:x:1000:36060000:1",
+   "valid": false,
+   "reason": "selected-idx-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-V1-X-COMMA",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000,5:36060000:1",
+   "valid": false,
+   "reason": "location-syntax",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  },
+  {
+   "id": "CP-V1-X-TIME-OVERFLOW",
+   "dir": "completion",
+   "raw": "JUMP_COMPLETE:STA:1:1000:2147483648:1",
+   "valid": false,
+   "reason": "time-range",
+   "version": null,
+   "kind": null,
+   "fields": null,
+   "canonical": null,
+   "note": ""
+  }
+ ],
+ "locations": [
+  {
+   "id": "LOC-OK-01",
+   "text": "0",
+   "valid": true,
+   "reason": null,
+   "bits": "0000000000000000",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-02",
+   "text": "0.0",
+   "valid": true,
+   "reason": null,
+   "bits": "0000000000000000",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-03",
+   "text": "-0",
+   "valid": true,
+   "reason": null,
+   "bits": "0000000000000000",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-04",
+   "text": "-0.0",
+   "valid": true,
+   "reason": null,
+   "bits": "0000000000000000",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-05",
+   "text": "0e5",
+   "valid": true,
+   "reason": null,
+   "bits": "0000000000000000",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-06",
+   "text": "0.000",
+   "valid": true,
+   "reason": null,
+   "bits": "0000000000000000",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-07",
+   "text": "0.1",
+   "valid": true,
+   "reason": null,
+   "bits": "3FB999999999999A",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-08",
+   "text": "0.01",
+   "valid": true,
+   "reason": null,
+   "bits": "3F847AE147AE147B",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-09",
+   "text": "0.34",
+   "valid": true,
+   "reason": null,
+   "bits": "3FD5C28F5C28F5C3",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-10",
+   "text": "1",
+   "valid": true,
+   "reason": null,
+   "bits": "3FF0000000000000",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-11",
+   "text": "1234.5678",
+   "valid": true,
+   "reason": null,
+   "bits": "40934A456D5CFAAD",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-12",
+   "text": "123456.789",
+   "valid": true,
+   "reason": null,
+   "bits": "40FE240C9FBE76C9",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-13",
+   "text": "-50.5",
+   "valid": true,
+   "reason": null,
+   "bits": "C049400000000000",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-14",
+   "text": "999999999",
+   "valid": true,
+   "reason": null,
+   "bits": "41CDCD64FF800000",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-15",
+   "text": "1000000000",
+   "valid": true,
+   "reason": null,
+   "bits": "41CDCD6500000000",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-16",
+   "text": "-1000000000",
+   "valid": true,
+   "reason": null,
+   "bits": "C1CDCD6500000000",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-17",
+   "text": "1e-9",
+   "valid": true,
+   "reason": null,
+   "bits": "3E112E0BE826D695",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-18",
+   "text": "1E-9",
+   "valid": true,
+   "reason": null,
+   "bits": "3E112E0BE826D695",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-19",
+   "text": "1e-09",
+   "valid": true,
+   "reason": null,
+   "bits": "3E112E0BE826D695",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-20",
+   "text": "0.000000001",
+   "valid": true,
+   "reason": null,
+   "bits": "3E112E0BE826D695",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-21",
+   "text": "-1e-9",
+   "valid": true,
+   "reason": null,
+   "bits": "BE112E0BE826D695",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-22",
+   "text": "1.5E-05",
+   "valid": true,
+   "reason": null,
+   "bits": "3EEF75104D551D69",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-23",
+   "text": "0.0001",
+   "valid": true,
+   "reason": null,
+   "bits": "3F1A36E2EB1C432D",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-24",
+   "text": "0.00001",
+   "valid": true,
+   "reason": null,
+   "bits": "3EE4F8B588E368F1",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-25",
+   "text": "1.2345678901234567",
+   "valid": true,
+   "reason": null,
+   "bits": "3FF3C0CA428C59FB",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-26",
+   "text": "0.30000000000000004",
+   "valid": true,
+   "reason": null,
+   "bits": "3FD3333333333334",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-27",
+   "text": "300.00000000000006",
+   "valid": true,
+   "reason": null,
+   "bits": "4072C00000000001",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-28",
+   "text": "98765.43210987654",
+   "valid": true,
+   "reason": null,
+   "bits": "40F81CD6E9EC0BC0",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-29",
+   "text": "98765.4321098765",
+   "valid": true,
+   "reason": null,
+   "bits": "40F81CD6E9EC0BBE",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-30",
+   "text": "46095.601584",
+   "valid": true,
+   "reason": null,
+   "bits": "40E681F3402D16B9",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-31",
+   "text": "542178.603787",
+   "valid": true,
+   "reason": null,
+   "bits": "41208BC5352391D5",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-32",
+   "text": "329353.29853",
+   "valid": true,
+   "reason": null,
+   "bits": "41141A2531B1D92B",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-33",
+   "text": "-61950.81118768745",
+   "valid": true,
+   "reason": null,
+   "bits": "C0EE3FD9F53FE190",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-34",
+   "text": "7004328.1965845805",
+   "valid": true,
+   "reason": null,
+   "bits": "415AB82A0C94D77E",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-35",
+   "text": "5984324.122430149",
+   "valid": true,
+   "reason": null,
+   "bits": "4156D41107D5E543",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-36",
+   "text": "4271014.924829436",
+   "valid": true,
+   "reason": null,
+   "bits": "41504AE9BB3067CD",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-37",
+   "text": "1e9",
+   "valid": true,
+   "reason": null,
+   "bits": "41CDCD6500000000",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-38",
+   "text": "1E+9",
+   "valid": true,
+   "reason": null,
+   "bits": "41CDCD6500000000",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-39",
+   "text": "1e+09",
+   "valid": true,
+   "reason": null,
+   "bits": "41CDCD6500000000",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-40",
+   "text": "100e-2",
+   "valid": true,
+   "reason": null,
+   "bits": "3FF0000000000000",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-41",
+   "text": "12345678.9e1",
+   "valid": true,
+   "reason": null,
+   "bits": "419D6F3454000000",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-42",
+   "text": "0.5e1",
+   "valid": true,
+   "reason": null,
+   "bits": "4014000000000000",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-43",
+   "text": "1e0",
+   "valid": true,
+   "reason": null,
+   "bits": "3FF0000000000000",
+   "note": ""
+  },
+  {
+   "id": "LOC-OK-44",
+   "text": "1e00000000000000000001",
+   "valid": true,
+   "reason": null,
+   "bits": "4024000000000000",
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-01",
+   "text": "",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-02",
+   "text": "-",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-03",
+   "text": "+",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-04",
+   "text": ".",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-05",
+   "text": "e",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-06",
+   "text": "E5",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-07",
+   "text": "NaN",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-08",
+   "text": "nan",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-09",
+   "text": "NAN",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-10",
+   "text": "Infinity",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-11",
+   "text": "-Infinity",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-12",
+   "text": "+Infinity",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-13",
+   "text": "inf",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-14",
+   "text": "-inf",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-15",
+   "text": "\u221e",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-16",
+   "text": "1,5",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-17",
+   "text": "1.234,5",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-18",
+   "text": "1 234",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-19",
+   "text": "1.5 ",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-20",
+   "text": " 1.5",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-21",
+   "text": "1.5\n",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-22",
+   "text": "1.5\r",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-23",
+   "text": "\t1.5",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-24",
+   "text": "1.5abc",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-25",
+   "text": "abc",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-26",
+   "text": "1e",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-27",
+   "text": "1e+",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-28",
+   "text": "1e-",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-29",
+   "text": "e5",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-30",
+   "text": "1e5.5",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-31",
+   "text": "1ee5",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-32",
+   "text": "1e+-5",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-33",
+   "text": "1e--5",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-34",
+   "text": "1.e5",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-35",
+   "text": ".5",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-36",
+   "text": "5.",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-37",
+   "text": "+5",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-38",
+   "text": "--5",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-39",
+   "text": "-+5",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-40",
+   "text": "0x10",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-41",
+   "text": "1_000",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-42",
+   "text": "00",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-43",
+   "text": "007",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-44",
+   "text": "-007.5",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-45",
+   "text": "1..5",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-46",
+   "text": "1.5.5",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-47",
+   "text": "\uff11\uff10",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-48",
+   "text": "\u0661\u0662",
+   "valid": false,
+   "reason": "location-syntax",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-49",
+   "text": "12345678901234567890",
+   "valid": false,
+   "reason": "location-precision",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-50",
+   "text": "1.00000000000000001",
+   "valid": false,
+   "reason": "location-precision",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-51",
+   "text": "0.123456789012345678",
+   "valid": false,
+   "reason": "location-precision",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-52",
+   "text": "1234.56789012345678",
+   "valid": false,
+   "reason": "location-precision",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-53",
+   "text": "1000000001",
+   "valid": false,
+   "reason": "location-range",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-54",
+   "text": "-1000000001",
+   "valid": false,
+   "reason": "location-range",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-55",
+   "text": "1000000000.0000001",
+   "valid": false,
+   "reason": "location-range",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-56",
+   "text": "1e10",
+   "valid": false,
+   "reason": "location-range",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-57",
+   "text": "1e999",
+   "valid": false,
+   "reason": "location-range",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-58",
+   "text": "1e99999999999999999999",
+   "valid": false,
+   "reason": "location-range",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-59",
+   "text": "1.7976931348623157e308",
+   "valid": false,
+   "reason": "location-range",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-60",
+   "text": "1e-10",
+   "valid": false,
+   "reason": "location-range",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-61",
+   "text": "9.99e-10",
+   "valid": false,
+   "reason": "location-range",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-62",
+   "text": "5e-324",
+   "valid": false,
+   "reason": "location-range",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-63",
+   "text": "1e-999",
+   "valid": false,
+   "reason": "location-range",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-64",
+   "text": "0.0000000001",
+   "valid": false,
+   "reason": "location-range",
+   "bits": null,
+   "note": ""
+  },
+  {
+   "id": "LOC-BAD-65",
+   "text": "-1e-10",
+   "valid": false,
+   "reason": "location-range",
+   "bits": null,
+   "note": ""
+  }
+ ],
+ "format": [
+  {
+   "id": "FQ-OK-STA",
+   "dir": "request",
+   "input": {
+    "kind": "STA",
+    "station_index": 2,
+    "time_ms": 36060000,
+    "location_bits": "408F440000000000",
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": true,
+   "reason": null,
+   "text": "JUMP_STA_TIME:2:36060000:12345678:E1D70409:4:1000.5",
+   "note": ""
+  },
+  {
+   "id": "FQ-OK-LOC",
+   "dir": "request",
+   "input": {
+    "kind": "LOC",
+    "station_index": 2,
+    "time_ms": 36200000,
+    "location_bits": "409F400000000000",
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": true,
+   "reason": null,
+   "text": "JUMP_LOC_TIME:2000:36200000:12345678:E1D70409:4:2",
+   "note": ""
+  },
+  {
+   "id": "FQ-OK-SAMELOC-B",
+   "dir": "request",
+   "input": {
+    "kind": "STA",
+    "station_index": 2,
+    "time_ms": 36060000,
+    "location_bits": "408F400000000000",
+    "scope": {
+     "scenario_id": 7,
+     "list_id": "2BF6D1AE",
+     "count": 4
+    }
+   },
+   "valid": true,
+   "reason": null,
+   "text": "JUMP_STA_TIME:2:36060000:7:2BF6D1AE:4:1000",
+   "note": "same location as index 1, the index written is 2"
+  },
+  {
+   "id": "FQ-OK-NEAR-B",
+   "dir": "request",
+   "input": {
+    "kind": "STA",
+    "station_index": 2,
+    "time_ms": 36060000,
+    "location_bits": "4090420000000000",
+    "scope": {
+     "scenario_id": 3,
+     "list_id": "0A0B0C0D",
+     "count": 3
+    }
+   },
+   "valid": true,
+   "reason": null,
+   "text": "JUMP_STA_TIME:2:36060000:3:0A0B0C0D:3:1040.5",
+   "note": ""
+  },
+  {
+   "id": "FQ-OK-NEGZERO",
+   "dir": "request",
+   "input": {
+    "kind": "LOC",
+    "station_index": 0,
+    "time_ms": 0,
+    "location_bits": "8000000000000000",
+    "scope": {
+     "scenario_id": 1,
+     "list_id": "592BCC9A",
+     "count": 2
+    }
+   },
+   "valid": true,
+   "reason": null,
+   "text": "JUMP_LOC_TIME:0:0:1:592BCC9A:2:0",
+   "note": "-0.0 is written as 0"
+  },
+  {
+   "id": "FQ-OK-LAST",
+   "dir": "request",
+   "input": {
+    "kind": "STA",
+    "station_index": 3,
+    "time_ms": 0,
+    "location_bits": "40A7700000000000",
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": true,
+   "reason": null,
+   "text": "JUMP_STA_TIME:3:0:12345678:E1D70409:4:3000",
+   "note": ""
+  },
+  {
+   "id": "FQ-OK-MAX",
+   "dir": "request",
+   "input": {
+    "kind": "STA",
+    "station_index": 0,
+    "time_ms": 2147483647,
+    "location_bits": "41CDCD6500000000",
+    "scope": {
+     "scenario_id": 2147483647,
+     "list_id": "592BCC9A",
+     "count": 2147483647
+    }
+   },
+   "valid": true,
+   "reason": null,
+   "text": "JUMP_STA_TIME:0:2147483647:2147483647:592BCC9A:2147483647:1000000000",
+   "note": ""
+  },
+  {
+   "id": "FQ-X-KIND",
+   "dir": "request",
+   "input": {
+    "kind": "XXX",
+    "station_index": 2,
+    "time_ms": 0,
+    "location_bits": "3FF0000000000000",
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "kind",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FQ-X-KIND-LOWER",
+   "dir": "request",
+   "input": {
+    "kind": "sta",
+    "station_index": 2,
+    "time_ms": 0,
+    "location_bits": "3FF0000000000000",
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "kind",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FQ-X-NOSCOPE",
+   "dir": "request",
+   "input": {
+    "kind": "STA",
+    "station_index": 2,
+    "time_ms": 0,
+    "location_bits": "3FF0000000000000",
+    "scope": null
+   },
+   "valid": false,
+   "reason": "scope-incomplete",
+   "text": null,
+   "note": "v1 style: no scope = no v2 request"
+  },
+  {
+   "id": "FQ-X-IDX-EQ-COUNT",
+   "dir": "request",
+   "input": {
+    "kind": "STA",
+    "station_index": 4,
+    "time_ms": 0,
+    "location_bits": "3FF0000000000000",
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "station-index-range",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FQ-X-IDX-NEGATIVE",
+   "dir": "request",
+   "input": {
+    "kind": "STA",
+    "station_index": -1,
+    "time_ms": 0,
+    "location_bits": "3FF0000000000000",
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "station-index-range",
+   "text": null,
+   "note": "no fallback to station 0"
+  },
+  {
+   "id": "FQ-X-LOC-IDX-NEGATIVE",
+   "dir": "request",
+   "input": {
+    "kind": "LOC",
+    "station_index": -1,
+    "time_ms": 0,
+    "location_bits": "3FF0000000000000",
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "station-index-range",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FQ-X-TIME-NEGATIVE",
+   "dir": "request",
+   "input": {
+    "kind": "STA",
+    "station_index": 1,
+    "time_ms": -1,
+    "location_bits": "3FF0000000000000",
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "time-range",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FQ-X-TIME-OVERFLOW",
+   "dir": "request",
+   "input": {
+    "kind": "STA",
+    "station_index": 1,
+    "time_ms": 2147483648,
+    "location_bits": "3FF0000000000000",
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "time-range",
+   "text": null,
+   "note": "int32_unrepresentable"
+  },
+  {
+   "id": "FQ-X-SCEN-NEGATIVE",
+   "dir": "request",
+   "input": {
+    "kind": "STA",
+    "station_index": 1,
+    "time_ms": 0,
+    "location_bits": "3FF0000000000000",
+    "scope": {
+     "scenario_id": -1,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "scenario-id-range",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FQ-X-COUNT-ZERO",
+   "dir": "request",
+   "input": {
+    "kind": "STA",
+    "station_index": 0,
+    "time_ms": 0,
+    "location_bits": "3FF0000000000000",
+    "scope": {
+     "scenario_id": 1,
+     "list_id": "E1D70409",
+     "count": 0
+    }
+   },
+   "valid": false,
+   "reason": "count-range",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FQ-X-LISTID-LOWER",
+   "dir": "request",
+   "input": {
+    "kind": "STA",
+    "station_index": 1,
+    "time_ms": 0,
+    "location_bits": "3FF0000000000000",
+    "scope": {
+     "scenario_id": 1,
+     "list_id": "e1d70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "list-id-syntax",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FQ-X-LISTID-SHORT",
+   "dir": "request",
+   "input": {
+    "kind": "STA",
+    "station_index": 1,
+    "time_ms": 0,
+    "location_bits": "3FF0000000000000",
+    "scope": {
+     "scenario_id": 1,
+     "list_id": "E1D7040",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "list-id-syntax",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FQ-X-LOC-NAN",
+   "dir": "request",
+   "input": {
+    "kind": "STA",
+    "station_index": 1,
+    "time_ms": 0,
+    "location_bits": "7FF8000000000000",
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "location-range",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FQ-X-LOC-INF",
+   "dir": "request",
+   "input": {
+    "kind": "STA",
+    "station_index": 1,
+    "time_ms": 0,
+    "location_bits": "7FF0000000000000",
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "location-range",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FQ-X-LOC-NEGINF",
+   "dir": "request",
+   "input": {
+    "kind": "STA",
+    "station_index": 1,
+    "time_ms": 0,
+    "location_bits": "FFF0000000000000",
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "location-range",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FQ-X-LOC-ABOVE",
+   "dir": "request",
+   "input": {
+    "kind": "STA",
+    "station_index": 1,
+    "time_ms": 0,
+    "location_bits": "41CDCD6500800000",
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "location-range",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FQ-X-LOC-BELOW",
+   "dir": "request",
+   "input": {
+    "kind": "STA",
+    "station_index": 1,
+    "time_ms": 0,
+    "location_bits": "3DDB7CDFD9D7BDBB",
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "location-range",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FQ-X-LOC-DBLMAX",
+   "dir": "request",
+   "input": {
+    "kind": "STA",
+    "station_index": 1,
+    "time_ms": 0,
+    "location_bits": "7FEFFFFFFFFFFFFF",
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "location-range",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FC-OK-STA",
+   "dir": "completion",
+   "input": {
+    "kind": "STA",
+    "selected_idx": 2,
+    "location_bits": "408F440000000000",
+    "time_ms": 36060000,
+    "jump_count": 1,
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": true,
+   "reason": null,
+   "text": "JUMP_COMPLETE:STA:2:1000.5:36060000:1:12345678:E1D70409:4",
+   "note": ""
+  },
+  {
+   "id": "FC-OK-LOC",
+   "dir": "completion",
+   "input": {
+    "kind": "LOC",
+    "selected_idx": 2,
+    "location_bits": "409F400000000000",
+    "time_ms": 36200000,
+    "jump_count": 3,
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": true,
+   "reason": null,
+   "text": "JUMP_COMPLETE:LOC:2:2000:36200000:3:12345678:E1D70409:4",
+   "note": ""
+  },
+  {
+   "id": "FC-OK-SAMELOC-B",
+   "dir": "completion",
+   "input": {
+    "kind": "STA",
+    "selected_idx": 2,
+    "location_bits": "408F400000000000",
+    "time_ms": 36060000,
+    "jump_count": 1,
+    "scope": {
+     "scenario_id": 7,
+     "list_id": "2BF6D1AE",
+     "count": 4
+    }
+   },
+   "valid": true,
+   "reason": null,
+   "text": "JUMP_COMPLETE:STA:2:1000:36060000:1:7:2BF6D1AE:4",
+   "note": ""
+  },
+  {
+   "id": "FC-OK-NEGZERO",
+   "dir": "completion",
+   "input": {
+    "kind": "STA",
+    "selected_idx": 0,
+    "location_bits": "8000000000000000",
+    "time_ms": 0,
+    "jump_count": 0,
+    "scope": {
+     "scenario_id": 1,
+     "list_id": "592BCC9A",
+     "count": 2
+    }
+   },
+   "valid": true,
+   "reason": null,
+   "text": "JUMP_COMPLETE:STA:0:0:0:0:1:592BCC9A:2",
+   "note": ""
+  },
+  {
+   "id": "FC-X-KIND",
+   "dir": "completion",
+   "input": {
+    "kind": "SKIP",
+    "selected_idx": 2,
+    "location_bits": "3FF0000000000000",
+    "time_ms": 0,
+    "jump_count": 0,
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "kind",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FC-X-NOSCOPE",
+   "dir": "completion",
+   "input": {
+    "kind": "STA",
+    "selected_idx": 2,
+    "location_bits": "3FF0000000000000",
+    "time_ms": 0,
+    "jump_count": 0,
+    "scope": null
+   },
+   "valid": false,
+   "reason": "scope-incomplete",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FC-X-SEL-NEGATIVE",
+   "dir": "completion",
+   "input": {
+    "kind": "LOC",
+    "selected_idx": -1,
+    "location_bits": "3FF0000000000000",
+    "time_ms": 0,
+    "jump_count": 0,
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "selected-idx-range",
+   "text": null,
+   "note": "the v1 LOC value -1 can not be written"
+  },
+  {
+   "id": "FC-X-SEL-EQ-COUNT",
+   "dir": "completion",
+   "input": {
+    "kind": "STA",
+    "selected_idx": 4,
+    "location_bits": "3FF0000000000000",
+    "time_ms": 0,
+    "jump_count": 0,
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "selected-idx-range",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FC-X-TIME-NEGATIVE",
+   "dir": "completion",
+   "input": {
+    "kind": "STA",
+    "selected_idx": 1,
+    "location_bits": "3FF0000000000000",
+    "time_ms": -1,
+    "jump_count": 0,
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "time-range",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FC-X-JC-NEGATIVE",
+   "dir": "completion",
+   "input": {
+    "kind": "STA",
+    "selected_idx": 1,
+    "location_bits": "3FF0000000000000",
+    "time_ms": 0,
+    "jump_count": -1,
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "jump-count-range",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FC-X-LOC-NAN",
+   "dir": "completion",
+   "input": {
+    "kind": "STA",
+    "selected_idx": 1,
+    "location_bits": "7FF8000000000000",
+    "time_ms": 0,
+    "jump_count": 0,
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "location-range",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FC-X-LOC-INF",
+   "dir": "completion",
+   "input": {
+    "kind": "STA",
+    "selected_idx": 1,
+    "location_bits": "7FF0000000000000",
+    "time_ms": 0,
+    "jump_count": 0,
+    "scope": {
+     "scenario_id": 12345678,
+     "list_id": "E1D70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "location-range",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FC-X-LISTID-LOWER",
+   "dir": "completion",
+   "input": {
+    "kind": "STA",
+    "selected_idx": 1,
+    "location_bits": "3FF0000000000000",
+    "time_ms": 0,
+    "jump_count": 0,
+    "scope": {
+     "scenario_id": 1,
+     "list_id": "e1d70409",
+     "count": 4
+    }
+   },
+   "valid": false,
+   "reason": "list-id-syntax",
+   "text": null,
+   "note": ""
+  },
+  {
+   "id": "FC-X-COUNT-ZERO",
+   "dir": "completion",
+   "input": {
+    "kind": "STA",
+    "selected_idx": 0,
+    "location_bits": "3FF0000000000000",
+    "time_ms": 0,
+    "jump_count": 0,
+    "scope": {
+     "scenario_id": 1,
+     "list_id": "E1D70409",
+     "count": 0
+    }
+   },
+   "valid": false,
+   "reason": "count-range",
+   "text": null,
+   "note": ""
+  }
+ ],
+ "numbers": [
+  {
+   "id": "NUM-ZERO",
+   "bits": "0000000000000000",
+   "text": "0",
+   "note": ""
+  },
+  {
+   "id": "NUM-NEGZERO",
+   "bits": "8000000000000000",
+   "text": "0",
+   "note": "the text of -0.0 is 0 (the bits of the PARSED value are 0000...)"
+  },
+  {
+   "id": "NUM-0.1",
+   "bits": "3FB999999999999A",
+   "text": "0.1",
+   "note": ""
+  },
+  {
+   "id": "NUM-0.01",
+   "bits": "3F847AE147AE147B",
+   "text": "0.01",
+   "note": ""
+  },
+  {
+   "id": "NUM-0.34",
+   "bits": "3FD5C28F5C28F5C3",
+   "text": "0.34",
+   "note": ""
+  },
+  {
+   "id": "NUM-ONE",
+   "bits": "3FF0000000000000",
+   "text": "1",
+   "note": ""
+  },
+  {
+   "id": "NUM-TYPICAL",
+   "bits": "40934A456D5CFAAD",
+   "text": "1234.5678",
+   "note": ""
+  },
+  {
+   "id": "NUM-17DIG",
+   "bits": "3FF3C0CA428C59FB",
+   "text": "1.2345678901234567",
+   "note": ""
+  },
+  {
+   "id": "NUM-KM",
+   "bits": "40FE240C9FBE76C9",
+   "text": "123456.789",
+   "note": ""
+  },
+  {
+   "id": "NUM-NEG",
+   "bits": "C049400000000000",
+   "text": "-50.5",
+   "note": ""
+  },
+  {
+   "id": "NUM-MAX999",
+   "bits": "41CDCD64FF800000",
+   "text": "999999999",
+   "note": ""
+  },
+  {
+   "id": "NUM-MAX",
+   "bits": "41CDCD6500000000",
+   "text": "1000000000",
+   "note": ""
+  },
+  {
+   "id": "NUM-NEGMAX",
+   "bits": "C1CDCD6500000000",
+   "text": "-1000000000",
+   "note": ""
+  },
+  {
+   "id": "NUM-MIN",
+   "bits": "3E112E0BE826D695",
+   "text": "1E-09",
+   "note": ""
+  },
+  {
+   "id": "NUM-SMALL",
+   "bits": "3EEF75104D551D69",
+   "text": "1.5E-05",
+   "note": ""
+  },
+  {
+   "id": "NUM-1E-4",
+   "bits": "3F1A36E2EB1C432D",
+   "text": "0.0001",
+   "note": ""
+  },
+  {
+   "id": "NUM-ARITH",
+   "bits": "3FD3333333333334",
+   "text": "0.30000000000000004",
+   "note": ""
+  },
+  {
+   "id": "NUM-ARITH-1000",
+   "bits": "4072C00000000001",
+   "text": "300.00000000000006",
+   "note": ""
+  },
+  {
+   "id": "NUM-16DIG",
+   "bits": "40F81CD6E9EC0BC0",
+   "text": "98765.43210987654",
+   "note": ""
+  },
+  {
+   "id": "NUM-NET-PARSE-1",
+   "bits": "40E681F3402D16B9",
+   "text": "46095.601584",
+   "note": "11 digits: the .NET Framework Double.Parse of this text is 1 ulp away (measured)"
+  },
+  {
+   "id": "NUM-NET-PARSE-2",
+   "bits": "41208BC5352391D5",
+   "text": "542178.603787",
+   "note": "likewise"
+  },
+  {
+   "id": "NUM-NET-PARSE-3",
+   "bits": "41141A2531B1D92B",
+   "text": "329353.29853",
+   "note": "likewise"
+  },
+  {
+   "id": "NUM-NET-R-1",
+   "bits": "415AB82A0C94D77E",
+   "text": "7004328.1965845805",
+   "note": "the .NET 'R' text of this value is 15 digits and is read back 1 ulp away by a correct parser (measured)"
+  },
+  {
+   "id": "NUM-NET-R-2",
+   "bits": "4156D41107D5E543",
+   "text": "5984324.122430149",
+   "note": ""
+  },
+  {
+   "id": "NUM-NET-R-3",
+   "bits": "41504AE9BB3067CD",
+   "text": "4271014.924829436",
+   "note": ""
+  },
+  {
+   "id": "NUM-NET-R-4",
+   "bits": "C0EE3FD9F53FE190",
+   "text": "-61950.81118768745",
+   "note": ""
+  },
+  {
+   "id": "NUM-POW2-1",
+   "bits": "4130000000000000",
+   "text": "1048576",
+   "note": "2^20"
+  },
+  {
+   "id": "NUM-POW2-NEG",
+   "bits": "3EB0000000000000",
+   "text": "9.5367431640625E-07",
+   "note": "2^-20 is below 1e-4: exponent text"
+  }
+ ],
+ "equivalence": [
+  {
+   "id": "EQ-01",
+   "raw": "JUMP_STA_TIME:2:36060000",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": true,
+   "class": "same",
+   "same_meaning": true
+  },
+  {
+   "id": "EQ-02",
+   "raw": "JUMP_STA_TIME:0:0",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": true,
+   "class": "same",
+   "same_meaning": true
+  },
+  {
+   "id": "EQ-03",
+   "raw": "JUMP_STA_TIME:-1:36060000",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": true,
+   "class": "same",
+   "same_meaning": true
+  },
+  {
+   "id": "EQ-04",
+   "raw": "JUMP_STA_TIME:2:-1",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": true,
+   "class": "same",
+   "same_meaning": true
+  },
+  {
+   "id": "EQ-05",
+   "raw": "JUMP_STA_TIME:-2147483648:0",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": true,
+   "class": "same",
+   "same_meaning": true
+  },
+  {
+   "id": "EQ-06",
+   "raw": "JUMP_STA_TIME:2147483647:2147483647",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": true,
+   "class": "same",
+   "same_meaning": true
+  },
+  {
+   "id": "EQ-07",
+   "raw": "JUMP_LOC_TIME:1000.5:36060000",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": true,
+   "class": "same",
+   "same_meaning": true
+  },
+  {
+   "id": "EQ-08",
+   "raw": "JUMP_LOC_TIME:0.0:36060000",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": true,
+   "class": "same",
+   "same_meaning": true
+  },
+  {
+   "id": "EQ-09",
+   "raw": "JUMP_LOC_TIME:-0.0:36060000",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": true,
+   "class": "same",
+   "same_meaning": true
+  },
+  {
+   "id": "EQ-10",
+   "raw": "JUMP_LOC_TIME:1e-05:0",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": true,
+   "class": "same",
+   "same_meaning": true
+  },
+  {
+   "id": "EQ-11",
+   "raw": "JUMP_LOC_TIME:1e3:0",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": true,
+   "class": "same",
+   "same_meaning": true
+  },
+  {
+   "id": "EQ-12",
+   "raw": "JUMP_LOC_TIME:1E+3:0",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": true,
+   "class": "same",
+   "same_meaning": true
+  },
+  {
+   "id": "EQ-13",
+   "raw": "JUMP_LOC_TIME:-50.5:0",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": true,
+   "class": "same",
+   "same_meaning": true
+  },
+  {
+   "id": "EQ-14",
+   "raw": "JUMP_LOC_TIME:123456.789:5",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": true,
+   "class": "same",
+   "same_meaning": true
+  },
+  {
+   "id": "EQ-15",
+   "raw": "JUMP_LOC_TIME:1000.5:-5",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": true,
+   "class": "same",
+   "same_meaning": true
+  },
+  {
+   "id": "EQ-16",
+   "raw": "JUMP_LOC_TIME:46095.601584:0",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": true,
+   "class": "bcl-ulp"
+  },
+  {
+   "id": "EQ-17",
+   "raw": "JUMP_STA_TIME:2147483648:0",
+   "current_accepts": false,
+   "legacy_accepts": false,
+   "jumpwire_accepts": false,
+   "class": "same"
+  },
+  {
+   "id": "EQ-18",
+   "raw": "JUMP_STA_TIME:1:2147483648",
+   "current_accepts": false,
+   "legacy_accepts": false,
+   "jumpwire_accepts": false,
+   "class": "same"
+  },
+  {
+   "id": "EQ-19",
+   "raw": "JUMP_STA_TIME:1.5:0",
+   "current_accepts": false,
+   "legacy_accepts": false,
+   "jumpwire_accepts": false,
+   "class": "same"
+  },
+  {
+   "id": "EQ-20",
+   "raw": "JUMP_STA_TIME:x:0",
+   "current_accepts": false,
+   "legacy_accepts": false,
+   "jumpwire_accepts": false,
+   "class": "same"
+  },
+  {
+   "id": "EQ-21",
+   "raw": "JUMP_STA_TIME:1",
+   "current_accepts": false,
+   "legacy_accepts": false,
+   "jumpwire_accepts": false,
+   "class": "same"
+  },
+  {
+   "id": "EQ-22",
+   "raw": "JUMP_STA_TIME:1:0:5",
+   "current_accepts": false,
+   "legacy_accepts": false,
+   "jumpwire_accepts": false,
+   "class": "same"
+  },
+  {
+   "id": "EQ-23",
+   "raw": "JUMP_STA_TIME:1:0:",
+   "current_accepts": false,
+   "legacy_accepts": false,
+   "jumpwire_accepts": false,
+   "class": "same"
+  },
+  {
+   "id": "EQ-24",
+   "raw": "JUMP_LOC_TIME:abc:0",
+   "current_accepts": false,
+   "legacy_accepts": false,
+   "jumpwire_accepts": false,
+   "class": "same"
+  },
+  {
+   "id": "EQ-25",
+   "raw": "JUMP_LOC_TIME:0x10:0",
+   "current_accepts": false,
+   "legacy_accepts": false,
+   "jumpwire_accepts": false,
+   "class": "same"
+  },
+  {
+   "id": "EQ-26",
+   "raw": "JUMP_LOC_TIME:1_000:0",
+   "current_accepts": false,
+   "legacy_accepts": false,
+   "jumpwire_accepts": false,
+   "class": "same"
+  },
+  {
+   "id": "EQ-27",
+   "raw": "JUMP_LOC_TIME:1,5:0",
+   "current_accepts": false,
+   "legacy_accepts": false,
+   "jumpwire_accepts": false,
+   "class": "same"
+  },
+  {
+   "id": "EQ-28",
+   "raw": "JUMP_LOC_TIME:inf:0",
+   "current_accepts": false,
+   "legacy_accepts": false,
+   "jumpwire_accepts": false,
+   "class": "same"
+  },
+  {
+   "id": "EQ-29",
+   "raw": "JUMP_LOC_TIME:1e:0",
+   "current_accepts": false,
+   "legacy_accepts": false,
+   "jumpwire_accepts": false,
+   "class": "same"
+  },
+  {
+   "id": "EQ-30",
+   "raw": "JUMP_STA_TIME: 1:0",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": false,
+   "class": "legacy-lenient"
+  },
+  {
+   "id": "EQ-31",
+   "raw": "JUMP_STA_TIME:1: 0",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": false,
+   "class": "legacy-lenient"
+  },
+  {
+   "id": "EQ-32",
+   "raw": "JUMP_STA_TIME:1:0 ",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": false,
+   "class": "legacy-lenient"
+  },
+  {
+   "id": "EQ-33",
+   "raw": "JUMP_STA_TIME:+1:0",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": false,
+   "class": "legacy-lenient"
+  },
+  {
+   "id": "EQ-34",
+   "raw": "JUMP_STA_TIME:01:0",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": false,
+   "class": "legacy-lenient"
+  },
+  {
+   "id": "EQ-35",
+   "raw": "JUMP_STA_TIME:1:0\n",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": false,
+   "class": "legacy-lenient"
+  },
+  {
+   "id": "EQ-36",
+   "raw": "JUMP_LOC_TIME: 1000.5:0",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": false,
+   "class": "legacy-lenient"
+  },
+  {
+   "id": "EQ-37",
+   "raw": "JUMP_LOC_TIME:1000.5 :0",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": false,
+   "class": "legacy-lenient"
+  },
+  {
+   "id": "EQ-38",
+   "raw": "JUMP_LOC_TIME:.5:0",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": false,
+   "class": "legacy-lenient"
+  },
+  {
+   "id": "EQ-39",
+   "raw": "JUMP_LOC_TIME:5.:0",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": false,
+   "class": "legacy-lenient"
+  },
+  {
+   "id": "EQ-40",
+   "raw": "JUMP_LOC_TIME:+5:0",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": false,
+   "class": "legacy-lenient"
+  },
+  {
+   "id": "EQ-41",
+   "raw": "JUMP_LOC_TIME:007:0",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": false,
+   "class": "legacy-lenient"
+  },
+  {
+   "id": "EQ-42",
+   "raw": "JUMP_LOC_TIME:1e300:0",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": false,
+   "class": "out-of-contract-range"
+  },
+  {
+   "id": "EQ-43",
+   "raw": "JUMP_LOC_TIME:1e-300:0",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": false,
+   "class": "out-of-contract-range"
+  },
+  {
+   "id": "EQ-44",
+   "raw": "JUMP_LOC_TIME:1000000001:0",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": false,
+   "class": "out-of-contract-range"
+  },
+  {
+   "id": "EQ-45",
+   "raw": "JUMP_LOC_TIME:1e-10:0",
+   "current_accepts": true,
+   "legacy_accepts": true,
+   "jumpwire_accepts": false,
+   "class": "out-of-contract-range"
+  },
+  {
+   "id": "EQ-46",
+   "raw": "JUMP_LOC_TIME:NaN:0",
+   "current_accepts": false,
+   "legacy_accepts": true,
+   "jumpwire_accepts": false,
+   "class": "nonfinite"
+  },
+  {
+   "id": "EQ-47",
+   "raw": "JUMP_LOC_TIME:Infinity:0",
+   "current_accepts": false,
+   "legacy_accepts": true,
+   "jumpwire_accepts": false,
+   "class": "nonfinite"
+  },
+  {
+   "id": "EQ-48",
+   "raw": "JUMP_LOC_TIME:-Infinity:0",
+   "current_accepts": false,
+   "legacy_accepts": true,
+   "jumpwire_accepts": false,
+   "class": "nonfinite"
+  }
+ ],
+ "corpus": {
+  "generator": "splitmix64",
+  "seed": "0x20261022A7C3B1D5",
+  "family_a": {
+   "count": 20000,
+   "rule": "stream = splitmix64(seed); per draw z1, z2, z3 = next three outputs; k = (z2 >> 32) % 60 - 29; sign = bit 63 of z3; bits = (sign << 63) | ((k + 1023) << 52) | (z1 & (2^52 - 1)); x = the double with those bits (no arithmetic); skip the draw when |x| > 1e9"
+  },
+  "family_b": {
+   "count": 20000,
+   "rule": "stream = splitmix64(seed XOR 0x5555555555555555); d = 1 + (z1 >> 20) % 17; n = z2 % 10^d; frac = (z3 >> 24) % (d + 1); text = decimal text of n; when frac > 0 left-pad to frac + 1 digits and put the point before the last frac digits; a leading minus when bit 63 of z3 is set; the verdict of the codec decides (range / precision) which texts are valid"
+  },
+  "reference": [
+   "D6025A2E951A98F3",
+   "DB10A6BB616B00DB",
+   "DC76A67FF64993BF",
+   "8ED205BC38978245",
+   "BC44EDB0BBEA3CCE",
+   "39633661E9E4B412"
+  ]
+ }
+}
