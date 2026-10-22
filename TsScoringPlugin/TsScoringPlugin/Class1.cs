@@ -67,9 +67,16 @@ namespace TsScoringPlugin
         // Pythonから要求された公式ジャンプの完了通知待機状態
         private bool pendingJumpComplete = false;
         private string pendingJumpType = "";
+        // Phase ST-3b: the index the jump ADOPTED (the host was called with it), and the location it was checked against; -1 / 0.0 = no pending jump
         private int pendingJumpStationIndex = -1;
+        private int pendingJumpRequestedIndex = -1;
+        private double pendingJumpRequestedLocation = 0.0;
         // PID-D6: the RequestId of the pending jump (null = a plain command of the normal mode); echoed in the managed JUMP_COMPLETE envelope
         private byte[] pendingJumpRequestId = null;
+        // Phase ST-3b: the one-shot StationIndex of the re-initialisation that follows an official jump (-1 = none). Set only by BeginPendingJump (after the host call), consumed by the
+        // first re-initialisation, cleared with the pending jump; it is never derived from a position.
+        private int requestedTargetIndex = -1;
+        private double requestedTargetLocation = 0.0;
         private TSScoringPlugin.DataPlane.CurrentJumpEndpoint jumpEndpoint;
         private int opStopDelayStartMs = -1;
         private bool initialStaListSent = false;
@@ -273,6 +280,113 @@ namespace TsScoringPlugin
             internal JumpInput(string text, byte[] requestId) { Text = text; RequestId = requestId; }
         }
 
+        // ---- Phase ST-3b: the Current jump transaction. Every DECISION (grammar, version, scope, index, location, the target to re-initialise, the numbers written) is
+        // CurrentJumpExecution's, a pure unit held by compiled tests; what follows is the plugin's own state and the one diagnostic channel (one line per request, never per Tick).
+
+        private TSScoringPlugin.DataPlane.CurrentJumpView BuildJumpView()
+        {
+            TSScoringPlugin.DataPlane.CurrentJumpView view = new TSScoringPlugin.DataPlane.CurrentJumpView();
+            view.ScenarioId = scenarioId;
+            view.ListReady = stidxListReady;
+            view.ListId = stidxListId;
+            view.ListCount = stidxListCount;
+            view.Locations = StationLocations();
+            return view;
+        }
+
+        private double[] StationLocations()
+        {
+            double[] locations = new double[stationList.Count];
+            for (int i = 0; i < locations.Length; i++) locations[i] = stationList[i].Location;
+            return locations;
+        }
+
+        private void JumpDiag(string line)
+        {
+            try { if (diagnostics != null) diagnostics.Write(line); } catch { }
+        }
+
+        private void JumpRefused(byte[] requestId, TSScoringPlugin.DataPlane.CurrentJumpDecision decision, string reason, string detail)
+        {
+            JumpDiag(TSScoringPlugin.DataPlane.CurrentJumpExecution.RefusedLine(requestId, decision, reason, detail));
+        }
+
+        /// <summary>The only place that empties the pending jump: after the completion was sent, or when it will never be sent.</summary>
+        private void ClearPendingJump()
+        {
+            pendingJumpComplete = false;
+            pendingJumpRequestId = null;
+            pendingJumpType = "";
+            pendingJumpStationIndex = -1;
+            pendingJumpRequestedIndex = -1;
+            pendingJumpRequestedLocation = 0.0;
+            requestedTargetIndex = -1;
+            requestedTargetLocation = 0.0;
+        }
+
+        /// <summary>A jump that was executed but will not be completed (superseded, scenario gone, the list can not carry it, the numbers can not be read or written): one line, no completion.</summary>
+        private void AbandonPendingJump(string reason, string detail)
+        {
+            if (pendingJumpComplete) JumpDiag(TSScoringPlugin.DataPlane.CurrentJumpExecution.AbortedLine(pendingJumpRequestId, pendingJumpType, pendingJumpStationIndex, reason, detail));
+            ClearPendingJump();
+        }
+
+        /// <summary>The jump was executed with the ADOPTED index: remember it (for the completion and for the one re-initialisation) after the host call, never before.</summary>
+        private void BeginPendingJump(string kind, byte[] requestId, TSScoringPlugin.DataPlane.CurrentJumpDecision decision)
+        {
+            if (pendingJumpComplete) AbandonPendingJump(TSScoringPlugin.DataPlane.CurrentJumpExecution.RSuperseded, "-");
+            pendingJumpComplete = true;
+            pendingJumpRequestId = requestId;
+            pendingJumpType = kind;
+            pendingJumpStationIndex = decision.StationIndex;
+            pendingJumpRequestedIndex = decision.RequestedIndex;
+            pendingJumpRequestedLocation = decision.Location;
+            requestedTargetIndex = decision.StationIndex;
+            requestedTargetLocation = decision.Location;
+        }
+
+        private void ReinitializeTargetStateAfterJump()
+        {
+            isInitialized = false;
+            hasDoorOpenedAtTarget = false;
+            opStopDelayStartMs = -1;
+            terminalFrozenDiffSeconds = -999;
+            wasTerminalDoorOpened = false;
+        }
+
+        /// <summary>The time field of the BVE time manager, found BEFORE the host is called (a jump whose time can not be set is not started); null when any step is missing.</summary>
+        private static System.Reflection.FieldInfo FindJumpTimeField(object scenario, System.Reflection.BindingFlags flags, out object rawTimeMgr)
+        {
+            rawTimeMgr = null;
+            var timeMgr = scenario.GetType().GetProperty("TimeManager", flags)?.GetValue(scenario);
+            if (timeMgr == null) return null;
+            rawTimeMgr = timeMgr.GetType().GetProperty("Src", flags)?.GetValue(timeMgr);
+            if (rawTimeMgr == null) return null;
+            return rawTimeMgr.GetType().GetField("c", flags);
+        }
+
+        /// <summary>The target after an official jump: the ADOPTED StationIndex. No position is searched.</summary>
+        private void SelectTargetByRequestedIndex(int requestedStationIndex, double location, bool areDoorsClosed)
+        {
+            targetStationIndex = requestedStationIndex;
+            hasDoorOpenedAtTarget = !areDoorsClosed && Math.Abs(stationList[requestedStationIndex].Location - location) < 50.0;
+        }
+
+        /// <summary>The target of every re-initialisation that carries NO StationIndex (first Tick, scenario change, manual time jump, a changed station count): the first station that is not more
+        /// than 50 m behind the vehicle. Never reached on the path of an official jump.</summary>
+        private void SelectTargetByPosition(double location, bool areDoorsClosed)
+        {
+            for (int i = 0; i < stationList.Count; i++)
+            {
+                if (stationList[i].Location >= location - 50.0)
+                {
+                    targetStationIndex = i;
+                    hasDoorOpenedAtTarget = !areDoorsClosed && Math.Abs(stationList[i].Location - location) < 50.0;
+                    break;
+                }
+            }
+        }
+
         private bool firstTickNoted;
 
         public override void Tick(TimeSpan elapsed)
@@ -294,6 +408,7 @@ namespace TsScoringPlugin
                 initialStaListSent = false;
                 lastStaListSendTime = DateTime.MinValue;
                 currentScenario = null;
+                AbandonPendingJump(TSScoringPlugin.DataPlane.CurrentJumpExecution.RScenarioChanged, "-");
                 return;
             }
 
@@ -318,6 +433,7 @@ namespace TsScoringPlugin
                     lastTimeMs = 0;
                     initialStaListSent = false;
                     lastStaListSendTime = DateTime.MinValue;
+                    AbandonPendingJump(TSScoringPlugin.DataPlane.CurrentJumpExecution.RScenarioChanged, "-");
                 }
 
                 // シナリオ情報を取得して送信用変数へ格納する
@@ -350,138 +466,122 @@ namespace TsScoringPlugin
                             string msg = jumpInput.Text;
                             byte[] jumpRequestId = jumpInput.RequestId;
 
+                            // Phase ST-3b: the command is judged BEFORE any host call (JumpWire v1 / v2 grammar, scenario, list id and count, StationIndex, location). Only a v2 command that
+                            // passes is executed, and it is executed with the ADOPTED index / location; every other command is refused with one diagnostic line, no host call, no completion.
+                            TSScoringPlugin.DataPlane.CurrentJumpDecision jumpDecision = TSScoringPlugin.DataPlane.CurrentJumpExecution.Judge(msg, BuildJumpView());
+                            if (!jumpDecision.Accepted)
+                            {
+                                JumpRefused(jumpRequestId, jumpDecision, jumpDecision.Reason, jumpDecision.Detail);
+                                continue;
+                            }
+                            int adoptedIndex = jumpDecision.StationIndex;
+                            double adoptedLocation = jumpDecision.Location;
+                            int adoptedTimeMs = jumpDecision.TimeMs;
+
                             // 駅番号によるジャンプを実行し、指定されたBVE時刻へ同期する
                             if (msg.StartsWith("JUMP_STA_TIME:"))
                             {
-                                string[] parts = msg.Split(':');
-                                if (parts.Length >= 3 && int.TryParse(parts[1], out int sIdx) && int.TryParse(parts[2], out int rTimeMs))
+                                try
                                 {
-                                    try
+                                    var scenario = BveHacker.Scenario;
+                                    var srcProp = scenario == null ? null : scenario.GetType().GetProperty("Src", bindFlagsAll);
+                                    object rawScenario = srcProp == null ? null : srcProp.GetValue(scenario);
+                                    if (rawScenario == null)
                                     {
-                                        var scenario = BveHacker.Scenario;
-                                        if (scenario == null) continue;
-                                        var srcProp = scenario.GetType().GetProperty("Src", bindFlagsAll);
-                                        if (srcProp != null)
-                                        {
-                                            object rawScenario = srcProp.GetValue(scenario);
-                                            if (rawScenario != null)
-                                            {
-                                                // 駅番号を引数に取るジャンプメソッドを取得する
-                                                var jumpStaMethod = rawScenario
-                                                    .GetType()
-                                                    .GetMethods(bindFlagsAll)
-                                                    .FirstOrDefault(
-                                                        m =>
-                                                            m.GetParameters().Length == 1
-                                                            && m.GetParameters()[0].ParameterType == typeof(int)
-                                                            && m.ReturnType == typeof(void)
-                                                    );
-
-                                                if (jumpStaMethod != null)
-                                                {
-                                                    jumpStaMethod.Invoke(
-                                                        rawScenario,
-                                                        new object[] { sIdx }
-                                                    );
-                                                }
-
-                                                // BVE時刻を指定された時刻へ同期する
-                                                var timeMgr = scenario.GetType().GetProperty("TimeManager", bindFlagsAll)?.GetValue(scenario);
-                                                if (timeMgr != null)
-                                                {
-                                                    var rawTimeMgr = timeMgr.GetType().GetProperty("Src", bindFlagsAll)?.GetValue(timeMgr);
-                                                    if (rawTimeMgr != null)
-                                                    {
-                                                        var timeField = rawTimeMgr.GetType().GetField("c", bindFlagsAll);
-                                                        if (timeField != null && rTimeMs >= 0) timeField.SetValue(rawTimeMgr, rTimeMs);
-                                                    }
-                                                    double locationAfterCommand = -1.0;
-                                                    bool doorsClosedAfterCommand = true;
-
-                                                    try
-                                                    {
-                                                        locationAfterCommand =
-                                                            BveHacker.Scenario.VehicleLocation.Location;
-                                                    }
-                                                    catch
-                                                    {
-                                                    }
-
-                                                    try
-                                                    {
-                                                        doorsClosedAfterCommand =
-                                                            BveHacker.Scenario.Vehicle.Doors.AreAllClosed;
-                                                    }
-                                                    catch
-                                                    {
-                                                    }
-                                                }
-
-                                                // ジャンプ後の現在位置を基準に対象駅状態を再初期化する
-                                                isInitialized = false;
-                                                hasDoorOpenedAtTarget = false;
-                                                opStopDelayStartMs = -1;
-                                                terminalFrozenDiffSeconds = -999;
-                                                wasTerminalDoorOpened = false;
-                                                // 駅状態の再初期化後にPythonへ完了通知を送る
-                                                pendingJumpComplete = true;
-                                                pendingJumpRequestId = jumpRequestId;
-                                                pendingJumpType = "STA";
-                                                pendingJumpStationIndex = sIdx;
-                                            }
-                                        }
+                                        JumpRefused(jumpRequestId, jumpDecision, TSScoringPlugin.DataPlane.CurrentJumpExecution.RScenarioMissing, "-");
+                                        continue;
                                     }
-                                    catch { }
+
+                                    // 駅番号を引数に取るジャンプメソッドを取得する
+                                    var jumpStaMethod = rawScenario
+                                        .GetType()
+                                        .GetMethods(bindFlagsAll)
+                                        .FirstOrDefault(
+                                            m =>
+                                                m.GetParameters().Length == 1
+                                                && m.GetParameters()[0].ParameterType == typeof(int)
+                                                && m.ReturnType == typeof(void)
+                                        );
+                                    if (jumpStaMethod == null)
+                                    {
+                                        JumpRefused(jumpRequestId, jumpDecision, TSScoringPlugin.DataPlane.CurrentJumpExecution.RApiMissing, "-");
+                                        continue;
+                                    }
+
+                                    object rawTimeMgr;
+                                    var timeField = FindJumpTimeField(scenario, bindFlagsAll, out rawTimeMgr);
+                                    if (timeField == null)
+                                    {
+                                        JumpRefused(jumpRequestId, jumpDecision, TSScoringPlugin.DataPlane.CurrentJumpExecution.RTimeFieldMissing, "-");
+                                        continue;
+                                    }
+
+                                    jumpStaMethod.Invoke(
+                                        rawScenario,
+                                        new object[] { adoptedIndex }
+                                    );
+
+                                    // BVE時刻を指定された時刻へ同期する
+                                    timeField.SetValue(rawTimeMgr, adoptedTimeMs);
+
+                                    // ジャンプ後の対象駅状態を再初期化する（対象駅は採用したStationIndexで決まり、位置では選ばない）
+                                    ReinitializeTargetStateAfterJump();
+                                    // 駅状態の再初期化後にPythonへ完了通知を送る
+                                    BeginPendingJump("STA", jumpRequestId, jumpDecision);
+                                }
+                                catch (Exception jumpEx)
+                                {
+                                    JumpRefused(jumpRequestId, jumpDecision, TSScoringPlugin.DataPlane.CurrentJumpExecution.RJumpException, jumpEx.GetType().Name);
                                 }
                             }
 
                             // 駅ジャンプを利用できない場合は、座標と時刻を直接指定して移動する
                             else if (msg.StartsWith("JUMP_LOC_TIME:"))
                             {
-                                string[] parts = msg.Split(':');
-                                if (parts.Length >= 3 && double.TryParse(parts[1], out double rLoc) && int.TryParse(parts[2], out int rTimeMs))
+                                try
                                 {
-                                    try
+                                    var scenario = BveHacker.Scenario;
+                                    var srcProp = scenario == null ? null : scenario.GetType().GetProperty("Src", bindFlagsAll);
+                                    object rawScenario = srcProp == null ? null : srcProp.GetValue(scenario);
+                                    if (rawScenario == null)
                                     {
-                                        var scenario = BveHacker.Scenario;
-                                        if (scenario == null) continue;
-                                        var srcProp = scenario.GetType().GetProperty("Src", bindFlagsAll);
-                                        if (srcProp != null)
-                                        {
-                                            object rawScenario = srcProp.GetValue(scenario);
-                                            if (rawScenario != null)
-                                            {
-                                                // 指定座標へのジャンプを実行する
-                                                var jumpMethod = rawScenario.GetType().GetMethods(bindFlagsAll)
-                                                    .FirstOrDefault(m => m.GetParameters().Length == 2 &&
-                                                                         m.GetParameters()[0].ParameterType == typeof(double) &&
-                                                                         m.GetParameters()[1].ParameterType == typeof(int) &&
-                                                                         m.ReturnType == typeof(void));
-                                                if (jumpMethod != null)
-                                                {
-                                                    jumpMethod.Invoke(rawScenario, new object[] { rLoc, 0 });
-                                                }
-
-                                                // BVE時刻を指定された時刻へ同期する
-                                                var timeMgr = scenario.GetType().GetProperty("TimeManager", bindFlagsAll)?.GetValue(scenario);
-                                                if (timeMgr != null)
-                                                {
-                                                    var rawTimeMgr = timeMgr.GetType().GetProperty("Src", bindFlagsAll)?.GetValue(timeMgr);
-                                                    if (rawTimeMgr != null)
-                                                    {
-                                                        var timeField = rawTimeMgr.GetType().GetField("c", bindFlagsAll);
-                                                        if (timeField != null && rTimeMs >= 0) timeField.SetValue(rawTimeMgr, rTimeMs);
-                                                    }
-                                                }
-                                                // 駅状態の反映後にPythonへ完了通知を送る
-                                                pendingJumpComplete = true;
-                                                pendingJumpRequestId = jumpRequestId;
-                                                pendingJumpType = "LOC";
-                                                pendingJumpStationIndex = -1;
-                                            }
-                                        }
+                                        JumpRefused(jumpRequestId, jumpDecision, TSScoringPlugin.DataPlane.CurrentJumpExecution.RScenarioMissing, "-");
+                                        continue;
                                     }
-                                    catch { }
+
+                                    // 指定座標へのジャンプを実行する
+                                    var jumpMethod = rawScenario.GetType().GetMethods(bindFlagsAll)
+                                        .FirstOrDefault(m => m.GetParameters().Length == 2 &&
+                                                             m.GetParameters()[0].ParameterType == typeof(double) &&
+                                                             m.GetParameters()[1].ParameterType == typeof(int) &&
+                                                             m.ReturnType == typeof(void));
+                                    if (jumpMethod == null)
+                                    {
+                                        JumpRefused(jumpRequestId, jumpDecision, TSScoringPlugin.DataPlane.CurrentJumpExecution.RApiMissing, "-");
+                                        continue;
+                                    }
+
+                                    object rawTimeMgr;
+                                    var timeField = FindJumpTimeField(scenario, bindFlagsAll, out rawTimeMgr);
+                                    if (timeField == null)
+                                    {
+                                        JumpRefused(jumpRequestId, jumpDecision, TSScoringPlugin.DataPlane.CurrentJumpExecution.RTimeFieldMissing, "-");
+                                        continue;
+                                    }
+
+                                    jumpMethod.Invoke(rawScenario, new object[] { adoptedLocation, 0 });
+
+                                    // BVE時刻を指定された時刻へ同期する
+                                    timeField.SetValue(rawTimeMgr, adoptedTimeMs);
+
+                                    // 座標ジャンプも対象駅状態を自分で再初期化し、採用したStationIndexを完了へ載せる
+                                    ReinitializeTargetStateAfterJump();
+                                    // 駅状態の反映後にPythonへ完了通知を送る
+                                    BeginPendingJump("LOC", jumpRequestId, jumpDecision);
+                                }
+                                catch (Exception jumpEx)
+                                {
+                                    JumpRefused(jumpRequestId, jumpDecision, TSScoringPlugin.DataPlane.CurrentJumpExecution.RJumpException, jumpEx.GetType().Name);
                                 }
                             }
                         }
@@ -882,15 +982,25 @@ namespace TsScoringPlugin
                             }
                         }
 
-                        for (int i = 0; i < stationList.Count; i++)
+                        // Phase ST-3b: the re-initialisation that follows an official jump targets the ADOPTED StationIndex (one-shot, consumed here whatever the verdict); a list that can no longer
+                        // carry it abandons the completion and leaves the target alone - it never falls back to the position search. Every re-initialisation that carries NO index
+                        // (first Tick, scenario change, manual time jump, a changed station count) keeps the position search.
+                        int requestedStationIndex = -1;
+                        bool requestedTargetRefused = false;
+                        if (requestedTargetIndex >= 0)
                         {
-                            if (stationList[i].Location >= location - 50.0)
+                            string reinitReason;
+                            requestedStationIndex = TSScoringPlugin.DataPlane.CurrentJumpExecution.ResolveRequestedTarget(requestedTargetIndex, requestedTargetLocation, StationLocations(), out reinitReason);
+                            requestedTargetIndex = -1;
+                            requestedTargetLocation = 0.0;
+                            if (requestedStationIndex < 0)
                             {
-                                targetStationIndex = i;
-                                hasDoorOpenedAtTarget = !areDoorsClosed && Math.Abs(stationList[i].Location - location) < 50.0;
-                                break;
+                                requestedTargetRefused = true;
+                                AbandonPendingJump(reinitReason, "-");
                             }
                         }
+                        if (requestedStationIndex >= 0) SelectTargetByRequestedIndex(requestedStationIndex, location, areDoorsClosed);
+                        else if (!requestedTargetRefused) SelectTargetByPosition(location, areDoorsClosed);
                         isInitialized = true;
                     }
 
@@ -903,7 +1013,7 @@ namespace TsScoringPlugin
                             int sTiming = st.IsScoring ? 1 : 0;
 
                             staInfoList.Add(
-                                $"{sName}={sTiming}={st.Location}="
+                                $"{sName}={sTiming}={TSScoringPlugin.DataPlane.CurrentJumpExecution.StationLocationText(st.Location)}="
                                 + $"{st.ArrTime}={st.DepTime}="
                                 + $"{st.DefaultTime}={st.StoppageTime}="
                                 + $"{(st.IsPass ? 1 : 0)}="
@@ -1396,13 +1506,18 @@ namespace TsScoringPlugin
                     }
                     if (pendingJumpComplete && isInitialized)
                     {
-                        double completedLocation = -1.0;
-                        int completedTime = -1;
+                        // Phase ST-3b: the completion carries what the host REALLY reports (position, time) and the index the jump ADOPTED; a value that can not be read or written is
+                        // never replaced by -1: the completion is abandoned (Python releases the jump by its own timeout) and nothing is sent.
+                        double completedLocation = 0.0;
+                        int completedTime = 0;
+                        bool completedLocationRead = false;
+                        bool completedTimeRead = false;
 
                         try
                         {
                             completedLocation =
                                 BveHacker.Scenario.VehicleLocation.Location;
+                            completedLocationRead = true;
                         }
                         catch
                         {
@@ -1415,29 +1530,48 @@ namespace TsScoringPlugin
                                     .TimeManager
                                     .Time
                                     .TotalMilliseconds;
+                            completedTimeRead = true;
                         }
                         catch
                         {
                         }
 
-                        string completeMessage =
-                            $"JUMP_COMPLETE:{pendingJumpType}"
-                            + $":{pendingJumpStationIndex}"
-                            + $":{completedLocation}"
-                            + $":{completedTime}"
-                            + $":{jumpCounter}";
-
-                        byte[] completeBytes =
-                            Encoding.UTF8.GetBytes(completeMessage);
-
-                        // Normal mode (plain command, no RequestId): sent plain as always. Managed mode (PID-D6): a type 5 envelope that echoes the RequestId of
-                        // the command. During the hold-off, or while the Telemetry endpoint cannot be resolved, the notice stays pending.
-                        if (batch.SendJumpComplete(completeBytes, pendingJumpRequestId))
+                        string completeReason = null;
+                        string completeMessage = null;
+                        if (!completedLocationRead || !completedTimeRead)
                         {
-                            pendingJumpComplete = false;
-                            pendingJumpRequestId = null;
-                            pendingJumpType = "";
-                            pendingJumpStationIndex = -1;
+                            completeReason = TSScoringPlugin.DataPlane.CurrentJumpExecution.RCompletionUnreadable;
+                        }
+                        else if (!stidxListReady)
+                        {
+                            completeReason = TSScoringPlugin.DataPlane.CurrentJumpExecution.RListNotReady;
+                        }
+                        else
+                        {
+                            completeMessage = TSScoringPlugin.DataPlane.CurrentJumpExecution.FormatCompletion(
+                                pendingJumpType, pendingJumpStationIndex, completedLocation, completedTime, jumpCounter, scenarioId, stidxListId, stationList.Count, out completeReason);
+                        }
+
+                        if (completeMessage == null)
+                        {
+                            AbandonPendingJump(
+                                completeReason == TSScoringPlugin.DataPlane.CurrentJumpExecution.RCompletionUnreadable || completeReason == TSScoringPlugin.DataPlane.CurrentJumpExecution.RListNotReady
+                                    ? completeReason : TSScoringPlugin.DataPlane.CurrentJumpExecution.RCompletionFormat,
+                                completeReason);
+                        }
+                        else
+                        {
+                            byte[] completeBytes =
+                                Encoding.UTF8.GetBytes(completeMessage);
+
+                            // Normal mode (plain command, no RequestId): sent plain as always. Managed mode (PID-D6): a type 5 envelope that echoes the RequestId of
+                            // the command. During the hold-off, or while the Telemetry endpoint cannot be resolved, the notice stays pending (and is sent once, when it can be).
+                            if (batch.SendJumpComplete(completeBytes, pendingJumpRequestId))
+                            {
+                                JumpDiag(TSScoringPlugin.DataPlane.CurrentJumpExecution.CompletedLine(
+                                    pendingJumpRequestId, pendingJumpType, pendingJumpRequestedIndex, pendingJumpStationIndex, pendingJumpRequestedLocation, completedLocation, completedTime, jumpCounter));
+                                ClearPendingJump();
+                            }
                         }
                     }
                 }

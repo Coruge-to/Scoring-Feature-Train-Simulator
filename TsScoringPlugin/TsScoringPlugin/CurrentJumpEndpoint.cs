@@ -64,12 +64,21 @@ namespace TSScoringPlugin.DataPlane
         private readonly Queue<string> recentOrder = new Queue<string>();
         private readonly HashSet<string> recent = new HashSet<string>();
         private readonly Dictionary<string, long> reasons = new Dictionary<string, long>();
+        private readonly bool sharedWireGrammar;
         private long accepted;
         private long rejected;
         private bool firstAcceptNoted;
 
+        // Phase ST-3b: the five argument form keeps the grammar this validator had before ST-3b (the three field v1 predicate, ValidGrammarV1). It is the form the Legacy jump plane
+        // builds and Legacy is migrated only in ST-3c; the Current endpoint is the only caller of the form below that reads the command through the shared JumpWire.
         internal JumpCommandValidator(int bvePid, UInt32 generation, byte[] token, IEndpointSource source, Action<string> log)
+            : this(bvePid, generation, token, source, log, false)
         {
+        }
+
+        internal JumpCommandValidator(int bvePid, UInt32 generation, byte[] token, IEndpointSource source, Action<string> log, bool sharedWireGrammar)
+        {
+            this.sharedWireGrammar = sharedWireGrammar;
             if (bvePid <= 0) throw new ArgumentOutOfRangeException("bvePid");
             if (generation == 0U) throw new ArgumentOutOfRangeException("generation");
             if (token == null || token.Length != 16) throw new ArgumentException("token");
@@ -160,7 +169,7 @@ namespace TSScoringPlugin.DataPlane
             string text;
             try { text = new UTF8Encoding(false, true).GetString(env.Payload); }
             catch { reason = "payload-grammar"; return null; }
-            if (!ValidGrammar(env.MessageType, text)) { reason = "payload-grammar"; return null; }           // step 10
+            if (!(sharedWireGrammar ? ValidGrammar(env.MessageType, text) : ValidGrammarV1(env.MessageType, text))) { reason = "payload-grammar"; return null; }           // step 10
 
             string key = Convert.ToBase64String(env.RequestId);
             lock (gate)
@@ -180,7 +189,20 @@ namespace TSScoringPlugin.DataPlane
             return new CurrentJumpCommand(text, (byte[])env.RequestId.Clone(), env.MessageType);
         }
 
+        // Phase ST-3b: the grammar is the shared JumpWire reader, v1 (3 fields) and v2 (7 fields) alike; the version is the field count. Whether a command is EXECUTED is decided later, by the
+        // plugin (CurrentJumpExecution.Judge); this gate only says that the text is one of the two commands of the message type.
         private static bool ValidGrammar(UInt32 messageType, string text)
+        {
+            string reason;
+            JumpWireRequest request = JumpWire.ParseRequest(text, out reason);
+            if (request == null) return false;
+            if (messageType == DataPlaneMessageTypes.JumpStationTime) return request.Kind == JumpWire.KindSta;
+            return request.Kind == JumpWire.KindLoc;
+        }
+
+        // The grammar of this gate before ST-3b, unchanged (the PID-D6 text): three fields, the integers and the location read with Int32 / Double.TryParse in the invariant culture.
+        // Only the five argument validator uses it (the Legacy plane, until ST-3c replaces it); the Current endpoint never does.
+        private static bool ValidGrammarV1(UInt32 messageType, string text)
         {
             string[] parts = text.Split(':');
             if (parts.Length != 3) return false;
@@ -349,7 +371,7 @@ namespace TSScoringPlugin.DataPlane
                 UInt32 generation = BitConverter.ToUInt32(RandomBytes(4), 0);
                 if (generation == 0U) generation = 1U;
 
-                JumpCommandValidator validator = new JumpCommandValidator(bvePid, generation, token, source, log);
+                JumpCommandValidator validator = new JumpCommandValidator(bvePid, generation, token, source, log, true);   // the Current gate: v1 and v2 through the shared JumpWire
                 publisher = new JumpDirectoryPublisher((UInt32)bvePid, objectName);
                 publisher.Publish(DataPlaneProtocol.Published, port, generation, token, JumpCapabilities.Published);                                   // non-ready first
                 publisher.Publish(DataPlaneProtocol.Published | DataPlaneProtocol.Ready, port, generation, token, JumpCapabilities.Published);     // then READY

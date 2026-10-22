@@ -24,7 +24,15 @@ other test files, and a matching hash alone proves no contract: the individual s
     the hash MUST NOT BE UPDATED MECHANICALLY. When Class1.cs is changed on purpose (JF-3, the J3 limited release), first re-audit the changed lines, the shape pins
     below, the contract and the regression range, record that, and only then set the new value.
 
-ISOLATION: files are only read (Class1.cs, CurrentJumpEndpoint.cs, the Legacy csproj, two Python sources). No socket, no process, no write, no Desktop, no Downloads.
+PHASE ST-3b (Current C# wiring; the audited Class1.cs below is the revision AFTER it): the characterization of the dangerous shapes that ST-3b removed is FLIPPED, as the audit
+(Start Audit 14, section 1) and the owner's plan fixed: C02 / C03 / C17 / X06 (the target after a jump), C07 / C09 (no jump method / no time field), C11 (no range check), C12 (a location
+jump does not re-initialise), C16 / F28 / F11 (the culture of the numbers) were DANGER or neutral pins of the old shape; each id keeps its place here as a CURRENT pin of the NEW shape
+(the new shape is also held by tests\\test_stationindex_current_st3b.py, the contract of ST-3b), and its TARGET twin is gone. C06 / C08 / C10 / F12 / F32 / C15 / J20 are re-pinned to
+the shape ST-3b gave them (the same intent: a request without a scenario gives no completion; an exception gives no completion; the completion stays pending until the send succeeds;
+one pending slot; the link sets; the target index survives a scenario change - still FUTURE, JF-3 B6; no failure response - OD-S3-6). What ST-3b did NOT touch stays as it was: C04,
+C05, C13, C15, J20, the MANUAL items.
+
+ISOLATION: files are only read (Class1.cs, CurrentJumpEndpoint.cs, CurrentJumpExecution.cs, the Legacy csproj, two Python sources). No socket, no process, no write, no Desktop, no Downloads.
 """
 import hashlib
 import os
@@ -38,11 +46,14 @@ ROOT = os.path.dirname(HERE)
 PLUGIN = os.path.join(ROOT, "TsScoringPlugin")
 CLASS1 = os.path.join(PLUGIN, "TsScoringPlugin", "Class1.cs")
 ENDPOINT = os.path.join(PLUGIN, "TsScoringPlugin", "CurrentJumpEndpoint.cs")
+EXECUTION = os.path.join(PLUGIN, "TsScoringPlugin", "CurrentJumpExecution.cs")
 DATAPLANE = os.path.join(PLUGIN, "TsScoringPlugin", "CurrentDataPlane.cs")
 LEGACY_CSPROJ = os.path.join(PLUGIN, "Handshake", "Telemetry", "Legacy", "TSScoringPlugin.AtsExLegacy.Telemetry.csproj")
 CURRENT_CSPROJ = os.path.join(PLUGIN, "TsScoringPlugin", "TsScoringPlugin.csproj")
 
-CLASS1_AUDITED_NORMALISED_SHA256 = "009BA364703FCF5CD8654BA2587D15A862708D7F91FF44D0859E14F17EB90BA8"
+CLASS1_AUDITED_NORMALISED_SHA256 = "4D8FF9CB1C1B98F0D1303E9CAFED609F097922FCC1799B0CF2A79D4148DAE7B6"
+# Phase ST-3b (the Current jump wiring): the value moved from 009BA364... after the changed lines were re-audited (the jump transaction, the one-shot StationIndex re-initialisation, the canonical numbers; every shape pin of this
+# file was re-pinned or flipped as the module docstring says, and tests\\test_stationindex_current_st3b.py holds the contract of the new shape).
 # Phase ST-1A (J3-G2: R1 / R5 / R6 in their observation-only form): the value moved from 29613E14... after the changed lines were re-audited. The change is ADDITIVE and only the
 # STIDX statements read what it adds; every shape pin of this file (C02 ... C17, X06, F11, F12, U1, L1 ... L9) is unchanged and still passes; tests\\test_stationindex_supply_st1a.py
 # (class D) pins who reads the new fields, where the part is written and that no new write of targetStationIndex exists.
@@ -115,8 +126,10 @@ class Pins(unittest.TestCase):
         cls.sta_branch = cls.c1[i_sta:i_loc]
         cls.loc_branch = cls.c1[i_loc:i_end]
         cls.jump_loop = cls.c1[cls.c1.index("foreach (JumpInput jumpInput in CollectJumpCommands())"):i_end]
-        cls.init_loop = re.search(r"for \(int i = 0; i < stationList\.Count; i\+\+\) \{ if \(stationList\[i\]\.Location >= location - 50\.0\) \{ (.*?) \} \} isInitialized = true; \}",
+        # Phase ST-3b: the position search lives in its own function, reached only by a re-initialisation that carries NO StationIndex
+        cls.init_loop = re.search(r"private void SelectTargetByPosition\(double location, bool areDoorsClosed\) \{ for \(int i = 0; i < stationList\.Count; i\+\+\) \{ if \(stationList\[i\]\.Location >= location - 50\.0\) \{ (.*?) \} \} \}",
                                   cls.c1)
+        cls.ex = code(EXECUTION)
 
     # -- the drift guard -------------------------------------------------------------------------------------------------------------------------
     @jf0("DRIFT", "CURRENT")
@@ -131,20 +144,25 @@ class Pins(unittest.TestCase):
         self.assertIn("targetStationIndex = i;", self.init_loop.group(1))
         self.assertIn("break;", self.init_loop.group(1))
 
-    @danger("C02", "after a jump to station B at the SAME position as station A (A earlier in the list) the sender's target is A: the first station whose location is not "
-                   "more than 50 m behind the vehicle wins, so the requested B is never the target",
-            "JF-2 (TARGET-A V-4: such a request is refused in advance) / JF-3 (TARGET-B B2: the requested index is kept)", "the target is the requested index; this pin is replaced by TARGET_B_C02")
-    def test_CURRENT_DANGER_C02_the_first_station_in_range_wins_so_the_second_of_two_same_position_stations_is_never_the_target(self):
+    @jf0("C02", "CURRENT")
+    def test_CURRENT_C02_after_a_jump_the_target_is_the_requested_index_so_the_second_of_two_same_position_stations_is_the_target(self):
+        """Phase ST-3b (FLIPPED from DANGER C02, its TARGET_B twin is this test): the re-initialisation that follows an official jump takes the ADOPTED index; the first-in-range search is
+        the one of a re-initialisation without an index and is unchanged."""
         body = self.init_loop.group(1)
         self.assertEqual(len(re.findall(r"targetStationIndex = i;", body)), 1)
-        self.assertRegex(body, r"targetStationIndex = i; hasDoorOpenedAtTarget = [^;]+; break;$")           # the first hit ends the search
-        self.assertNotIn("sIdx", body)                                                                       # the requested index plays no part
+        self.assertRegex(body, r"targetStationIndex = i; hasDoorOpenedAtTarget = [^;]+; break;$")           # the index-less search: the first hit ends it (unchanged)
+        self.assertNotIn("requestedStationIndex", body)                                                      # and the requested index plays no part in IT
+        self.assertRegex(self.c1, r"targetStationIndex = requestedStationIndex;")                           # the jump path: the requested index is the target
+        self.assertIn("if (requestedStationIndex >= 0) SelectTargetByRequestedIndex(requestedStationIndex, location, areDoorsClosed); else if (!requestedTargetRefused) SelectTargetByPosition(location, areDoorsClosed);", self.c1)
 
-    @danger("C03", "the 50 m range is INCLUSIVE ('>='): a station exactly 50 m behind the jump position is chosen as target instead of the requested one",
-            "JF-2 (TARGET-A V-4 extended: refused in advance, boundary included) / JF-3 (TARGET-B B2)", "the requested index is kept; this pin is replaced by TARGET_B_C03")
-    def test_CURRENT_DANGER_C03_the_back_range_of_50_m_is_inclusive(self):
+    @jf0("C03", "CURRENT")
+    def test_CURRENT_C03_the_back_range_of_50_m_of_the_index_less_search_is_inclusive_and_the_jump_path_never_reaches_it(self):
+        """Phase ST-3b (FLIPPED from DANGER C03): the inclusive 50 m range is a fact of the search of a re-initialisation without an index only."""
         self.assertIn("if (stationList[i].Location >= location - 50.0)", self.c1)
         self.assertNotIn("stationList[i].Location > location - 50.0", self.c1)
+        self.assertEqual(self.c1.count("location - 50.0"), 1)
+        self.assertNotIn("location - 50.0", self.jump_loop)                                                  # the jump branches never name the search
+        self.assertNotIn("SelectTargetByPosition", self.jump_loop)
 
     @jf0("C04", "CURRENT")
     def test_CURRENT_C04_the_door_open_detection_uses_100_m_and_the_initial_state_uses_50_m(self):
@@ -155,78 +173,97 @@ class Pins(unittest.TestCase):
     def test_CURRENT_C05_when_no_station_is_in_range_the_target_index_is_left_as_it_was(self):
         """Current has no 'no next station' value: after the loop the code only sets isInitialized (the Legacy timeline sets target = Count)."""
         self.assertNotRegex(self.c1, r"targetStationIndex = (stationList\.Count|-1)")
-        self.assertRegex(self.c1, r"break; \} \} isInitialized = true; \}")
+        self.assertRegex(self.c1, r"private void SelectTargetByPosition\(double location, bool areDoorsClosed\) \{ for \(int i = 0; i < stationList\.Count; i\+\+\) \{ if \(stationList\[i\]\.Location >= location - 50\.0\) \{ targetStationIndex = i; [^}]*break; \} \} \}")
 
-    @danger("C17", "a station 40 m BEHIND the requested one (not at the same position) is also chosen as target: the requested station is never the target while that earlier "
-                   "station is within 50 m",
-            "JF-2 (TARGET-A V-4 extended: refused in advance) / JF-3 (TARGET-B B2)", "the requested index is kept; this pin is replaced by TARGET_B_C17")
-    def test_CURRENT_DANGER_C17_the_requested_index_is_only_echoed_and_never_feeds_the_target(self):
-        self.assertEqual(len(re.findall(r"\bsIdx\b", self.c1)), 3)                       # the TryParse, the Invoke argument, the echo for the completion text
-        self.assertIn("pendingJumpStationIndex = sIdx;", self.sta_branch)
-        self.assertNotRegex(self.c1, r"targetStationIndex = (sIdx|pendingJumpStationIndex)")
+    @jf0("C17", "CURRENT")
+    def test_CURRENT_C17_a_station_behind_the_requested_one_within_50_m_does_not_replace_it(self):
+        """Phase ST-3b (FLIPPED from DANGER C17): the adopted index feeds the target; the plugin no longer parses an index out of the command text."""
+        self.assertNotRegex(self.c1, r"\bsIdx\b")
+        self.assertIn("targetStationIndex = requestedStationIndex;", self.c1)
+        by_index = re.search(r"private void SelectTargetByRequestedIndex\(int requestedStationIndex, double location, bool areDoorsClosed\) \{ (.*?) \}", self.c1)
+        self.assertIsNotNone(by_index)
+        self.assertNotIn("for (", by_index.group(1))                                                          # no search on the way from the index to the target
+        self.assertNotIn("Location >=", by_index.group(1))
+        self.assertIn("pendingJumpStationIndex = decision.StationIndex;", self.c1)
 
-    @danger("X06", "(C# half of the chain) the STA branch re-initialises the target state and then announces completion with the REQUESTED index, while the target itself is chosen by position "
-                   "afterwards: Python's completion check can not see which station the sender really targets",
-            "JF-2 (TARGET-A V-4) / JF-3 (TARGET-B B2, B3 / K7)", "the sender keeps the requested index and reports the next index; this pin is replaced")
-    def test_CURRENT_DANGER_X06_the_completion_is_announced_after_a_position_based_reinitialisation(self):
-        branch = self.sta_branch
-        self.assertLess(branch.index("isInitialized = false;"), branch.index("pendingJumpComplete = true;"))
-        self.assertLess(branch.index("pendingJumpComplete = true;"), branch.index("pendingJumpStationIndex = sIdx;"))
-        # the re-selection by position happens in the NEXT initialisation pass (isInitialized == false), not in the jump branch
-        self.assertNotIn("targetStationIndex", branch)
+    @jf0("X06", "CURRENT")
+    def test_CURRENT_X06_the_completion_is_announced_after_an_index_based_reinitialisation_with_the_adopted_index(self):
+        """Phase ST-3b (FLIPPED from DANGER X06, its TARGET_B twin is this test): the pending jump (and with it the one-shot index) is begun after the host call and after the target state was
+        cleared; the target itself is taken from that index in the next initialisation pass, and the completion carries the same adopted index."""
+        for branch in (self.sta_branch, self.loc_branch):
+            self.assertLess(branch.index("ReinitializeTargetStateAfterJump();"), branch.index("BeginPendingJump("))
+            self.assertNotIn("targetStationIndex", branch)                                                    # the jump branch itself does not write the target
+        self.assertRegex(self.c1, r"FormatCompletion\( pendingJumpType, pendingJumpStationIndex,")
+        self.assertIn("requestedTargetIndex = decision.StationIndex;", self.c1)
 
     # -- C06 - C10 -------------------------------------------------------------------------------------------------------------------------------
     @jf0("C06", "CURRENT")
-    def test_CURRENT_C06_a_request_without_a_scenario_is_skipped_silently_with_no_completion(self):
-        self.assertEqual(self.sta_branch.count("if (scenario == null) continue;"), 1)
-        self.assertEqual(self.loc_branch.count("if (scenario == null) continue;"), 1)
-        self.assertLess(self.sta_branch.index("if (scenario == null) continue;"), self.sta_branch.index("pendingJumpComplete = true;"))
-        self.assertLess(self.loc_branch.index("if (scenario == null) continue;"), self.loc_branch.index("pendingJumpComplete = true;"))
+    def test_CURRENT_C06_a_request_without_a_scenario_is_refused_with_one_diagnostic_and_no_completion(self):
+        """Phase ST-3b (re-pinned): the silent `continue` became a refusal with a reason (scenario-missing); the intent - no host call, no completion - is the same."""
+        for branch in (self.sta_branch, self.loc_branch):
+            self.assertEqual(branch.count("CurrentJumpExecution.RScenarioMissing"), 1)
+            self.assertRegex(branch, r"if \(rawScenario == null\) \{ JumpRefused\(jumpRequestId, jumpDecision, TSScoringPlugin\.DataPlane\.CurrentJumpExecution\.RScenarioMissing, \"-\"\); continue; \}")
+            self.assertLess(branch.index("RScenarioMissing"), branch.index("BeginPendingJump("))
+            self.assertLess(branch.index("RScenarioMissing"), branch.index(".Invoke("))
 
-    @danger("C07", "if the jump method is not found the call is skipped but the completion is STILL announced: the sender reports a jump that did not happen",
-            "JF-2 (TARGET-A K4: the position check catches it) / JF-3 (TARGET-B B4, B7: no completion, a failure response)", "no completion without a jump; this pin is replaced")
-    def test_CURRENT_DANGER_C07_a_missing_jump_method_does_not_prevent_the_completion(self):
-        self.assertRegex(self.sta_branch, r"if \(jumpStaMethod != null\) \{ jumpStaMethod\.Invoke\( rawScenario, new object\[\] \{ sIdx \} \); \}")
-        self.assertRegex(self.loc_branch, r"if \(jumpMethod != null\) \{ jumpMethod\.Invoke\(rawScenario, new object\[\] \{ rLoc, 0 \}\); \}")
-        for branch, pattern in ((self.sta_branch, r"if \(jumpStaMethod != null\) \{ jumpStaMethod\.Invoke\( rawScenario, new object\[\] \{ sIdx \} \); \}"),
-                                (self.loc_branch, r"if \(jumpMethod != null\) \{ jumpMethod\.Invoke\(rawScenario, new object\[\] \{ rLoc, 0 \}\); \}")):
-            # the completion statement is NOT inside the 'method found' block: it comes after that block is closed
-            self.assertGreater(branch.index("pendingJumpComplete = true;"), re.search(pattern, branch).end())
+    @jf0("C07", "CURRENT")
+    def test_CURRENT_C07_a_missing_jump_method_is_refused_before_the_host_call_and_no_completion_is_announced(self):
+        """Phase ST-3b (FLIPPED from DANGER C07; OD-S3-6: no failure response - the refusal is one diagnostic line, Python's own timeout releases the jump)."""
+        for branch, method in ((self.sta_branch, "jumpStaMethod"), (self.loc_branch, "jumpMethod")):
+            self.assertRegex(branch, r"if \(%s == null\) \{ JumpRefused\(jumpRequestId, jumpDecision, TSScoringPlugin\.DataPlane\.CurrentJumpExecution\.RApiMissing, \"-\"\); continue; \}" % method)
+            self.assertNotIn("if (%s != null)" % method, branch)
+            self.assertLess(branch.index("RApiMissing"), branch.index(".Invoke("))
+            self.assertGreater(branch.index("BeginPendingJump("), branch.index(".Invoke("))
 
     @jf0("C08", "CURRENT")
-    def test_CURRENT_C08_an_exception_of_the_jump_call_ends_in_an_empty_catch_and_no_completion(self):
+    def test_CURRENT_C08_an_exception_of_the_jump_call_ends_in_one_diagnostic_and_no_completion(self):
+        """Phase ST-3b (re-pinned): the empty catch writes one line (jump-exception, the exception TYPE only) now; the pending jump is begun only after the host call and the time were set."""
         for branch in (self.sta_branch, self.loc_branch):
-            self.assertLess(branch.index("Invoke("), branch.index("pendingJumpComplete = true;"))
-            self.assertRegex(branch, r"pendingJumpStationIndex = (sIdx|-1); \} \} \} catch \{ \} \} \}")
+            self.assertLess(branch.index("Invoke("), branch.index("BeginPendingJump("))
+            self.assertLess(branch.index("timeField.SetValue(rawTimeMgr, adoptedTimeMs);"), branch.index("BeginPendingJump("))
+            self.assertIn("catch (Exception jumpEx) { JumpRefused(jumpRequestId, jumpDecision, TSScoringPlugin.DataPlane.CurrentJumpExecution.RJumpException, jumpEx.GetType().Name); }", branch)
+            self.assertNotIn("jumpEx.Message", branch)
 
-    @danger("C09", "if the time field ('c') of the time manager is not found, the time is not set but the completion is still announced (with the current time)",
-            "JF-3 (TARGET-B B4: a failure response instead)", "no completion without the time being set; this pin is replaced by TARGET_B_C09")
-    def test_CURRENT_DANGER_C09_a_missing_time_field_does_not_prevent_the_completion(self):
+    @jf0("C09", "CURRENT")
+    def test_CURRENT_C09_a_missing_time_field_is_refused_before_the_host_call_and_no_completion_is_announced(self):
+        """Phase ST-3b (FLIPPED from DANGER C09): the time field is looked for BEFORE the host is called; without it nothing is called and nothing is announced."""
         for branch in (self.sta_branch, self.loc_branch):
-            self.assertIn('GetField("c", bindFlagsAll)', branch)
-            self.assertIn("if (timeField != null && rTimeMs >= 0) timeField.SetValue(rawTimeMgr, rTimeMs);", branch)
-            self.assertLess(branch.index("timeField.SetValue"), branch.index("pendingJumpComplete = true;"))
+            self.assertIn("FindJumpTimeField(scenario, bindFlagsAll, out rawTimeMgr)", branch)
+            self.assertRegex(branch, r"if \(timeField == null\) \{ JumpRefused\(jumpRequestId, jumpDecision, TSScoringPlugin\.DataPlane\.CurrentJumpExecution\.RTimeFieldMissing, \"-\"\); continue; \}")
+            self.assertLess(branch.index("if (timeField == null)"), branch.index(".Invoke("))
+            self.assertIn("timeField.SetValue(rawTimeMgr, adoptedTimeMs);", branch)
+        helper = re.search(r"private static System\.Reflection\.FieldInfo FindJumpTimeField\(.*?\{ (.*?) \} ", self.c1)
+        self.assertIsNotNone(helper)
+        self.assertIn('GetField("c", flags)', helper.group(1))
 
     @jf0("C10", "CURRENT")
     def test_CURRENT_C10_the_completion_is_sent_only_when_initialised_and_stays_pending_until_the_send_succeeds(self):
+        """Phase ST-3b (re-pinned): the pending jump is emptied in ONE place (ClearPendingJump), after the send succeeded or when the jump is abandoned."""
         self.assertIn("if (pendingJumpComplete && isInitialized)", self.c1)
-        sent = re.search(r"if \(batch\.SendJumpComplete\(completeBytes, pendingJumpRequestId\)\) \{ pendingJumpComplete = false; pendingJumpRequestId = null; pendingJumpType = \"\"; "
-                         r"pendingJumpStationIndex = -1; \}", self.c1)
+        sent = re.search(r"if \(batch\.SendJumpComplete\(completeBytes, pendingJumpRequestId\)\) \{ JumpDiag\(.*?\); ClearPendingJump\(\); \}", self.c1)
         self.assertIsNotNone(sent)
         self.assertEqual(len(re.findall(r"(?<!bool )pendingJumpComplete = false;", self.c1)), 1)         # the only place that clears the pending flag (the declaration excepted)
+        clear = re.search(r"private void ClearPendingJump\(\) \{ (.*?) \}", self.c1)
+        self.assertIsNotNone(clear)
+        for field in ("pendingJumpComplete = false;", "pendingJumpRequestId = null;", 'pendingJumpType = "";', "pendingJumpStationIndex = -1;", "requestedTargetIndex = -1;"):
+            self.assertIn(field, clear.group(1))
 
     @jf0("C11", "CURRENT")
-    def test_CURRENT_C11_the_requested_station_index_is_passed_on_without_any_range_check(self):
-        parse = 'int.TryParse(parts[1], out int sIdx) && int.TryParse(parts[2], out int rTimeMs)'
-        self.assertIn(parse, self.sta_branch)
-        self.assertNotRegex(self.sta_branch, r"sIdx\s*(<|>|<=|>=)\s*|(<|>|<=|>=)\s*sIdx\b|Count")
+    def test_CURRENT_C11_the_requested_station_index_is_judged_against_the_list_before_any_host_call(self):
+        """Phase ST-3b (FLIPPED from C11): range, scope and location are checked by the judgement (CurrentJumpExecution.Judge) before the first host call."""
+        self.assertLess(self.jump_loop.index("CurrentJumpExecution.Judge(msg, BuildJumpView())"), self.jump_loop.index(".Invoke("))
+        self.assertIn("if (r.StationIndex < 0 || r.StationIndex >= view.Locations.Length) { d.Reason = RIndexRange; return d; }", self.ex)
+        self.assertNotRegex(self.sta_branch, r"int\.TryParse")
 
     # -- C12 / C13 -------------------------------------------------------------------------------------------------------------------------------
     @jf0("C12", "CURRENT")
-    def test_CURRENT_C12_a_location_jump_does_not_reinitialise_the_target_state_itself(self):
-        """Estimate (JF-0 v2): a LOC jump relies on the time-discontinuity check; it never sets isInitialized = false in its own branch."""
-        self.assertNotIn("isInitialized", self.loc_branch)
-        self.assertIn("isInitialized = false;", self.sta_branch)
+    def test_CURRENT_C12_a_location_jump_reinitialises_the_target_state_itself(self):
+        """Phase ST-3b (FLIPPED from C12, its TARGET_B twin is this test): a location jump no longer relies on the time-discontinuity check; the shared re-initialisation clears isInitialized."""
+        self.assertIn("ReinitializeTargetStateAfterJump();", self.loc_branch)
+        self.assertIn("ReinitializeTargetStateAfterJump();", self.sta_branch)
+        body = re.search(r"private void ReinitializeTargetStateAfterJump\(\) \{ (.*?) \}", self.c1)
+        self.assertIsNotNone(body)
+        self.assertIn("isInitialized = false;", body.group(1))
 
     @jf0("C13", "CURRENT")
     def test_CURRENT_C13_the_jump_counter_counts_time_discontinuities_of_more_than_300_ms(self):
@@ -237,51 +274,69 @@ class Pins(unittest.TestCase):
     @danger("C15", "a scenario change does not reset the target index: a stale index of the previous scenario can survive and, if no station is in range, is used (or points past the new list)",
             "JF-3 (TARGET-B B6: reset to 0 and 'no next station' unified)", "the index is reset on a scenario change; this pin is replaced by TARGET_B_C15")
     def test_CURRENT_DANGER_C15_the_target_index_survives_a_scenario_change(self):
-        block = re.search(r"if \(!object\.Equals\(currentScenario, BveHacker\.Scenario\)\) \{(.*?)initialStaListSent = false; lastStaListSendTime = DateTime\.MinValue; \}", self.c1)
+        block = re.search(r"if \(!object\.Equals\(currentScenario, BveHacker\.Scenario\)\) \{(.*?)initialStaListSent = false; lastStaListSendTime = DateTime\.MinValue; AbandonPendingJump\(.*?\); \}", self.c1)
         self.assertIsNotNone(block)
         self.assertIn("isInitialized = false;", block.group(1))
         self.assertNotIn("targetStationIndex", block.group(1))
         writes = re.findall(r"targetStationIndex\s*(\+\+|=(?!=))", self.c1)
-        self.assertEqual(sorted(writes), sorted(["=", "=", "++", "++", "++"]))         # the declaration, the position search, three advances: no reset anywhere
+        # the declaration, the requested-index selector (ST-3b), the position search, three advances: no reset anywhere
+        self.assertEqual(sorted(writes), sorted(["=", "=", "=", "++", "++", "++"]))
 
     # -- C16 / F28 / F11 -------------------------------------------------------------------------------------------------------------------------
-    @danger("C16", "the location of a LOC command is parsed with the CURRENT CULTURE, while the endpoint's validator uses the invariant culture: on a culture with ',' as decimal "
-                   "separator a validated command can fail to run (silently, then a timeout)",
-            "JF-3 (TARGET-B B10: InvariantCulture); whether it happens on a real machine is L-8", "the culture is fixed; this pin is replaced by TARGET_B_C16")
-    def test_CURRENT_DANGER_C16_the_loc_command_location_is_parsed_without_a_culture(self):
-        self.assertIn("double.TryParse(parts[1], out double rLoc)", self.loc_branch)
-        self.assertNotIn("CultureInfo", self.loc_branch)
-        self.assertIn("Double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out location)", self.ep)
+    @jf0("C16", "CURRENT")
+    def test_CURRENT_C16_the_command_text_is_read_by_the_shared_reader_so_no_culture_decides_the_location(self):
+        """Phase ST-3b (FLIPPED from DANGER C16, its TARGET_B twin is this test): the plugin does not parse the command text at all; the endpoint's gate and the plugin's judgement both use the shared JumpWire reader."""
+        self.assertNotIn("double.TryParse", self.c1)
+        self.assertNotIn("Split(':')", self.c1)
+        self.assertIn("CurrentJumpExecution.Judge(msg, BuildJumpView())", self.jump_loop)
+        self.assertIn("JumpWire.ParseRequest(text, out reason)", self.ep)
+        self.assertIn("JumpWire.ParseRequest(text, out why)", self.ex)
+        self.assertNotIn("TryParse", self.ex)
 
     @jf0("F28", "CURRENT")
-    def test_CURRENT_F28_the_sta_command_parts_are_parsed_without_a_culture_too_but_integers_are_culture_safe_in_practice(self):
-        self.assertIn("int.TryParse(parts[1], out int sIdx)", self.sta_branch)
-        self.assertIn("Int32.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out index)", self.ep)
+    def test_CURRENT_F28_the_station_command_parts_are_read_by_the_shared_reader_in_the_endpoint_and_in_the_plugin(self):
+        """Phase ST-3b (FLIPPED from F28): no integer of the command is read with TryParse any more, in the plugin or in the Current gate of the endpoint. The old three-field predicate lives on only as
+        ValidGrammarV1, the grammar of the five argument validator (the Legacy plane's, until ST-3c); it is pinned apart (tests\\test_stationindex_current_st3b.py, A2_LegacyGateKept)."""
+        self.assertNotIn("int.TryParse(parts[1], out int sIdx)", self.sta_branch)
+        gate = re.search(r"private static bool ValidGrammar\(UInt32 messageType, string text\) \{ (.*?) \} ", self.ep)
+        self.assertIsNotNone(gate)
+        self.assertNotIn("TryParse", gate.group(1))
+        old = re.search(r"private static bool ValidGrammarV1\(UInt32 messageType, string text\) \{ (.*?) \} (?=\}|private|internal)", self.ep)
+        self.assertIsNotNone(old)
+        self.assertEqual(self.ep.count("Int32.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out index)"), 1)       # the one that is left is inside ValidGrammarV1
+        self.assertIn("Int32.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out index)", old.group(1))
 
     @jf0("F11", "CURRENT")
-    def test_CURRENT_F11_the_completion_text_formats_the_location_with_the_current_culture(self):
-        """Estimate (JF-0 v2 F-11): the interpolation of a double has no culture, so a ',' culture would write '1000,5'. The Python side then fails to parse it (see file F2 J15)."""
-        self.assertIn('$"JUMP_COMPLETE:{pendingJumpType}" + $":{pendingJumpStationIndex}" + $":{completedLocation}" + $":{completedTime}" + $":{jumpCounter}"', self.c1)
-        text = self.c1[self.c1.index('string completeMessage ='):self.c1.index("byte[] completeBytes")]
+    def test_CURRENT_F11_the_completion_text_is_written_by_the_canonical_formatter_in_any_culture(self):
+        """Phase ST-3b (FLIPPED from F11): the interpolation of a double (the current culture, 15 digits) is gone; JumpWire.FormatCompletionV2 writes the nine fields (invariant, shortest exact text)."""
+        self.assertNotIn('$"JUMP_COMPLETE:', self.c1)
+        self.assertNotIn("{completedLocation}", self.c1)
+        text = self.c1[self.c1.index("string completeReason = null;"):self.c1.index("if (completeMessage == null)")]
+        self.assertIn("CurrentJumpExecution.FormatCompletion(", text)
         self.assertNotIn("CultureInfo", text)
         self.assertNotIn("ToString(", text)
+        self.assertIn("JumpWire.FormatCompletionV2(kind, selectedIdx, actualLocation, timeMs, jumpCount, scope, out reason)", self.ex)
 
     # -- F12 : one slot, several commands per Tick -------------------------------------------------------------------------------------------------
     @jf0("F12", "CURRENT")
     def test_CURRENT_F12_every_command_of_a_tick_is_run_and_only_one_pending_slot_exists(self):
+        """Phase ST-3b (re-pinned): still one pending slot; a command that is begun while another is pending now ENDS it explicitly (superseded) instead of overwriting it silently."""
         self.assertNotIn("break;", self.jump_loop)                                  # the loop never stops after the first command
         self.assertEqual(len(re.findall(r"private bool pendingJumpComplete\b", self.c1)), 1)
         self.assertEqual(len(re.findall(r"private byte\[\] pendingJumpRequestId\b", self.c1)), 1)
-        self.assertEqual(len(re.findall(r"pendingJumpRequestId = jumpRequestId;", self.c1)), 2)      # STA and LOC both overwrite the same slot
+        self.assertEqual(len(re.findall(r"pendingJumpRequestId = requestId;", self.c1)), 1)          # BeginPendingJump, called by STA and LOC alike
+        self.assertEqual(len(re.findall(r"BeginPendingJump\(", self.c1)), 3)                          # the definition and the two branches
+        self.assertIn("if (pendingJumpComplete) AbandonPendingJump(TSScoringPlugin.DataPlane.CurrentJumpExecution.RSuperseded", self.c1)
 
     # -- J20 (static) ----------------------------------------------------------------------------------------------------------------------------
     @danger("J20", "no failure response exists in the sender: not in Class1.cs, not in the endpoint, not in the data plane; an unrunnable jump is only ever noticed by Python's 10 s timeout",
             "JF-3 (TARGET-B B7 / FC-7 JUMP_FAILED)", "a failure message exists; this pin is replaced by TARGET_B_J20")
     def test_CURRENT_DANGER_J20_the_sender_has_no_failure_response(self):
-        for name, text in (("Class1.cs", self.c1), ("CurrentJumpEndpoint.cs", self.ep), ("CurrentDataPlane.cs", self.dp)):
+        for name, text in (("Class1.cs", self.c1), ("CurrentJumpEndpoint.cs", self.ep), ("CurrentDataPlane.cs", self.dp), ("CurrentJumpExecution.cs", self.ex)):
             self.assertNotIn("JUMP_FAILED", text, name)
             self.assertNotIn("JumpFailed", text, name)
-        self.assertEqual(len(re.findall(r'"JUMP_COMPLETE:', self.c1)), 1)                                      # the only jump message the sender writes
+        self.assertEqual(len(re.findall(r"CurrentJumpExecution\.FormatCompletion\(", self.c1)), 1)            # the only jump message the sender writes (ST-3b: through the one formatter)
+        self.assertEqual(len(re.findall(r'"JUMP_COMPLETE:', self.c1)), 0)
 
     # -- F32 : the link sets of the Legacy and the Current project ---------------------------------------------------------------------------------
     # PID-D4 / LEGACY JUMP 2A-ALPHA (Stage S4): the Legacy project now links the Current jump endpoint source ONCE, as the one shared link that gives it the four
@@ -296,14 +351,15 @@ class Pins(unittest.TestCase):
         ("src\\LegacyInputTelemetry.cs", None), ("src\\LegacyJumpCommandQueue.cs", None), ("src\\LegacyJumpControlPlane.cs", None), ("src\\LegacyJumpEndpoint.cs", None), ("src\\LegacyJumpExecutor.cs", None),      # Phase LJX-1 (pin moved): the executor file
         ("src\\LegacyScoringProbe.cs", None), ("src\\LegacyStationTimeline.cs", None), ("src\\LegacyTelemetrySession.cs", None), ("src\\LegacyTelemetryExtension.cs", None),
         ("..\\Shared\\TelemetryContract.cs", "Shared\\TelemetryContract.cs"),
-        ("..\\Shared\\StationListIdentity.cs", "Shared\\StationListIdentity.cs")], key=lambda t: t[0])           # Phase ST-1A (pin moved): the one shared file of the STIDX supply
+        ("..\\Shared\\StationListIdentity.cs", "Shared\\StationListIdentity.cs"),           # Phase ST-1A (pin moved): the one shared file of the STIDX supply
+        ("..\\Shared\\JumpWire.cs", "Shared\\JumpWire.cs")], key=lambda t: t[0])                    # Phase ST-3b / G-PC-1 (pin moved): the compile-only link of the wire codec (nothing of Legacy calls it before ST-3c)
 
     @jf0("F32", "CURRENT")
     def test_CURRENT_F32_the_legacy_project_links_exactly_this_set_of_sources_with_the_one_shared_current_jump_endpoint_link_and_the_current_project_keeps_its_own(self):
-        # (1) the Legacy project: the exact (Include, Link) pairs, 22 of them (21 before Phase ST-1A, 20 before Phase LJX-1)
+        # (1) the Legacy project: the exact (Include, Link) pairs, 23 of them (22 before Phase ST-3b, 21 before Phase ST-1A, 20 before Phase LJX-1)
         legacy = compile_items(LEGACY_CSPROJ)
         self.assertEqual(sorted(legacy, key=lambda t: t[0]), self.LEGACY_EXPECTED_ITEMS)
-        self.assertEqual(len(legacy), 22)
+        self.assertEqual(len(legacy), 23)
         # (2) the shared link: exactly one element, exactly this Include and this Link; nothing else of the Current plugin folder besides CurrentDataPlane.cs
         endpoint_links = [t for t in legacy if t[0].endswith("CurrentJumpEndpoint.cs")]
         self.assertEqual(endpoint_links, [self.LEGACY_SHARED_LINK])
@@ -313,6 +369,10 @@ class Pins(unittest.TestCase):
         current = compile_items(CURRENT_CSPROJ)
         self.assertEqual([t for t in current if t[0].endswith("CurrentJumpEndpoint.cs")], [("CurrentJumpEndpoint.cs", None)])
         self.assertEqual([t for t in current if "Legacy" in t[0]], [])
+        # Phase ST-3b: the Current project links the wire codec once (as the other shared files) and compiles the Current-only decision unit once; the Legacy project does NOT compile the unit
+        self.assertEqual([t for t in current if t[0].endswith("JumpWire.cs")], [("..\\Handshake\\Telemetry\\Shared\\JumpWire.cs", "Shared\\JumpWire.cs")])
+        self.assertEqual([t for t in current if t[0].endswith("CurrentJumpExecution.cs")], [("CurrentJumpExecution.cs", None)])
+        self.assertEqual([t for t in legacy if "CurrentJumpExecution" in t[0]], [])
         # (4) the shared source is the same file for both projects and defines the shared types once (no copy of them in any Legacy-compiled source)
         shared_types = re.findall(r"\b(?:class|struct|enum|interface)\s+(JumpCapabilities|CurrentJumpCommand|JumpCommandValidator|JumpDirectoryPublisher|CurrentJumpEndpoint)\b", self.ep)
         self.assertEqual(sorted(shared_types), sorted(["JumpCapabilities", "CurrentJumpCommand", "JumpCommandValidator", "JumpDirectoryPublisher", "CurrentJumpEndpoint"]))
@@ -332,20 +392,6 @@ class Targets(unittest.TestCase):
     def setUpClass(cls):
         cls.c1 = code(CLASS1)
 
-    @unittest.skip("TARGET-B B2 (JF-3, J3 limited release): after a STA jump to B at the same position as A the sender's target is B (the requested index)")
-    @jf0("C02", "TARGET")
-    def test_TARGET_B_C02_the_requested_index_is_the_target_even_when_an_earlier_station_has_the_same_position(self):
-        self.assertRegex(self.c1, r"targetStationIndex = (sIdx|requestedStationIndex|pendingJumpStationIndex)")
-
-    @unittest.skip("TARGET-B B2 (JF-3): the 50 m boundary does not move the target away from the requested index")
-    @jf0("C03", "TARGET")
-    def test_TARGET_B_C03_the_boundary_station_does_not_replace_the_requested_index(self):
-        self.assertRegex(self.c1, r"targetStationIndex = (sIdx|requestedStationIndex|pendingJumpStationIndex)")
-
-    @unittest.skip("TARGET-B B2 (JF-3): an earlier station within 50 m does not replace the requested index")
-    @jf0("C17", "TARGET")
-    def test_TARGET_B_C17_an_earlier_station_within_50_m_does_not_replace_the_requested_index(self):
-        self.assertRegex(self.c1, r"targetStationIndex = (sIdx|requestedStationIndex|pendingJumpStationIndex)")
 
     @unittest.skip("TARGET-B B6 (JF-3): 'no next station' is unified to Count and a scenario change resets the target index to 0")
     @jf0("C05", "TARGET")
@@ -359,42 +405,17 @@ class Targets(unittest.TestCase):
         self.assertIsNotNone(block)
         self.assertIn("targetStationIndex = 0;", block.group(1))
 
-    @unittest.skip("TARGET-B B4 / B7 (JF-3): a missing jump method gives a failure response, not a completion")
-    @jf0("C07", "TARGET")
-    def test_TARGET_B_C07_a_missing_jump_method_does_not_announce_a_completion(self):
-        self.fail("TARGET-B B4/B7: the expectation (a failure response instead of a completion) can not be stated on today's text; its format is undecided (U-12)")
-
-    @unittest.skip("TARGET-B B4 (JF-3): a missing time field gives a failure response, not a completion")
-    @jf0("C09", "TARGET")
-    def test_TARGET_B_C09_a_missing_time_field_does_not_announce_a_completion(self):
-        self.fail("TARGET-B B4/B7: the expectation can not be stated on today's text; the failure format is undecided (U-12)")
-
-    @unittest.skip("TARGET-B B5 (JF-3): a LOC jump re-initialises the target state in its own branch")
-    @jf0("C12", "TARGET")
-    def test_TARGET_B_C12_a_location_jump_reinitialises_the_target_state(self):
-        i_loc = self.c1.index('else if (msg.StartsWith("JUMP_LOC_TIME:"))')
-        branch = self.c1[i_loc:self.c1.index("double speed = 0.0;")]
-        self.assertIn("isInitialized = false;", branch)
-
-    @unittest.skip("TARGET-B B10 (JF-3): the LOC location is parsed with the invariant culture")
-    @jf0("C16", "TARGET")
-    def test_TARGET_B_C16_the_loc_location_is_parsed_with_the_invariant_culture(self):
-        self.assertRegex(self.c1, r"double\.TryParse\(parts\[1\], (System\.Globalization\.)?NumberStyles\.Float, (System\.Globalization\.)?CultureInfo\.InvariantCulture, out double rLoc\)")
 
     @unittest.skip("TARGET-B B7 / FC-7 (JF-3): the sender answers an unrunnable jump with a failure response")
     @jf0("J20", "TARGET")
     def test_TARGET_B_J20_the_sender_has_a_failure_response(self):
         self.assertIn("JUMP_FAILED", self.c1)
 
-    @unittest.skip("TARGET-A V-3 (JF-2, Python side): a station index outside the list is refused by the sender's caller; the C# side keeps no range check (C11)")
+    @unittest.skip("TARGET-A V-3 (JF-2, Python side): a station index outside the list is refused by the sender's caller; the C# side checks the range too since ST-3b (C11 flipped)")
     @jf0("C11", "TARGET")
     def test_TARGET_A_C11_the_range_is_checked_before_the_request_is_sent(self):
         self.fail("TARGET-A V-3: the check lives on the Python side (see file F1 TARGET_A_S17); there is nothing to state on the C# text")
 
-    @unittest.skip("TARGET-A V-4 (JF-2) / TARGET-B B2, B3, K7 (JF-3): the completion reports the sender's real next index")
-    @jf0("X06", "TARGET")
-    def test_TARGET_B_X06_the_completion_carries_the_next_station_index(self):
-        self.assertRegex(self.c1, r"JUMP_COMPLETE:\{pendingJumpType\}\" \+ \$\":\{pendingJumpStationIndex\}\" \+ \$\":\{completedLocation\}\" \+ \$\":\{completedTime\}\" \+ \$\":\{jumpCounter\}\" \+ \$\":\{")
 
 
 # ==============================================================================================================================================
@@ -477,7 +498,7 @@ class Z_Meta(unittest.TestCase):
             self.assertEqual(meta["kind"], kind, name)
             self.assertIn(meta["id"], OWN_IDS, name)
             self.assertIn(meta["id"], name)
-        self.assertGreater(count, 40)
+        self.assertGreater(count, 30)                                      # 35 after ST-3b (43 before: the eight TARGET twins that became CURRENT pins are gone)
 
     def test_META_every_CURRENT_DANGER_carries_its_four_facts(self):
         seen = 0
@@ -489,7 +510,7 @@ class Z_Meta(unittest.TestCase):
             self.assertTrue(name.startswith("test_CURRENT_DANGER_" + meta["id"]), name)
             for key, shortest in (("danger", 21), ("phase", 8), ("flip", 21)):
                 self.assertTrue(meta[key] and len(meta[key]) >= shortest, (name, key))
-        self.assertEqual(seen, 9)
+        self.assertEqual(seen, 2)                                          # ST-3b: C15 (JF-3 B6) and J20 (OD-S3-6: no failure response) are the DANGER pins that remain (9 before)
 
     def test_META_every_TARGET_is_skipped_with_a_contract_id_in_the_reason(self):
         seen = 0
@@ -501,7 +522,7 @@ class Z_Meta(unittest.TestCase):
             reason = getattr(fn, "__unittest_skip_why__", "")
             self.assertRegex(reason, r"TARGET-[AB] ", name)
             self.assertRegex(reason, r"(V-\d|B\d+|FC-\d|K\d)", name)
-        self.assertGreaterEqual(seen, 12)
+        self.assertGreaterEqual(seen, 4)                                   # C05, C15, J20 and the Python-side C11 remain (12 before)
 
     def test_META_the_manual_items_are_skips_with_no_assertion_and_cover_L1_to_L9_and_U1(self):
         import ast

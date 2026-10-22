@@ -161,14 +161,14 @@ function Run-Static {
     SCheck 'S06' {
         # requirement 23 / 32: the Current product, the shared sources and the layout are untouched (git diff against HEAD is empty) and pinned by hash
         # (Phase ST-1A, J3-G2, observation only: Class1.cs and TsScoringPlugin.csproj are the two files of the Current plugin folder that carry the STIDX supply; they may differ from HEAD until the commit - tests\test_stationindex_supply_st1a.py pins what changed)
-        $st1aCurrent = @('TsScoringPlugin/TsScoringPlugin/Class1.cs', 'TsScoringPlugin/TsScoringPlugin/TsScoringPlugin.csproj')
+        $st1aCurrent = @('TsScoringPlugin/TsScoringPlugin/Class1.cs', 'TsScoringPlugin/TsScoringPlugin/TsScoringPlugin.csproj', 'TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs', 'TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs')      # Phase ST-3b adds the grammar gate and the new Current-only unit
         $diff = @(& git -C $repo diff --name-only HEAD -- 'TsScoringPlugin/TsScoringPlugin' 'TsScoringPlugin/Handshake/Telemetry/Shared/DataPlaneProtocol.cs' 'TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs' 'TsScoringPlugin/Handshake/Telemetry/Shared/GenericHandleTextContract.cs' 'TsScoringPlugin/Handshake/Telemetry/Legacy/TSScoringPlugin.AtsExLegacy.Telemetry.l3build.log' | Where-Object { $st1aCurrent -cnotcontains $_ })
         $pins = [ordered]@{
             'TsScoringPlugin\Handshake\Telemetry\Shared\DataPlaneProtocol.cs'         = '0F6DE268B785462BD2E32F7161F1BDA69FBFEC4515752A834FBE4DFD242AE13B'
             'TsScoringPlugin\Handshake\Telemetry\Shared\TelemetryDirectoryReader.cs'  = '9D6C47493457FD840E8CA5186C8E16181F0B5CF85C10721087C9098DD6644680'
             'TsScoringPlugin\Handshake\Telemetry\Shared\GenericHandleTextContract.cs' = '00B35CFCB21DC6648E4D7D65E8EC14721B76C6896B3A690CA6200AE959841264'
             'TsScoringPlugin\TsScoringPlugin\CurrentDataPlane.cs'                     = '69E4C447357B9988363F14F87ED36A0BCC24934077821F8BD9BFD2DED81EDAEF'
-            'TsScoringPlugin\TsScoringPlugin\CurrentJumpEndpoint.cs'                  = '3837A409AFB136F10322DD78B8D89C4831B871AEB87824D0709594916F6FCB6D'
+            'TsScoringPlugin\TsScoringPlugin\CurrentJumpEndpoint.cs'                  = 'E0D5992E5B4D3EE088BCCC5B06F9A48465A59401899EC72018E1A042FCD6F68D'      # Phase ST-3b (a current source pin, moved on purpose; the PID-D6 revision was 3837A409AFB136F10322DD78B8D89C4831B871AEB87824D0709594916F6FCB6D)
         }
         $bad = @()
         foreach ($k in $pins.Keys) { if ((Sha (Join-Path $repo $k)) -ne $pins[$k]) { $bad += $k } }
@@ -218,11 +218,11 @@ function Run-Static {
         $proj = ReadText $projFile
         $links = @([regex]::Matches($proj, '<Compile Include="(\.\.\\[^"]+)"') | ForEach-Object { $_.Groups[1].Value })
         # (Phase ST-1A adds the one shared link of the STIDX supply: ..\Shared\StationListIdentity.cs)
-        $okLinks = @('..\..\..\TsScoringPlugin\CurrentDataPlane.cs', '..\..\..\TsScoringPlugin\CurrentJumpEndpoint.cs', '..\Shared\GenericHandleTextContract.cs', '..\Shared\DataPlaneProtocol.cs', '..\Shared\TelemetryDirectoryReader.cs', '..\Shared\TelemetryContract.cs', '..\Shared\StationListIdentity.cs')
+        $okLinks = @('..\..\..\TsScoringPlugin\CurrentDataPlane.cs', '..\..\..\TsScoringPlugin\CurrentJumpEndpoint.cs', '..\Shared\GenericHandleTextContract.cs', '..\Shared\DataPlaneProtocol.cs', '..\Shared\TelemetryDirectoryReader.cs', '..\Shared\TelemetryContract.cs', '..\Shared\StationListIdentity.cs', '..\Shared\JumpWire.cs')      # Phase ST-3b / G-PC-1: the compile-only link of the wire codec
         $extra = @($links | Where-Object { $okLinks -notcontains $_ })
         $hasExec = $proj -match 'LegacyJumpExecutor\.cs'
         if (-not $hasExec) { return (Absent 'LegacyJumpExecutor.cs is not in the project' 'files-absent') }
-        @{ Ok = ($extra.Count -eq 0 -and $links.Count -eq 7); Detail = "linked files: $($links.Count); unexpected links: $($extra -join ',')" }
+        @{ Ok = ($extra.Count -eq 0 -and $links.Count -eq 8); Detail = "linked files: $($links.Count); unexpected links: $($extra -join ',')" }
     }
     SCheck 'S12' {
         # the executor never creates a thread, a timer or a task; the plane keeps its one worker thread

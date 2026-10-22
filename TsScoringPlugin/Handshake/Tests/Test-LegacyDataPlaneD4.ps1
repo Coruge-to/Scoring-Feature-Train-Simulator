@@ -120,19 +120,19 @@ $deployedCurrent = Join-Path $env:PUBLIC 'Documents\BveEx\2.0\Extensions\TsScori
 $handoff = 'C:\Users\tsuru\Documents\TS-Scoring-Claude-Handoff\pre-claude-v6-20261014_191918\live-d6\package\TsScoringPlugin.dll'
 Check 'F01 the CURRENTLY deployed Current DLL (an audit of the deployed state of this machine, not a historical baseline) is byte-identical to the Phase ST-1B Current build (1F504B45...EB02)' ((Sha $deployedCurrent) -eq $deployedCurrentPin)
 if (Test-Path -LiteralPath $handoff) { Check 'F02 the packaged Current DLL of PID-D6 is byte-identical (7D4B97A9...3856)' ((Sha $handoff) -eq $currentPin) } else { Skip 'F02 the packaged Current DLL is not at the recorded path' }
-$st1aCurrent = @('TsScoringPlugin/TsScoringPlugin/Class1.cs', 'TsScoringPlugin/TsScoringPlugin/TsScoringPlugin.csproj')      # Phase ST-1A (J3-G2, observation only): the only two files of the Current plugin folder the STIDX supply may change (0 changed files, e.g. after the commit, is a pass too)
+$st1aCurrent = @('TsScoringPlugin/TsScoringPlugin/Class1.cs', 'TsScoringPlugin/TsScoringPlugin/TsScoringPlugin.csproj', 'TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs', 'TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs')      # Phase ST-1A (J3-G2, observation only): the only two files of the Current plugin folder the STIDX supply may change; Phase ST-3b (the Current jump wiring) adds CurrentJumpEndpoint.cs (the grammar gate over JumpWire) and the new CurrentJumpExecution.cs (0 changed files, e.g. after the commit, is a pass too)
 $curSrcOutside = @((& git -C $repo status --porcelain -- TsScoringPlugin/TsScoringPlugin | Out-String) -split "`n" | Where-Object { $_.Trim() } | Where-Object { $st1aCurrent -cnotcontains $_.Substring(3).Trim().Trim('"') })
-Check 'F03 Current product source (TsScoringPlugin\TsScoringPlugin) is unchanged against HEAD (no modified, staged or untracked file) except the two files of Phase ST-1A (Class1.cs, TsScoringPlugin.csproj)' ($curSrcOutside.Count -eq 0)
+Check 'F03 Current product source (TsScoringPlugin\TsScoringPlugin) is unchanged against HEAD (no modified, staged or untracked file) except the two files of Phase ST-1A (Class1.cs, TsScoringPlugin.csproj) and the two of Phase ST-3b (CurrentJumpEndpoint.cs, CurrentJumpExecution.cs)' ($curSrcOutside.Count -eq 0)
 $pins = [ordered]@{
     'TsScoringPlugin\Handshake\Telemetry\Shared\DataPlaneProtocol.cs' = '0F6DE268B785462BD2E32F7161F1BDA69FBFEC4515752A834FBE4DFD242AE13B'
     'TsScoringPlugin\Handshake\Telemetry\Shared\TelemetryDirectoryReader.cs' = '9D6C47493457FD840E8CA5186C8E16181F0B5CF85C10721087C9098DD6644680'
     'TsScoringPlugin\Handshake\Telemetry\Shared\GenericHandleTextContract.cs' = '00B35CFCB21DC6648E4D7D65E8EC14721B76C6896B3A690CA6200AE959841264'
     'TsScoringPlugin\TsScoringPlugin\CurrentDataPlane.cs' = '69E4C447357B9988363F14F87ED36A0BCC24934077821F8BD9BFD2DED81EDAEF'
-    'TsScoringPlugin\TsScoringPlugin\CurrentJumpEndpoint.cs' = '3837A409AFB136F10322DD78B8D89C4831B871AEB87824D0709594916F6FCB6D'
+    'TsScoringPlugin\TsScoringPlugin\CurrentJumpEndpoint.cs' = 'E0D5992E5B4D3EE088BCCC5B06F9A48465A59401899EC72018E1A042FCD6F68D'      # Phase ST-3b (a current source pin, moved on purpose): the grammar gate reads the shared JumpWire; the PID-D6 revision was 3837A409AFB136F10322DD78B8D89C4831B871AEB87824D0709594916F6FCB6D
 }
 $pinOk = $true
 foreach ($k in $pins.Keys) { if ((Sha (Join-Path $repo $k)) -ne $pins[$k]) { $pinOk = $false; Write-Host ('  pin differs: ' + $k) } }
-Check 'F04 the three shared files, CurrentDataPlane.cs and CurrentJumpEndpoint.cs are byte-identical to the SHA-256 recorded at PID-D6' $pinOk
+Check 'F04 the three shared files and CurrentDataPlane.cs are byte-identical to the SHA-256 recorded at PID-D6, and CurrentJumpEndpoint.cs is the Phase ST-3b revision' $pinOk
 $sharedGit = (& git -C $repo status --porcelain -- TsScoringPlugin/Handshake/Telemetry/Shared/DataPlaneProtocol.cs TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs TsScoringPlugin/Handshake/Telemetry/Shared/GenericHandleTextContract.cs | Out-String).Trim()
 Check 'F05 and git sees no change in them against HEAD' ($sharedGit -eq '')
 $pyChanged = @((& git -C $repo status --porcelain | Out-String) -split "`n" | Where-Object { $_ -match '\.py\s*$' } | ForEach-Object { $_.Substring(3).Trim() } | Where-Object { $_ -notmatch '/' })

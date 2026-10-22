@@ -899,7 +899,9 @@ class D_Boundary(unittest.TestCase):
                                                                                "stidxDoorOpenedBefore")}
         # each count is the sum of exactly these statements: the declaration, the scenario-change reset, (for the list: the 1 Hz STALIST block), (for the arrival: the event),
         # (for the list: the condition of the part) and the argument of the part
-        self.assertEqual(counts, {"stidxArrivalIndex": 4, "stidxArrivalSeq": 4, "stidxListId": 4, "stidxListCount": 5, "stidxListReady": 4, "stidxTarget": 3, "stidxDoorOpenedBefore": 2})
+        # Phase ST-3b (an intended change, not a drift): the Current sender now READS the identity of its station list to judge a jump command - BuildJumpView (id, count, ready) and the
+        # completion (id, ready): stidxListId 4 -> 6, stidxListCount 5 -> 6, stidxListReady 4 -> 6. The STIDX statements themselves are unchanged; ST-1A's arrival / target / door reads are untouched.
+        self.assertEqual(counts, {"stidxArrivalIndex": 4, "stidxArrivalSeq": 4, "stidxListId": 6, "stidxListCount": 6, "stidxListReady": 6, "stidxTarget": 3, "stidxDoorOpenedBefore": 2})
 
     def test_current_state_machine_statements_are_untouched(self):
         c1 = self.c1
@@ -910,7 +912,9 @@ class D_Boundary(unittest.TestCase):
                        "if (stationList[i].Location >= location - 50.0) { targetStationIndex = i;"):
             self.assertIn(pinned, c1)
         writes = re.findall(r"targetStationIndex\s*(\+\+|=(?!=))", c1)
-        self.assertEqual(sorted(writes), sorted(["=", "=", "++", "++", "++"]))                       # no new write of the target: ST-1A reads it, it does not move it
+        # Phase ST-3b (an intended change): ONE new write of the target, SelectTargetByRequestedIndex (the adopted StationIndex of an official jump); the declaration, the position search and the three
+        # advances are the ones of before (tests\test_stationindex_current_st3b.py pins that the new write is reached only with an index and the old one only without)
+        self.assertEqual(sorted(writes), sorted(["=", "=", "=", "++", "++", "++"]))
 
     def test_legacy_group_carries_stidx_as_its_last_key_inside_the_one_all_or_nothing_group(self):
         ls = self.lses

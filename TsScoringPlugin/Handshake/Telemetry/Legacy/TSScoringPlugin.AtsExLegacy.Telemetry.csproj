@@ -108,6 +108,9 @@
     <Compile Include="..\Shared\StationListIdentity.cs">
       <Link>Shared\StationListIdentity.cs</Link>
     </Compile>
+    <Compile Include="..\Shared\JumpWire.cs">
+      <Link>Shared\JumpWire.cs</Link>
+    </Compile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

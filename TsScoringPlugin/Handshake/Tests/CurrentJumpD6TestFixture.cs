@@ -85,7 +85,7 @@ public static class CurrentJumpD6TestFixture
 
     static JumpCommandValidator NewValidator(FakeSource source, List<string> log)
     {
-        return new JumpCommandValidator(Pid, JumpGen, Token(9), source, delegate(string s) { log.Add(s); });
+        return new JumpCommandValidator(Pid, JumpGen, Token(9), source, delegate(string s) { log.Add(s); }, true);          // Phase ST-3b: the Current gate (the one CurrentJumpEndpoint.Create builds)
     }
 
     public static string[] Run(string interopFolder)
@@ -374,7 +374,7 @@ public static class CurrentJumpD6TestFixture
 
         FakeSource src = new FakeSource();
         src.Endpoint = new TelemetryEndpoint(bvePid, instance, appPid, telPort, telGen, telToken, 1U, 7U);
-        JumpCommandValidator v = new JumpCommandValidator((int)bvePid, jumpGen, jumpToken, src, null);
+        JumpCommandValidator v = new JumpCommandValidator((int)bvePid, jumpGen, jumpToken, src, null, true);
         List<string> results = new List<string>();
         foreach (string line in File.ReadAllLines(Path.Combine(folder, "commands.txt")))
         {

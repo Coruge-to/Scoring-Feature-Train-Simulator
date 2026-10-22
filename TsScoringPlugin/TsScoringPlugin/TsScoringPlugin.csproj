@@ -32,10 +32,12 @@
     <Compile Include="Class1.cs" />
     <Compile Include="CurrentDataPlane.cs" />
     <Compile Include="CurrentJumpEndpoint.cs" />
+    <Compile Include="CurrentJumpExecution.cs" />
     <Compile Include="..\Handshake\Telemetry\Shared\GenericHandleTextContract.cs"><Link>Shared\GenericHandleTextContract.cs</Link></Compile>
     <Compile Include="..\Handshake\Telemetry\Shared\DataPlaneProtocol.cs"><Link>Shared\DataPlaneProtocol.cs</Link></Compile>
     <Compile Include="..\Handshake\Telemetry\Shared\TelemetryDirectoryReader.cs"><Link>Shared\TelemetryDirectoryReader.cs</Link></Compile>
     <Compile Include="..\Handshake\Telemetry\Shared\StationListIdentity.cs"><Link>Shared\StationListIdentity.cs</Link></Compile>
+    <Compile Include="..\Handshake\Telemetry\Shared\JumpWire.cs"><Link>Shared\JumpWire.cs</Link></Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup><Analyzer Include="..\BveEx.Caller.InputDevice.dll" /></ItemGroup>

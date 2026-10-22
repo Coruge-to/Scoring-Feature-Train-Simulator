@@ -61,6 +61,7 @@ import test_jf1_retry_and_save_data_current as F1  # noqa: E402  (the retry rig 
 PLUGIN = os.path.join(ROOT, "TsScoringPlugin")
 CLASS1 = os.path.join(PLUGIN, "TsScoringPlugin", "Class1.cs")
 LEGACY_SESSION = os.path.join(PLUGIN, "Handshake", "Telemetry", "Legacy", "src", "LegacyTelemetrySession.cs")
+LEGACY_TIMELINE = os.path.join(PLUGIN, "Handshake", "Telemetry", "Legacy", "src", "LegacyStationTimeline.cs")
 SHARED_IDENTITY_CS = os.path.join(PLUGIN, "Handshake", "Telemetry", "Shared", "StationListIdentity.cs")
 VECTORS = os.path.join(HERE, "stidx_vectors_st0.json")
 T0 = 36000000
@@ -73,6 +74,7 @@ ADAPTER_LIST_ID = "list_id"            # list_id(payload_text) -> 8 upper-case h
 MIGRATED_TO = "tests/test_stationindex_supply_st1a.py"       # Phase ST-1A: where the six migrated contracts (T21, T22 x2, U12 x3) are executed now
 MIGRATED_TO_ST2A = "tests/test_stationindex_canon_st2.py"    # Phase ST-2a: where the three contracts that ST-2a turns GREEN (T09 initial checkpoint, T05 start, T04 save) are executed now
 MIGRATED_TO_ST2B = "tests/test_stationindex_canon_st2.py"    # Phase ST-2b: where the eight retry contracts that ST-2b turns GREEN (T08 T03 T04 T05 x2 T06 T09 T23) are executed now
+MIGRATED_TO_ST3B = "tests/test_stationindex_current_st3b.py"    # Phase ST-3b: where the one contract that ST-3b turns GREEN (U01: the Current sender fixes the requested index) is executed now
 SCOPE_SID = 7
 SCOPE_LIST_ID = "A1B2C3D4"
 
@@ -421,7 +423,7 @@ class StaticReds(RedMixin, unittest.TestCase):
         hundreds = [n.value for n in ast.walk(fn[0]) if isinstance(n, ast.Constant) and isinstance(n.value, float) and n.value == 100.0]
         self.contract(not hundreds, "T23", "EXECUTE-RETRY-HAS-100M-SEARCH", "execute_retry still contains %d float 100.0" % len(hundreds))
 
-    @red("U01", "CURRENT-STA-JUMP-DOES-NOT-FIX-REQUESTED-INDEX", items=(1,), artifact="JF-1 TARGET_B_C02 / C03 / C17 (their regular expression)",
+    @migrated("U01", "CURRENT-STA-JUMP-DOES-NOT-FIX-REQUESTED-INDEX", MIGRATED_TO_ST3B, items=(1,), artifact="JF-1 TARGET_B_C02 / C03 / C17 (their regular expression)",
          note="after a requested jump the Current sender's target is the requested index, so no 50 m position search can choose another station")
     def test_RED_U01_the_current_sender_fixes_the_requested_index(self):
         c1 = cs_code(CLASS1)
@@ -520,9 +522,14 @@ class Guards(RedMixin, unittest.TestCase):          # (Phase ST-2b: U13 is a dec
         python_uses_saved_index = any((isinstance(n, ast.Constant) and n.value == "station_index") or (isinstance(n, ast.Attribute) and n.attr == "check_retry_checkpoint")
                                       for n in ast.walk(fn[0]))
         c1 = cs_code(CLASS1)
-        csharp_fixes_request = re.search(r"targetStationIndex = (sIdx|requestedStationIndex|pendingJumpStationIndex)", c1) is not None
+        csharp_fixes_request_current = re.search(r"targetStationIndex = (sIdx|requestedStationIndex|pendingJumpStationIndex)", c1) is not None
+        # Phase ST-3b: the Legacy side is part of the condition from now on (Start Audit 12 section 2, row 2: the Legacy timeline takes a requested index before it searches by position). The Current sender
+        # alone (ST-3b) must not turn this declared RED into a pass: Legacy is ST-3c, Python is ST-3d, the GUARD return is ST-3e0. The detection of the Legacy side is the one name the audit fixed
+        # (RequestTarget of LegacyStationTimeline); ST-3c, which implements it, adds the Legacy R1-B and Python parts of the condition in the same way.
+        csharp_fixes_request_legacy = re.search(r"\bRequestTarget\b", cs_code(LEGACY_TIMELINE)) is not None
+        csharp_fixes_request = csharp_fixes_request_current and csharp_fixes_request_legacy
         self.contract(not (python_uses_saved_index and not csharp_fixes_request), "U13", "PYTHON-AHEAD-OF-CSHARP-REQUEST-FIXING",
-                      "Python retries by the saved station_index but Class1.cs still re-selects the target by position (ST-3 missing) - Legacy evidence must be added at ST-3")
+                      "Python retries by the saved station_index but a C# sender still re-selects the target by position (Current: %s, Legacy: %s - ST-3c missing)" % (csharp_fixes_request_current, csharp_fixes_request_legacy))
 
     @guard("T22", items=(), artifact="the vector table is part of the RED validity",
            note="the shared vector table is well formed: unique ids, CRC-32 values equal to the standard library, the verdict words of the audit only")

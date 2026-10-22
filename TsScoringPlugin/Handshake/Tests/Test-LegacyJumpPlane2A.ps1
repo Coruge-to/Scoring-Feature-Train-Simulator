@@ -159,7 +159,7 @@ function Run-Static {
         @{ Ok = ($cur -eq 0 -and ($lit -join ',') -eq 'LegacyJumpEndpoint.cs' -and $viaNames); Detail = ".CurrentJump: $cur; .LegacyJump literal only in: $($lit -join ','); the plane names its mapping through LegacyJumpNames: $viaNames" }
     }
     KCheck 'K10' {
-        $shared = @('Telemetry\Shared\DataPlaneProtocol.cs', 'Telemetry\Shared\TelemetryDirectoryReader.cs', 'Telemetry\Shared\TelemetryContract.cs') | ForEach-Object { Join-Path $Root $_ }
+        $shared = @('Telemetry\Shared\DataPlaneProtocol.cs', 'Telemetry\Shared\TelemetryDirectoryReader.cs', 'Telemetry\Shared\TelemetryContract.cs', 'Telemetry\Shared\JumpWire.cs') | ForEach-Object { Join-Path $Root $_ }
         $shared += (Join-Path $repo 'TsScoringPlugin\TsScoringPlugin\CurrentDataPlane.cs')
         $shared += (Join-Path $repo 'TsScoringPlugin\TsScoringPlugin\CurrentJumpEndpoint.cs')
         $own = ($newFiles + 'LegacyJumpExecutor.cs') | ForEach-Object { Join-Path $ProductSrcDir $_ }      # Phase LJX-1 (pin moved): the executor file is part of the host independent plane

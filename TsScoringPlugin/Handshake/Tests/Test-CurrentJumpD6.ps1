@@ -13,6 +13,7 @@ $shared = Join-Path $plugin 'Handshake\Telemetry\Shared'
 $sources = @(
     (Join-Path $shared 'DataPlaneProtocol.cs'),
     (Join-Path $shared 'TelemetryDirectoryReader.cs'),
+    (Join-Path $shared 'JumpWire.cs'),      # Phase ST-3b: the grammar gate of the endpoint is the shared JumpWire reader
     (Join-Path $plugin 'TsScoringPlugin\CurrentDataPlane.cs'),
     (Join-Path $plugin 'TsScoringPlugin\CurrentJumpEndpoint.cs'),
     (Join-Path $plugin 'Handshake\Tests\CurrentJumpD6TestFixture.cs')
@@ -63,7 +64,7 @@ Check 'B08 the fixed jump receiver (54322) still exists for the normal mode' ($c
 Check 'B09 plain commands from the fixed port are executed in the normal mode ONLY (no fixed-port fallback in the managed mode)' ($class1Code -match 'if \(normal\) commands\.Add\(')
 Check 'B10 the managed commands come from the validated endpoint only' (($class1Code -match 'jumpEndpoint\.Drain\(validated\)') -and ($class1Code -match 'new JumpInput\(c\.Text, c\.RequestId\)'))
 Check 'B11 the RequestId of the pending jump reaches the JUMP_COMPLETE (SendJumpComplete(completeBytes, pendingJumpRequestId))' ($class1Code -match 'batch\.SendJumpComplete\(completeBytes, pendingJumpRequestId\)')
-Check 'B12 JUMP_COMPLETE text and the payload builders are unchanged' (($class1Code -match '\$"JUMP_COMPLETE:\{pendingJumpType\}"') -and ($class1Code -match 'SCENARIO_ID:\{scenarioId\},SPEED:'))
+Check 'B12 the payload builders of the telemetry line are unchanged and the JUMP_COMPLETE text is written by the canonical formatter (Phase ST-3b: no interpolated string)' (($class1Code -match 'CurrentJumpExecution\.FormatCompletion\(') -and ($class1Code -notmatch '\$"JUMP_COMPLETE:') -and ($class1Code -match 'SCENARIO_ID:\{scenarioId\},SPEED:'))
 Check 'B13 the jump endpoint is created in its own try block and disposed with the plugin' (($class1Code -match 'CurrentJumpEndpoint\.Create\(') -and ($class1Code -match 'jumpEndpoint\.Dispose\(\)'))
 Check 'B14 the jump command grammar of the plugin (JUMP_STA_TIME / JUMP_LOC_TIME handling) is unchanged' (($class1Code -match 'msg\.StartsWith\("JUMP_STA_TIME:"\)') -and ($class1Code -match 'msg\.StartsWith\("JUMP_LOC_TIME:"\)'))
 

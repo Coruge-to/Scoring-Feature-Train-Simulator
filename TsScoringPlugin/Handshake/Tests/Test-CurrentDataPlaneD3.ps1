@@ -64,7 +64,7 @@ $jumpIdx = $ctor.Value.IndexOf('new UdpClient(54322)')
 $hbIdx = $ctor.Value.IndexOf('new Timer(50)')
 Check 'B11 the heartbeat is started before, and independently of, the 54322 bind' (($jumpIdx -gt 0) -and ($hbIdx -gt 0) -and ($hbIdx -lt $jumpIdx))
 Check 'B12 the jump receiver port, protocol and command handling are unchanged (54322, JUMP_STA_TIME / JUMP_LOC_TIME)' (($class1Code -match 'new UdpClient\(54322\)') -and ($class1Code -match 'JUMP_STA_TIME:') -and ($class1Code -match 'JUMP_LOC_TIME:'))
-Check 'B13 JUMP_COMPLETE text and the payload builders are unchanged' (($class1Code -match '\$"JUMP_COMPLETE:\{pendingJumpType\}"') -and ($class1Code -match 'SCENARIO_ID:\{scenarioId\},SPEED:'))
+Check 'B13 the payload builders of the telemetry line are unchanged and the JUMP_COMPLETE text is written by the canonical formatter (Phase ST-3b: no interpolated string)' (($class1Code -match 'CurrentJumpExecution\.FormatCompletion\(') -and ($class1Code -notmatch '\$"JUMP_COMPLETE:') -and ($class1Code -match 'SCENARIO_ID:\{scenarioId\},SPEED:'))
 Check 'B14 no new mode marker object: only the existing Enabled / Ready events are probed' (([regex]::Matches($dpCode, 'Local\\\\TSScoringPlugin')).Count -eq 2)
 
 Write-Host ''

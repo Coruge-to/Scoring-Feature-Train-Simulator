@@ -19,7 +19,7 @@ $telRoot = Join-Path $Root 'Telemetry'
 $vectorPath = Join-Path $repo 'tests\jump_wire_vectors.json'
 $jwPath = Join-Path $telRoot 'Shared\JumpWire.cs'
 $endpointPath = Join-Path $repo 'TsScoringPlugin\TsScoringPlugin\CurrentJumpEndpoint.cs'
-$endpointSha = '3837A409AFB136F10322DD78B8D89C4831B871AEB87824D0709594916F6FCB6D'
+$endpointSha = 'E0D5992E5B4D3EE088BCCC5B06F9A48465A59401899EC72018E1A042FCD6F68D'      # Phase ST-3b (a current source pin, moved on purpose): CurrentJumpEndpoint.cs reads the Current command through this file (the five argument validator keeps the old grammar); the PID-D6 revision (the state at ST-3a) was 3837A409AFB136F10322DD78B8D89C4831B871AEB87824D0709594916F6FCB6D
 
 $script:pass = 0
 $script:fail = 0
@@ -172,6 +172,12 @@ namespace St3aProbe
         public static bool CurrentValidGrammar(bool station, string text)
         {
             MethodInfo m = typeof(JumpCommandValidator).GetMethod("ValidGrammar", BindingFlags.NonPublic | BindingFlags.Static);
+            return (bool)m.Invoke(null, new object[] { station ? DataPlaneMessageTypes.JumpStationTime : DataPlaneMessageTypes.JumpLocationTime, text });
+        }
+        // Phase ST-3b (review, plan A): the grammar of the five argument validator, the form the Legacy plane builds - the gate as it was before ST-3b
+        public static bool LegacyCompatibleGrammar(bool station, string text)
+        {
+            MethodInfo m = typeof(JumpCommandValidator).GetMethod("ValidGrammarV1", BindingFlags.NonPublic | BindingFlags.Static);
             return (bool)m.Invoke(null, new object[] { station ? DataPlaneMessageTypes.JumpStationTime : DataPlaneMessageTypes.JumpLocationTime, text });
         }
         public static object[] LegacyClaim(bool station, string text)
@@ -420,17 +426,18 @@ Check 'N-codec-exact the 7 recorded texts where the BCL is off by one unit in th
 # ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 Write-Host ('EQUIVALENCE-TABLE id | text | current | legacy | jumpwire | class')
 $eqList = @(); if ($vec.PSObject.Properties['equivalence']) { $eqList = @($vec.equivalence) }
-$badEq = @(); $classCount = @{}
+$badEq = @(); $classCount = @{}   # Phase ST-3b: the Current gate (ValidGrammar) IS the JumpWire reader now; the gate of the five argument validator (ValidGrammarV1, the Legacy plane's) is the one the table's current_accepts column records
 foreach ($e in $eqList) {
     $station = ([string]$e.raw).StartsWith('JUMP_STA_TIME:')
     $cur = [bool](J 'CurrentValidGrammar' @($station, [string]$e.raw))
+    $old = [bool](J 'LegacyCompatibleGrammar' @($station, [string]$e.raw))
     $lc = J 'LegacyClaim' @($station, [string]$e.raw)
     $leg = ([string]$lc[0] -cne 'NONE')
     $pj = J 'ParseRequest' @([string]$e.raw)
     $jwOk = ($null -eq $pj[0]) -and ([int]$pj[1] -eq 1)
-    Write-Host ('  ' + $e.id + ' | ' + ([string]$e.raw -replace "`r", '\r' -replace "`n", '\n') + ' | ' + $cur + ' | ' + $leg + ' | ' + $jwOk + ' | ' + $e.class)
+    Write-Host ('  ' + $e.id + ' | ' + ([string]$e.raw -replace "`r", '\r' -replace "`n", '\n') + ' | ' + $old + ' | ' + $leg + ' | ' + $jwOk + ' | ' + $e.class + ' | current gate ' + $cur)
     $same = $true
-    if ($cur -and $leg -and $jwOk) {
+    if ($old -and $leg -and $jwOk) {
         # the three accept: do they mean the same thing? (the table records the answer)
         $timeJw = [int]$pj[5]
         $sameMeaning = ([int]$lc[3] -eq $timeJw)
@@ -443,12 +450,15 @@ foreach ($e in $eqList) {
         if ($e.PSObject.Properties['same_meaning']) { $same = ($sameMeaning -eq [bool]$e.same_meaning) }
         else { Write-Host ('  INFO ' + $e.id + ' same meaning on this platform: ' + $sameMeaning + ' (platform dependent, not enforced)') }
     }
-    $ok = ($cur -eq [bool]$e.current_accepts) -and ($leg -eq [bool]$e.legacy_accepts) -and ($jwOk -eq [bool]$e.jumpwire_accepts) -and $same
+    # Phase ST-3b (review, plan A): the Current gate (ValidGrammar) and JumpWire give ONE verdict on every text; the gate of the five argument validator (ValidGrammarV1, what the Legacy plane builds) keeps the verdict the table records (the gate as it was before ST-3b), so the ambiguous v1 spellings the old gate took are still taken there
+    $ok = ($cur -eq $jwOk) -and ($old -eq [bool]$e.current_accepts) -and ($leg -eq [bool]$e.legacy_accepts) -and ($jwOk -eq [bool]$e.jumpwire_accepts) -and $same
     if (-not $ok) { $badEq += $e.id }
     $classCount[[string]$e.class] = 1 + [int]$classCount[[string]$e.class]
 }
-Check ('E-eq the existing C# readers (CurrentJumpEndpoint.ValidGrammar, LegacyJumpClaim.From) and JumpWire give the verdicts the table records on ' + $eqList.Count + ' v1 texts, and mean the same wherever all three accept' + $(if ($badEq.Count) { ' - wrong: ' + (($badEq | Select-Object -First 8) -join ',') } else { '' })) (($eqList.Count -gt 25) -and ($badEq.Count -eq 0))
+Check ('E-eq since ST-3b the Current gate (ValidGrammar) and JumpWire give ONE verdict on ' + $eqList.Count + ' v1 texts; the gate of the five argument validator (ValidGrammarV1) and LegacyJumpClaim.From (both untouched) give the verdicts the table records; and all of them mean the same wherever they accept' + $(if ($badEq.Count) { ' - wrong: ' + (($badEq | Select-Object -First 8) -join ',') } else { '' })) (($eqList.Count -gt 25) -and ($badEq.Count -eq 0))
+$currentDiffers = @($eqList | Where-Object { [bool]$_.current_accepts -and (-not [bool]$_.jumpwire_accepts) } | ForEach-Object { $_.id })
 $newAccepts = @($eqList | Where-Object { [bool]$_.jumpwire_accepts -and (-not ([bool]$_.current_accepts -and [bool]$_.legacy_accepts)) })
+Write-Host ('  INFO the Current gate differs from the gate of the five argument validator (the Legacy plane) on ' + $currentDiffers.Count + ' of the texts (the ambiguous v1 spellings; Legacy migrates in ST-3c): ' + ($currentDiffers -join ','))
 Check 'E-never JumpWire v1 never accepts a text that one of the existing readers rejects' ($newAccepts.Count -eq 0)
 Write-Host ('  classes: ' + (($classCount.Keys | Sort-Object | ForEach-Object { $_ + '=' + $classCount[$_] }) -join ' '))
 
@@ -457,9 +467,10 @@ Write-Host ('  classes: ' + (($classCount.Keys | Sort-Object | ForEach-Object { 
 # ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 $projects = @(Get-ChildItem $Root -Recurse -Filter *.csproj | Where-Object { $_.FullName -notmatch '\\(obj|out)\\' }) + @(Get-ChildItem (Join-Path $repo 'TsScoringPlugin\TsScoringPlugin') -Filter *.csproj)
 $linked = @($projects | Where-Object { ([IO.File]::ReadAllText($_.FullName)) -match 'JumpWire' })
-Check ('B-link JumpWire.cs is a Compile item of none of the ' + $projects.Count + ' projects (ST-3a leaves both DLLs unchanged; ST-3b / ST-3c add the link)') ($linked.Count -eq 0)
+# Phase ST-3b (a current source pin, moved on purpose): ST-3a linked it nowhere; ST-3b links it into the Current project (the grammar gate and the Current jump transaction use it) and gives the Legacy project the compile-only link (G-PC-1: the Legacy DLL compiles the shared CurrentJumpEndpoint.cs, which now names it; nothing of Legacy calls it before ST-3c).
+Check ('B-link JumpWire.cs is a Compile item of exactly two of the ' + $projects.Count + ' projects: the Current plugin project and the Legacy telemetry project (' + (($linked | ForEach-Object { $_.Name } | Sort-Object) -join ', ') + ')') (($linked.Count -eq 2) -and ((@($linked | ForEach-Object { $_.Name } | Sort-Object) -join ',') -ceq 'TSScoringPlugin.AtsExLegacy.Telemetry.csproj,TsScoringPlugin.csproj'))
 $sha = (Get-FileHash -LiteralPath $endpointPath -Algorithm SHA256).Hash
-Check 'B-sha CurrentJumpEndpoint.cs (the existing v1 reader, shared with the Legacy DLL) is byte-identical to the SHA-256 recorded at PID-D6' ($sha -ceq $endpointSha)
+Check 'B-sha CurrentJumpEndpoint.cs (the grammar gate over this reader, shared with the Legacy DLL) is the Phase ST-3b revision (it was byte-identical to the PID-D6 revision until ST-3a)' ($sha -ceq $endpointSha)
 $jwText = [IO.File]::ReadAllText($jwPath)
 $jwCode = [regex]::Replace([regex]::Replace($jwText, '(?s)/\*.*?\*/', ''), '(?m)//.*$', '')
 Check 'B-host JumpWire.cs names no BVE / BveEX / AtsEX / Legacy / Caller / Handshake type, no file, socket, thread or reflection API, and no fixed port' (($jwCode -cnotmatch 'BveEx|BveEX|AtsEx|AtsEX|Legacy|Caller|Handshake|BveHacker|System\.IO|System\.Net|System\.Threading|System\.Reflection|System\.Diagnostics|File\.|Directory\.|54321|54322'))

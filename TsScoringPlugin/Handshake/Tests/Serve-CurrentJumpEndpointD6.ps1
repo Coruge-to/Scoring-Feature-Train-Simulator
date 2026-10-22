@@ -16,6 +16,7 @@ $shared = Join-Path $plugin 'Handshake\Telemetry\Shared'
 $sources = @(
     (Join-Path $shared 'DataPlaneProtocol.cs'),
     (Join-Path $shared 'TelemetryDirectoryReader.cs'),
+    (Join-Path $shared 'JumpWire.cs'),      # Phase ST-3b: the grammar gate of the endpoint is the shared JumpWire reader
     (Join-Path $plugin 'TsScoringPlugin\CurrentDataPlane.cs'),
     (Join-Path $plugin 'TsScoringPlugin\CurrentJumpEndpoint.cs'),
     (Join-Path $plugin 'Handshake\Tests\CurrentJumpD6TestFixture.cs')
