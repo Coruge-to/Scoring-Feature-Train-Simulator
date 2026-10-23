@@ -527,9 +527,17 @@ class Guards(RedMixin, unittest.TestCase):          # (Phase ST-2b: U13 is a dec
         # alone (ST-3b) must not turn this declared RED into a pass: Legacy is ST-3c, Python is ST-3d, the GUARD return is ST-3e0. The detection of the Legacy side is the one name the audit fixed
         # (RequestTarget of LegacyStationTimeline); ST-3c, which implements it, adds the Legacy R1-B and Python parts of the condition in the same way.
         csharp_fixes_request_legacy = re.search(r"\bRequestTarget\b", cs_code(LEGACY_TIMELINE)) is not None
-        csharp_fixes_request = csharp_fixes_request_current and csharp_fixes_request_legacy
+        # Phase ST-3c: the Legacy side now has RequestTarget, so the condition grows in the SAME change (otherwise U13 would turn into an UNEXPECTED-PASS): the Legacy STALIST is no longer marked
+        # sent without the sink's acknowledgement (R1-B: legacy_stalist_acked), and the Python side must settle the v2 transaction (python_settles_v2: execute_retry builds its request through
+        # the single v2 builder, ST-3d). The GUARD return (and the package-level duty, N-12) is ST-3e0.
+        legacy_session = cs_code(LEGACY_SESSION)
+        legacy_stalist_acked = ("ITelemetrySinkAck" in legacy_session and ".TrySend(" in legacy_session
+                                and re.search(r"sink\.Send\(staList\); staListSent = true;", legacy_session) is None)
+        python_settles_v2 = any((isinstance(n, ast.Name) and n.id == "build_jump_request") or (isinstance(n, ast.Attribute) and n.attr == "build_jump_request") for n in ast.walk(fn[0]))
+        csharp_fixes_request = csharp_fixes_request_current and csharp_fixes_request_legacy and legacy_stalist_acked and python_settles_v2
         self.contract(not (python_uses_saved_index and not csharp_fixes_request), "U13", "PYTHON-AHEAD-OF-CSHARP-REQUEST-FIXING",
-                      "Python retries by the saved station_index but a C# sender still re-selects the target by position (Current: %s, Legacy: %s - ST-3c missing)" % (csharp_fixes_request_current, csharp_fixes_request_legacy))
+                      "Python retries by the saved station_index but the request chain is not complete (Current: %s, Legacy RequestTarget: %s, Legacy STALIST acknowledged: %s, Python v2 settlement: %s - ST-3d missing)"
+                      % (csharp_fixes_request_current, csharp_fixes_request_legacy, legacy_stalist_acked, python_settles_v2))
 
     @guard("T22", items=(), artifact="the vector table is part of the RED validity",
            note="the shared vector table is well formed: unique ids, CRC-32 values equal to the standard library, the verdict words of the audit only")

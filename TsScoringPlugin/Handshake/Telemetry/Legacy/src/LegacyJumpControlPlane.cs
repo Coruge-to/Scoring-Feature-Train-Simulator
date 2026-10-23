@@ -159,6 +159,10 @@ namespace TSScoringPlugin.Telemetry
         private long lastIterationAtMs = -1;
         private int afterDisposeAccess;
         private int refusedNoted;
+        private int refusedLogged;            // Phase ST-3c: lines of refused (judged) commands written over the life of the plane; guarded by `diag` (NoteCapped)
+        private int txLogged;                 // Phase ST-3c: transaction lines written over the life of the plane; guarded by `diag`
+        private const int RefusedLogCapacity = 64;
+        private const int TxLogCapacity = 256;
         private long claimContended;          // LJX-1: claims that found the gate busy (the Tick never waits)
         private int consecutiveFailures;      // LJX-1: execution failures in a row (the breaker), valid for the scenario boundary counter in breakerEpoch
         private int breakerEpoch;
@@ -443,8 +447,24 @@ namespace TSScoringPlugin.Telemetry
                     return null;
                 }
                 if (!facts.ScenarioCreated || !facts.SessionActive) return null;   // not a fact against the command: it waits for the next Tick (and its TTL)
+
+                // Phase ST-3c: the judgement of a v2 command (scenario, station list id and count, index, location) comes BEFORE the claim. A command that does not hold against what the
+                // plugin holds now is Discarded (the host API was never called, nothing is in flight) with the reason contract-<word>, and it is NOT a failure of the breaker: the breaker counts
+                // only what went wrong after a claim (ReportExecution). A formal v1 command passes the judgement unchanged.
+                LegacyJumpView view = null;
+                try { if (facts.ViewProvider != null) view = facts.ViewProvider(); }
+                catch (Exception) { view = null; }
+                LegacyJumpDecision verdict = LegacyJumpJudge.Judge(q.Text, q.MessageType, view);
+                if (!verdict.Accepted)
+                {
+                    queue.DiscardQueued(q, LegacyJumpJudge.DiscardPrefix + verdict.Reason);
+                    NoteCapped(LegacyJumpJudge.RefusedLine(q.RequestId, verdict), ref refusedLogged, RefusedLogCapacity, "event=legacy-jump-refused-log-capped");
+                    return null;
+                }
+
                 if (!queue.TryClaim(q, now)) return null;
                 ticket = LegacyJumpClaim.From(q);
+                ticket.Adopt(verdict);
             }
             finally
             {
@@ -492,6 +512,42 @@ namespace TSScoringPlugin.Telemetry
                 FlushLog();
             }
             return outcome;
+        }
+
+        /// <summary>
+        /// Phase ST-3c: the one line of a claimed command that ended (see LegacyJumpJudge.TransactionLine), written by the Tick runner. Never per Tick; capped over the life of the plane. It only
+        /// reads: it changes no state of the command and no count of the breaker.
+        /// </summary>
+        internal void NoteTransaction(LegacyJumpClaim ticket, string status)
+        {
+            try
+            {
+                if (ticket == null) return;
+                NoteCapped(LegacyJumpJudge.TransactionLine(ticket, status ?? "-", t.TtlMs, BreakerOpen), ref txLogged, TxLogCapacity, "event=legacy-jump-tx-log-capped");
+                FlushLog();
+            }
+            catch
+            {
+            }
+        }
+
+        /// <summary>A diagnostic line with its own capacity (capacity, not time): the line itself while there is room, one "capped" line when the room is used up, then nothing.</summary>
+        private void NoteCapped(string line, ref int logged, int capacity, string cappedEvent)
+        {
+            lock (diag)
+            {
+                if (finalNoted) return;
+                if (logged > capacity) return;
+                if (logged == capacity)
+                {
+                    logged++;
+                    pendingLog.Add(cappedEvent + " limit=" + capacity);
+                    return;
+                }
+
+                logged++;
+                pendingLog.Add(line);
+            }
         }
 
         private void RegisterFailure()

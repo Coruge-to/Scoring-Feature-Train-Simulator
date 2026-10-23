@@ -39,7 +39,7 @@ namespace TSScoringPlugin.Telemetry
         void Event(string name, string detail);
     }
 
-    internal sealed class LegacyTelemetrySession : ILegacyJumpSessionPort
+    internal sealed class LegacyTelemetrySession : ILegacyJumpSessionPort, ILegacyJumpScopePort
     {
         private const double JumpToleranceMs = 300.0;
         private const int MaxDiscontinuityLines = 64;
@@ -48,6 +48,7 @@ namespace TSScoringPlugin.Telemetry
 
         private readonly ILegacyApi api;
         private readonly ITelemetrySink sink;
+        private readonly ITelemetrySinkAck ack;     // Phase ST-3c (R1-B): the sink when it can say whether a text was accepted, else null (a plain sink counts every text as sent)
         private readonly Func<long> nowMs;          // monotonic milliseconds
         private readonly Func<long> idSeed;         // any increasing number (UTC ticks in production); only used to derive a scenario id
         private readonly LegacyStationTimeline timeline = new LegacyStationTimeline();
@@ -96,6 +97,11 @@ namespace TSScoringPlugin.Telemetry
         private volatile int heartbeatStatus;                       // 0 nothing noted yet, 1 running, 2 paused, 3 idle = no active instance (heartbeat thread writes, the Tick thread resets)
         private readonly ILegacyJumpAvailability jumpAvail;          // LJX-1: null = the default build / no execution: the row never carries the jump group
         private bool officialJumpPending;                           // LJX-1: Tick thread only: the executor just ran an official jump; the next sample resets the station state
+        private int officialTargetIndex = -1;                       // Phase ST-3c: Tick thread only: the ADOPTED StationIndex of that jump (-1 = the jump carries none: a v1 command); handed to the timeline once
+        private double officialTargetLocation;                      // Phase ST-3c: and the location of that station
+        private string targetRefusal;                               // Phase ST-3c: Tick thread only: why the list could not carry the requested target after the jump (reinit-...), until the runner takes it
+        private int staListRefused;                                 // Phase ST-3c (R1-B): offers of the STALIST that the sink did not take since the last acceptance (diagnostic: state changes only)
+        private int metaRefused;                                    // Phase ST-3c (R1-B): the same for META
         private int lastLineJumpCount = -1;                         // LJX-1: Tick thread only: the JUMP value of the last row that carried the jump group (-1 = none)
 
         // diagnostics (tests, and a future log)
@@ -157,6 +163,7 @@ namespace TSScoringPlugin.Telemetry
             }
 
             this.sink = sink;
+            this.ack = sink as ITelemetrySinkAck;
             this.nowMs = nowMs;
             this.idSeed = idSeed;
             this.diag = diag;
@@ -193,6 +200,49 @@ namespace TSScoringPlugin.Telemetry
             }
         }
 
+        /// <summary>
+        /// Phase ST-3c (R1-B): offers a STALIST / META text to the sink. A sink that acknowledges decides (its exception is "not taken"); a plain sink counts every text as sent, the behaviour
+        /// of every earlier phase (an exception of a plain sink travels as it did).
+        /// </summary>
+        private bool SendAccepted(string text)
+        {
+            if (ack == null)
+            {
+                sink.Send(text);
+                return true;
+            }
+
+            try
+            {
+                return ack.TrySend(text);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Phase ST-3c (R1-B) diagnostic, state changes only: the first refusal of a run of refusals, and the acceptance that ends it. Never one line per Tick.</summary>
+        private void NoteOffer(string what, bool accepted, ref int refused)
+        {
+            if (accepted)
+            {
+                if (refused > 0)
+                {
+                    Log("TEL_" + what + "_ACCEPTED", "scenarioId=" + scenarioId + " after=" + refused);
+                    refused = 0;
+                }
+
+                return;
+            }
+
+            refused++;
+            if (refused == 1)
+            {
+                Log("TEL_" + what + "_PENDING", "scenarioId=" + scenarioId);
+            }
+        }
+
         internal bool ScenarioActive { get { return scenarioActive; } }
 
         internal int ScenarioId { get { return scenarioId; } }
@@ -216,6 +266,52 @@ namespace TSScoringPlugin.Telemetry
         int ILegacyJumpSessionPort.LastLineJumpCount { get { return lastLineJumpCount; } }
 
         bool ILegacyJumpSessionPort.ScenarioActive { get { return scenarioActive; } }
+
+        // -- Phase ST-3c: the optional scope port of the Legacy jump tick runner (Tick thread only) ------------------------------------------------------------
+        /// <summary>
+        /// A v2 jump was just executed with the ADOPTED StationIndex: like NoteOfficialJump(), and the re-initialisation of the next sample targets that station (one shot, see
+        /// LegacyStationTimeline.RequestTarget) instead of searching by position. A jump that carries no index (v1) calls the earlier overload and keeps the position search.
+        /// </summary>
+        internal void NoteOfficialJump(int adoptedIndex, double adoptedLocation)
+        {
+            officialJumpPending = true;
+            officialTargetIndex = adoptedIndex;
+            officialTargetLocation = adoptedLocation;
+            targetRefusal = null;
+        }
+
+        /// <summary>What a jump command is judged against, as of now: the scenario id of the active instance, the identity of the station list (id and count) and the locations in list order.</summary>
+        internal LegacyJumpView JumpView()
+        {
+            LegacyJumpView v = new LegacyJumpView();
+            v.ScenarioId = scenarioActive ? scenarioId : -1;
+            int count = timeline.Count;
+            v.ListReady = scenarioActive && count > 0;
+            v.ListId = timeline.ListId;
+            v.ListCount = count;
+            double[] locations = new double[count];
+            for (int i = 0; i < count; i++)
+            {
+                locations[i] = timeline.Entries[i].Location;
+            }
+
+            v.Locations = locations;
+            return v;
+        }
+
+        /// <summary>The reason (reinit-...) why the list could not carry the requested target after the last official jump, or null; taken once.</summary>
+        internal string TakeTargetRefusal()
+        {
+            string r = targetRefusal;
+            targetRefusal = null;
+            return r;
+        }
+
+        void ILegacyJumpScopePort.NoteOfficialJump(int adoptedIndex, double adoptedLocation) { NoteOfficialJump(adoptedIndex, adoptedLocation); }
+
+        LegacyJumpView ILegacyJumpScopePort.JumpView() { return JumpView(); }
+
+        string ILegacyJumpScopePort.TakeTargetRefusal() { return TakeTargetRefusal(); }
 
         // -- lifecycle events (Tick thread) ---------------------------------------------------------------------------------------------------
         internal void OnScenarioOpened(bool isReload)
@@ -313,6 +409,11 @@ namespace TSScoringPlugin.Telemetry
             metaSent = false;
             lastStaListMs = 0;
             lastMetaMs = 0;
+            staListRefused = 0;
+            metaRefused = 0;
+            officialTargetIndex = -1;                // Phase ST-3c: a target requested for the instance that just ended is never carried over to the next one
+            officialTargetLocation = 0.0;
+            targetRefusal = null;
             gradientFirstLogged = false;
             gradientNonZeroLogged = false;
         }
@@ -545,6 +646,16 @@ namespace TSScoringPlugin.Telemetry
                     timeline.MarkDiscontinuity();
                     haveLastSample = false;
                 }
+
+                // Phase ST-3c: a v2 jump names the station it adopted; the re-initialisation of THIS sample targets it (one shot: the timeline consumes it at the build below, or it expires
+                // at the end of the station part of this Tick). A jump without an index leaves the position search as it was.
+                if (officialTargetIndex >= 0)
+                {
+                    timeline.RequestTarget(officialTargetIndex, officialTargetLocation);
+                }
+
+                officialTargetIndex = -1;
+                officialTargetLocation = 0.0;
             }
 
             LineBuilder lb = new LineBuilder();
@@ -606,6 +717,15 @@ namespace TSScoringPlugin.Telemetry
             catch
             {
                 staList = null;
+            }
+
+            // Phase ST-3c: a requested target lives for the station part of THIS Tick and no longer (an unconsumed request expires here); a list that could not carry it is reported to the
+            // runner (the completion is abandoned) and never repaired by a position search.
+            timeline.ExpireRequestedTarget();
+            string refusal = timeline.TakeRequestRefusal();
+            if (refusal != null)
+            {
+                targetRefusal = refusal;
             }
 
             if (haveDoors)
@@ -809,18 +929,29 @@ namespace TSScoringPlugin.Telemetry
             string line = "SCENARIO_ID:" + TelemetryContract.I(scenarioId) + "," + avail + ",SPEED:" + TelemetryContract.D(speedKmh) + ",TIME:"
                 + TelemetryContract.I(timeMs) + ",LOCATION:" + TelemetryContract.D(location) + lb.Body;
 
+            // Phase ST-3c (R1-B): a STALIST / META text counts as sent only when the sink ACCEPTED it. A refusal (no endpoint yet, hold-off, closed) leaves the flag down, so the text is composed
+            // again from the CURRENT list and offered on the next Tick, until it is taken; after that the 1 s cadence is the earlier one (no duplicate in READY). The operating row below is
+            // not retried: a lost row is replaced by the next one.
             if (staList != null)
             {
-                sink.Send(staList);
-                staListSent = true;
-                lastStaListMs = now;
+                bool staListAccepted = SendAccepted(staList);
+                NoteOffer("STALIST", staListAccepted, ref staListRefused);
+                if (staListAccepted)
+                {
+                    staListSent = true;
+                    lastStaListMs = now;
+                }
             }
 
             if (metaPacket != null)
             {
-                sink.Send(metaPacket);
-                metaSent = true;
-                lastMetaMs = now;
+                bool metaAccepted = SendAccepted(metaPacket);
+                NoteOffer("META", metaAccepted, ref metaRefused);
+                if (metaAccepted)
+                {
+                    metaSent = true;
+                    lastMetaMs = now;
+                }
             }
 
             sink.Send(line);

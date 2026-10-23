@@ -133,6 +133,17 @@ namespace TSScoringPlugin.Telemetry
         void Close();
     }
 
+    /// <summary>
+    /// Phase PID-D4JA StationIndex ST-3c (R1-B): an OPTIONAL extension of the sink for the sender that can say whether a text was ACCEPTED. true = the sink took the text (it left, or it
+    /// was consumed by a rule of the router); false = it was not taken (closed, no router, hold-off, endpoint not resolvable, send failure) and the sender may offer the text again
+    /// later. An exception is the same as false. Send stays as it is and is the answer for a sink that does not implement this (a plain sink counts every text as sent).
+    /// Legacy sender only: the Current project does not compile this file, so nothing here reaches the Current sender, and no datagram, wire or order changes.
+    /// </summary>
+    internal interface ITelemetrySinkAck : ITelemetrySink
+    {
+        bool TrySend(string text);
+    }
+
     internal sealed class UdpTelemetrySink : ITelemetrySink
     {
         private readonly object gate = new object();

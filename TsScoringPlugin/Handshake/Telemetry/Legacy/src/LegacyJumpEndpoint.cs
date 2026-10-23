@@ -194,7 +194,7 @@ namespace TSScoringPlugin.Telemetry
                 UInt32 generation = NewGeneration(previousGeneration);
                 byte[] token = NewToken(previousToken);
                 RecordingEndpointSource recording = new RecordingEndpointSource(env.Source);
-                JumpCommandValidator validator = new JumpCommandValidator(env.BvePid, generation, token, recording, note);
+                JumpCommandValidator validator = new JumpCommandValidator(env.BvePid, generation, token, recording, note, true);      // Phase ST-3c: the shared JumpWire grammar (v1 and v2), the same gate as the Current endpoint
                 writer = env.Writers.Create(env.BvePid, objectName);
                 return new LegacyJumpEndpoint(env.BvePid, socket, writer, validator, recording, generation, token, port);
             }

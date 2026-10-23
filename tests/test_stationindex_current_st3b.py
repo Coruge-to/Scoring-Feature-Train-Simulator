@@ -176,7 +176,8 @@ PRE_ST3B_GATE = ('{ string[] parts = text.Split(\':\'); if (parts.Length != 3) r
 
 
 class A2_LegacyGateKept(unittest.TestCase):
-    """Plan A for G-3B-2: only the Current endpoint reads the command through JumpWire; the Legacy plane keeps the grammar it had (the constructor chooses, nothing is shared by accident)."""
+    """Plan A for G-3B-2 (ST-3b): only the Current endpoint reads the command through JumpWire; the Legacy plane keeps the grammar it had. Phase ST-3c ENDED the Legacy part of this plan: the Legacy plane builds the
+    six argument form as well (see test_only_the_current_endpoint_builds_the_shared_gate). The retained five argument validator is still held byte for byte (the first two tests): it is dead code in the product now."""
 
     def test_the_old_three_field_gate_is_kept_byte_for_byte_as_ValidGrammarV1(self):
         ep = cs_code(ENDPOINT)
@@ -201,10 +202,11 @@ class A2_LegacyGateKept(unittest.TestCase):
             if not name.endswith(".cs"):
                 continue
             text = cs_code(os.path.join(src_dir, name))
-            self.assertNotIn("JumpWire", text, name)                                          # the compile-only link: no Legacy source names the shared codec
             self.assertNotIn("sharedWireGrammar", text, name)
             legacy_builds += [(name, b) for b in re.findall(r"new JumpCommandValidator\([^;]*;", text)]
-        self.assertEqual(legacy_builds, [("LegacyJumpEndpoint.cs", "new JumpCommandValidator(env.BvePid, generation, token, recording, note);")])
+        # Phase ST-3c (intended update; was the FIVE argument form = the old predicate): the Legacy plane builds the SIX argument form too, i.e. the shared JumpWire grammar; the five argument form and
+        # ValidGrammarV1 stay in CurrentJumpEndpoint.cs (a Current product file ST-3c does not touch) but no plane builds it any more (its removal is a Current change, ST-3e)
+        self.assertEqual(legacy_builds, [("LegacyJumpEndpoint.cs", "new JumpCommandValidator(env.BvePid, generation, token, recording, note, true);")])
 
 
 # ==============================================================================================================================================
@@ -400,7 +402,8 @@ class F_Projects(unittest.TestCase):
         contract(not any("CurrentJumpExecution" in i for i in includes), "G-PC-1", "legacy-jumpwire-link-missing", "the Current-only unit reaches the Legacy project")
 
     def test_GPC1_the_legacy_runtime_does_not_name_jumpwire(self):
-        """Compile-only: no Legacy source names the wire codec, the Current-only unit or the Current plugin; the Legacy parser and completion are the ones of before (ST-3c)."""
+        """Phase ST-3c (intended update): the Legacy project links JumpWire.cs and TWO Legacy sources name it - the executor (the claim reader, the judgement and the completion) and the timeline (the
+        STALIST positions); no Legacy source names the Current-only unit or the Current plugin. (Before ST-3c: compile-only, no Legacy source named the codec.)"""
         src = os.path.join(LEGACY_DIR, "src")
         named = []
         for base, _dirs, files in os.walk(LEGACY_DIR):
@@ -409,12 +412,13 @@ class F_Projects(unittest.TestCase):
             for name in files:
                 if name.endswith(".cs"):
                     text = cs_code(os.path.join(base, name))
-                    if "JumpWire" in text or "CurrentJumpExecution" in text:
+                    if "JumpWire" in text:
                         named.append(name)
-        self.assertEqual(named, [])
+                    self.assertNotIn("CurrentJumpExecution", text, name)
+        self.assertEqual(sorted(named), ["LegacyJumpExecutor.cs", "LegacyStationTimeline.cs"])
         executor = cs_code(os.path.join(src, "LegacyJumpExecutor.cs"))
-        self.assertIn("string[] parts = r.Text == null ? new string[0] : r.Text.Split(':');", executor)              # the Legacy parser (untouched)
-        self.assertIn("if (parts.Length != 3 ||", executor)                                                          # it still reads the 3-field v1 text only
+        self.assertIn("JumpWireRequest w = JumpWire.ParseRequest(r.Text, out why);", executor)                      # the Legacy claim reads the command with the shared reader (ST-3c)
+        self.assertNotIn(".Split(", executor)                                                                         # and has no parser of its own any more
 
     def test_the_jumpwire_source_is_the_one_of_st3a(self):
         with open(JUMPWIRE, "rb") as f:
@@ -476,7 +480,8 @@ class H_RefusalDiagnostic(unittest.TestCase):
         for name in sorted(os.listdir(src)):
             if name.endswith(".cs"):
                 text = cs_code(os.path.join(src, name))
-                self.assertNotIn("Describe(", text, name)
+                if name != "LegacyJumpExecutor.cs":                                                                    # Phase ST-3c: the Legacy judgement has its OWN isolated extraction (LegacyJumpJudge.Describe)
+                    self.assertNotIn("Describe(", text, name)
                 self.assertNotIn("CurrentJumpDiagnostic", text, name)
 
     def test_GRC1_the_diagnostic_is_set_after_the_verdict_and_read_only_by_the_line(self):

@@ -107,7 +107,7 @@ if (-not $compiled.Errors.HasErrors) {
     }
 }
 $ctorCallText = (($ctorCalls | Sort-Object -Unique) -join ' ')
-Check ('C04 the Legacy plane builds the validator with the five argument constructor (the grammar of before ST-3b) and only the shared Current endpoint builds the six argument one: ' + $ctorCallText) ($ctorCallText -ceq 'CurrentJumpEndpoint.Create->6 LegacyJumpEndpoint.Open->5')
+Check ('C04 since ST-3c both planes build the validator with the six argument constructor (the shared JumpWire grammar): the Current endpoint and the Legacy plane; nothing builds the five argument one (the grammar of before ST-3b): ' + $ctorCallText) ($ctorCallText -ceq 'CurrentJumpEndpoint.Create->6 LegacyJumpEndpoint.Open->6')
 
 Write-Host ''
 Write-Host ('PASS=' + $script:pass + ' FAIL=' + $script:fail)

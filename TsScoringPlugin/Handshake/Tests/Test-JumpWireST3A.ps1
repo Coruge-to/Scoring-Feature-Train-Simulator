@@ -451,14 +451,16 @@ foreach ($e in $eqList) {
         else { Write-Host ('  INFO ' + $e.id + ' same meaning on this platform: ' + $sameMeaning + ' (platform dependent, not enforced)') }
     }
     # Phase ST-3b (review, plan A): the Current gate (ValidGrammar) and JumpWire give ONE verdict on every text; the gate of the five argument validator (ValidGrammarV1, what the Legacy plane builds) keeps the verdict the table records (the gate as it was before ST-3b), so the ambiguous v1 spellings the old gate took are still taken there
-    $ok = ($cur -eq $jwOk) -and ($old -eq [bool]$e.current_accepts) -and ($leg -eq [bool]$e.legacy_accepts) -and ($jwOk -eq [bool]$e.jumpwire_accepts) -and $same
+    # Phase ST-3c (intended update; was `($leg -eq [bool]$e.legacy_accepts)`): LegacyJumpClaim.From reads through JumpWire.ParseRequest now, so it gives the JumpWire verdict on every text (the 16 ambiguous
+    # spellings are refused there too, and so are the three non-finite ones it used to read). The table's legacy_accepts column keeps recording what the OLD hand reader took (a historical column of the specification).
+    $ok = ($cur -eq $jwOk) -and ($old -eq [bool]$e.current_accepts) -and ($leg -eq $jwOk) -and ($jwOk -eq [bool]$e.jumpwire_accepts) -and $same
     if (-not $ok) { $badEq += $e.id }
     $classCount[[string]$e.class] = 1 + [int]$classCount[[string]$e.class]
 }
-Check ('E-eq since ST-3b the Current gate (ValidGrammar) and JumpWire give ONE verdict on ' + $eqList.Count + ' v1 texts; the gate of the five argument validator (ValidGrammarV1) and LegacyJumpClaim.From (both untouched) give the verdicts the table records; and all of them mean the same wherever they accept' + $(if ($badEq.Count) { ' - wrong: ' + (($badEq | Select-Object -First 8) -join ',') } else { '' })) (($eqList.Count -gt 25) -and ($badEq.Count -eq 0))
+Check ('E-eq since ST-3b the Current gate (ValidGrammar) and JumpWire give ONE verdict on ' + $eqList.Count + ' v1 texts; since ST-3c LegacyJumpClaim.From gives it too; the retained five argument predicate (ValidGrammarV1, built by no plane any more) still gives the verdicts the table records; and all of them mean the same wherever they accept' + $(if ($badEq.Count) { ' - wrong: ' + (($badEq | Select-Object -First 8) -join ',') } else { '' })) (($eqList.Count -gt 25) -and ($badEq.Count -eq 0))
 $currentDiffers = @($eqList | Where-Object { [bool]$_.current_accepts -and (-not [bool]$_.jumpwire_accepts) } | ForEach-Object { $_.id })
 $newAccepts = @($eqList | Where-Object { [bool]$_.jumpwire_accepts -and (-not ([bool]$_.current_accepts -and [bool]$_.legacy_accepts)) })
-Write-Host ('  INFO the Current gate differs from the gate of the five argument validator (the Legacy plane) on ' + $currentDiffers.Count + ' of the texts (the ambiguous v1 spellings; Legacy migrates in ST-3c): ' + ($currentDiffers -join ','))
+Write-Host ('  INFO the Current gate differs from the gate of the five argument validator (the Legacy plane) on ' + $currentDiffers.Count + ' of the texts (the ambiguous v1 spellings; the Legacy plane migrated to the shared gate in ST-3c, so the retained predicate is dead code): ' + ($currentDiffers -join ','))
 Check 'E-never JumpWire v1 never accepts a text that one of the existing readers rejects' ($newAccepts.Count -eq 0)
 Write-Host ('  classes: ' + (($classCount.Keys | Sort-Object | ForEach-Object { $_ + '=' + $classCount[$_] }) -join ' '))
 

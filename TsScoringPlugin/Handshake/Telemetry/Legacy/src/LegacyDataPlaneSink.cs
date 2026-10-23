@@ -103,7 +103,7 @@ namespace TSScoringPlugin.Telemetry
     /// The sink of LegacyTelemetrySession in the PID-D4 world. Thread safe: the Tick thread and the heartbeat timer thread both call Send (the router has its own gate,
     /// the transport serialises the socket). After Close nothing is sent any more.
     /// </summary>
-    internal sealed class LegacyDataPlaneSink : ITelemetrySink, ILegacyJumpCompleteSender
+    internal sealed class LegacyDataPlaneSink : ITelemetrySink, ITelemetrySinkAck, ILegacyJumpCompleteSender
     {
         private readonly CurrentTelemetryRouter router;
         private readonly LegacyUdpTransport transport;
@@ -166,13 +166,20 @@ namespace TSScoringPlugin.Telemetry
 
         internal long UnclassifiedDropped { get { return System.Threading.Interlocked.Read(ref unclassifiedDropped); } }
 
-        public void Send(string text)
+        public void Send(string text) { TrySend(text); }
+
+        /// <summary>
+        /// Phase ST-3c (R1-B): the one send path. true = the router handed the text to the transport (or consumed it by a rule of its own); false = nothing was sent: closed, no router,
+        /// no text, the router held it back (hold-off, mode not decided), the managed endpoint can not be resolved, a send failure, or a text of no known kind dropped in managed mode. An
+        /// exception is false as well and is counted. The session offers a STALIST / META text again until this says true; Send (every other text) ignores the answer, as before.
+        /// </summary>
+        public bool TrySend(string text)
         {
             try
             {
                 if (closed || router == null || text == null)
                 {
-                    return;
+                    return false;
                 }
 
                 byte[] bytes = Encoding.UTF8.GetBytes(text);
@@ -184,22 +191,20 @@ namespace TSScoringPlugin.Telemetry
                     // message type and is dropped (never invented as a telemetry line, never sent plain)
                     if (batch.Mode == CurrentSenderMode.Normal)
                     {
-                        batch.Send(type, bytes);
-                    }
-                    else
-                    {
-                        NoteUnclassified();
+                        return batch.Send(type, bytes);
                     }
 
-                    return;
+                    NoteUnclassified();
+                    return false;
                 }
 
-                batch.Send(type, bytes);
+                return batch.Send(type, bytes);
             }
             catch
             {
                 // nothing may reach BVE; the receiving application may simply not be running (the NORMAL path of the router lets a transport exception through, as before)
                 System.Threading.Interlocked.Increment(ref failed);
+                return false;
             }
         }
 

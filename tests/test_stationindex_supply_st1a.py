@@ -935,7 +935,9 @@ class D_Boundary(unittest.TestCase):
         counts = {name: len(re.findall(r"\b" + name + r"\b", ltl)) for name in ("arrivalIndex", "arrivalSeq", "listId", "doorOpenedBefore", "shownIndex")}
         self.assertEqual(counts, {"arrivalIndex": 4, "arrivalSeq": 4, "listId": 4, "doorOpenedBefore": 2, "shownIndex": 3})
         writes = re.findall(r"\btarget\s*(\+\+|=(?!=))", ltl)
-        self.assertEqual(sorted(writes), sorted(["=", "=", "=", "++", "++", "++"]))                  # Reset, "no station in range" and the position search, three advances: as before
+        # Phase ST-3c (intended update; was three "="): the fourth "=" is SelectRequestedTarget (the target of an official v2 jump: the adopted index, no position involved); Reset, "no station in range"
+        # and the position search are the three of before, and the three advances are untouched
+        self.assertEqual(sorted(writes), sorted(["=", "=", "=", "=", "++", "++", "++"]))
 
     def test_the_senders_link_the_shared_file_and_the_probe_project_compiles_what_the_product_compiles(self):
         for path in (CURRENT_CSPROJ, LEGACY_CSPROJ, B1PROBE_CSPROJ):
