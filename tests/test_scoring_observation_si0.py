@@ -950,7 +950,8 @@ class G_WhatAGenerationChangeDiscardsToday(unittest.TestCase):
     def test_a_new_scenario_id_discards_the_scoring_settings_the_menu_and_the_scoring_flag_only(self):
         kept = self.survivors(lambda o: o.apply_telemetry_text("SCENARIO_ID:2,SPEED:0"))
         discarded = set(D3_VARIABLES) - kept
-        self.assertEqual(discarded, {"is_scoring_mode", "is_scoring_finished", "setting_start_idx", "setting_end_idx", "setting_stop_distance", "setting_initial_brake", "menu_state"})
+        self.assertEqual(discarded, {"is_scoring_mode", "is_scoring_finished", "setting_start_idx", "setting_end_idx", "setting_stop_distance", "setting_initial_brake", "menu_state",
+                                     "is_official_jumping"})         # Phase ST-3d (an intended change): the official jump of the previous scenario ends with it (its transaction is closed, nothing waits for a completion any more)
 
     def test_everything_else_of_the_list_survives_a_scenario_change_today(self):
         kept = self.survivors(lambda o: o.apply_telemetry_text("SCENARIO_ID:2,SPEED:0"))
@@ -958,7 +959,7 @@ class G_WhatAGenerationChangeDiscardsToday(unittest.TestCase):
             "manual_eb_penalty_applied", "manual_eb_accum_time", "manual_eb_cooling_time", "smee_virtual_eb_active",
             "hb_cushion_entry_time", "hb_cushion_max_g", "hb_prev_notch", "hb_strong_entered",
             "bb_apply_count", "bb_current_notch", "bb_evaluated", "bb_is_in_zone", "bb_is_stable", "bb_notch_change_time", "bb_prev_stable_notch", "bb_release_count", "bb_state",
-            "last_jump_count", "bve_jump_count", "station_list", "is_official_jumping", "is_official_retry", "jump_lock",
+            "last_jump_count", "bve_jump_count", "station_list", "is_official_retry", "jump_lock",
             "prev_base_limit", "prev_diff_s", "prev_door", "prev_doordir", "prev_frame_loc", "prev_is_pass", "prev_is_timing", "prev_next_loc", "prev_term", "last_update_time",
             "is_linked", "bve_hwnd"})
 

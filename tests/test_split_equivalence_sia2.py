@@ -315,10 +315,58 @@ class SiAScopeOfMain(unittest.TestCase):
         # longer unconditionally after the call: the call line, the comment and the two lines of the unconditional count left
         "handle_menu_enter": {"self.udp_socket.writeDatagram(retry_cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)", "getattr(self, 'save_data', []).append({", "})",
                               "execute_retry(self, getattr(self, 'target_retry_idx', -1), is_bve_advancing)", "# 始発駅以外へのリトライをSランク判定用の回数へ加算する",
-                              "if getattr(self, 'target_retry_idx', -1) > 0:", "self.total_retry_count += 1"},
+                              "if getattr(self, 'target_retry_idx', -1) > 0:", "self.total_retry_count += 1"}
+                              # Phase ST-3d (on purpose): the scoring start builds its request BEFORE anything of the scoring is changed, by the one builder of the Jump wire v2: the computation of the start
+                              # position / time / command moved to Overlay._scoring_start_plan (the v1 text assembly and the guard around it left). These are the 32 distinct lines (stripped) that the diff shows
+                              # as removed from handle_menu_enter; no score, no rule and no constant is among them (the start time rule moved unchanged).
+                              | {
+                                  '# 始発駅では作者定義時刻を優先する',
+                                  '# 途中駅で作者定義時刻が計算時刻より遅い場合は、不要な開扉待ちを避けるためLOC方式へ切り替える',
+                                  '# 途中駅：def_tとcalc_tの「早い方(min)」',
+                                  'calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1',
+                                  'cands = [t for t in [def_t, calc_t] if t >= 0]',
+                                  'def_t = st.get("def_time", -1)',
+                                  'elif calc_t >= 0: target_time_ms = calc_t',
+                                  'else:',
+                                  'else: target_time_ms = raw_arr if raw_arr >= 0 else -1',
+                                  'if cands: target_time_ms = min(cands)',
+                                  'if def_t >= 0: target_time_ms = def_t',
+                                  "if getattr(self, 'station_list', []) and 0 <= getattr(self, 'setting_start_idx', 0) < len(getattr(self, 'station_list', [])):",
+                                  'if retry_cmd != "":',
+                                  'if self.setting_start_idx == 0:',
+                                  'if self.setting_start_idx > 0 and def_t >= 0 and def_t > target_time_ms:',
+                                  "if target_time_ms < 0: target_time_ms = max(0, getattr(self, 'bve_time_ms', 0))",
+                                  'if use_legacy_jump:',
+                                  'raw_arr = st.get("raw_arr", -1)',
+                                  'raw_dep = st.get("raw_dep", -1)',
+                                  'retry_cmd = ""',
+                                  'retry_cmd = f"JUMP_LOC_TIME:{start_loc}:{target_time_ms}"',
+                                  'retry_cmd = f"JUMP_STA_TIME:{self.setting_start_idx}:{target_time_ms}"',
+                                  'st = self.station_list[self.setting_start_idx]',
+                                  'start_loc = 0.0',
+                                  'start_loc = st.get("location", 0.0)',
+                                  'start_sta_name = "不明な駅"',
+                                  'start_sta_name = st.get("name", "不明な駅")',
+                                  'stop_t = st.get("stop_time", 15000)',
+                                  'target_time_ms = -1',
+                                  'use_legacy_jump = False',
+                                  'use_legacy_jump = True',
+                                  'write_desktop_log(f"[MENU 6] 送信コマンド: {retry_cmd} / 予想時間: {target_time_ms}")',
+                              },
         # PID-D6 (on purpose): a JUMP_COMPLETE only counts when its RequestId matches the outstanding command (Overlay._jump_complete_acceptable)
         # Phase ST-2a (on purpose): the station list of a STALIST datagram is a station_identity.StationList that carries the list id (new_list = [] became that constructor call)
-        "read_udp_data": {"if len(complete_parts) >= 6:", "new_list = []"}, "toggle_borderless_fullscreen": set(),
+        "read_udp_data": {"if len(complete_parts) >= 6:", "new_list = []"}
+                          # Phase ST-3d (on purpose): the JUMP_COMPLETE branch hands the body to Overlay._note_jump_complete (the transport) instead of reading it inline: the inline reader left
+                          | {
+                                  '"jump_count": int(complete_parts[5])',
+                                  '"location": float(complete_parts[3]),',
+                                  '"station_index": int(complete_parts[2]),',
+                                  '"time": int(complete_parts[4]),',
+                                  '"type": complete_parts[1],',
+                                  "complete_parts = text.split(':')",
+                                  'self.pending_jump_complete = {',
+                                  '}',
+                              }, "toggle_borderless_fullscreen": set(),
     }
 
     @classmethod

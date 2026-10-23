@@ -42,6 +42,8 @@ except Exception:  # pragma: no cover
     HAS_QT = False
 
 import dataplane_contract as contract  # noqa: E402
+import jump_wire  # noqa: E402
+import station_identity  # noqa: E402
 import sia_rig as R  # noqa: E402
 
 OWN_IDS = ["J03", "J04", "J05", "J06", "J07", "J12", "J14", "J15", "J16", "J17", "J18", "J19", "J20", "J21", "R22", "R27", "X06"]
@@ -151,6 +153,19 @@ class Base(unittest.TestCase):
         self.r.send_raw(self.r.wrap(text, request_id=rid))
         self.r.tick(2)
 
+    def settled_ends(self):
+        """The `end` of every jump-settled line of the managed log, in order."""
+        out = []
+        for line in self.r.events("jump-settled"):
+            out += [part[4:] for part in line.split() if part.startswith("end=")]
+        return out
+
+    def v2c(self, rid, kind="STA", idx=0, loc=0.0, t=T0, count=1):
+        """Phase ST-3d: the completion v2 text of the request that was sent with `rid` (its scope), as the sender writes it."""
+        text, why = jump_wire.format_completion_v2(kind, idx, loc, t, count, self.r.request_scope(rid))
+        self.assertIsNone(why)
+        return text
+
     def started_and_jumped(self):
         cmd = self.start()
         self.bve_jumped()
@@ -160,52 +175,62 @@ class Base(unittest.TestCase):
 # ==============================================================================================================================================
 class J_Completion(Base):
     # -- J03 -------------------------------------------------------------------------------------------------------------------------------------
-    @danger("J03", "a completion with the right RequestId but another location is only logged: the official jump stays on, the request is finished (no timeout, nothing is reported), "
-                   "so the scoring is dead while it looks on",
-            "JF-2 (TARGET-A K4 / FC-2 / FC-5: a mismatch aborts the scoring, no silent stuck state)", "the mismatch aborts; this assertion is replaced by TARGET_A_J03")
-    def test_CURRENT_DANGER_J03_location_mismatch_leaves_official_jump_stuck_silently(self):
+    @jf0("J03", "CURRENT")
+    def test_CURRENT_J03_a_location_mismatch_aborts_the_scoring_and_releases_the_jump_at_once(self):
+        """Phase ST-3d: was CURRENT_DANGER (a completion with the right RequestId but another location was only logged: the official jump stayed on, the request counted as completed,
+        so the scoring was dead while it looked on). The settlement judges every completion that the transport accepts; nothing is left to the timeout."""
         r, o = self.r, self.o
         rid = self.started_and_jumped()
         self.assertTrue(o.jump_lock)
         r.complete(rid, location=500.0, time_ms=T0, count=1)
         r.tick(2)
-        self.assertTrue(o.is_official_jumping)
-        self.assertIsNone(o.pending_jump_complete)
-        self.assertTrue(o.is_scoring_mode)                              # the scoring looks on ...
-        self.assertTrue(o.jump_lock)                                    # ... but every scoring feature behind the lock is dead
-        self.assertEqual(len(self.rejected_logs()), 1)
-        self.assertFalse(r.client.has_outstanding)                      # the request counts as completed ...
+        self.assertFalse(o.is_official_jumping)
+        self.assertTrue(o.jump_lock)
+        self.assertFalse(o.is_scoring_mode)
+        self.assertEqual(len([p for p in o.popups if p.get("category") == "警告"]), 2)
+        self.assertFalse(r.client.has_outstanding)                      # the request counts as completed (the transport) ...
         self.assertEqual(r.client.counts["completed"], 1)
-        r.clock32.now += 3600.0                                         # ... so an hour later there is still no timeout and no report
-        self.telemetry(T0 + 1000, speed=0.0, loc=0.0)
-        self.assertIsNone(r.client.take_unreleased())
-        self.assertIsNone(r.client.last_failure)
-        self.assertTrue(o.is_official_jumping)
-        self.assertTrue(o.is_scoring_mode)
+        self.assertIsNone(o.retry_pending)                              # ... and the transaction is closed (the settlement)
+        self.assertIsNone(o.jump_expectation)
 
     # -- J04 -------------------------------------------------------------------------------------------------------------------------------------
     @jf0("J04", "CURRENT")
-    def test_CURRENT_J04_a_location_error_of_0_0099_is_accepted(self):
-        r, o = self.r, self.o
-        cmd = self.start()
-        r.complete(cmd["request_id"], location=0.0099, time_ms=T0)
-        self.assertFalse(o.is_official_jumping)
+    def test_CURRENT_J04_the_position_read_back_must_be_the_requested_position_exactly(self):
+        """Phase ST-3d (owner decision 8): the tolerance of 0.01 m is gone. The position that comes back is the position that was requested, as a double, or the jump did not prove the request."""
+        for location in (0.0099, 0.01, 1.0e-9, -1.0e-9):
+            with self.subTest(location=location):
+                self.r.close()
+                self.setUp()
+                r, o = self.r, self.o
+                cmd = self.start()
+                r.complete(cmd["request_id"], location=location, time_ms=T0)
+                self.assertFalse(o.is_official_jumping)
+                self.assertFalse(o.is_scoring_mode)
+                self.assertTrue(o.jump_lock)
+                self.assertEqual(len(self.settled_ends()), 1)
+                self.assertEqual(self.settled_ends()[0], "actual-location-mismatch")
 
     @jf0("J04", "CURRENT")
-    def test_CURRENT_J04_a_location_error_of_exactly_0_01_is_rejected(self):
-        r, o = self.r, self.o
-        cmd = self.start()
-        r.complete(cmd["request_id"], location=0.01, time_ms=T0)
-        self.assertTrue(o.is_official_jumping)
-        self.assertEqual(len(self.rejected_logs()), 1)
+    def test_CURRENT_J04_the_exact_requested_position_releases_and_a_signed_zero_is_a_zero(self):
+        for location in (0.0, -0.0):
+            with self.subTest(location=location):
+                self.r.close()
+                self.setUp()
+                r, o = self.r, self.o
+                cmd = self.start()
+                r.complete(cmd["request_id"], location=location, time_ms=T0)
+                self.assertFalse(o.is_official_jumping)
+                self.assertTrue(o.is_scoring_mode)
 
     @jf0("J04", "CURRENT")
-    def test_CURRENT_J04_an_unset_expected_location_never_matches(self):
+    def test_CURRENT_J04_the_old_sentinel_of_expected_target_loc_plays_no_part_the_expectation_judges(self):
+        """Phase ST-3d: was 'an unset expected location never matches' (expected_target_loc < 0 never matched, a negative station position could never be completed)."""
         r, o = self.r, self.o
         cmd = self.start()
         o.expected_target_loc = -1.0
-        r.complete(cmd["request_id"], location=-1.0, time_ms=T0)
-        self.assertTrue(o.is_official_jumping)
+        r.complete(cmd["request_id"], location=0.0, time_ms=T0)
+        self.assertFalse(o.is_official_jumping)
+        self.assertTrue(o.is_scoring_mode)
 
     # -- J05 - J07 : what is NOT checked -------------------------------------------------------------------------------------------------------
     @jf0("J05", "CURRENT")
@@ -216,22 +241,28 @@ class J_Completion(Base):
         r.complete(cmd["request_id"], location=0.0, time_ms=12345)
         self.assertFalse(o.is_official_jumping)
 
-    @danger("J06", "the station index of the completion is not compared with the requested one: a completion that names another station releases the jump",
-            "JF-2 (TARGET-A K3 / FC-2: a different index aborts) and JF-3 (TARGET-B K7 with NEXTIDX)", "this assertion is replaced by TARGET_A_J06")
-    def test_CURRENT_DANGER_J06_station_index_is_not_checked_on_completion(self):
+    @jf0("J06", "CURRENT")
+    def test_CURRENT_J06_a_completion_that_names_another_station_aborts_the_scoring(self):
+        """Phase ST-3d: was CURRENT_DANGER (the station index of the completion was not compared with the requested one: a completion that named another station released the jump)."""
         r, o = self.r, self.o
         cmd = self.start()
-        self.assertEqual(cmd["text"], "JUMP_STA_TIME:0:%d" % T0)
+        self.assertEqual(jump_wire.parse_request(cmd["text"])[0].station_index, 0)
         r.complete(cmd["request_id"], location=0.0, time_ms=T0, index=2)
         self.assertFalse(o.is_official_jumping)
+        self.assertFalse(o.is_scoring_mode)
+        self.assertTrue(o.jump_lock)
+        self.assertEqual(self.settled_ends(), ["selected-index-mismatch"])
 
     @jf0("J07", "CURRENT")
-    def test_CURRENT_J07_the_jump_kind_of_the_completion_is_not_compared_with_the_request(self):
+    def test_CURRENT_J07_a_completion_of_the_other_jump_kind_aborts_the_scoring(self):
         r, o = self.r, self.o
         cmd = self.start()
         self.assertTrue(cmd["text"].startswith("JUMP_STA_TIME:"))
-        r.complete(cmd["request_id"], location=0.0, time_ms=T0, kind="LOC", index=-1)
+        r.complete(cmd["request_id"], location=0.0, time_ms=T0, kind="LOC", index=0)
         self.assertFalse(o.is_official_jumping)
+        self.assertFalse(o.is_scoring_mode)
+        self.assertTrue(o.jump_lock)
+        self.assertEqual(self.settled_ends(), ["command-kind-mismatch"])
 
     # -- J12 : a second request while one is outstanding ---------------------------------------------------------------------------------------
     @jf0("J12", "CURRENT")
@@ -253,48 +284,47 @@ class J_Completion(Base):
     # (see class N_NormalMode below)
 
     # -- J15 / J19 : malformed and short completions -----------------------------------------------------------------------------------------
-    @danger("J15", "a completion with a non-numeric field is accepted by the RequestId check FIRST (the request is consumed) and then dies in the parser: nothing is set, nothing is logged, "
-                   "the official jump stays on with no timeout",
-            "JF-2 (TARGET-A K0: validate the syntax BEFORE consuming the RequestId, then abort on a mismatch)", "this assertion is replaced by TARGET_A_J15")
-    def test_CURRENT_DANGER_J15_malformed_completion_consumes_request_then_sticks(self):
+    @jf0("J15", "CURRENT")
+    def test_CURRENT_J15_a_malformed_completion_aborts_the_scoring_at_once_and_does_not_leave_the_jump_on(self):
+        """Phase ST-3d: was CURRENT_DANGER (a completion with a non-numeric field was accepted by the RequestId check FIRST, then died in the parser: nothing set, nothing logged, the jump stayed
+        on with no timeout)."""
         r, o = self.r, self.o
         rid = self.started_and_jumped()
         self.raw_completion(rid, "JUMP_COMPLETE:STA:x:0.0:%d:1" % T0)
-        self.assertEqual(r.client.counts["completed"], 1)                # the request was consumed ...
+        self.assertEqual(r.client.counts["completed"], 1)                # the transport accepted the request ...
         self.assertFalse(r.client.has_outstanding)
-        self.assertIsNone(o.pending_jump_complete)                       # ... but nothing was understood
-        self.assertTrue(o.is_official_jumping)
-        self.assertEqual(self.rejected_logs(), [])                       # and nothing was said about it
+        self.assertIsNone(o.pending_jump_complete)
+        self.assertFalse(o.is_official_jumping)                          # ... and the settlement released it
+        self.assertFalse(o.is_scoring_mode)
+        self.assertTrue(o.jump_lock)
+        self.assertEqual(self.settled_ends(), ["malformed-completion"])
         r.clock32.now += 3600.0
         self.telemetry(T0 + 1000, speed=0.0, loc=0.0)
-        self.assertTrue(o.is_official_jumping)
         self.assertIsNone(r.client.take_unreleased())
 
-    @danger("J19", "a completion with fewer than six parts is not even looked at (the request is NOT consumed): the jump stays unreleased until the 10 s timeout aborts the scoring",
-            "JF-2 (TARGET-A K0: a short payload is an immediate mismatch, field=payload)", "this assertion is replaced by TARGET_A_J19")
-    def test_CURRENT_DANGER_J19_short_completion_payload_waits_for_the_timeout(self):
+    @jf0("J19", "CURRENT")
+    def test_CURRENT_J19_a_short_completion_payload_aborts_at_once_and_does_not_wait_for_the_timeout(self):
         r, o = self.r, self.o
         rid = self.started_and_jumped()
         self.raw_completion(rid, "JUMP_COMPLETE:STA:0:0.0")
-        self.assertEqual(r.client.counts["completed"], 0)                # NOT consumed
-        self.assertTrue(r.client.has_outstanding)
-        self.assertTrue(o.is_official_jumping)
-        self.assertTrue(o.is_scoring_mode)
-        r.clock32.now += 11.0                                            # the only way out: the 10 s timeout (the J08 path)
-        self.telemetry(T0 + 1000, speed=0.0, loc=0.0)
-        self.assertFalse(o.is_scoring_mode)
+        self.assertEqual(r.client.counts["completed"], 1)                # consumed: a body of the outstanding request is always settled
+        self.assertFalse(r.client.has_outstanding)
         self.assertFalse(o.is_official_jumping)
+        self.assertFalse(o.is_scoring_mode)
         self.assertTrue(o.jump_lock)
-        self.assertEqual(r.client.last_failure, "timeout")
+        self.assertNotEqual(r.client.last_failure, "timeout")            # decided by the settlement, not by the timeout
+        self.assertEqual(self.settled_ends(), ["malformed-completion"])
 
     # -- J16 - J18 -------------------------------------------------------------------------------------------------------------------------------
     @jf0("J16", "CURRENT")
     def test_CURRENT_J16_two_completions_of_the_same_request_in_one_batch_release_once_and_the_second_is_a_duplicate(self):
         r, o = self.r, self.o
         rid = self.started_and_jumped()
-        text = "JUMP_COMPLETE:STA:0:0.0:%d:1" % T0
+        text = self.v2c(rid)
         r.send_raw(r.wrap(text, request_id=rid), r.wrap(text, request_id=rid))
         self.assertFalse(o.is_official_jumping)
+        self.assertTrue(o.is_scoring_mode)                                # one settlement, a success
+        self.assertEqual(len(self.settled_ends()), 1)                     # ... and one final line
         self.assertEqual(r.client.counts["completed"], 1)
         self.assertEqual(r.client.reasons.get("complete-duplicate"), 1)
 
@@ -302,21 +332,24 @@ class J_Completion(Base):
     def test_CURRENT_J17_the_completion_is_applied_after_the_telemetry_of_the_same_batch(self):
         r, o = self.r, self.o
         rid = self.started_and_jumped()
-        r.send_raw(r.wrap(self.MR.tele(1, time_ms=T0 + 500, speed=0.0, loc=0.0, NEXTLOC=1500.0, JUMP=1)), r.wrap("JUMP_COMPLETE:STA:0:0.0:%d:1" % T0, request_id=rid))
+        r.send_raw(r.wrap(self.MR.tele(1, time_ms=T0 + 500, speed=0.0, loc=0.0, NEXTLOC=1500.0, JUMP=1)), r.wrap(self.v2c(rid), request_id=rid))
         self.assertFalse(o.is_official_jumping)
         self.assertEqual(o.bve_next_loc, 1500.0)
         self.assertEqual(o.prev_next_loc, 1500.0)                        # synchronised to the NEW telemetry of the same batch
         self.assertEqual(o.door_open_loc, 0.0)
 
     @jf0("J18", "CURRENT")
-    def test_CURRENT_J18_after_a_rejected_completion_the_next_JUMP_count_is_treated_as_the_official_jump_and_raises_no_warning(self):
+    def test_CURRENT_J18_after_a_rejected_completion_the_scoring_is_off_and_the_next_JUMP_count_raises_no_further_warning(self):
+        """Phase ST-3d: was 'after a rejected completion the next JUMP count is treated as the official jump and raises no warning' (the rejected completion left the jump on and the scoring
+        looked on). The rejection aborts the scoring; the sender's JUMP counter then finds the scoring off and raises nothing more (the warnings of the abort are the only ones)."""
         r, o = self.r, self.o
         cmd = self.start()
-        r.complete(cmd["request_id"], location=500.0, time_ms=T0)           # rejected: is_official_jumping stays on
-        self.assertTrue(o.is_official_jumping)
+        r.complete(cmd["request_id"], location=500.0, time_ms=T0)           # rejected: the scoring is aborted
+        self.assertFalse(o.is_official_jumping)
+        self.assertFalse(o.is_scoring_mode)
         self.telemetry(T0, speed=0.0, loc=0.0, JUMP=1)                      # the sender's JUMP counter now arrives
         self.assertEqual([p for p in o.popups if p.get("category") == "警告"], [])
-        self.assertTrue(o.is_scoring_mode)
+        self.assertFalse(o.is_scoring_mode)
         self.assertTrue(o.jump_lock)
 
     # -- J20 : static --------------------------------------------------------------------------------------------------------------------------
@@ -358,36 +391,6 @@ class J_Completion(Base):
         self.assertEqual(self.D.TELEMETRY_GEN, 7)                           # the telemetry endpoint's generation (a third value)
 
     # -- TARGET (skipped) ------------------------------------------------------------------------------------------------------------------------
-    @unittest.skip("TARGET-A K4 / FC-2 / FC-5 (JF-2): a location mismatch aborts the scoring explicitly and nothing stays stuck")
-    @jf0("J03", "TARGET")
-    def test_TARGET_A_J03_a_location_mismatch_aborts_the_scoring_and_releases_the_stuck_state(self):
-        r, o = self.r, self.o
-        rid = self.started_and_jumped()
-        r.complete(rid, location=500.0, time_ms=T0)
-        r.tick(2)
-        self.assertFalse(o.is_official_jumping)
-        self.assertTrue(o.jump_lock)
-        self.assertFalse(o.is_scoring_mode)
-        self.assertEqual(len([p for p in o.popups if p.get("category") == "警告"]), 2)
-
-    @unittest.skip("TARGET-A K3 / FC-2 (JF-2): a station index that differs from the request aborts the scoring")
-    @jf0("J06", "TARGET")
-    def test_TARGET_A_J06_a_station_index_mismatch_aborts_the_scoring(self):
-        r, o = self.r, self.o
-        cmd = self.start()
-        r.complete(cmd["request_id"], location=0.0, time_ms=T0, index=2)
-        self.assertFalse(o.is_scoring_mode)
-        self.assertTrue(o.jump_lock)
-
-    @unittest.skip("TARGET-A K2 / FC-2 (JF-2): a jump kind that differs from the request aborts the scoring")
-    @jf0("J07", "TARGET")
-    def test_TARGET_A_J07_a_kind_mismatch_aborts_the_scoring(self):
-        r, o = self.r, self.o
-        cmd = self.start()
-        r.complete(cmd["request_id"], location=0.0, time_ms=T0, kind="LOC", index=-1)
-        self.assertFalse(o.is_scoring_mode)
-        self.assertTrue(o.jump_lock)
-
     @unittest.skip("TARGET-A V-8 (JF-2): while a request is outstanding a new one is refused at the application layer (reason jump-in-flight) and the first stays")
     @jf0("J12", "TARGET")
     def test_TARGET_A_J12_a_second_request_is_refused_while_one_is_outstanding(self):
@@ -396,26 +399,6 @@ class J_Completion(Base):
         self.assertIsNone(o.send_jump_command("JUMP_STA_TIME:0:%d" % T0))
         self.assertEqual(r.client.outstanding_id, first["request_id"])
         self.assertEqual(len([c for c in r.jump_commands() if not c.get("other")]), 1)
-
-    @unittest.skip("TARGET-A K0 (JF-2): the syntax is validated BEFORE the RequestId is consumed, and a malformed completion aborts the scoring")
-    @jf0("J15", "TARGET")
-    def test_TARGET_A_J15_a_malformed_completion_aborts_the_scoring_and_does_not_leave_it_stuck(self):
-        r, o = self.r, self.o
-        rid = self.started_and_jumped()
-        self.raw_completion(rid, "JUMP_COMPLETE:STA:x:0.0:%d:1" % T0)
-        self.assertFalse(o.is_official_jumping)
-        self.assertFalse(o.is_scoring_mode)
-        self.assertTrue(o.jump_lock)
-
-    @unittest.skip("TARGET-A K0 (JF-2): a payload with fewer than six parts is an immediate mismatch (field=payload) and aborts without waiting for the timeout")
-    @jf0("J19", "TARGET")
-    def test_TARGET_A_J19_a_short_payload_aborts_at_once(self):
-        r, o = self.r, self.o
-        rid = self.started_and_jumped()
-        self.raw_completion(rid, "JUMP_COMPLETE:STA:0:0.0")
-        self.assertFalse(o.is_scoring_mode)
-        self.assertTrue(o.jump_lock)
-        self.assertNotEqual(r.client.last_failure, "timeout")                    # decided by the payload check, not by the timeout
 
     @unittest.skip("TARGET-B B7 / FC-7 / U-12 (JF-3): a JUMP_FAILED response ends the jump at once; its format is undecided, so no wire expectation is written")
     @jf0("J20", "TARGET")
@@ -448,17 +431,33 @@ class N_NormalMode(unittest.TestCase):
         self.o = self.rig.o
 
     def begin(self):
+        """Phase ST-3d: an open plain-mode transaction: the request for station B (index 1) of a two-station list, built by the one builder and opened the way the scoring start opens it."""
+        import jump_transaction                    # (imported here: the shared rig of this file is also used against trees that do not have the module)
         o = self.o
         o.is_scoring_mode = True
-        o.station_list = [R.station("A", 0.0), R.station("B", 1000.0)]
+        o.station_list = station_identity.StationList([R.station("A", 0.0), R.station("B", 1000.0)], list_id=R.SCOPE_LIST_ID)
+        o.current_scenario_id, o.bve_list_id = R.SCOPE_SID, R.SCOPE_LIST_ID
         self.S.begin_official_jump(o, 1000.0, T0)
+        planned, why = jump_transaction.build_jump_request("STA", 1, T0, (R.SCOPE_SID, R.SCOPE_LIST_ID, 2), 1000.0)
+        self.assertIsNone(why)
+        o._open_jump_transaction("start", planned, None)
+
+    def completion(self, count=1):
+        text, why = jump_wire.format_completion_v2("STA", 1, 1000.0, T0, count, (R.SCOPE_SID, R.SCOPE_LIST_ID, 2))
+        self.assertIsNone(why)
+        return text.encode("ascii")
 
     @jf0("J14", "CURRENT")
-    def test_CURRENT_J14_a_plain_completion_is_always_acceptable_in_the_normal_mode(self):
+    def test_CURRENT_J14_a_plain_completion_always_reaches_the_settlement_in_the_normal_mode(self):
         o = self.o
         self.assertIsNone(o.dataplane_receiver)
         self.assertFalse(o.dataplane_strict)
-        self.assertTrue(o._jump_complete_acceptable())
+        self.begin()
+        o._note_jump_complete(self.completion().decode("ascii"))
+        self.assertIsNotNone(o.pending_jump_complete)                          # the transport takes it (nothing identifies it) ...
+        self.assertIsNone(o.pending_jump_complete.request_id)
+        o._settle_jump_complete()                                              # ... and the settlement judges it
+        self.assertFalse(o.is_official_jumping)
 
     @jf0("J14", "CURRENT")
     def test_CURRENT_J14_an_unsolicited_completion_without_any_request_is_only_logged(self):
@@ -472,13 +471,15 @@ class N_NormalMode(unittest.TestCase):
     def test_CURRENT_J14_after_the_release_a_second_plain_completion_is_rejected_and_changes_nothing(self):
         o = self.o
         self.begin()
-        o.udp_socket.incoming = [b"JUMP_COMPLETE:STA:1:1000.0:%d:1" % T0]
+        o.udp_socket.incoming = [self.completion(1)]
         o.read_udp_data()
         self.assertFalse(o.is_official_jumping)
+        self.assertTrue(o.is_scoring_mode)
         self.rig.log.clear()
-        o.udp_socket.incoming = [b"JUMP_COMPLETE:STA:1:1000.0:%d:2" % T0]
+        o.udp_socket.incoming = [self.completion(2)]
         o.read_udp_data()
         self.assertFalse(o.is_official_jumping)
+        self.assertTrue(o.is_scoring_mode)
         self.assertEqual(len([m for m in self.rig.log if m.startswith("[JUMP COMPLETE REJECTED]")]), 1)
 
 
@@ -537,29 +538,38 @@ class RX_RetryAndStartChains(Base):
         r.tick(2)
         self.assertEqual([s["name"] for s in self.o.station_list], ["A", "P", "Q", "E"])
 
-    @danger("X06", "starting at a station (Q, index 2) that has an earlier station (P, 40 m behind) within 50 m: Python requests index 2 and expects Q's position, the completion at "
-                   "that position passes the check - while the sender re-selects P as its target after the jump. Nothing on the Python side can notice.",
-            "JF-2 (TARGET-A V-4 extended: refused in advance) / JF-3 (TARGET-B B2: the sender keeps the requested index)", "refused or fixed; this assertion is replaced")
-    def test_CURRENT_DANGER_X06_a_start_at_a_station_with_a_close_previous_station_passes_the_completion_check_with_the_wrong_target(self):
-        """JF-0 v2 X06 describes this chain through a RETRY. In the code as it is, a retry can not produce it: the 100 m search of execute_retry picks the earlier
-        station itself (see the next test). The dangerous chain exists on the SCORING START route, where setting_start_idx names the later station directly.
-        The sender's re-selection (idx 1) is pinned by the C# source pins (file F3) and the LegacyStationTimeline run (file F4); it is not observable here."""
+    @jf0("X06", "CURRENT")
+    def test_CURRENT_X06_a_start_at_a_station_with_a_close_previous_station_is_judged_by_the_index_the_sender_selected(self):
+        """Phase ST-3d: was CURRENT_DANGER (a start at Q, index 2, with an earlier station P 40 m behind: Python requested index 2 and expected Q's position, the completion at that position
+        passed the check - while the sender re-selected P as its target after the jump; nothing on the Python side could notice). The completion now names the index the sender selected."""
         r, o = self.r, self.o
         self._go_with_close_stations()
         o.setting_start_idx = 2
         o.setting_end_idx = 3
         r.start_scoring_via_menu()
         cmd = r.last_command()
-        self.assertEqual(cmd["text"], "JUMP_STA_TIME:2:%d" % T0)
-        self.assertEqual(o.expected_target_loc, 1000.0)                          # Python expects Q's position
-        r.complete(cmd["request_id"], location=1000.0, time_ms=T0, index=2)       # the sender really moved to 1000.0 ...
-        self.assertFalse(o.is_official_jumping)                                  # ... the completion check is satisfied; nothing is reported
+        request = jump_wire.parse_request(cmd["text"])[0]
+        self.assertEqual((request.kind, request.station_index, request.location), ("STA", 2, 1000.0))
+        r.complete(cmd["request_id"], location=1000.0, time_ms=T0, index=1)       # the sender really moved to 1000.0 but re-selected P (index 1): the Python side notices
+        self.assertFalse(o.is_official_jumping)
+        self.assertFalse(o.is_scoring_mode)
+        self.assertEqual(self.settled_ends(), ["selected-index-mismatch"])
+        self.r.close()
+        self.setUp()
+        r, o = self.r, self.o
+        self._go_with_close_stations()
+        o.setting_start_idx = 2
+        o.setting_end_idx = 3
+        r.start_scoring_via_menu()
+        cmd = r.last_command()
+        r.complete(cmd["request_id"], location=1000.0, time_ms=T0, index=2)       # a sender that keeps the requested index passes
+        self.assertFalse(o.is_official_jumping)
+        self.assertTrue(o.is_scoring_mode)
 
-    @danger("X06", "a RETRY to the checkpoint of Q (index 2) with an earlier station P 40 m behind: since Phase ST-2b Python requests the SAVED index 2 and expects Q's position, so "
-                   "the completion at that position passes the check - while the sender still re-selects P by its 50 m search. Nothing on the Python side can notice (it used to pick P itself, "
-                   "so Python and the sender agreed by accident).",
-            "ST-3 (the sender fixes the requested index in Current and Legacy; the completion's selected index is checked)", "ST-3: the sender keeps the requested index; this assertion is replaced by the ST-3 completion check")
-    def test_CURRENT_DANGER_X06_a_retry_with_a_close_previous_station_requests_the_saved_station_so_python_and_the_sender_disagree_until_st3(self):
+    @jf0("X06", "CURRENT")
+    def test_CURRENT_X06_a_retry_with_a_close_previous_station_requests_the_saved_station_and_the_completion_must_name_it(self):
+        """Phase ST-3d: was CURRENT_DANGER (a RETRY to Q with P 40 m behind: Python requested the SAVED index 2 while the sender re-selected P by its 50 m search, and nothing on the Python side
+        could notice). The sender fixes the requested index (ST-3b / ST-3c) and the completion's selected index is checked."""
         r, o = self.r, self.o
         self._go_with_close_stations()
         o.is_scoring_mode = True
@@ -567,8 +577,14 @@ class RX_RetryAndStartChains(Base):
                        self.ident({"loc": 999.0, "time_ms": T0 + 60000, "score": 10, "score_details": dict(o.score_details), "target_loc": 1000.0, "station_name": "Q", "stop_error": 1.0}, 2)]
         self.S.execute_retry(o, 1, True)
         cmd = r.last_command()
-        self.assertEqual(cmd["text"], "JUMP_STA_TIME:2:%d" % (T0 + 60000))        # Q (index 2), the saved index; the sender re-selects P (index 1) until ST-3
+        request = jump_wire.parse_request(cmd["text"])[0]
+        self.assertEqual((request.kind, request.station_index, request.time_ms), ("STA", 2, T0 + 60000))        # Q (index 2), the saved index
         self.assertEqual(o.expected_target_loc, 1000.0)
+        r.complete(cmd["request_id"], location=1000.0, time_ms=T0 + 60000, index=1)                         # the sender re-selected P: notice
+        self.assertFalse(o.is_official_jumping)
+        self.assertFalse(o.is_scoring_mode)
+        self.assertEqual(len(o.save_data), 2)                                                                # the history is kept
+        self.assertEqual(self.settled_ends(), ["selected-index-mismatch"])
 
 
 # ==============================================================================================================================================
@@ -599,7 +615,7 @@ class Z_Meta(unittest.TestCase):
             self.assertEqual(meta["kind"], kind, name)
             self.assertIn(meta["id"], OWN_IDS, name)
             self.assertIn(meta["id"], name)
-        self.assertGreater(count, 30)
+        self.assertGreater(count, 25)                                   # Phase ST-3d: 30+ before; the five skipped TARGET tests that became CURRENT tests and the danger tests that they replace are fewer
 
     def test_META_every_CURRENT_DANGER_carries_its_four_facts(self):
         seen = 0
@@ -611,7 +627,7 @@ class Z_Meta(unittest.TestCase):
             self.assertTrue(name.startswith("test_CURRENT_DANGER_" + meta["id"]), name)
             for key, shortest in (("danger", 21), ("phase", 8), ("flip", 21)):
                 self.assertTrue(meta[key] and len(meta[key]) >= shortest, (name, key))
-        self.assertEqual(seen, 7)                                       # Phase ST-2b: the retry-side X06 is a danger now (Python asks for Q, the sender still re-selects P until ST-3)
+        self.assertEqual(seen, 1)                                       # Phase ST-3d: J20 only (no failure response exists); J03 J06 J15 J19 and both X06 are CURRENT now
 
     def test_META_every_TARGET_is_skipped_with_a_contract_id_in_the_reason(self):
         seen = 0
@@ -623,7 +639,7 @@ class Z_Meta(unittest.TestCase):
             reason = getattr(fn, "__unittest_skip_why__", "")
             self.assertRegex(reason, r"TARGET-[AB] ", name)
             self.assertRegex(reason, r"(V-\d|K\d|FC-\d|B7|JR-\d)", name)
-        self.assertGreaterEqual(seen, 8)
+        self.assertGreaterEqual(seen, 3)                                    # Phase ST-3d: J12 J20 J21 (J03 J06 J07 J15 J19 are CURRENT tests now)
 
     def test_META_every_own_id_has_a_test_and_the_delegated_ones_name_the_existing_file(self):
         have = {fn.jf0["id"] for _c, _n, fn in self.case_methods() if hasattr(fn, "jf0")}

@@ -1683,7 +1683,19 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
             'if use_legacy:',
             'cmd = f"JUMP_STA_TIME:{target_bve_sta_idx}:{cp[\'time_ms\']}"',
         )
-        self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport) + st2a_checkpoint_identity + st2b_retry_by_saved_index], removed)
+        # Phase ST-3d (on purpose): the request of the retry is built BEFORE anything of the retry is changed, by the one builder of the Jump wire v2 (jump_transaction.build_jump_request), so the
+        # LOC-method condition (with its four comment lines) moved up in front of the state changes, and the two hand assembled command texts and the else branch between them left. These are the 6
+        # distinct lines (stripped) that the diff shows as removed because they moved or went; no score, no rule and no constant is among them.
+        st3d_request_by_the_one_builder = (
+            '# LOC方式を使用する条件',
+            '# 1. 開始駅以外の途中駅である',
+            '# 2. 作者定義時刻が計算時刻より遅い',
+            '# 3. チェックポイント時刻が作者定義時刻より早い',
+            'cmd = f"JUMP_LOC_TIME:{ideal_loc}:{cp[\'time_ms\']}"',
+            'else:',
+        )
+        self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport) + st2a_checkpoint_identity + st2b_retry_by_saved_index
+                                   + st3d_request_by_the_one_builder], removed)
 
     def test_the_scoring_function_bodies_are_ast_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":scoring_logic.py")

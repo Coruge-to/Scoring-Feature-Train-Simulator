@@ -723,7 +723,7 @@ class C3_CallerLineCap(unittest.TestCase):
 
     def test_nothing_else_about_the_caps_changed(self):
         cls = self.mi.ManagedInputController
-        self.assertEqual({k: v for k, v in cls.EVENT_LINE_CAPS.items() if k != "stidx"}, {"input-hold": 24, "input-pause": 6, "input-resume": 6})
+        self.assertEqual({k: v for k, v in cls.EVENT_LINE_CAPS.items() if k not in ("stidx", "jump-settled")}, {"input-hold": 24, "input-pause": 6, "input-resume": 6})        # (Phase ST-3d adds the cap of its own final line, jump-settled: 24)
         self.assertEqual((cls.EVENT_LINE_CAP, cls.TOTAL_LINE_BUDGET), (10, 70))
         self.assertEqual(self.ctl.cap_for("some-unregistered-event"), 10)                           # the default of the unregistered events
         self.assertEqual(self.ctl.cap_for("stidx-sum"), 10)                                         # a name of its own: it is NOT covered by the stidx cap, and keeps the default
@@ -1310,7 +1310,7 @@ class F2_TheCallerLineBudget(unittest.TestCase):
 
     def test_the_caps_are_exactly_what_they_were(self):
         cls = self.mi.ManagedInputController
-        self.assertEqual(cls.EVENT_LINE_CAPS, {"input-hold": 24, "input-pause": 6, "input-resume": 6, "stidx": 24})
+        self.assertEqual(cls.EVENT_LINE_CAPS, {"input-hold": 24, "input-pause": 6, "input-resume": 6, "stidx": 24, "jump-settled": 24})        # Phase ST-3d: + the ONE final line of an official jump transaction
         self.assertEqual((cls.EVENT_LINE_CAP, cls.TOTAL_LINE_BUDGET), (10, 70))
 
 

@@ -24,6 +24,8 @@ for p in (ROOT, HERE):
 
 import current_jump_client as cjc  # noqa: E402
 import dataplane_contract as contract  # noqa: E402
+import jump_transaction  # noqa: E402
+import jump_wire  # noqa: E402
 import telemetry_dataplane_receiver as receiver_module  # noqa: E402
 
 try:
@@ -600,7 +602,8 @@ class C_CommandAndRelease(OverlayCase):
         self.assertNotIn(54321, [port for _data, port in written])
         self.assertEqual(cmd["message_type"], contract.MSG_JUMP_STATION_TIME)
         self.assertTrue(any(cmd["request_id"]))
-        self.assertEqual(cmd["text"], "JUMP_STA_TIME:0:36000000")                         # the legacy text is unchanged
+        request = jump_wire.parse_request(cmd["text"])[0]                                  # Phase ST-3d: the Jump wire v2 text (was the unchanged three-field legacy text)
+        self.assertEqual((request.version, request.kind, request.station_index, request.time_ms, request.location), (2, "STA", 0, 36000000, 0.0))
         self.assertEqual(cmd["sender_pid"], self.D.APP_PID)
         self.assertEqual(self.r.client.outstanding_id, cmd["request_id"])
         self.assertTrue(self.o.is_official_jumping)
@@ -842,7 +845,7 @@ class C_TheWholeScoringRun(OverlayCase):
 
     def test_the_normal_mode_has_no_client_and_no_abort(self):
         import types
-        o = types.SimpleNamespace(jump_client=None)
+        o = types.SimpleNamespace(jump_client=None, jump_expectation=None)
         self.main.Overlay._poll_jump_client(o)                                   # no client: nothing to poll, nothing to abort (the normal mode is unchanged)
 
 
@@ -905,11 +908,15 @@ class C_TheOtherPathsAreUnchanged(OverlayCase):
             o = rig.o
             self.assertIsNone(o.jump_client)
             self.assertFalse(o.dataplane_strict)
-            o.send_jump_command("JUMP_STA_TIME:0:5")
-            self.assertEqual(o.udp_socket.written, [(b"JUMP_STA_TIME:0:5", 54322)])
+            planned, why = jump_transaction.build_jump_request("STA", 0, 5, (7, "A1B2C3D4", 2), 0.0)       # Phase ST-3d: the plain mode writes the v2 text to the same fixed port
+            self.assertIsNone(why)
+            o.send_jump_command(planned.text)
+            self.assertEqual(o.udp_socket.written, [(planned.text.encode("ascii"), 54322)])
             o.is_official_jumping = True
-            o.expected_target_loc = 0.0
-            o.udp_socket.incoming.append(b"JUMP_COMPLETE:STA:0:0.0:5:1")
+            o._open_jump_transaction("start", planned, None)
+            o.udp_socket.incoming.append(jump_wire.format_completion_v2("STA", 0, 0.0, 5, 1, (7, "A1B2C3D4", 2))[0].encode("ascii"))
+            o.station_list = [R.station("A", 0.0), R.station("B", 1000.0)]
+            o.current_scenario_id, o.bve_list_id = 7, "A1B2C3D4"
             o.read_udp_data()
             self.assertFalse(o.is_official_jumping)
         finally:

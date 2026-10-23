@@ -45,7 +45,7 @@ SINK = os.path.join(LEGACY_SRC, "LegacyDataPlaneSink.cs")
 CONTRACT = os.path.join(SHARED_DIR, "TelemetryContract.cs")
 RED_ST0 = os.path.join(HERE, "red_st0_stationindex_contract.py")
 
-# the files that ST-3c does not touch, as committed by ST-3b (9d8ef74): git blob ids. ST-3d changes the Python ones on purpose and re-pins them in the same change.
+# the files that ST-3c does not touch, as committed by ST-3b (9d8ef74): git blob ids. Phase ST-3d changes three of the Python ones on purpose (main.py, scoring_logic.py, managed_input.py: their rows are gone;\n# the Python side of the transaction is held by tests/test_stationindex_python_st3d.py now); station_identity.py, jump_wire.py, current_jump_client.py and dataplane_contract.py stay byte-identical.
 UNTOUCHED = {
     "TsScoringPlugin/TsScoringPlugin/Class1.cs": "a1c34ae72a0210da29b7bfcd320e6019d48ed8c7",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs": "3e0d3bffbb74e4a2ecc6d10d378a8b6e2788ae6f",
@@ -62,9 +62,6 @@ UNTOUCHED = {
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/AssemblyInfo.cs": "d601dec6a3a0feff0e7e6ed54c610ecb0d53bd51",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "12a0f84ad865443ad64c76e308907f5b7bcfdcf9",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpCommandQueue.cs": "c9517db9074f45ef447991cd52280ef512047070",
-    "main.py": "d16aef52858fb54194b5efb6a2e0170b3f0a7fa1",
-    "scoring_logic.py": "17be18ce9e5e35ea1fc5dba0862207de4b78115c",
-    "managed_input.py": "1a5f769316ad2ad9138a014cc89135aedaafa018",
     "station_identity.py": "93ce7abce5a7050896c00ba6eddd3290e7b192d2",
     "jump_wire.py": "00579f8031221333f2f6e471d7e30ab3f8b1a365",
     "current_jump_client.py": "bfcee44c0a0f79a76a8a6e950c738084523f1cf9",

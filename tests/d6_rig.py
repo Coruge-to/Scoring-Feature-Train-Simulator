@@ -18,6 +18,7 @@ for p in (ROOT, HERE):
 
 import current_jump_client  # noqa: E402
 import dataplane_contract as contract  # noqa: E402
+import jump_wire  # noqa: E402
 import sia_managed_rig as MR  # noqa: E402
 import telemetry_dataplane_receiver  # noqa: E402
 
@@ -182,7 +183,23 @@ class D6Rig(MR.ManagedRig):
         commands = [c for c in self.jump_commands() if not c.get("other")]
         return commands[-1] if commands else None
 
-    def complete(self, request_id, location=0.0, time_ms=36000000, count=1, kind="STA", index=0):
-        """Current executed the command and answers: a type 5 envelope that echoes `request_id` (the text is the unchanged legacy JUMP_COMPLETE)."""
-        text = "JUMP_COMPLETE:%s:%d:%s:%d:%d" % (kind, index, location, time_ms, count)
+    def request_scope(self, request_id):
+        """The scope (scenario_id, list_id, count) of the v2 command that was sent with `request_id`; None when no such command is known or it was a v1 text."""
+        for command in reversed([c for c in self.jump_commands() if not c.get("other")]):
+            if command["request_id"] == request_id:
+                request, _why = jump_wire.parse_request(command["text"])
+                return None if request is None or request.scope is None else tuple(request.scope)
+        return None
+
+    def complete(self, request_id, location=0.0, time_ms=36000000, count=1, kind="STA", index=0, version=None, scope=None):
+        """The sender executed the command and answers: a type 5 envelope that echoes `request_id`. Phase ST-3d: the text is the completion v2 of the scope of the command that
+        was sent with that id (9 fields: the selected index `index`, the position read back `location`, the scope), unless version=1 asks for the old six-field text (or the id
+        belongs to no v2 command, as the ids of the stale / unknown tests); `scope` overrides the scope of the command."""
+        if version is None:
+            version = 2 if (scope is not None or self.request_scope(request_id) is not None) else 1
+        if version == 2:
+            text, why = jump_wire.format_completion_v2(kind, index, location, time_ms, count, tuple(scope if scope is not None else self.request_scope(request_id)))
+            assert why is None, why
+        else:
+            text = "JUMP_COMPLETE:%s:%d:%s:%d:%d" % (kind, index, location, time_ms, count)
         self.send_raw(self.wrap(text, request_id=request_id))

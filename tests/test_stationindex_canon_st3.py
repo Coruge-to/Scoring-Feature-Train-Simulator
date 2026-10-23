@@ -491,14 +491,15 @@ class D_SingleBuilder(unittest.TestCase):
         b = jw.format_request_v2("STA", 2, 36060000, scope, 1040.5)
         self.assertEqual(a, b)
 
-    def test_N21a_the_codec_is_not_wired_into_any_product_module_yet(self):
+    def test_N21a_the_codec_is_wired_into_the_product_by_the_transaction_layer_and_its_two_readers_only(self):
         load_module("N-21a")
-        offenders = []
+        users = []
         for name in sorted(os.listdir(ROOT)):
             if name.endswith(".py") and name != "jump_wire.py" and "jump_wire" in read_text(os.path.join(ROOT, name)):
-                offenders.append(name)
-        # ST-3a only fixes the contract: execute_retry / handle_menu_enter / the settlement import it from ST-3d on (this guard is turned into N-21b there)
-        self.assertEqual(offenders, [])
+                users.append(name)
+        # Phase ST-3d (was: "not wired into any product module yet"; N-21b, the two call sites, is executed in tests/test_stationindex_python_st3d.py): the transaction layer writes the
+        # request, the scoring logic needs its command words, the Overlay reads the completion; nothing else knows the codec
+        self.assertEqual(users, ["jump_transaction.py", "main.py", "scoring_logic.py"])
 
 
 # ============================================================================================================================================================
@@ -670,13 +671,15 @@ def legacy_python_completion_reader(text):
 
 
 class G_V1Compatibility(unittest.TestCase):
-    def test_the_legacy_python_reader_in_main_py_is_what_this_file_transcribes(self):
+    def test_the_legacy_python_reader_in_main_py_is_gone_the_completion_is_read_by_the_codec(self):
+        """Phase ST-3d (was: "the legacy Python reader in main.py is what this file transcribes"): the inline split / int / float reader of the JUMP_COMPLETE text no longer exists; the
+        completion is read by jump_wire.parse_completion in the settlement, and a v1 text is a reason word there, never a success."""
         main = read_text(os.path.join(ROOT, "main.py"))
         i = main.index('elif text.startswith("JUMP_COMPLETE:"):')
-        block = main[i:i + 900]
-        for needle in ("complete_parts = text.split(':')", "len(complete_parts) >= 6 and self._jump_complete_acceptable()", '"type": complete_parts[1],',
-                       '"station_index": int(complete_parts[2]),', '"location": float(complete_parts[3]),', '"time": int(complete_parts[4]),', '"jump_count": int(complete_parts[5])'):
-            self.assertIn(needle, block)
+        block = main[i:i + 200]
+        self.assertNotIn("complete_parts", main)
+        self.assertIn("self._note_jump_complete(text)", block)
+        self.assertEqual(main.count("jump_wire.parse_completion("), 1)
 
     def test_v1_vectors_parse_as_version_1_without_scope(self):
         jw, doc = load_module("N-G"), load_vectors("N-G")

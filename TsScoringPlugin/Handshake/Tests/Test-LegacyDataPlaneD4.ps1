@@ -136,13 +136,30 @@ Check 'F04 the three shared files and CurrentDataPlane.cs are byte-identical to 
 $sharedGit = (& git -C $repo status --porcelain -- TsScoringPlugin/Handshake/Telemetry/Shared/DataPlaneProtocol.cs TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs TsScoringPlugin/Handshake/Telemetry/Shared/GenericHandleTextContract.cs | Out-String).Trim()
 Check 'F05 and git sees no change in them against HEAD' ($sharedGit -eq '')
 $pyChanged = @((& git -C $repo status --porcelain | Out-String) -split "`n" | Where-Object { $_ -match '\.py\s*$' } | ForEach-Object { $_.Substring(3).Trim() } | Where-Object { $_ -notmatch '/' })
-$pyAllowed = @('current_jump_client.py', 'dataplane_contract.py', 'main.py', 'telemetry_contract.py', 'station_index_contract.py', 'managed_input.py')      # PID-D4 / Legacy Jump 2A-alpha: the only two Python product modules the slice may change; Phase ST-1A adds the three of the STIDX intake; Phase ST-1B Prep adds managed_input.py (F07 limits it to the one stidx cap) (0 changed files, e.g. after the commit, is a pass too)
+$pyAllowed = @('current_jump_client.py', 'dataplane_contract.py', 'main.py', 'telemetry_contract.py', 'station_index_contract.py', 'managed_input.py', 'scoring_logic.py', 'jump_transaction.py')      # PID-D4 / Legacy Jump 2A-alpha: the only two Python product modules the slice may change; Phase ST-1A adds the three of the STIDX intake; Phase ST-1B Prep adds managed_input.py (F07 limits it to the one stidx cap); Phase ST-3d adds scoring_logic.py (F07 limits it to its imports and execute_retry) and the new pure module jump_transaction.py (0 changed files, e.g. after the commit, is a pass too)
 $pyOutside = @($pyChanged | Where-Object { $pyAllowed -cnotcontains $_ })
 Check ('F06 no Python product module (repository root) differs from HEAD except the two allowed ones (' + ($pyAllowed -join ', ') + ')' + $(if ($pyOutside.Count -gt 0) { ': ' + ($pyOutside -join ',') } else { '' })) ($pyOutside.Count -eq 0)
 # Phase ST-1B Prep (owner decision G-1): managed_input.py may differ from HEAD only by the EVENT_LINE_CAPS statement (the one "stidx" cap); no change at all (e.g. after the commit) is a pass too
 $miChanged = @((& git -C $repo diff -U0 HEAD -- managed_input.py) | Where-Object { $_ -match '^[+-]' -and $_ -notmatch '^(\+\+\+|---)' })
-$miOutside = @($miChanged | Where-Object { $_ -notmatch 'EVENT_LINE_CAPS|"stidx": 24' })
-Check 'F07 scoring_logic.py is byte-identical to HEAD, and managed_input.py differs from HEAD only in the EVENT_LINE_CAPS statement (the stidx cap)' (((& git -C $repo status --porcelain -- scoring_logic.py | Out-String).Trim() -eq '') -and ($miOutside.Count -eq 0) -and ($miChanged.Count -le 3))
+# Phase ST-3d (on purpose): managed_input.py also gains the "jump-settled" cap, the jump_expectation state (generation_defaults, discard_scoring_session) and the close of the open transaction in _cancel_outstanding_jump
+$miOutside = @($miChanged | Where-Object { $_ -notmatch 'EVENT_LINE_CAPS|"stidx": 24|"jump-settled": 24|retry_pending|jump_expectation|Phase ST-3d|_jump_transaction_finish|if finish is not None|finish\(reason\)|try:|except Exception:|pass$|PID-D6: the official jump' })
+# Phase ST-3d (on purpose): scoring_logic.py may differ from HEAD only in its import block (jump_transaction, jump_wire) and inside execute_retry (the request is built before anything changes, by the one builder of the Jump wire v2); no change at all (e.g. after the commit) is a pass too
+$slLines = [IO.File]::ReadAllLines((Join-Path $repo 'scoring_logic.py'))
+$fnStart = 0
+$fnEnd = $slLines.Count
+for ($i = 0; $i -lt $slLines.Count; $i++) { if ($slLines[$i] -match '^def execute_retry\(') { $fnStart = $i + 1; break } }
+for ($i = $fnStart; $i -lt $slLines.Count; $i++) { if ($slLines[$i] -match '^def ') { $fnEnd = $i; break } }
+$slOutside = @()
+foreach ($h in @((& git -C $repo diff -U0 HEAD -- scoring_logic.py) | Where-Object { $_ -match '^@@ ' })) {
+    if ($h -match '\+(\d+)(,(\d+))? @@') {
+        $first = [int]$Matches[1]
+        $count = 1
+        if ($Matches[3]) { $count = [int]$Matches[3] }
+        $last = $first + [Math]::Max($count, 1) - 1
+        if (-not (($last -le 12) -or (($first -ge $fnStart) -and ($last -le $fnEnd)))) { $slOutside += $h }
+    }
+}
+Check 'F07 scoring_logic.py differs from HEAD only in its imports and inside execute_retry, and managed_input.py only in the stidx / jump-settled caps, the jump_expectation state and the close of the open transaction' (($slOutside.Count -eq 0) -and ($miOutside.Count -eq 0) -and ($miChanged.Count -le 16))
 $tel = Join-Path $Root 'Telemetry'
 $legacySrc = @(Get-ChildItem (Join-Path $tel 'Legacy\src') -Filter *.cs)
 $legacyCode = ($legacySrc | ForEach-Object { Code ([IO.File]::ReadAllText($_.FullName)) }) -join "`n"

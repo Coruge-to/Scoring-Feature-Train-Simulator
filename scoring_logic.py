@@ -3,6 +3,8 @@ import os
 from PyQt6.QtNetwork import QHostAddress
 
 from config import *
+import jump_transaction
+import jump_wire
 import station_identity
 from utils import (
     calculate_apex_speed,
@@ -626,6 +628,32 @@ def execute_retry(self, index, is_bve_advancing):
     if managed and getattr(self, 'jump_client', None) is None:
         return result._replace(accepted=False, reason=station_identity.JUMP_UNAVAILABLE)
 
+    # Phase ST-3d: the request is built (and refused if the wire can not carry it) BEFORE anything is changed, by the one builder of the Jump wire v2
+    cp = history[index]
+    station_index = result.selected_station_index
+    station = station_list[station_index]
+    ideal_loc = station["location"]
+    def_t = station.get("def_time", -1)
+
+    # 駅データから比較用の計算時刻を求める
+    raw_dep = station.get("raw_dep", -1)
+    stop_t = station.get("stop_time", 15000)
+    calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1
+
+    # LOC方式を使用する条件
+    # 1. 開始駅以外の途中駅である
+    # 2. 作者定義時刻が計算時刻より遅い
+    # 3. チェックポイント時刻が作者定義時刻より早い
+    use_loc_method = (station_index > 0 and def_t >= 0 and calc_t >= 0 and def_t > calc_t and cp['time_ms'] < def_t)
+
+    request_time = cp['time_ms']
+    if isinstance(request_time, float) and request_time.is_integer():
+        request_time = int(request_time)                      # a whole time of the history is written as the integer that it is
+    planned, refusal = jump_transaction.build_jump_request(jump_wire.KIND_LOC if use_loc_method else jump_wire.KIND_STA, station_index, request_time,
+                                                           station_identity.scope_of(getattr(self, 'current_scenario_id', -1), getattr(self, 'bve_list_id', ""), station_list), ideal_loc)
+    if planned is None:
+        return result._replace(accepted=False, reason=refusal)
+
     self.is_official_retry = (index > 0)
     self.is_first_station = (index == 0)
 
@@ -640,7 +668,6 @@ def execute_retry(self, index, is_bve_advancing):
     reset_station_evaluation_state(self)
     self.is_first_udp = True
 
-    cp = history[index]
     self.score = cp["score"]
 
     if "score_details" in cp:
@@ -661,34 +688,14 @@ def execute_retry(self, index, is_bve_advancing):
 
     self.toggle_menu(is_bve_advancing)
 
-    station_index = result.selected_station_index
-    station = station_list[station_index]
-    ideal_loc = station["location"]
-    def_t = station.get("def_time", -1)
-
-    # 駅データから比較用の計算時刻を求める
-    raw_dep = station.get("raw_dep", -1)
-    stop_t = station.get("stop_time", 15000)
-    calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1
-
-    # LOC方式を使用する条件
-    # 1. 開始駅以外の途中駅である
-    # 2. 作者定義時刻が計算時刻より遅い
-    # 3. チェックポイント時刻が作者定義時刻より早い
-    use_loc_method = (station_index > 0 and def_t >= 0 and calc_t >= 0 and def_t > calc_t and cp['time_ms'] < def_t)
-
-    if use_loc_method:
-        cmd = f"JUMP_LOC_TIME:{ideal_loc}:{cp['time_ms']}"
-    else:
-        cmd = f"JUMP_STA_TIME:{station_index}:{cp['time_ms']}"
-
     begin_official_jump(self, ideal_loc, cp['time_ms'])
     pending = station_identity.make_retry_pending(history, index)
     self.retry_pending = pending
-    request_id = self.send_jump_command(cmd)
+    request_id = self.send_jump_command(planned.text)
     # the request was sent: a RequestId (managed mode) or the plain send (normal mode: no id). A managed send the client refused leaves the pending retry 'validated'.
     if pending is not None and (request_id is not None or not managed):
         self.retry_pending = pending._replace(request_id=request_id, state=station_identity.RETRY_SENT)
+    self._open_jump_transaction(jump_transaction.JUMP_RETRY, planned, request_id)
     return result._replace(request_id=request_id)
 
 def add_score_popup(

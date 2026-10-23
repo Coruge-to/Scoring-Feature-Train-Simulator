@@ -43,7 +43,7 @@ def generation_defaults():
         # the scoring session and its result
         "popups": [], "score": 0, "score_details": {key: 0 for key in ("time", "stop", "base_brake", "roll", "jerk", "init_brake", "rel_brake", "eb", "limit", "ats", "bonus")},
         "is_scoring_mode": False, "is_scoring_finished": False, "is_result_saved": False, "saved_file_path": "",
-        "end_message_time": 0.0, "result_screen_time": 0.0, "theoretical_score": 0, "total_retry_count": 0, "save_data": [], "retry_pending": None,
+        "end_message_time": 0.0, "result_screen_time": 0.0, "theoretical_score": 0, "total_retry_count": 0, "save_data": [], "retry_pending": None, "jump_expectation": None,
         "rollback_msg": "", "rollback_msg_timer": 0.0,
         "is_speed_limit_exceeded": False, "last_speed_limit_penalty_time": 0.0, "accumulated_speed_penalty": 0,
         # emergency brake (manual EB and Smee virtual EB)
@@ -122,7 +122,14 @@ KEPT_ACROSS_GENERATIONS = frozenset({
 
 
 def _cancel_outstanding_jump(overlay, reason):
-    """PID-D6: the official jump that belongs to a discarded scoring session / generation can no longer be completed: a late JUMP_COMPLETE for it is stale."""
+    """PID-D6: the official jump that belongs to a discarded scoring session / generation can no longer be completed: a late JUMP_COMPLETE for it is stale.
+    Phase ST-3d: the open transaction of that jump (the pending retry and the expectation) ends here too, and says so once, BEFORE the state is reset."""
+    finish = getattr(overlay, "_jump_transaction_finish", None)
+    if finish is not None:
+        try:
+            finish(reason)
+        except Exception:
+            pass
     client = getattr(overlay, "jump_client", None)
     if client is not None:
         try:
@@ -152,6 +159,7 @@ def discard_scoring_session(overlay):
     ):
         setattr(overlay, name, d[name])
     overlay.retry_pending = d["retry_pending"]                  # Phase ST-2b: a retry that waits for its jump belongs to the scoring session (kept out of the tuple above: that header is a pinned jump-contract region)
+    overlay.jump_expectation = d["jump_expectation"]            # Phase ST-3d: so does the expectation of the open official jump
     reset_result_display_state(overlay)
     reset_speed_penalty_state(overlay)
     reset_roll_state(overlay)
@@ -361,7 +369,8 @@ class ManagedInputController(object):
     # budget (a cap per event name and a total); what does not fit is only counted (input-summary).
     EVENT_LINE_CAP = 10
     EVENT_LINE_CAPS = {"input-hold": 24, "input-pause": 6, "input-resume": 6,              # (a menu opened and closed again is two lines)
-                       "stidx": 24}                                                         # (Phase ST-1B Prep: the STIDX observer's progress budget 20 + 4 verdict / scope events of one generation; stidx-sum keeps the default 10)
+                       "stidx": 24,                                                         # (Phase ST-1B Prep: the STIDX observer's progress budget 20 + 4 verdict / scope events of one generation; stidx-sum keeps the default 10)
+                       "jump-settled": 24}                                                  # (Phase ST-3d: the ONE final line of every official jump transaction: the starts and the retries of a session)
     TOTAL_LINE_BUDGET = 70
 
     def cap_for(self, event):

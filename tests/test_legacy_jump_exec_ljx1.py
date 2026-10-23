@@ -84,8 +84,13 @@ SCORING_LOGIC_AT_LJX1 = {
 # timeout (class A, current_jump_client.py), the cancel reasons and the shutdown order below.
 JUMP_UNITS = {
     "main.py": {
-        "whole": ["Overlay._jump_complete_acceptable", "Overlay._poll_jump_client", "Overlay._abort_unreleased_official_jump", "Overlay._send_jump_datagram",
-                  "Overlay._settle_jump_complete", "Overlay.send_jump_command", "_managed_jump_log"],
+        # Phase ST-3d (an INTENDED change of the jump contract): the completion is taken by the transport (_note_jump_complete) and judged by the settlement, the transaction is opened / closed in
+        # three small units, the start request is planned in one; _jump_complete_acceptable is gone. Every unit that names the contract is declared (nothing is undeclared).
+        "whole": ["Overlay._note_jump_complete", "Overlay._poll_jump_client", "Overlay._open_jump_transaction",
+                  "Overlay._emit_jump_settled", "Overlay._finish_jump_transaction", "Overlay._jump_transaction_finish",
+                  "Overlay._abort_unreleased_official_jump", "Overlay._send_jump_datagram", "Overlay._log_rejected_completion",
+                  "Overlay._settle_jump_complete", "Overlay._scoring_start_plan", "Overlay.send_jump_command",
+                  "_managed_jump_log"],
         "sliced": [regions.MODULE, "Overlay.__init__", "Overlay.read_udp_data", "Overlay.apply_telemetry_text", "Overlay.handle_menu_enter",
                    "Overlay._detect_and_release_fast_forward", "Overlay._advance_scoring_clock_and_score", "run_managed"],
         # contract 13.2 step 7 (the jump client is closed, its outstanding request cancelled) before 15.2 step 3 (the data plane receiver stops)
@@ -104,33 +109,51 @@ JUMP_UNITS = {
     },
 }
 
-# digests of the regions: computed from the LJX-1 commit ca58586 and found IDENTICAL at 69077aa and in the ST-2a working tree (kind, SHA-256, number of jump records)
+# digests of the regions (kind, SHA-256, number of jump records). Computed from the LJX-1 commit ca58586 and found IDENTICAL at 69077aa, in the ST-2a working tree and (main.py, managed_input.py)
+# at ea0a3fb - except the units named in the Phase ST-3d notes below, which ST-3d changed on purpose and re-pinned in the SAME change (old value -> new value, with the purpose).
 REGION_PINS = {
     "main.py": {
-        "Overlay._jump_complete_acceptable": ("whole", "FEFB3BD73C666438BB4A159B5DC1FF95A966AB9BE0D31904B528DCF78429A58B", 1),
-        "Overlay._poll_jump_client": ("whole", "5C7202FFAA49F134AE375EFFCF050227FB852EFFEBB1A49F33DC7D9810A9480C", 1),
-        "Overlay._abort_unreleased_official_jump": ("whole", "D011C7748AF1E6B91BFD039EDD4F995A7E409AD3AE91E0B1A388221C97404CE2", 1),
+        "Overlay._note_jump_complete": ("whole", "4E0813095DE0203C269FE5F2A3DC1E85235DA836D53BFC63FA615E73716C91D9", 1),
+        # Phase ST-3d (was 5C7202FF...): the normal mode has no client; its open transaction is released at the same 10 s deadline (current_jump_client.OUTSTANDING_TIMEOUT_S)
+        "Overlay._poll_jump_client": ("whole", "752D31B04E7EA5B6BD6DA7D13D239D7444660CD754A2C70913F9996C1403EEA6", 1),
+        "Overlay._open_jump_transaction": ("whole", "EB4E49E48B214801C9C8A0CE9663FD98B52FC23F55F3B61548C2E1FF77828406", 1),
+        "Overlay._emit_jump_settled": ("whole", "7AB4809B8049C5D970490B897DEB34B51FEE7279A89273776D0E6C2270FF22F7", 1),
+        "Overlay._finish_jump_transaction": ("whole", "B6E82E3A2C9365893598E57E3AB54606A6A227C4C37C4F6FF512AADFEA79DAA7", 1),
+        "Overlay._jump_transaction_finish": ("whole", "3CFF60626FCE391D84E1A19483AE04BC144035FDCD3A4E16A9924B573003DF0E", 1),
+        # Phase ST-3d (was D011C774...): also the one exit of every FAILED settlement (a verdict), closes the books of the transaction (jump-settled) and releases the pending retry
+        "Overlay._abort_unreleased_official_jump": ("whole", "2FDDD061237B01664F661F22B1B8ED019E8324EB52176AE064040B43E5C0C487", 1),
         "Overlay._send_jump_datagram": ("whole", "28F6535FFD17481537E586D5F61A5D0BB2824E6CB309EF9F2D1F7D63A4DFF281", 1),
-        "Overlay._settle_jump_complete": ("whole", "1709CFC14771A488F3521D0F445172A5EE145A1723102C1520F9FCF46ECF4379", 1),
+        "Overlay._log_rejected_completion": ("whole", "C5B2E6C61374F8CD15019919490069ADF03F0C8137168CAF51DAD397C1D54C83", 1),
+        # Phase ST-3d (was 1709CFC1...): the settlement itself - judge_completion, the cut of the history (the ONE call of resolve_retry_history), the release, then the unchanged success body
+        "Overlay._settle_jump_complete": ("whole", "7995AA5F27B35E3FDABB9FCF85F2AC6EA20D6C854475133CD8FF4919B1C9E4CC", 1),
+        "Overlay._scoring_start_plan": ("whole", "1CAC50AE7FBF10311002294F0A9EE83929BA82770561AA79AA230E7DE777E74C", 1),
         "Overlay.send_jump_command": ("whole", "64A500353BD0B85B9E834D1F229191288688FAC19AFFC56C79C013F16526191C", 1),
         "_managed_jump_log": ("whole", "79C052E4112C613AE67EEE787BA19E15A2164441D18BA383057CE08F47133689", 1),
-        "<module>": ("slice", "24D36E4E27FAA4BE0FD9DDCC9B61FFD2498C1273325194B51BD906220EE0A41B", 3),
-        "Overlay.__init__": ("slice", "AF89937BD6344F881A817489A79B4E0C5EF5189C68ED4A3C41C701BCC61E854F", 10),
-        "Overlay.read_udp_data": ("slice", "741D5BA4388B552DB6ACB4FCCF5B906CA26985EAED004AAA4A7FD183AEF6F5AF", 5),
-        "Overlay.apply_telemetry_text": ("slice", "8DF014098D3DBC5016935829C152E25E2B897B128195751B39A02C503CD977DB", 5),
-        # Phase ST-2b (an INTENDED change of the jump contract, owner decision OD-B6): the retry call site became `result = execute_retry(...)` followed by the count of an accepted retry only
-        # and the restore of the BVE resume flag of a refused one (was 73F4E0A3... : `execute_retry(...)` followed by the unconditional `+= 1`); still 8 jump records
-        "Overlay.handle_menu_enter": ("slice", "84E656C2C28CECB0D1DA14F55C8FAB94C79372BC43AD4327050B0697BF0C4405", 8),
+        # Phase ST-3d (was 24D36E4E..., 3 records): + import jump_transaction, import jump_wire
+        "<module>": ("slice", "EDC95B2B14DA2329CBCB0F76C6C34119AB82D46AB8AD4D4C18679B39719BB8BD", 5),
+        # Phase ST-3d (was AF89937B..., 10 records): + self.jump_expectation = None
+        "Overlay.__init__": ("slice", "7240852E3BE539E9A0B5493057188075368BFDEB189D816B33E2BB3EFE661146", 11),
+        # Phase ST-3d (was 741D5BA4...): the JUMP_COMPLETE branch hands the body to _note_jump_complete; the settlement call is guarded (an exception releases the open jump)
+        "Overlay.read_udp_data": ("slice", "D227ABC32AAD5F93FF1011ADC97BB444EBE7C1501D8D21F8282C1C78A9825B1C", 5),
+        # Phase ST-3d (was 8DF01409..., 5 records): a scenario change closes the open transaction and releases is_official_jumping
+        "Overlay.apply_telemetry_text": ("slice", "064FF5BEC97451E8241DC9AC170C08E7A7E08F9F281C7CE702440DBE03508EA0", 7),
+        # Phase ST-3d (was 84E656C2..., 8 records): the start request comes from _scoring_start_plan (refused before anything changes) and the start opens its transaction
+        "Overlay.handle_menu_enter": ("slice", "5943298E8353AA2DEED72DEAC4BD898BADCAF87D828F8A1313DDB6DAA7559022", 3),
         "Overlay._detect_and_release_fast_forward": ("slice", "6E15C0D15405AC3D2025E2EBD501EF36EC8D1D916D56CDA25E9E1D5E7B9092E7", 1),
         "Overlay._advance_scoring_clock_and_score": ("slice", "781559CFFF388EE116614B528F018826B5A1FB0A2280C3D3CA72700C5F23779C", 2),
-        "run_managed": ("slice", "CC1590768A62BA11C05F021909315D103B5DC2A4C47AA8F4ECC36EA4F7B6D4B7", 6),
+        # Phase ST-3d (was CC159076..., 6 records): the shutdown closes an open transaction (before the client is closed)
+        "run_managed": ("slice", "7C861C443A860D2869DA2D944AC8CA542422988E0AB2E761607AE985950C5674", 7),
     },
     "managed_input.py": {
-        "_cancel_outstanding_jump": ("whole", "A6BBA9887F4AE34FC40975FB1506710883D6FC5E355EF289CF785699D9F2E1B1", 1),
+        # Phase ST-3d (was A6BBA988...): the open transaction ends with the discarded session / generation, before the client's request is cancelled
+        "_cancel_outstanding_jump": ("whole", "3D6C7F18C90C8B6A9820107F1705C69DB615CC4C9A9973EADA0A1C0756E30F8B", 1),
         "scoring_input_blockers": ("whole", "DE0DDABD18416E1B8EBA119DBD79A07D7B3AFEC879513541DDF5F64738516664", 1),
-        "<module>": ("slice", "8A72CB7864A02D5E368C839D20EA55846BBB8072975E619BB01BD82FF0729698", 3),
-        "generation_defaults": ("slice", "EA70319D1221C33861F074C2DCB20B4735F774FF0C3C4DF70B48CA43CB7A329D", 9),
-        "discard_scoring_session": ("slice", "35BF78F12127D75E2FC7A20206133FAAA3069B9E92B463192A5148ECD489AE3E", 2),
+        # Phase ST-3d (was 8A72CB78..., 3 records): + the cap of the final line jump-settled in EVENT_LINE_CAPS
+        "<module>": ("slice", "4F5100EFED10D7262A62F471F4D3B0E0FCAA53318719AA7963CD834F7FC47B7C", 4),
+        # Phase ST-3d (was EA70319D..., 9 records): + jump_expectation: None
+        "generation_defaults": ("slice", "30BDFEF6909510B1AEA0AF833832BBB61E72E30D484777E81BD2C3527D2B35A6", 10),
+        # Phase ST-3d (was 35BF78F1..., 2 records): + overlay.jump_expectation reset
+        "discard_scoring_session": ("slice", "D8C47223B603D0E6BB275C4637729784D8DE14865988DF0B6DA8E306F8A180DE", 3),
         "discard_generation_state": ("slice", "2E51777AEEE6233FA907BBD73C25D0BD02D060A766149F6C2188CF5BA7133950", 2),
         "ManagedInputController._observe": ("slice", "8275B1616287102B6C0054FF447B9A3F4216F1D74EEB652ED56168FC57093781", 1),
     },
@@ -139,7 +162,12 @@ REGION_PINS = {
 # Phase ST-2b (an INTENDED change of the jump contract, owner decision OD-B6): execute_retry takes the station from the saved StationIndex (verified by station_identity), refuses what does not
 # verify, keeps the history whole and leaves a pending retry. It is the one region of scoring_logic.py that is no longer compared with the blob of the formal LJX-1 commit; its new
 # canonical AST is pinned here (begin_official_jump, the other WHOLE region, and every SLICE region are still compared with the blob).
-ST2B_EXECUTE_RETRY_PIN = ("whole", "9226392088B12DEF33099036F18948D627FDEA0F6F03BBB61D0B8820A44359EA", 1)
+ST2B_EXECUTE_RETRY_PIN = ("whole", "9226392088B12DEF33099036F18948D627FDEA0F6F03BBB61D0B8820A44359EA", 1)          # (history: the value of ST-2b)
+
+# Phase ST-3d (an INTENDED change of the jump contract): execute_retry builds its request BEFORE it changes anything, by the one builder of the Jump wire v2 (jump_transaction.build_jump_request),
+# refuses a request the wire can not carry, and opens the transaction after the send. Its new canonical AST is pinned here; begin_official_jump, the other WHOLE region and every SLICE region are
+# still compared with the blob of the formal LJX-1 commit (they are identical).
+ST3D_EXECUTE_RETRY_PIN = ("whole", "E5DB2D56A0FC1A4894DD4FBDA7D7CFF63BEB4EB78E74D30FE70A860325890105", 1)
 
 STATIONS = [0.0, 1000.0, 2000.0, 3000.0]
 SCORING_TOKENS = ["time", "speed", "loc", "station", "door", "handle", "brake_type", "brake_cab", "prates"]
@@ -217,7 +245,7 @@ class A2_TheLegacyJumpContractRegionsOfThePythonSide(unittest.TestCase):
         now, now_undeclared = regions.region_digests(read_source("scoring_logic.py"), spec["whole"], spec["sliced"])
         self.assertEqual(then_undeclared, [])
         self.assertTrue(all(value is not None for value in then.values()), then)
-        self.assertEqual(now.pop("execute_retry"), ST2B_EXECUTE_RETRY_PIN)           # Phase ST-2b: the intended change, pinned on its own
+        self.assertEqual(now.pop("execute_retry"), ST3D_EXECUTE_RETRY_PIN)           # Phase ST-2b / ST-3d: the intended changes, pinned on their own (the ST-2b value stays above as history)
         then.pop("execute_retry")
         self.assertEqual(now, then)
         self.assertEqual(now_undeclared, [])

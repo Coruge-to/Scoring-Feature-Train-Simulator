@@ -34,6 +34,8 @@ import pause_recovery
 import telemetry_contract
 import station_index_contract
 import station_identity
+import jump_transaction
+import jump_wire
 import telemetry_dataplane_receiver
 import current_jump_client
 import telemetry_gate
@@ -134,9 +136,10 @@ class Overlay(QWidget):
         self.expected_target_loc = -1.0
         self.expected_target_time = -1
         self.pending_jump_complete = None
+        self.jump_expectation = None   # Phase ST-3d: what the open official jump asked for (jump_transaction.JumpExpectation); judged against its completion, closed by _finish_jump_transaction
 
         self.save_data = []
-        self.retry_pending = None   # Phase ST-2b: the retry that waits for its jump (station_identity.RetryPending); the history is cut by ST-3 only
+        self.retry_pending = None   # Phase ST-2b: the retry that waits for its jump (station_identity.RetryPending); Phase ST-3d: the history is cut by the success branch of _settle_jump_complete only
         self.menu_state = 0   
         self.menu_cursor = 0  
         self.menu_scroll = 0  
@@ -440,16 +443,7 @@ class Overlay(QWidget):
                         self.meta_vehicle = parts[3]
                         self.meta_author = parts[4]
                 elif text.startswith("JUMP_COMPLETE:"):
-                    complete_parts = text.split(':')
-
-                    if len(complete_parts) >= 6 and self._jump_complete_acceptable():
-                        self.pending_jump_complete = {
-                            "type": complete_parts[1],
-                            "station_index": int(complete_parts[2]),
-                            "location": float(complete_parts[3]),
-                            "time": int(complete_parts[4]),
-                            "jump_count": int(complete_parts[5])
-                        }
+                    self._note_jump_complete(text)
 
                 elif text.startswith("STATUS:LOADED"):
                     status = text.split(':')[-1].strip()
@@ -476,42 +470,113 @@ class Overlay(QWidget):
             self._station_identity_sync()                    # Phase ST-2a: AFTER the line is applied (and observed) and the station list is adopted, never before
 
         self._poll_jump_client()
-        self._settle_jump_complete()
+        try:
+            self._settle_jump_complete()
+        except Exception:
+            self._abort_unreleased_official_jump(jump_transaction.SETTLE_INTERNAL)      # Phase ST-3d: whatever goes wrong inside the settlement, the open jump is released (the client has finished the request: no timeout would)
 
-    def _jump_complete_acceptable(self):
-        """PID-D6: may the JUMP_COMPLETE that was just unwrapped release the official jump? Normal mode (no DataPlane receiver): yes, as always. Managed
-        caller mode: only when its type 5 envelope echoes the RequestId of THE outstanding jump command; a duplicate, stale, unknown or unsolicited
-        completion is dropped (counted and logged once by the client) and changes nothing."""
-        receiver = self.dataplane_receiver
-        if receiver is None:
-            return not self.dataplane_strict
-        client = self.jump_client
-        if client is None:
-            return False
-        return client.complete(receiver.last_request_id) == current_jump_client.R_OK
+    def _note_jump_complete(self, text):
+        """Phase ST-3d, TRANSPORT only: a JUMP_COMPLETE body arrived. Managed caller mode: its type 5 envelope has to echo the RequestId of THE outstanding jump command (the client says
+        ok / duplicate / stale / unknown / invalid); a completion of any other kind is dropped, noted on the open transaction (received, last word) and changes nothing else. A completion that the
+        transport accepts is handed to the settlement WHATEVER it says: whether it proves the request is decided by _settle_jump_complete and never by the timeout. Normal mode (no DataPlane
+        receiver): the plain text is accepted as it always was, with no RequestId (nothing is proven by it). Never raises."""
+        request_id = None
+        try:
+            receiver = self.dataplane_receiver
+            if receiver is not None:
+                client = self.jump_client
+                if client is None:
+                    return
+                result = client.complete(receiver.last_request_id)
+                if result != current_jump_client.R_OK:
+                    self.jump_expectation = jump_transaction.with_completion_seen(self.jump_expectation, jump_transaction.transport_word(result))
+                    return
+                request_id = bytes(receiver.last_request_id)
+            elif self.dataplane_strict:
+                return
+            self.jump_expectation = jump_transaction.with_completion_seen(self.jump_expectation, jump_transaction.LAST_OK)
+            self.pending_jump_complete = jump_transaction.CompletionEvent(request_id, text)
+        except Exception:
+            if getattr(self, 'jump_expectation', None) is not None:
+                self.pending_jump_complete = jump_transaction.CompletionEvent(request_id, None)      # whatever went wrong, the settlement takes the transaction to a failure
 
     def _poll_jump_client(self):
         """PID-D6: lets an outstanding jump request notice a lost completion (timeout) or a withdrawn endpoint, and aborts the scoring session whose official jump
-        was left unreleased (refused send, timeout, endpoint gone). No effect in normal mode."""
+        was left unreleased (refused send, timeout, endpoint gone). Phase ST-3d: the normal mode has no client; its open transaction is released at the same deadline."""
         client = getattr(self, 'jump_client', None)
         if client is not None:
             client.poll()
             reason = client.take_unreleased()
             if reason is not None:
                 self._abort_unreleased_official_jump(reason)
+            return
+        expectation = self.jump_expectation
+        if expectation is not None and expectation.request_id is None and time.monotonic() - expectation.sent_at >= current_jump_client.OUTSTANDING_TIMEOUT_S:
+            self._abort_unreleased_official_jump(jump_transaction.SETTLE_TIMEOUT)
 
-    def _abort_unreleased_official_jump(self, reason):
+    def _open_jump_transaction(self, purpose, planned, request_id):
+        """Phase ST-3d: the request `planned` was handed to send_jump_command and it answered `request_id` (None: nothing was sent). The transaction is open from here until
+        _settle_jump_complete (success), _abort_unreleased_official_jump (failure) or a reset (_jump_transaction_finish) closes it. A managed send that the client refused keeps a
+        RequestId of zeros (never issued): such a transaction can only fail, and its final line still says what was asked."""
+        managed = getattr(self, 'dataplane_strict', False) or getattr(self, 'jump_client', None) is not None
+        if request_id is None and managed:
+            request_id = bytes(16)
+        stale = self.jump_expectation
+        if stale is not None:
+            self._emit_jump_settled(stale, jump_transaction.SETTLE_CLEANUP, None, None, None)      # an older transaction that this one replaces says how it ended
+        self.jump_expectation = jump_transaction.make_expectation(purpose, planned, request_id, time.monotonic())
+
+    def _emit_jump_settled(self, expectation, end, selected, actual, history):
+        """The ONE final diagnostic line of a transaction (jump_transaction.settled_event): once per transaction, never per Tick; the normal mode installs no sink and writes nothing."""
+        try:
+            event, fields = jump_transaction.settled_event(expectation, end, time.monotonic(), selected, actual, history, getattr(self, 'total_retry_count', None))
+            self._emit_input_event(event, **fields)
+        except Exception:
+            pass
+
+    def _finish_jump_transaction(self, end, selected=None, actual=None, history=None):
+        """Phase ST-3d: closes the books of the open transaction - the pending retry and the expectation are released and its final diagnostic line is written, once. Idempotent: with
+        nothing open it does nothing and says nothing. Returns True when something was closed. (Not an entrance of its own: _settle_jump_complete, _abort_unreleased_official_jump and
+        _jump_transaction_finish are the three callers.)"""
+        expectation = self.jump_expectation
+        pending = self.retry_pending
+        if expectation is None and pending is None:
+            return False
+        self.retry_pending = None
+        self.jump_expectation = None
+        if history is None:
+            size = len(getattr(self, 'save_data', None) or [])
+            history = (size, size)
+        self._emit_jump_settled(expectation, end, selected, actual, history)
+        return True
+
+    def _jump_transaction_finish(self, reason):
+        """Phase ST-3d: a RESET ends the open transaction (the scoring session ends, a new scenario generation starts, the scenario changes, the application shuts down): nothing waits for
+        its completion any more. The pending retry and the expectation are released and the transaction says how it ended; the scoring state itself is the caller's reset (no abort here)."""
+        self._finish_jump_transaction(jump_transaction.release_word(reason))
+        self.pending_jump_complete = None
+
+    def _abort_unreleased_official_jump(self, reason, verdict=None):
         """PID-D6 timeout contract (fail closed, no new state machine): an official jump that can no longer be completed ends THAT scoring session through the
         same path as the existing illegal-jump abort (scoring_logic: scoring off, warning popups, jump_lock, no result fixed or shown). Nothing is guessed from the
         telemetry and is_official_jumping is never released on its own (that would resume scoring after an unfinished jump); a completion that arrives later is
-        stale (the request is cancelled here). The next scoring start is a normal start."""
+        stale (the request is cancelled here). The next scoring start is a normal start.
+
+        Phase ST-3d: this is also the one exit of every FAILED settlement (a completion that does not prove the request: `verdict` says which check failed): the history is kept as it is,
+        the pending retry and the expectation are released, the retry count is not touched, and the transaction says how it ended (jump-settled), once."""
+        word = jump_transaction.release_word(reason)
+        selected = actual = None
+        if verdict is not None:
+            selected, actual = verdict.selected_idx, verdict.actual_location
         if not getattr(self, 'is_official_jumping', False):
-            return                                              # no scoring jump is waiting for this client
+            self._finish_jump_transaction(word, selected, actual)   # a stale pending retry / expectation: nothing waits for this client any more, but its books are closed
+            return
         client = self.jump_client
         if client is not None:
             client.cancel("scoring-aborted")
-        # no log line of its own: the client already logged why ([JUMP] event=timeout / send-refused / request-cancelled) and the input controller reports the
-        # scoring abort ([MANAGED] event=scoring-abort reason=jump), so the trail is complete and the write_desktop_log call sites stay as pinned
+        # the client already logged why ([JUMP] event=timeout / send-refused / request-cancelled) and the input controller reports the scoring abort
+        # ([MANAGED] event=scoring-abort reason=jump); the final line of the transaction (jump-settled) is the Python side of the same trail
+        self._finish_jump_transaction(word, selected, actual)
         reset_transient_scoring_state(self)
         self.pending_jump_complete = None
         if getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False):
@@ -526,7 +591,7 @@ class Overlay(QWidget):
         return self.udp_socket.writeDatagram(data, QHostAddress.SpecialAddress.LocalHost, port)
 
     def send_jump_command(self, command):
-        """The official jump command (JUMP_STA_TIME / JUMP_LOC_TIME) to the sender plugin. Managed caller mode: Envelope v1 + RequestId to the jump endpoint
+        """The official jump command (the v2 text of jump_transaction.build_jump_request) to the sender plugin. Managed caller mode: Envelope v1 + RequestId to the jump endpoint
         that the plugin publishes (current_jump_client); there is NO plain fixed-port fallback, so a refused send leaves the official jump unreleased and is
         reported by the client. Normal mode: the plain text to the fixed jump port, unchanged."""
         if getattr(self, 'dataplane_strict', False) or getattr(self, 'jump_client', None) is not None:
@@ -670,6 +735,43 @@ class Overlay(QWidget):
             snapshot = snapshot._replace(reason=current.reason)
         return snapshot
 
+    def _scoring_start_plan(self, snapshot):
+        """Phase ST-3d: (start position, station name, target time, PlannedJump, refusal reason) of the scoring start at the VERIFIED station `snapshot` (setting_start_idx). The request is
+        written by the one builder (jump_transaction.build_jump_request, the v2 wire); a request that can not be written is no request (PlannedJump None, the reason names why) and the
+        start is refused before anything is changed. Nothing here changes the state."""
+        st = self.station_list[self.setting_start_idx]
+        start_loc = st.get("location", 0.0)
+        start_sta_name = st.get("name", "不明な駅")
+
+        raw_arr = st.get("raw_arr", -1)
+        raw_dep = st.get("raw_dep", -1)
+        def_t = st.get("def_time", -1)
+        stop_t = st.get("stop_time", 15000)
+
+        calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1
+
+        if self.setting_start_idx == 0:
+            # 始発駅では作者定義時刻を優先する
+            if def_t >= 0: target_time_ms = def_t
+            elif calc_t >= 0: target_time_ms = calc_t
+            else: target_time_ms = raw_arr if raw_arr >= 0 else -1
+        else:
+            # 途中駅：def_tとcalc_tの「早い方(min)」
+            cands = [t for t in [def_t, calc_t] if t >= 0]
+            if cands: target_time_ms = min(cands)
+            else: target_time_ms = raw_arr if raw_arr >= 0 else -1
+
+        if target_time_ms < 0: target_time_ms = max(0, getattr(self, 'bve_time_ms', 0))
+
+        # 途中駅で作者定義時刻が計算時刻より遅い場合は、不要な開扉待ちを避けるためLOC方式へ切り替える
+        use_loc_command = False
+        if self.setting_start_idx > 0 and def_t >= 0 and def_t > target_time_ms:
+            use_loc_command = True
+
+        command = jump_wire.KIND_LOC if use_loc_command else jump_wire.KIND_STA
+        planned, reason = jump_transaction.build_jump_request(command, self.setting_start_idx, target_time_ms, snapshot.scope, start_loc)
+        return start_loc, start_sta_name, target_time_ms, planned, reason
+
     def _refuse_scoring_start(self, snapshot, is_bve_advancing):
         """The identity of the start station is not established: no scoring, no jump, no checkpoint. One warning on the HUD, one diagnostic line, the menu closes."""
         self._station_identity_note("scoring-start-refused", why=snapshot.reason, idx=snapshot.station_index, src="identity",
@@ -707,6 +809,10 @@ class Overlay(QWidget):
                                 # 前シナリオのロールバック通知を破棄
                                 self.rollback_msg = ""
                                 self.rollback_msg_timer = 0.0
+
+                                # Phase ST-3d: the official jump of the previous scenario ends with it (nothing waits for its completion any more)
+                                self._jump_transaction_finish(jump_transaction.SETTLE_SCENARIO)
+                                self.is_official_jumping = False
 
                                 reset_score_accumulation(self)
                                 self.save_data.clear()
@@ -903,70 +1009,77 @@ class Overlay(QWidget):
 
             self._station_index_observe(latest_telemetry)
 
+    def _log_rejected_completion(self, reason):
+        """The normal mode installs no diagnostic sink: a completion that proves nothing is still written to the Desktop log, as it always was (a fixed word, nothing of the body)."""
+        if getattr(self, 'input_event_sink', None) is None:
+            write_desktop_log("[JUMP COMPLETE REJECTED]\n  - reason: %s\n" % jump_transaction.release_word(reason))
+
     def _settle_jump_complete(self):
-        if self.pending_jump_complete is not None:
-            complete = self.pending_jump_complete
-            self.pending_jump_complete = None
+        """Phase ST-3d: the SETTLEMENT of a completion that the transport accepted (_note_jump_complete). It always ends in one of two places: the success below, or
+        _abort_unreleased_official_jump (every failed check); nothing is left to a timeout. Success is the AND of jump_transaction.judge_completion. The order of the success:
+        judge -> the history is cut to the chosen checkpoint (retry, RequestId proven: station_identity.resolve_retry_history, the ONE call site of the application, builds a NEW list)
+        -> the pending retry and the expectation are released -> is_official_jumping falls -> the scoring goes on. The arrival and the checkpoint logic run in the next
+        update step (never inside this one), so the first arrival after a retry is always judged against the cut history."""
+        event = self.pending_jump_complete
+        if event is None:
+            return
+        self.pending_jump_complete = None
+        expectation = self.jump_expectation
+        if expectation is None:
+            self._log_rejected_completion(jump_transaction.SETTLE_UNSOLICITED)
+            return
+        completion = None
+        if isinstance(event.text, str):
+            completion, _why = jump_wire.parse_completion(event.text)
+        station_list = getattr(self, 'station_list', None)
+        listed = None
+        try:
+            if station_identity._is_int(expectation.station_index) and 0 <= expectation.station_index < len(station_list):
+                listed = station_list[expectation.station_index]["location"]
+        except Exception:
+            listed = None
+        # the world of the request: the scenario and the station list that is ADOPTED now (its own list id; the published identity bve_list_id is not read here: it may be unusable for a moment
+        # after a jump while the list has not changed, and that is no reason to fail a jump that proves its request)
+        list_id = getattr(station_list, 'list_id', None) or getattr(self, 'bve_list_id', "")
+        scope = station_identity.scope_of(getattr(self, 'current_scenario_id', -1), list_id, station_list)
+        verdict = jump_transaction.judge_completion(expectation, completion, event.request_id, scope, listed)
+        if not verdict.ok:
+            self._log_rejected_completion(verdict.reason)
+            self._abort_unreleased_official_jump(verdict.reason, verdict)
+            return
+        history_before = len(self.save_data)
+        if verdict.formal and expectation.purpose == jump_transaction.JUMP_RETRY:
+            history = station_identity.resolve_retry_history(self.save_data, self.retry_pending, getattr(self, 'current_scenario_id', -1), list_id, station_list)
+            if history is None:
+                self._abort_unreleased_official_jump(jump_transaction.SETTLE_HISTORY, verdict)      # the history is no longer the one of the request: it is not cut, the jump is released
+                return
+            self.save_data = history
+        self._finish_jump_transaction(verdict.reason, verdict.selected_idx, verdict.actual_location, (history_before, len(self.save_data)))
 
-            completed_location = complete["location"]
-            completed_time = complete["time"]
-            completed_jump_count = complete["jump_count"]
+        completed_location = verdict.actual_location
+        completed_jump_count = completion.jump_count
 
-            expected_location = getattr(
-                self,
-                'expected_target_loc',
-                -1.0
-            )
+        self.is_official_jumping = False
 
-            location_matches = (
-                expected_location >= 0.0
-                and abs(
-                    completed_location
-                    - expected_location
-                ) < 0.01
-            )
+        # 完了通知に含まれる公式ジャンプカウントを吸収
+        self.bve_jump_count = completed_jump_count
+        self.last_jump_count = completed_jump_count
 
-            if (
-                getattr(self, 'is_official_jumping', False)
-                and location_matches
-            ):
-                self.is_official_jumping = False
+        # 最新テレメトリーをジャンプ後の新しい基準状態にする
+        self.prev_door = getattr(self, 'bve_door', 0)
+        self.prev_doordir = getattr(self, 'bve_doordir', 1)
+        self.prev_next_loc = getattr(self, 'bve_next_loc', -1.0)
+        self.prev_is_pass = getattr(self, 'bve_is_pass', 0)
+        self.prev_is_timing = getattr(self, 'bve_is_timing', 0)
+        self.prev_term = getattr(self, 'bve_term', 0)
 
-                # 完了通知に含まれる公式ジャンプカウントを吸収
-                self.bve_jump_count = completed_jump_count
-                self.last_jump_count = completed_jump_count
+        # ブレーキ遷移判定もジャンプ後の実ノッチへ同期する
+        self.hb_prev_notch = self.bve_brk_notch
 
-                # 最新テレメトリーをジャンプ後の新しい基準状態にする
-                self.prev_door = getattr(self, 'bve_door', 0)
-                self.prev_doordir = getattr(self, 'bve_doordir', 1)
-                self.prev_next_loc = getattr(self, 'bve_next_loc', -1.0)
-                self.prev_is_pass = getattr(self, 'bve_is_pass', 0)
-                self.prev_is_timing = getattr(self, 'bve_is_timing', 0)
-                self.prev_term = getattr(self, 'bve_term', 0)
+        self.door_open_loc = completed_location
+        self.roll_penalty_count = 0
+        self.roll_was_moving = False
 
-                # ブレーキ遷移判定もジャンプ後の実ノッチへ同期する
-                self.hb_prev_notch = self.bve_brk_notch
-
-                self.door_open_loc = completed_location
-                self.roll_penalty_count = 0
-                self.roll_was_moving = False
-
-            else:
-                write_desktop_log(
-                    "[JUMP COMPLETE REJECTED]\n"
-                    f"  - type: {complete['type']}\n"
-                    f"  - completed_location: {completed_location}\n"
-                    f"  - expected_location: {expected_location}\n"
-                    f"  - completed_time: {completed_time}\n"
-                    f"  - expected_time: "
-                    f"{getattr(self, 'expected_target_time', -1)}\n"
-                    f"  - telemetry_location: {self.bve_location}\n"
-                    f"  - telemetry_time: {self.bve_time_ms}\n"
-                    f"  - location_matches: {location_matches}\n"
-                    f"  - is_official_jumping: "
-                    f"{getattr(self, 'is_official_jumping', False)}\n"
-                )
-            
     def is_station_timing(self, sta_idx):
         if sta_idx == self.setting_start_idx:
             return False 
@@ -1635,6 +1748,11 @@ class Overlay(QWidget):
                 if not start_identity.valid:
                     self._refuse_scoring_start(start_identity, is_bve_advancing)
                     return
+                # Phase ST-3d: the request of the start is built (and refused if it can not be written) BEFORE anything of the scoring is changed
+                start_loc, start_sta_name, target_time_ms, start_request, start_refusal = self._scoring_start_plan(start_identity)
+                if start_request is None:
+                    self._refuse_scoring_start(start_identity._replace(valid=False, reason=start_refusal), is_bve_advancing)
+                    return
                 self.is_scoring_mode = True
                 reset_result_display_state(self)
                 reset_score_accumulation(self)
@@ -1654,46 +1772,6 @@ class Overlay(QWidget):
                 self.has_departed = False
                 reset_station_evaluation_state(self)
 
-                start_loc = 0.0
-                start_sta_name = "不明な駅"
-                target_time_ms = -1
-                retry_cmd = ""
-                
-                if getattr(self, 'station_list', []) and 0 <= getattr(self, 'setting_start_idx', 0) < len(getattr(self, 'station_list', [])):
-                    st = self.station_list[self.setting_start_idx]
-                    start_loc = st.get("location", 0.0)
-                    start_sta_name = st.get("name", "不明な駅")
-                    
-                    raw_arr = st.get("raw_arr", -1)
-                    raw_dep = st.get("raw_dep", -1)
-                    def_t = st.get("def_time", -1)
-                    stop_t = st.get("stop_time", 15000)
-                    
-                    calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1
-                    
-                    if self.setting_start_idx == 0:
-                        # 始発駅では作者定義時刻を優先する
-                        if def_t >= 0: target_time_ms = def_t
-                        elif calc_t >= 0: target_time_ms = calc_t
-                        else: target_time_ms = raw_arr if raw_arr >= 0 else -1
-                    else:
-                        # 途中駅：def_tとcalc_tの「早い方(min)」
-                        cands = [t for t in [def_t, calc_t] if t >= 0]
-                        if cands: target_time_ms = min(cands)
-                        else: target_time_ms = raw_arr if raw_arr >= 0 else -1
-
-                    if target_time_ms < 0: target_time_ms = max(0, getattr(self, 'bve_time_ms', 0))
-
-                    # 途中駅で作者定義時刻が計算時刻より遅い場合は、不要な開扉待ちを避けるためLOC方式へ切り替える
-                    use_legacy_jump = False
-                    if self.setting_start_idx > 0 and def_t >= 0 and def_t > target_time_ms:
-                        use_legacy_jump = True
-
-                    if use_legacy_jump:
-                        retry_cmd = f"JUMP_LOC_TIME:{start_loc}:{target_time_ms}"
-                    else:
-                        retry_cmd = f"JUMP_STA_TIME:{self.setting_start_idx}:{target_time_ms}"
-              
                 begin_official_jump(self, start_loc, target_time_ms)
 
                 self.is_bve_loaded = False
@@ -1710,9 +1788,8 @@ class Overlay(QWidget):
                 first_checkpoint.update(station_identity.checkpoint_fields(start_identity))
                 getattr(self, 'save_data', []).append(first_checkpoint)
                 
-                if retry_cmd != "":
-                    write_desktop_log(f"[MENU 6] 送信コマンド: {retry_cmd} / 予想時間: {target_time_ms}")
-                    self.send_jump_command(retry_cmd)
+                write_desktop_log(f"[MENU 6] 送信コマンド: {start_request.text} / 予想時間: {target_time_ms}")
+                self._open_jump_transaction(jump_transaction.JUMP_START, start_request, self.send_jump_command(start_request.text))
                 self.was_advancing_before_menu = True
                 
                 self.toggle_menu(is_bve_advancing)
@@ -2912,6 +2989,12 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
             if finish is not None:
                 try:
                     finish()
+                except Exception:
+                    pass
+            transaction_finish = getattr(overlay, "_jump_transaction_finish", None)     # StationIndex ST-3d: an open official jump says how it ended (shutdown) before its client is closed
+            if transaction_finish is not None:
+                try:
+                    transaction_finish("shutdown")
                 except Exception:
                     pass
             if jump_client is not None:

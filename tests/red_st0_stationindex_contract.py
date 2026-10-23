@@ -75,6 +75,7 @@ MIGRATED_TO = "tests/test_stationindex_supply_st1a.py"       # Phase ST-1A: wher
 MIGRATED_TO_ST2A = "tests/test_stationindex_canon_st2.py"    # Phase ST-2a: where the three contracts that ST-2a turns GREEN (T09 initial checkpoint, T05 start, T04 save) are executed now
 MIGRATED_TO_ST2B = "tests/test_stationindex_canon_st2.py"    # Phase ST-2b: where the eight retry contracts that ST-2b turns GREEN (T08 T03 T04 T05 x2 T06 T09 T23) are executed now
 MIGRATED_TO_ST3B = "tests/test_stationindex_current_st3b.py"    # Phase ST-3b: where the one contract that ST-3b turns GREEN (U01: the Current sender fixes the requested index) is executed now
+MIGRATED_TO_ST3D = "tests/test_stationindex_python_st3d.py"    # Phase ST-3d: where the one contract that ST-3d turns GREEN (T07: a completion that names another station aborts the scoring) is executed now
 SCOPE_SID = 7
 SCOPE_LIST_ID = "A1B2C3D4"
 
@@ -363,7 +364,7 @@ class SaveReds(RedMixin, F1.Base):
 # the completion of a jump (T07)
 # ==============================================================================================================================================
 class CompletionReds(RedMixin, F2.Base):
-    @red("T07", "COMPLETION-INDEX-MISMATCH-ACCEPTED", items=(8,), artifact="JF-1 CURRENT_DANGER_J06 and TARGET_A_J06",
+    @migrated("T07", "COMPLETION-INDEX-MISMATCH-ACCEPTED", MIGRATED_TO_ST3D, items=(8,), artifact="JF-1 CURRENT_DANGER_J06 and TARGET_A_J06",
          note="a JUMP_COMPLETE that names another station index than the request (location matching) aborts the scoring and releases the jump state")
     def test_RED_T07_a_completion_with_another_station_index_aborts_the_scoring(self):
         r, o = self.r, self.o
@@ -530,14 +531,17 @@ class Guards(RedMixin, unittest.TestCase):          # (Phase ST-2b: U13 is a dec
         # Phase ST-3c: the Legacy side now has RequestTarget, so the condition grows in the SAME change (otherwise U13 would turn into an UNEXPECTED-PASS): the Legacy STALIST is no longer marked
         # sent without the sink's acknowledgement (R1-B: legacy_stalist_acked), and the Python side must settle the v2 transaction (python_settles_v2: execute_retry builds its request through
         # the single v2 builder, ST-3d). The GUARD return (and the package-level duty, N-12) is ST-3e0.
+        # Phase ST-3d: the Python side is done (the builder is wired, the completion is settled), so the condition grows ONCE MORE in the same change (otherwise U13 would turn into an
+        # UNEXPECTED-PASS): the package guard that refuses a package of only one half (N-12, tools/Test-PackageGuardST3.ps1) must exist. ST-3e0 adds it and turns this back into a GUARD.
         legacy_session = cs_code(LEGACY_SESSION)
         legacy_stalist_acked = ("ITelemetrySinkAck" in legacy_session and ".TrySend(" in legacy_session
                                 and re.search(r"sink\.Send\(staList\); staListSent = true;", legacy_session) is None)
         python_settles_v2 = any((isinstance(n, ast.Name) and n.id == "build_jump_request") or (isinstance(n, ast.Attribute) and n.attr == "build_jump_request") for n in ast.walk(fn[0]))
-        csharp_fixes_request = csharp_fixes_request_current and csharp_fixes_request_legacy and legacy_stalist_acked and python_settles_v2
+        package_guard_exists = os.path.isfile(os.path.join(PLUGIN, "Handshake", "Tests", "Test-PackageGuardST3.ps1"))
+        csharp_fixes_request = csharp_fixes_request_current and csharp_fixes_request_legacy and legacy_stalist_acked and python_settles_v2 and package_guard_exists
         self.contract(not (python_uses_saved_index and not csharp_fixes_request), "U13", "PYTHON-AHEAD-OF-CSHARP-REQUEST-FIXING",
-                      "Python retries by the saved station_index but the request chain is not complete (Current: %s, Legacy RequestTarget: %s, Legacy STALIST acknowledged: %s, Python v2 settlement: %s - ST-3d missing)"
-                      % (csharp_fixes_request_current, csharp_fixes_request_legacy, legacy_stalist_acked, python_settles_v2))
+                      "Python retries by the saved station_index but the request chain is not complete (Current: %s, Legacy RequestTarget: %s, Legacy STALIST acknowledged: %s, Python v2 settlement: %s, N-12 package guard: %s - ST-3e0 missing)"
+                      % (csharp_fixes_request_current, csharp_fixes_request_legacy, legacy_stalist_acked, python_settles_v2, package_guard_exists))
 
     @guard("T22", items=(), artifact="the vector table is part of the RED validity",
            note="the shared vector table is well formed: unique ids, CRC-32 values equal to the standard library, the verdict words of the audit only")

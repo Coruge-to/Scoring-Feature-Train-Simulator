@@ -939,7 +939,7 @@ class D_TheScoringStart(ContractMixin, F1.Base):
         o = self.o
         R.bind_identity(o)
         self.start_through_the_menu(2)
-        self.assertEqual(self.sent(), ["JUMP_STA_TIME:2:%d" % T0])
+        self.assertEqual(self.sent(), [self.v2("STA", 2, T0)])
         self.assertTrue(o.is_scoring_mode and o.is_official_jumping)
         self.assertEqual(o.expected_target_loc, 2000.0)
         first = o.save_data[0]
@@ -1032,7 +1032,7 @@ class E_Migrated(ContractMixin, F1.Base):
         o = self.o
         bind_scope(o, o.station_list)
         self.start_through_the_menu(2)
-        self.assertEqual(self.sent(), ["JUMP_STA_TIME:2:%d" % T0])                                 # the fixture reached the start of the scoring
+        self.assertEqual(self.sent(), [self.v2("STA", 2, T0)])                                 # the fixture reached the start of the scoring
         first = o.save_data[0]
         self.assertEqual((first["loc"], first["station_name"]), (2000.0, "C"))
         missing = [k for k in CHECKPOINT_FIELDS if k not in first]
@@ -1043,7 +1043,7 @@ class E_Migrated(ContractMixin, F1.Base):
     def test_RED_T05_a_scoring_start_with_an_out_of_range_start_index_is_refused(self):
         bind_scope(self.o, self.o.station_list)
         self.start_through_the_menu(1)                                                              # the control: a valid start index starts the scoring and sends its jump
-        self.assertEqual(self.sent(), ["JUMP_STA_TIME:1:%d" % T0])
+        self.assertEqual(self.sent(), [self.v2("STA", 1, T0)])
         for bad in (9, -1):
             with self.subTest(bad=bad):
                 self.rig.close()
@@ -1089,7 +1089,7 @@ class F_TheCheckpointHistory(ContractMixin, F1.Base):
         o.station_list = abcde()
         R.bind_identity(o, arr_idx=-1, tgt_idx=-1)
         self.start_through_the_menu(0)
-        self.assertEqual(self.sent(), ["JUMP_STA_TIME:0:%d" % T0])
+        self.assertEqual(self.sent(), [self.v2("STA", 0, T0)])
         history = o.save_data
         start = history[0]
         start_copy = dict(start)
@@ -1331,7 +1331,7 @@ class RetryBase(ContractMixin, F1.Base):
     def control(self, position=1):
         """The unchanged fixture is accepted by the product (a refusal test is only a refusal test when the same fixture without the fault is retried)."""
         result, unchanged, cmds = self.run_retry(position)
-        self.assertEqual(cmds, ["JUMP_STA_TIME:%d:%d" % (position, T0 + 60000 * position)])
+        self.assertEqual(cmds, [self.v2("STA", position, T0 + 60000 * position)])
         self.reset()
 
     def refusal(self, mutate, reason, tid, code, position=1):
@@ -1373,7 +1373,7 @@ class H_TheRetry(RetryBase):
         self.reset()
         self.hist[1]["station_location"] = 1000.01                                               # exactly the tolerance: still the same station
         result = self.S.execute_retry(self.o, 1, True)
-        self.assertEqual(self.sent(), ["JUMP_STA_TIME:1:%d" % (T0 + 60000)])
+        self.assertEqual(self.sent(), [self.v2("STA", 1, T0 + 60000)])
         if result is not None:                                                                   # (the product of ST-2a returns nothing)
             self.assertTrue(result.accepted)
 
@@ -1450,7 +1450,7 @@ class H_TheRetry(RetryBase):
         self.assertEqual([c["station_name"] for c in saves], ["A", "B1", "B2"])                  # (ST-2a: both arrivals have their own checkpoint)
         self.assertEqual([c["station_index"] for c in saves], [0, 1, 2])
         self.confirm(2)
-        want = ["JUMP_STA_TIME:2:%d" % saves[2]["time_ms"]]
+        want = [self.v2("STA", 2, saves[2]["time_ms"])]
         self.contract(self.sent() == want, "N-10", "SAVE-THEN-RETRY-CHAIN-SAME-POSITION", "sent %r, expected %r (B1 and B2 are different stations)" % (self.sent(), want))
 
 
@@ -1475,7 +1475,7 @@ class I_ThePendingRetry(RetryBase):
                 ok = (p is not None and p.selected_save_position == 1 and p.selected_station_index == 1 and tuple(p.selected_scope) == (SID, LID, 5) and p.checkpoint is self.hist[1] and
                       p.request_id == rid and p.scenario_id == SID and p.original_history_length == 4 and p.state == "sent")
                 self.contract(ok, "N-13", "RETRY-REQUEST-CUTS-THE-HISTORY", "pending retry %r" % (p,))
-                self.assertEqual(self.sent(), ["JUMP_STA_TIME:1:%d" % (T0 + 60000)])
+                self.assertEqual(self.sent(), [self.v2("STA", 1, T0 + 60000)])
 
     # -- N-14 ---------------------------------------------------------------------------------------------------------------------------------
     @n2b_red("N-14", "RETRY-WHILE-PENDING-NOT-REFUSED", "while a retry is pending a second one is refused; once the jump is over the stale pending is simply replaced")
@@ -1492,7 +1492,7 @@ class I_ThePendingRetry(RetryBase):
         result, unchanged, cmds = self.run_retry(2)
         self.assertTrue(result.accepted)
         self.assertEqual(o.retry_pending.selected_save_position, 2)
-        self.assertEqual(self.sent(), first + ["JUMP_STA_TIME:2:%d" % (T0 + 120000)])
+        self.assertEqual(self.sent(), first + [self.v2("STA", 2, T0 + 120000)])
 
     # -- N-15 ---------------------------------------------------------------------------------------------------------------------------------
     @n2b_red("N-15", "PENDING-TRUNCATE-RESOLUTION-ABSENT", "the cut of the history after a matching completion is a pure function of (history, pending, current scope); ST-2b only fixes it, ST-3 wires it")
@@ -1646,7 +1646,7 @@ class L_MigratedRetry(ContractMixin, F1.Base):
         bind_scope(o, stations)
         saves = [contract_cp(stations, 0, 0.0, T0, "A", role="scoring_start"), contract_cp(stations, 1, 1000.0, T0 + 60000, "B", details=F1.ZERO)]
         cmds = self.retry(1, saves, stations)
-        self.assertEqual(cmds, ["JUMP_STA_TIME:1:%d" % (T0 + 60000)])
+        self.assertEqual(cmds, [self.v2("STA", 1, T0 + 60000)])
         self.events.clear()
         o.is_official_jumping = False
 
@@ -1658,7 +1658,7 @@ class L_MigratedRetry(ContractMixin, F1.Base):
         saved = contract_cp(stations, 2, 1500.0, T0 + 120000, "C", details=F1.ZERO)                     # 500 m from B and from C: a 100 m search finds nothing
         saves = [contract_cp(stations, 0, 0.0, T0, "A", role="scoring_start"), contract_cp(stations, 1, 1000.0, T0 + 60000, "B", details=F1.ZERO), saved]
         cmds = self.retry(2, saves, stations)
-        self.contract(cmds == ["JUMP_STA_TIME:2:%d" % (T0 + 120000)], "T08", "RETRY-DOES-NOT-USE-THE-SAVED-INDEX", "sent %r instead of the saved index 2" % (cmds,))
+        self.contract(cmds == [self.v2("STA", 2, T0 + 120000)], "T08", "RETRY-DOES-NOT-USE-THE-SAVED-INDEX", "sent %r instead of the saved index 2" % (cmds,))
 
     def test_RED_T03_several_stations_within_100_m_keep_the_saved_index(self):
         o = self.o
@@ -1668,7 +1668,7 @@ class L_MigratedRetry(ContractMixin, F1.Base):
         saves = [contract_cp(stations, 0, 0.0, T0, "A", role="scoring_start"), contract_cp(stations, 1, 1000.0, T0 + 1000, "B", details=F1.ZERO),
                  contract_cp(stations, 2, 1050.0, T0 + 60000, "C", details=F1.ZERO)]
         cmds = self.retry(2, saves, stations)
-        self.contract(cmds == ["JUMP_STA_TIME:2:%d" % (T0 + 60000)], "T03", "RETRY-IGNORES-THE-SAVED-INDEX-AMONG-NEIGHBOURS", "sent %r; the saved index is 2 (C), B is 50 m away" % (cmds,))
+        self.contract(cmds == [self.v2("STA", 2, T0 + 60000)], "T03", "RETRY-IGNORES-THE-SAVED-INDEX-AMONG-NEIGHBOURS", "sent %r; the saved index is 2 (C), B is 50 m away" % (cmds,))
 
     def test_RED_T04_a_retry_to_the_second_of_two_same_position_stations_goes_to_the_second(self):
         o = self.o
@@ -1678,7 +1678,7 @@ class L_MigratedRetry(ContractMixin, F1.Base):
         saves = [contract_cp(stations, 0, 0.0, T0, "A", role="scoring_start"), contract_cp(stations, 1, 1000.0, T0 + 1000, "B1", details=F1.ZERO),
                  contract_cp(stations, 2, 1000.0, T0 + 60000, "B2", details=F1.ZERO)]
         cmds = self.retry(2, saves, stations)
-        self.contract(cmds == ["JUMP_STA_TIME:2:%d" % (T0 + 60000)], "T04", "SAME-POSITION-PAIR-NOT-DISTINGUISHED", "sent %r; B1 and B2 are different elements" % (cmds,))
+        self.contract(cmds == [self.v2("STA", 2, T0 + 60000)], "T04", "SAME-POSITION-PAIR-NOT-DISTINGUISHED", "sent %r; B1 and B2 are different elements" % (cmds,))
 
     def refusal_case(self, stations, saved_mutator, tid, code):
         o = self.o
@@ -1727,7 +1727,7 @@ class L_MigratedRetry(ContractMixin, F1.Base):
         initial = contract_cp(stations, 2, 1000.0, T0, "Q", role="scoring_start")
         self.assertEqual((initial["station_index"], initial["station_location"]), (2, 1000.0))
         cmds = self.retry(0, [initial], stations)
-        self.contract(cmds == ["JUMP_STA_TIME:2:%d" % T0] and o.expected_target_loc == 1000.0, "T09", "INITIAL-CHECKPOINT-RETRY-IGNORES-START-INDEX",
+        self.contract(cmds == [self.v2("STA", 2, T0)] and o.expected_target_loc == 1000.0, "T09", "INITIAL-CHECKPOINT-RETRY-IGNORES-START-INDEX",
                       "sent %r, expected location %r (the position search lands on P, index 1)" % (cmds, o.expected_target_loc))
 
     def test_RED_T23_execute_retry_has_no_100_m_position_search(self):
@@ -1941,7 +1941,7 @@ class M_ThePureRetryLayer(unittest.TestCase):
 
 class M2_TheRetryInTheOverlay(RetryBase):
     def test_the_first_checkpoint_and_a_middle_checkpoint_use_the_same_path_and_their_own_saved_index(self):
-        for position, expected_cmd in ((0, "JUMP_STA_TIME:0:%d" % T0), (2, "JUMP_STA_TIME:2:%d" % (T0 + 120000))):
+        for position, expected_cmd in ((0, self.v2("STA", 0, T0)), (2, self.v2("STA", 2, T0 + 120000))):
             with self.subTest(position=position):
                 self.reset()
                 o = self.o
@@ -1959,7 +1959,7 @@ class M2_TheRetryInTheOverlay(RetryBase):
         o.save_data = self.hist + [ck(self.stations, 0, T0 + 999999)]
         result = self.S.execute_retry(o, 4, True)
         self.assertEqual((result.accepted, result.selected_station_index), (True, 0))
-        self.assertEqual(self.sent(), ["JUMP_STA_TIME:0:%d" % (T0 + 999999)])
+        self.assertEqual(self.sent(), [self.v2("STA", 0, T0 + 999999)])
         self.assertTrue(o.is_official_retry)                                                 # (a later position is a retry; only position 0 is the first station)
 
     def test_the_loc_method_condition_is_kept_for_a_middle_station(self):
@@ -1967,7 +1967,7 @@ class M2_TheRetryInTheOverlay(RetryBase):
         self.stations[1].update(def_time=T0 + 100000, raw_dep=T0 + 15000 + 60000)           # defined later than calculated, checkpoint earlier than defined
         self.hist[1]["time_ms"] = T0 + 60000
         self.S.execute_retry(o, 1, True)
-        self.assertEqual(self.sent(), ["JUMP_LOC_TIME:1000.0:%d" % (T0 + 60000)])
+        self.assertEqual(self.sent(), [self.v2("LOC", 1, T0 + 60000)])
 
     def test_the_reasons_of_the_overlay_side(self):
         o = self.o
@@ -2092,7 +2092,7 @@ class M2_TheRetryInTheOverlay(RetryBase):
 
     def test_the_diagnostic_budget_of_the_controller_is_unchanged(self):
         import managed_input
-        self.assertEqual(managed_input.ManagedInputController.EVENT_LINE_CAPS, {"input-hold": 24, "input-pause": 6, "input-resume": 6, "stidx": 24})
+        self.assertEqual(managed_input.ManagedInputController.EVENT_LINE_CAPS, {"input-hold": 24, "input-pause": 6, "input-resume": 6, "stidx": 24, "jump-settled": 24})        # Phase ST-3d: the ONE final line of an official jump transaction
         self.assertEqual((managed_input.ManagedInputController.EVENT_LINE_CAP, managed_input.ManagedInputController.TOTAL_LINE_BUDGET), (10, 70))
 
 

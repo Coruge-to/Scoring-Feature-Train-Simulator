@@ -23,6 +23,8 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import sia_rig as R  # noqa: E402
+import jump_transaction  # noqa: E402
+import jump_wire  # noqa: E402
 
 try:
     import PyQt6.QtWidgets  # noqa: F401
@@ -155,8 +157,10 @@ class A_ScoringState(Base):
         self.assertEqual(len(written), 1)
         data, port = written[0]
         self.assertEqual(port, 54322)
-        self.assertEqual(data, b"JUMP_STA_TIME:0:36000000")
-        self.assertTrue(any(line.startswith("[MENU 6] 送信コマンド: JUMP_STA_TIME:0:36000000") for line in self.log))
+        expected, why = jump_wire.format_request_v2("STA", 0, 36000000, (R.SCOPE_SID, R.SCOPE_LIST_ID, 2), 0.0)       # Phase ST-3d: the Jump wire v2 text (was the three-field legacy text)
+        self.assertIsNone(why)
+        self.assertEqual(data, expected.encode("ascii"))
+        self.assertTrue(any(line.startswith("[MENU 6] 送信コマンド: " + expected) for line in self.log))
 
     def test_the_scoring_start_does_not_check_session_driving_or_telemetry_state(self):
         """CURRENT: the start only needs the menu to be open and a VERIFIED start station. There is no gate on the session / driving / telemetry state (SI-A3 puts the
@@ -1147,6 +1151,20 @@ class F_Jump(Base):
         self.o.is_scoring_mode = True
         self.o.station_list = [R.station("A", 0.0), R.station("B", 1000.0)]
 
+    def open_jump(self):
+        """Phase ST-3d: the official jump of a scoring start is a transaction: the request for station B (index 1), built by the one builder and opened the way the start opens it."""
+        o = self.o
+        o.current_scenario_id, o.bve_list_id = R.SCOPE_SID, R.SCOPE_LIST_ID
+        self.rig.scoring_logic.begin_official_jump(o, 1000.0, 36000000)
+        planned, why = jump_transaction.build_jump_request("STA", 1, 36000000, (R.SCOPE_SID, R.SCOPE_LIST_ID, 2), 1000.0)
+        self.assertIsNone(why)
+        o._open_jump_transaction("start", planned, None)
+
+    def completion(self, location, count=3):
+        text, why = jump_wire.format_completion_v2("STA", 1, location, 36000000, count, (R.SCOPE_SID, R.SCOPE_LIST_ID, 2))
+        self.assertIsNone(why)
+        return text.encode("ascii")
+
     def jump(self, n):
         self.o.bve_jump_count = n
         self.rig.scoring_logic.update_physics_and_scoring(self.o, 100.0, 0.016)
@@ -1217,21 +1235,23 @@ class F_Jump(Base):
     def test_the_official_jump_completion_with_the_expected_location_ends_the_protection(self):
         o = self.o
         self.scoring()
-        self.rig.scoring_logic.begin_official_jump(o, 1000.0, 36000000)
+        self.open_jump()
         self.assertTrue(o.is_official_jumping)
-        o.udp_socket.incoming = [b"JUMP_COMPLETE:STA:1:1000.0:36000000:3"]
+        o.udp_socket.incoming = [self.completion(1000.0)]
         o.read_udp_data()
         self.assertFalse(o.is_official_jumping)
         self.assertEqual((o.bve_jump_count, o.last_jump_count), (3, 3))
         self.assertEqual(o.door_open_loc, 1000.0)
 
-    def test_the_completion_with_another_location_is_rejected_and_logged(self):
+    def test_the_completion_with_another_location_is_rejected_logged_and_aborts_the_scoring(self):
+        """Phase ST-3d: was "rejected and logged" with the jump left on (the official jump stayed on for ever); the settlement releases it with the scoring abort."""
         o = self.o
         self.scoring()
-        self.rig.scoring_logic.begin_official_jump(o, 1000.0, 36000000)
-        o.udp_socket.incoming = [b"JUMP_COMPLETE:STA:1:900.0:36000000:3"]
+        self.open_jump()
+        o.udp_socket.incoming = [self.completion(900.0)]
         o.read_udp_data()
-        self.assertTrue(o.is_official_jumping)
+        self.assertFalse(o.is_official_jumping)
+        self.assertFalse(o.is_scoring_mode)
         self.assertTrue(any(l.startswith("[JUMP COMPLETE REJECTED]") for l in self.log))
 
     def test_a_completion_without_an_official_jump_is_rejected(self):

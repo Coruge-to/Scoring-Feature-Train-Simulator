@@ -38,6 +38,7 @@ try:
 except Exception:  # pragma: no cover
     HAS_QT = False
 
+import jump_wire  # noqa: E402
 import sia_rig as R  # noqa: E402
 
 THIS_FILE = "F1"
@@ -154,6 +155,14 @@ class Base(unittest.TestCase):
     def sent(self):
         return [e[1] for e in self.events if e[0] == "send"]
 
+    def v2(self, kind, index, time_ms):
+        """Phase ST-3d: the Jump wire v2 text that the application writes for station `index` of the station list it holds NOW (its scope: scenario, list id, count; its position),
+        written by the shared codec - the request that used to be the three-field 'JUMP_STA_TIME:<index>:<time>' / 'JUMP_LOC_TIME:<position>:<time>' text."""
+        o = self.o
+        text, why = jump_wire.format_request_v2(kind, index, time_ms, (o.current_scenario_id, o.bve_list_id, len(o.station_list)), o.station_list[index]["location"])
+        self.assertIsNone(why)
+        return text
+
     def retry(self, index, saves, stations=None, adv=True, identity=True):
         o = self.o
         o.save_data = saves
@@ -246,7 +255,7 @@ class R_ExecuteRetry(Base):
         self.assertEqual(len(o.save_data), 2)                 # Phase ST-2b: the request does not cut the history (was 1: ST-3 cuts it after the matching completion)
         self.assertEqual(o.retry_pending.selected_save_position, 0)
         self.assertEqual(o.score, 0)
-        self.assertEqual(cmds, ["JUMP_STA_TIME:0:%d" % T0])
+        self.assertEqual(cmds, [self.v2("STA", 0, T0)])
         self.assertEqual((o.expected_target_loc, o.expected_target_time), (0.0, T0))
         self.assertTrue(o.is_official_jumping)
         self.assertIsNone(o.pending_jump_complete)
@@ -266,7 +275,7 @@ class R_ExecuteRetry(Base):
         # Phase ST-2b: was "the station within 100 m of the check point position"; the output is the same, the reason is the saved StationIndex (no search at all)
         o = self.o
         cmds = self.retry(1, [cp(0.0, T0), with_identity(cp(1004.2, T0 + 60000, score=10, details=ZERO, name="B"), 1, 1000.0)])
-        self.assertEqual(cmds, ["JUMP_STA_TIME:1:%d" % (T0 + 60000)])
+        self.assertEqual(cmds, [self.v2("STA", 1, T0 + 60000)])
         self.assertEqual(o.expected_target_loc, 1000.0)       # the STATION position, not cp["loc"]
 
     @jf0("R05a", "CURRENT")
@@ -274,7 +283,7 @@ class R_ExecuteRetry(Base):
         # Phase ST-2b: was "99.999 m is a candidate" (the 100 m search). The saved StationIndex is the station whatever the stop position was.
         o = self.o
         cmds = self.retry(1, [cp(0.0, T0), with_identity(cp(900.001, T0 + 60000, details=ZERO), 1, 1000.0)])
-        self.assertEqual(cmds, ["JUMP_STA_TIME:1:%d" % (T0 + 60000)])
+        self.assertEqual(cmds, [self.v2("STA", 1, T0 + 60000)])
         self.assertEqual(o.expected_target_loc, 1000.0)
 
     @jf0("R05b", "CURRENT")
@@ -284,7 +293,7 @@ class R_ExecuteRetry(Base):
             with self.subTest(loc=loc):
                 self.events.clear()
                 cmds = self.retry(1, [cp(0.0, T0), with_identity(cp(loc, T0 + 60000, details=ZERO), 1, 1000.0)])
-                self.assertEqual(cmds, ["JUMP_STA_TIME:1:%d" % (T0 + 60000)])
+                self.assertEqual(cmds, [self.v2("STA", 1, T0 + 60000)])
                 self.assertEqual(self.o.expected_target_loc, 1000.0)
 
     @jf0("R05c", "CURRENT")
@@ -292,7 +301,7 @@ class R_ExecuteRetry(Base):
         # Phase ST-2b: was "100.001 m is no candidate" (station-0 fallback)
         o = self.o
         cmds = self.retry(1, [cp(0.0, T0), with_identity(cp(899.999, T0 + 60000, details=ZERO), 1, 1000.0)])
-        self.assertEqual(cmds, ["JUMP_STA_TIME:1:%d" % (T0 + 60000)])
+        self.assertEqual(cmds, [self.v2("STA", 1, T0 + 60000)])
         self.assertEqual(o.expected_target_loc, 1000.0)
 
     @jf0("R06", "CURRENT")
@@ -301,7 +310,7 @@ class R_ExecuteRetry(Base):
         o = self.o
         stations = [st("A", 0.0), st("B", 1000.0), st("C", 1060.0), st("D", 3000.0, terminal=True)]
         cmds = self.retry(2, [cp(0.0, T0), cp(500.0, T0 + 1000), with_identity(cp(1050.0, T0 + 60000, details=ZERO, name="C"), 2, 1060.0)], stations)
-        self.assertEqual(cmds, ["JUMP_STA_TIME:2:%d" % (T0 + 60000)])                    # C was meant and C is used
+        self.assertEqual(cmds, [self.v2("STA", 2, T0 + 60000)])                    # C was meant and C is used
         self.assertEqual(o.expected_target_loc, 1060.0)
 
     @jf0("R07", "CURRENT")
@@ -310,7 +319,7 @@ class R_ExecuteRetry(Base):
         o = self.o
         stations = [st("A", 0.0), st("B1", 1000.0), st("B2", 1000.0), st("D", 3000.0, terminal=True)]
         cmds = self.retry(2, [cp(0.0, T0), cp(500.0, T0 + 1000), with_identity(cp(1000.0, T0 + 60000, details=ZERO, name="B2"), 2, 1000.0)], stations)
-        self.assertEqual(cmds, ["JUMP_STA_TIME:2:%d" % (T0 + 60000)])
+        self.assertEqual(cmds, [self.v2("STA", 2, T0 + 60000)])
         self.assertEqual(o.expected_target_loc, 1000.0)
 
     @jf0("R08", "CURRENT")
@@ -353,7 +362,7 @@ class R_ExecuteRetry(Base):
         o.setting_start_idx = 2
         stations = [st("A", 0.0), st("P", 950.0), st("Q", 1000.0), st("D", 3000.0, terminal=True)]
         cmds = self.retry(0, [with_identity(cp(1000.0, T0, name="Q"), 2, 1000.0, role="scoring_start")], stations)
-        self.assertEqual(cmds, ["JUMP_STA_TIME:2:%d" % T0])
+        self.assertEqual(cmds, [self.v2("STA", 2, T0)])
         self.assertEqual(o.expected_target_loc, 1000.0)
         self.assertEqual(o.setting_start_idx, 2)
 
@@ -366,81 +375,81 @@ class R_ExecuteRetry(Base):
     @jf0("R11", "CURRENT")
     def test_CURRENT_R11_index_0_is_never_a_LOC_jump_even_when_every_other_condition_holds(self):
         stations = [st("A", 0.0, def_time=40000000, raw_dep=39015000), st("B", 1000.0), st("C", 2000.0), st("D", 3000.0, terminal=True)]
-        self.assertEqual(self.retry(0, [cp(0.0, T0, name="A")], stations), ["JUMP_STA_TIME:0:%d" % T0])
+        self.assertEqual(self.retry(0, [cp(0.0, T0, name="A")], stations), [self.v2("STA", 0, T0)])
 
     @jf0("R12", "CURRENT")
     def test_CURRENT_R12_all_five_conditions_true_gives_a_LOC_jump_with_the_station_location(self):
         cmds = self.retry(1, [cp(0.0, T0), cp(1000.0, T0, details=ZERO, name="B")], self._loc_station_list())
-        self.assertEqual(cmds, ["JUMP_LOC_TIME:1000.0:%d" % T0])
+        self.assertEqual(cmds, [self.v2("LOC", 1, T0)])
         self.assertEqual(self.o.expected_target_loc, 1000.0)
 
     @jf0("R12", "CURRENT")
     def test_CURRENT_R12_def_time_below_zero_gives_STA(self):
         cmds = self.retry(1, [cp(0.0, T0), cp(1000.0, T0, details=ZERO)], self._loc_station_list(def_time=-1))
-        self.assertEqual(cmds, ["JUMP_STA_TIME:1:%d" % T0])
+        self.assertEqual(cmds, [self.v2("STA", 1, T0)])
 
     @jf0("R12", "CURRENT")
     def test_CURRENT_R12_calc_time_below_zero_because_raw_dep_is_missing_gives_STA(self):
         cmds = self.retry(1, [cp(0.0, T0), cp(1000.0, T0, details=ZERO)], self._loc_station_list(raw_dep=-1))
-        self.assertEqual(cmds, ["JUMP_STA_TIME:1:%d" % T0])
+        self.assertEqual(cmds, [self.v2("STA", 1, T0)])
 
     @jf0("R12", "CURRENT")
     def test_CURRENT_R12_def_time_not_later_than_calc_time_gives_STA(self):
         cmds = self.retry(1, [cp(0.0, T0), cp(1000.0, T0, details=ZERO)], self._loc_station_list(def_time=38000000))
-        self.assertEqual(cmds, ["JUMP_STA_TIME:1:%d" % T0])
+        self.assertEqual(cmds, [self.v2("STA", 1, T0)])
 
     @jf0("R12", "CURRENT")
     def test_CURRENT_R12_check_point_time_not_earlier_than_def_time_gives_STA(self):
         cmds = self.retry(1, [cp(0.0, T0), cp(1000.0, 40000001, details=ZERO)], self._loc_station_list())
-        self.assertEqual(cmds, ["JUMP_STA_TIME:1:40000001"])
+        self.assertEqual(cmds, [self.v2("STA", 1, 40000001)])
 
     @jf0("R12", "CURRENT")
     def test_CURRENT_R12_the_LOC_text_uses_the_float_string_of_the_station_location(self):
         stations = self._loc_station_list()
         stations[1]["location"] = 1000.5
         cmds = self.retry(1, [cp(0.0, T0), cp(1000.5, T0, details=ZERO)], stations)
-        self.assertEqual(cmds, ["JUMP_LOC_TIME:1000.5:%d" % T0])
+        self.assertEqual(cmds, [self.v2("LOC", 1, T0)])
 
     @jf0("R13", "CURRENT")
     def test_CURRENT_R13_check_point_time_equal_to_def_time_gives_STA(self):
         cmds = self.retry(1, [cp(0.0, T0), cp(1000.0, 40000000, details=ZERO)], self._loc_station_list())
-        self.assertEqual(cmds, ["JUMP_STA_TIME:1:40000000"])
+        self.assertEqual(cmds, [self.v2("STA", 1, 40000000)])
 
     @jf0("R13", "CURRENT")
     def test_CURRENT_R13_def_time_equal_to_calc_time_gives_STA(self):
         cmds = self.retry(1, [cp(0.0, T0), cp(1000.0, T0, details=ZERO)], self._loc_station_list(def_time=39000000))
-        self.assertEqual(cmds, ["JUMP_STA_TIME:1:%d" % T0])
+        self.assertEqual(cmds, [self.v2("STA", 1, T0)])
 
     @jf0("R13", "CURRENT")
     def test_CURRENT_R13_raw_dep_minus_1_gives_calc_time_minus_1_and_STA(self):
         cmds = self.retry(1, [cp(0.0, T0), cp(1000.0, T0, details=ZERO)], self._loc_station_list(raw_dep=-1))
-        self.assertEqual(cmds, ["JUMP_STA_TIME:1:%d" % T0])
+        self.assertEqual(cmds, [self.v2("STA", 1, T0)])
 
     @jf0("R13", "CURRENT")
     def test_CURRENT_R13_a_raw_dep_below_the_stop_time_gives_a_negative_calc_time_and_STA(self):
         cmds = self.retry(1, [cp(0.0, T0), cp(1000.0, T0, details=ZERO)], self._loc_station_list(raw_dep=10000))
-        self.assertEqual(cmds, ["JUMP_STA_TIME:1:%d" % T0])
+        self.assertEqual(cmds, [self.v2("STA", 1, T0)])
 
     @jf0("R13", "CURRENT")
     def test_CURRENT_R13_a_missing_stop_time_key_means_15000(self):
         stations = self._loc_station_list(def_time=39010000)         # calc 39000000 with 15000; with a different default it would not be earlier than def_time
         del stations[1]["stop_time"]
         cmds = self.retry(1, [cp(0.0, T0), cp(1000.0, T0, details=ZERO)], stations)
-        self.assertEqual(cmds, ["JUMP_LOC_TIME:1000.0:%d" % T0])
+        self.assertEqual(cmds, [self.v2("LOC", 1, T0)])
 
     @jf0("R13", "CURRENT")
     def test_CURRENT_R13_a_missing_raw_dep_key_means_minus_1(self):
         stations = self._loc_station_list()
         del stations[1]["raw_dep"]
         cmds = self.retry(1, [cp(0.0, T0), cp(1000.0, T0, details=ZERO)], stations)
-        self.assertEqual(cmds, ["JUMP_STA_TIME:1:%d" % T0])
+        self.assertEqual(cmds, [self.v2("STA", 1, T0)])
 
     @jf0("R14", "CURRENT")
     def test_CURRENT_R14_one_millisecond_before_def_time_is_LOC_and_def_time_itself_is_STA(self):
         stations = self._loc_station_list()
-        self.assertEqual(self.retry(1, [cp(0.0, T0), cp(1000.0, 39999999, details=ZERO)], stations), ["JUMP_LOC_TIME:1000.0:39999999"])
+        self.assertEqual(self.retry(1, [cp(0.0, T0), cp(1000.0, 39999999, details=ZERO)], stations), [self.v2("LOC", 1, 39999999)])
         self.events.clear()
-        self.assertEqual(self.retry(1, [cp(0.0, T0), cp(1000.0, 40000000, details=ZERO)], stations), ["JUMP_STA_TIME:1:40000000"])
+        self.assertEqual(self.retry(1, [cp(0.0, T0), cp(1000.0, 40000000, details=ZERO)], stations), [self.v2("STA", 1, 40000000)])
 
     # -- R15 - R17 : state restoration ---------------------------------------------------------------------------------------------------------
     @jf0("R15", "CURRENT")
@@ -529,9 +538,10 @@ class R_ExecuteRetry(Base):
         self.assertTrue(o.is_first_udp)
 
     # -- R23 / R24 -------------------------------------------------------------------------------------------------------------------------------
-    @danger("R23", "in the NORMAL mode a failed UDP write (-1) is ignored: the official jump state stays on, no client and no timeout exist, so the scoring waits for ever",
-            "not a JF phase (the normal mode is a documented constraint, OD-6); only a note in the contract (section 12)", "none while the normal mode keeps the fixed port and no timeout")
-    def test_CURRENT_DANGER_R23_normal_mode_send_failure_has_no_timeout(self):
+    @jf0("R23", "CURRENT")
+    def test_CURRENT_R23_normal_mode_send_failure_is_released_at_the_deadline(self):
+        """Phase ST-3d: was CURRENT_DANGER (a failed UDP write (-1) is ignored and the normal mode has no client and no timeout, so the scoring waited for ever). The open transaction of
+        the normal mode has the same 10 s deadline as the managed one: nothing is sent, nothing completes, and the jump is released with the scoring abort."""
         o = self.o
         del o.send_jump_command                                      # the REAL send_jump_command (the class method) with the rig's stub socket
         attempts = []
@@ -541,11 +551,12 @@ class R_ExecuteRetry(Base):
         o.save_data = [cp(0.0, T0), cp(1000.0, T0 + 60000, details=ZERO, name="B")]
         self.complete_identity(o.save_data)
         self.S.execute_retry(o, 1, True)                              # no exception although the write failed
-        self.assertEqual(attempts, [(b"JUMP_STA_TIME:1:%d" % (T0 + 60000), 54322)])
+        self.assertEqual(attempts, [(self.v2("STA", 1, T0 + 60000).encode("ascii"), 54322)])
         self.assertTrue(o.is_official_jumping)
         self.rig.advance(3600.0)                                      # an hour later ...
         o._poll_jump_client()
-        self.assertTrue(o.is_official_jumping)                        # ... still waiting: nothing ends it
+        self.assertFalse(o.is_official_jumping)                       # ... the deadline has ended it
+        self.assertIsNone(o.retry_pending)
 
     @danger("R24", "when the send raises, the state is ALREADY changed (score restored, official jump begun; Phase ST-2b: the check points are no longer cut) and nothing is rolled back; the exception reaches the caller",
             "JF-2 (TARGET-A FC-1 / RT-1: validate first, an explicit abort on a send exception)", "this assertion is replaced by TARGET_A_R24")
@@ -585,7 +596,7 @@ class R_ExecuteRetry(Base):
         o.handle_menu_enter(True)
         self.assertEqual(o.total_retry_count, 2)
         self.assertTrue(o.was_advancing_before_menu)
-        self.assertEqual(self.sent(), ["JUMP_STA_TIME:2:%d" % (T0 + 120000)])
+        self.assertEqual(self.sent(), [self.v2("STA", 2, T0 + 120000)])
         o.menu_state = 3
         o.menu_cursor = 0
         o.target_retry_idx = 0
@@ -604,7 +615,7 @@ class R_ExecuteRetry(Base):
         saved = cp(1004.2, T0 + 60000, details=ZERO, name="B")
         saved.update(station_index=1, station_location=1000.0)
         cmds = self.retry(1, [cp(0.0, T0), saved])
-        self.assertEqual(cmds, ["JUMP_STA_TIME:1:%d" % (T0 + 60000)])
+        self.assertEqual(cmds, [self.v2("STA", 1, T0 + 60000)])
         self.assertEqual(o.expected_target_loc, 1000.0)
 
     @unittest.skip("TARGET-A RT-3 / CP-2 (JF-2) and TARGET-B B2 (JF-3): a retry to B2 uses the saved index 2, not B1")
@@ -613,7 +624,7 @@ class R_ExecuteRetry(Base):
         stations = [st("A", 0.0), st("B1", 1000.0), st("B2", 1000.0), st("D", 3000.0, terminal=True)]
         saved = cp(1000.0, T0 + 60000, details=ZERO, name="B2")
         saved.update(station_index=2, station_location=1000.0)
-        self.assertEqual(self.retry(2, [cp(0.0, T0), cp(500.0, T0 + 1000), saved], stations), ["JUMP_STA_TIME:2:%d" % (T0 + 60000)])
+        self.assertEqual(self.retry(2, [cp(0.0, T0), cp(500.0, T0 + 1000), saved], stations), [self.v2("STA", 2, T0 + 60000)])
 
     @unittest.skip("TARGET-A V-R3 (JF-2): a check point position with no station is refused, no command, no state change")
     @jf0("R08", "TARGET")
@@ -641,7 +652,7 @@ class R_ExecuteRetry(Base):
         stations = [st("A", 0.0), st("P", 950.0), st("Q", 1000.0), st("D", 3000.0, terminal=True)]
         initial = cp(1000.0, T0, name="Q")
         initial.update(station_index=2, station_location=1000.0)
-        self.assertEqual(self.retry(0, [initial], stations), ["JUMP_STA_TIME:2:%d" % T0])
+        self.assertEqual(self.retry(0, [initial], stations), [self.v2("STA", 2, T0)])
         self.assertEqual(o.expected_target_loc, 1000.0)
 
     @unittest.skip("TARGET-A FC-1 / RT-1 (JF-2): a send exception is not propagated; the official jump is aborted explicitly")
@@ -715,7 +726,7 @@ class S_SaveData(Base):
         self.assertNotIn("score_details", o.save_data[0])
         self.assertNotIn("scenario_generation", o.save_data[0])
         self.assertEqual(order, [("begin", 0)])                       # begin_official_jump runs BEFORE the check point is appended ...
-        self.assertEqual(self.sent(), ["JUMP_STA_TIME:0:%d" % T0])
+        self.assertEqual(self.sent(), [self.v2("STA", 0, T0)])
         self.assertEqual(self.events[-1][2]["saves"], 1)              # ... and the command leaves AFTER it
         self.assertTrue(self.events[-1][2]["jumping"])
 
@@ -726,7 +737,7 @@ class S_SaveData(Base):
         # Phase ST-2a (inverted: was "has no station_index either")
         self.assertEqual(o.save_data, [{"loc": 2000.0, "time_ms": T0, "score": 0, "target_loc": 2000.0, "station_name": "C", "stop_error": 0.0,
                                         "station_index": 2, "scope": (R.SCOPE_SID, R.SCOPE_LIST_ID, 4), "station_location": 2000.0, "role": "scoring_start"}])
-        self.assertEqual(self.sent(), ["JUMP_STA_TIME:2:%d" % T0])
+        self.assertEqual(self.sent(), [self.v2("STA", 2, T0)])
 
     # -- S02 / S03 / S04 -------------------------------------------------------------------------------------------------------------------------
     @jf0("S02", "CURRENT")
@@ -885,7 +896,10 @@ class S_SaveData(Base):
                        with_identity(cp(1996.0, T0 + 120000, details=ZERO, name="C", target_loc=2000.0), 2, 2000.0)])
         import station_identity
         self.assertEqual(len(o.save_data), 3)                              # Phase ST-2b: the request does not cut (was 2) ...
-        o.save_data = station_identity.resolve_retry_history(o.save_data, o.retry_pending, R.SCOPE_SID, R.SCOPE_LIST_ID, o.station_list)      # ... ST-3 cuts after the matching completion, before any arrival is judged
+        # ... ST-3 cuts after the matching completion, before any arrival is judged. Phase ST-3d: the real cut is the success branch of the MANAGED settlement (tests/test_stationindex_python_st3d.py,
+        # N-39 / N-45 / N-73: the history is cut when the RequestId-proven completion arrives and before the first arrival); this normal-mode characterization applies the same pure rule by hand
+        # (the normal mode is not a formal transaction and never cuts)
+        o.save_data = station_identity.resolve_retry_history(o.save_data, o.retry_pending, R.SCOPE_SID, R.SCOPE_LIST_ID, o.station_list)
         self.assertEqual(len(o.save_data), 2)
         o.is_scoring_mode = True
         o.bve_next_loc, o.prev_next_loc, o.bve_location, o.bve_is_pass = 1000.0, 1000.0, 996.0, 1
@@ -1040,7 +1054,7 @@ class S_SaveData(Base):
         self.assertEqual(saves[-1]["time_ms"], 36090000)                        # not added: will_use_sta is False
         self.assertEqual(self.door_logs(), [])
         cmds = self.retry(1, saves)
-        self.assertEqual(cmds, ["JUMP_STA_TIME:1:36090000"])                    # STA, because calc_t < 0 (retry rule R13)
+        self.assertEqual(cmds, [self.v2("STA", 1, 36090000)])                    # STA, because calc_t < 0 (retry rule R13)
 
     # -- TARGET (skipped) ------------------------------------------------------------------------------------------------------------------------
     @unittest.skip("TARGET-A CP-1 (JF-2): the initial check point carries station_index = setting_start_idx, a zero score_details and the scenario generation")
@@ -1109,7 +1123,11 @@ class S_SaveData(Base):
 # ==============================================================================================================================================
 class X_Chains(Base):
     def _complete(self, location, kind="STA", index=0, t=T0, count=1):
-        self.o.pending_jump_complete = {"type": kind, "station_index": index, "location": location, "time": t, "jump_count": count}
+        """Phase ST-3d: the plain (normal mode) completion v2 of the open request: the transport takes it (_note_jump_complete), the settlement judges it."""
+        exp = self.o.jump_expectation
+        text, why = jump_wire.format_completion_v2(kind, index, location, t, count, tuple(exp.scope))
+        self.assertIsNone(why)
+        self.o._note_jump_complete(text)
         self.o._settle_jump_complete()
 
     @jf0("X01", "CURRENT")
@@ -1122,7 +1140,7 @@ class X_Chains(Base):
         self.assertEqual(len(self.door_logs()), 1)
         self.assertIn("Qにて", self.door_logs()[0])                            # creation: station Q (index 2)
         cmds = self.retry(1, saves)
-        self.assertEqual(cmds, ["JUMP_STA_TIME:2:%d" % (T0 + 60000 + 4630)])  # retry: station Q (index 2), the same station
+        self.assertEqual(cmds, [self.v2("STA", 2, T0 + 60000 + 4630)])  # retry: station Q (index 2), the same station
 
     @jf0("X01", "CURRENT")
     def test_CURRENT_X01_a_consistent_late_arrival_is_saved_with_the_door_time_and_retried_by_STA(self):
@@ -1131,7 +1149,7 @@ class X_Chains(Base):
         o.bve_door_close_time_ms = 4630
         saves = self.arrive(1000.0, 999.0, t=T0 + 60000)                       # now >= def_time and late: the door time is added
         self.assertEqual(saves[-1]["time_ms"], T0 + 60000 + 4630)
-        self.assertEqual(self.retry(1, saves), ["JUMP_STA_TIME:1:%d" % (T0 + 60000 + 4630)])
+        self.assertEqual(self.retry(1, saves), [self.v2("STA", 1, T0 + 60000 + 4630)])
 
     @jf0("X01", "CURRENT")
     def test_CURRENT_X01_a_consistent_early_arrival_is_saved_without_the_door_time_and_retried_by_LOC(self):
@@ -1140,7 +1158,7 @@ class X_Chains(Base):
         o.bve_door_close_time_ms = 4630
         saves = self.arrive(1000.0, 999.0, t=T0 + 60000)                       # before def_time: STA would be too early, LOC is predicted: no door time
         self.assertEqual(saves[-1]["time_ms"], T0 + 60000)
-        self.assertEqual(self.retry(1, saves), ["JUMP_LOC_TIME:1000.0:%d" % (T0 + 60000)])
+        self.assertEqual(self.retry(1, saves), [self.v2("LOC", 1, T0 + 60000)])
 
     @jf0("X02", "CURRENT")
     def test_CURRENT_X02_retry_to_the_first_station_then_completion_then_departure_then_the_next_arrival_adds_a_checkpoint(self):
@@ -1149,7 +1167,7 @@ class X_Chains(Base):
         o.setting_end_idx = 3
         o.jump_lock = True
         cmds = self.retry(0, [cp(0.0, T0, name="A"), cp(1000.0, T0 + 60000, details=ZERO, name="B")])
-        self.assertEqual(cmds, ["JUMP_STA_TIME:0:%d" % T0])
+        self.assertEqual(cmds, [self.v2("STA", 0, T0)])
         self.assertTrue(o.is_first_station and o.is_official_jumping)
         self._complete(0.0)
         self.assertFalse(o.is_official_jumping)
@@ -1199,24 +1217,49 @@ class X_Chains(Base):
         o.save_data = [cp(0.0, T0), cp(1000.0, T0 + 60000, details=ZERO, name="B")]
         self.complete_identity(o.save_data)
         self.S.execute_retry(o, 1, True)
-        o.udp_socket.incoming = [b"JUMP_COMPLETE:STA:1:1000.0:%d:2" % (T0 + 60000)]
+        o.udp_socket.incoming = [self.completion_v2("STA", 1, 1000.0, T0 + 60000, 2)]
         o.read_udp_data()
         self.assertFalse(o.is_official_jumping)
+        self.assertEqual(len(o.save_data), 2)                                  # (the normal mode is not a formal transaction: it releases the jump, it never cuts the history)
 
-    @danger("X05", "normal mode: a plain completion at another location is rejected and the official jump stays on; there is no RequestId and no timeout, so it stays for ever",
-            "not a JF phase (normal mode, OD-6); documented in the contract section 12", "none while the normal mode has no RequestId / timeout")
-    def test_CURRENT_DANGER_X05_normal_mode_a_plain_completion_at_another_location_leaves_the_jump_stuck_for_ever(self):
+    @jf0("X05", "CURRENT")
+    def test_CURRENT_X05_normal_mode_a_plain_completion_at_another_location_aborts_the_scoring_instead_of_sticking(self):
+        """Phase ST-3d: was CURRENT_DANGER ("a plain completion at another location is rejected and the official jump stays on for ever": no RequestId, no timeout). The settlement judges
+        every completion that arrives and releases the jump with the scoring abort; a completion that never arrives is released at the same 10 s deadline as in the managed mode."""
         o = self.o
         del o.send_jump_command
+        o.is_scoring_mode = True
         o.save_data = [cp(0.0, T0), cp(1000.0, T0 + 60000, details=ZERO, name="B")]
         self.complete_identity(o.save_data)
         self.S.execute_retry(o, 1, True)
-        o.udp_socket.incoming = [b"JUMP_COMPLETE:STA:1:900.0:%d:2" % (T0 + 60000)]
+        o.udp_socket.incoming = [self.completion_v2("STA", 1, 900.0, T0 + 60000, 2)]
         o.read_udp_data()
-        self.assertTrue(o.is_official_jumping)
-        self.rig.advance(3600.0)
+        self.assertFalse(o.is_official_jumping)
+        self.assertFalse(o.is_scoring_mode)
+        self.assertTrue(o.jump_lock)
+        self.assertIsNone(o.retry_pending)
+        self.assertEqual(len(o.save_data), 2)
+
+    @jf0("X05", "CURRENT")
+    def test_CURRENT_X05_normal_mode_without_any_completion_the_deadline_releases_the_jump(self):
+        o = self.o
+        del o.send_jump_command
+        o.is_scoring_mode = True
+        o.save_data = [cp(0.0, T0), cp(1000.0, T0 + 60000, details=ZERO, name="B")]
+        self.complete_identity(o.save_data)
+        self.S.execute_retry(o, 1, True)
+        self.rig.advance(5.0)
         o._poll_jump_client()
         self.assertTrue(o.is_official_jumping)
+        self.rig.advance(6.0)
+        o._poll_jump_client()
+        self.assertFalse(o.is_official_jumping)
+        self.assertIsNone(o.retry_pending)
+
+    def completion_v2(self, kind, index, location, t, count):
+        text, why = jump_wire.format_completion_v2(kind, index, location, t, count, tuple(self.o.jump_expectation.scope))
+        self.assertIsNone(why)
+        return text.encode("ascii")
 
 
 # ==============================================================================================================================================
@@ -1261,7 +1304,7 @@ class Z_Meta(unittest.TestCase):
             self.assertTrue(name.startswith("test_CURRENT_DANGER_" + meta["id"]) or name.startswith("test_CURRENT_DANGER_%s_" % meta["id"]), name)
             for key, shortest in (("danger", 21), ("phase", 8), ("flip", 21)):
                 self.assertTrue(meta[key] and len(meta[key]) >= shortest, (name, key))
-        self.assertEqual(seen, 8)                                       # Phase ST-2b: 16 before; R06 R07 R08 R09 x2 R10 X01 X04 are no longer dangerous (CURRENT)
+        self.assertEqual(seen, 6)                                       # Phase ST-2b: 16 before; R06 R07 R08 R09 x2 R10 X01 X04 are no longer dangerous (CURRENT); Phase ST-3d: R23 and X05 (a normal mode that waits for ever) are gone
 
     def test_META_every_TARGET_is_skipped_with_a_contract_id_in_the_reason(self):
         seen = 0
