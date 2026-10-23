@@ -96,7 +96,8 @@ FROZEN = {
     "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryContract.cs": "c7be611e9b1d704a17014b9294a532cf82abc0b9",
     "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs": "cde81d8f5411df680cb17b10288a3c8d9b01f561",
     "TsScoringPlugin/TsScoringPlugin/AtsLoggerPlugin.cs": "22209df3e50762dd17c68c9bb788af6f8faf98b7",
-    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "a1c34ae72a0210da29b7bfcd320e6019d48ed8c7",
+    # Phase U10 changed Class1.cs on purpose (tests\test_stationindex_station_range_u10.py): the blob moved from a1c34ae7... (ST-3b); ST-3d itself still does not touch it
+    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "a9b420a0e0da76bac286815f697cf0010144bd72",
     "TsScoringPlugin/TsScoringPlugin/CurrentDataPlane.cs": "71b0ebaa6f52871ceb2a59456a2b527041241c46",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs": "3e0d3bffbb74e4a2ecc6d10d378a8b6e2788ae6f",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs": "8a54d6a14100e0021ca248d28369c335f965fafe",

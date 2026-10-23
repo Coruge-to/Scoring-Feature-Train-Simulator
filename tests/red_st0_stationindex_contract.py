@@ -76,6 +76,7 @@ MIGRATED_TO_ST2A = "tests/test_stationindex_canon_st2.py"    # Phase ST-2a: wher
 MIGRATED_TO_ST2B = "tests/test_stationindex_canon_st2.py"    # Phase ST-2b: where the eight retry contracts that ST-2b turns GREEN (T08 T03 T04 T05 x2 T06 T09 T23) are executed now
 MIGRATED_TO_ST3B = "tests/test_stationindex_current_st3b.py"    # Phase ST-3b: where the one contract that ST-3b turns GREEN (U01: the Current sender fixes the requested index) is executed now
 MIGRATED_TO_ST3D = "tests/test_stationindex_python_st3d.py"    # Phase ST-3d: where the one contract that ST-3d turns GREEN (T07: a completion that names another station aborts the scoring) is executed now
+MIGRATED_TO_U10 = "tests/test_stationindex_station_range_u10.py"    # Phase U10: where the one contract that U10 turns GREEN (U10: an unreadable stop range is not 5.0 / 5.0, the whole list is rejected) is executed now
 SCOPE_SID = 7
 SCOPE_LIST_ID = "A1B2C3D4"
 
@@ -433,7 +434,7 @@ class StaticReds(RedMixin, unittest.TestCase):
         self.contract(re.search(r"targetStationIndex = (sIdx|requestedStationIndex|pendingJumpStationIndex)", c1) is not None, "U01",
                       "CURRENT-STA-JUMP-DOES-NOT-FIX-REQUESTED-INDEX", "targetStationIndex is only ever assigned by the 50 m position search or advanced, never from the requested index")
 
-    @red("U10", "CURRENT-MARGIN-FALLBACK-5.0-PRESENT", items=(10,), artifact="OD-NEW-7 / 05 M-4 / 04 section 2.4",
+    @migrated("U10", "CURRENT-MARGIN-FALLBACK-5.0-PRESENT", MIGRATED_TO_U10, items=(10,), artifact="OD-NEW-7 / 05 M-4 / 04 section 2.4",
          note="a range that can not be read does not become 5.0 / 5.0 in the Current sender (fail-closed like Legacy)")
     def test_RED_U10_the_current_sender_has_no_5_0_fallback_for_an_unreadable_range(self):
         c1 = cs_code(CLASS1)

@@ -901,7 +901,8 @@ class D_Boundary(unittest.TestCase):
         # (for the list: the condition of the part) and the argument of the part
         # Phase ST-3b (an intended change, not a drift): the Current sender now READS the identity of its station list to judge a jump command - BuildJumpView (id, count, ready) and the
         # completion (id, ready): stidxListId 4 -> 6, stidxListCount 5 -> 6, stidxListReady 4 -> 6. The STIDX statements themselves are unchanged; ST-1A's arrival / target / door reads are untouched.
-        self.assertEqual(counts, {"stidxArrivalIndex": 4, "stidxArrivalSeq": 4, "stidxListId": 6, "stidxListCount": 6, "stidxListReady": 6, "stidxTarget": 3, "stidxDoorOpenedBefore": 2})
+        # Phase U10 (an intended change, not a drift): RejectStationList empties the published identity of a list that was rejected (id, count, ready: 6 -> 7 each); it publishes nothing and the STIDX statements are unchanged.
+        self.assertEqual(counts, {"stidxArrivalIndex": 4, "stidxArrivalSeq": 4, "stidxListId": 7, "stidxListCount": 7, "stidxListReady": 7, "stidxTarget": 3, "stidxDoorOpenedBefore": 2})
 
     def test_current_state_machine_statements_are_untouched(self):
         c1 = self.c1

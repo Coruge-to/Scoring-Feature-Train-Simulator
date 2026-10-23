@@ -50,6 +50,10 @@ namespace TsScoringPlugin
         private bool hasDoorOpenedAtTarget = false;
         private bool isInitialized = false;
 
+        // Phase U10: set when the stop range of a station could not be read (or is not finite) and the WHOLE station list of this scenario was rejected (RejectStationList). While it is set the station part of the Tick
+        // does not run (nothing is built, published or targeted). It ends where the scenario ends (gone / changed): the existing way to a new list.
+        private bool stationRangeRejected = false;
+
         // Phase ST-1A (observation only; nothing of the state machine or of the scoring reads these): the values of the STIDX part of the telemetry line.
         private int stidxArrivalIndex = -1;
         private int stidxArrivalSeq = 0;
@@ -387,6 +391,36 @@ namespace TsScoringPlugin
             }
         }
 
+        /// <summary>Phase U10: the stop range of one host station, read ONCE and strictly. Returns null when both members were read and are finite (sd.MarginMin = |MarginMin|, sd.MarginMax = MarginMax, exactly as before);
+        /// otherwise the stage that failed (min-read / max-read / min-invalid / max-invalid) and, for a read, the type of the exception. A range is never replaced by a stand-in value.</summary>
+        private static string ReadStationRange(object station, StationData sd, out string exceptionType)
+        {
+            dynamic st = station;
+            exceptionType = "-";
+            try { sd.MarginMin = Math.Abs((double)st.MarginMin); } catch (Exception minEx) { exceptionType = minEx.GetType().Name; return "min-read"; }
+            try { sd.MarginMax = (double)st.MarginMax; } catch (Exception maxEx) { exceptionType = maxEx.GetType().Name; return "max-read"; }
+            if (double.IsNaN(sd.MarginMin) || double.IsInfinity(sd.MarginMin)) return "min-invalid";
+            if (double.IsNaN(sd.MarginMax) || double.IsInfinity(sd.MarginMax)) return "max-invalid";
+            return null;
+        }
+
+        /// <summary>Phase U10: a station's stop range could not be read (or is not finite), so the WHOLE list of this scenario is rejected - never a list without that station (the StationIndex is the position in the host list,
+        /// a missing station would shift every later index) and never that station with a stand-in range. Nothing of it stays published (no list text, id, count, ready flag), a pending jump is abandoned like any jump the list
+        /// can not carry, the scenario is latched (stationRangeRejected: the inputs are the host's static map data, so every Tick would answer the same; nothing is retried per Tick) and ONE line is written.</summary>
+        private void RejectStationList(int stationIndex, string stage, string exceptionType)
+        {
+            int built = stationList.Count;
+            stationRangeRejected = true;
+            stationList.Clear();
+            lastStaListPacket = "";
+            stidxListId = TSScoringPlugin.Telemetry.StationListIdentity.EmptyId;
+            stidxListCount = 0;
+            stidxListReady = false;
+            isInitialized = false;
+            AbandonPendingJump(TSScoringPlugin.DataPlane.CurrentJumpExecution.RListNotReady, "-");
+            try { if (diagnostics != null) diagnostics.Write("event=current-station-list-rejected scn=" + scenarioId + " idx=" + stationIndex + " stage=" + stage + " ex=" + exceptionType + " built=" + built + " verdict=rejected retry=scenario-change action=hold"); } catch { }
+        }
+
         private bool firstTickNoted;
 
         public override void Tick(TimeSpan elapsed)
@@ -402,6 +436,7 @@ namespace TsScoringPlugin
                 lastUdpData = "";
                 lastStaListPacket = "";
                 isInitialized = false;
+                stationRangeRejected = false;
                 isTextsCached = false;
                 stationList.Clear();
                 lastTimeMs = 0;
@@ -428,6 +463,7 @@ namespace TsScoringPlugin
                     lastUdpData = "";
                     lastStaListPacket = "";
                     isInitialized = false;
+                    stationRangeRejected = false;
                     isTextsCached = false;
                     stationList.Clear();
                     lastTimeMs = 0;
@@ -709,6 +745,8 @@ namespace TsScoringPlugin
                 }
                 catch { }
 
+                // Phase U10: a scenario whose station list was rejected has no station part at all (nothing is built, published or targeted) until the scenario changes
+                if (!stationRangeRejected)
                 try
                 {
                     var stations = map.Stations;
@@ -818,8 +856,15 @@ namespace TsScoringPlugin
                             sd.HasTimeDef = (sd.ArrTime > 0 || sd.DepTime > 0);
                             sd.IsScoring = sd.HasTimeDef;
 
-                            try { sd.MarginMin = Math.Abs((double)st.MarginMin); } catch { sd.MarginMin = 5.0; }
-                            try { sd.MarginMax = (double)st.MarginMax; } catch { sd.MarginMax = 5.0; }
+                            // Phase U10: the stop range is read by ReadStationRange. A station whose range can not be read (or is not finite) rejects the WHOLE list (RejectStationList) and leaves this builder: the range is
+                            // never replaced by a stand-in, no station is skipped (the StationIndex is the host position) and nothing of the partial list is kept or published (the catch of this try is the old one).
+                            string rangeFailType;
+                            string rangeFailStage = ReadStationRange((object)st, sd, out rangeFailType);
+                            if (rangeFailStage != null)
+                            {
+                                RejectStationList(i, rangeFailStage, rangeFailType);
+                                throw new InvalidOperationException("station range rejected");
+                            }
                             stationList.Add(sd);
                         }
 

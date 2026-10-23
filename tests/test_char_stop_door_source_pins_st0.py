@@ -165,11 +165,13 @@ class Pins(ShortCase):
         self.assertNotIn("Margin", body)
         self.assertNotIn("DoorDir", body)
 
-    @st0("T17", "KNOWN-DEFECT-BEHAVIOR", items=(12,), note="Current: a range that can not be read becomes 5.0 / 5.0 and the station is still announced (fail-open); the owner wants this fail-closed in the formal contract")
-    def test_PIN_T17_current_falls_back_to_5_0_when_the_range_can_not_be_read(self):
-        self.assertIn("try { sd.MarginMin = Math.Abs((double)st.MarginMin); } catch { sd.MarginMin = 5.0; }", self.cur)
-        self.assertIn("try { sd.MarginMax = (double)st.MarginMax; } catch { sd.MarginMax = 5.0; }", self.cur)
-        self.assertIn("double marginBack = 5.0; double marginFront = 5.0;", self.cur)
+    @st0("T17", "KNOWN-DEFECT-BEHAVIOR", items=(12,), note="Phase U10 (inverted - it was: a range that can not be read becomes 5.0 / 5.0 and the station is still announced, fail-open): it rejects the whole list like Legacy; no stand-in range is left")
+    def test_PIN_T17_current_rejects_the_whole_list_when_the_range_can_not_be_read(self):
+        self.assertNotIn("catch { sd.MarginMin = 5.0; }", self.cur)
+        self.assertNotIn("catch { sd.MarginMax = 5.0; }", self.cur)
+        self.assertEqual(len(re.findall(r"\bsd\.Margin(?:Min|Max)\s*=\s*-?\d", self.cur)), 0)
+        self.assertIn("string rangeFailStage = ReadStationRange((object)st, sd, out rangeFailType); if (rangeFailStage != null) { RejectStationList(i, rangeFailStage, rangeFailType);", self.cur)
+        self.assertIn("double marginBack = 5.0; double marginFront = 5.0;", self.cur)                 # the initial value of the per-Tick locals (no target station) is a different requirement and stays
 
     @st0("T17", "CROSS-LAYER-DIFFERENCE", items=(13,), note="Legacy: a station whose range is not finite makes TryStations fail, so no station group is sent at all (fail-closed)")
     def test_PIN_T17_legacy_refuses_the_whole_list_when_a_range_is_not_finite(self):

@@ -51,7 +51,9 @@ DATAPLANE = os.path.join(PLUGIN, "TsScoringPlugin", "CurrentDataPlane.cs")
 LEGACY_CSPROJ = os.path.join(PLUGIN, "Handshake", "Telemetry", "Legacy", "TSScoringPlugin.AtsExLegacy.Telemetry.csproj")
 CURRENT_CSPROJ = os.path.join(PLUGIN, "TsScoringPlugin", "TsScoringPlugin.csproj")
 
-CLASS1_AUDITED_NORMALISED_SHA256 = "4D8FF9CB1C1B98F0D1303E9CAFED609F097922FCC1799B0CF2A79D4148DAE7B6"
+CLASS1_AUDITED_NORMALISED_SHA256 = "830E16A65CA42E16D97A1D15E3871AA642D321B7C29BEC11005EF17675FC5BEC"
+# Phase U10 (the stop range of the station list builder): the value moved from 4D8FF9CB... after the changed lines were re-audited (ReadStationRange, RejectStationList, the latch stationRangeRejected and its gate; the 5.0 / 5.0
+# fallback of an unreadable range is gone). Every shape pin of this file still passes unchanged; tests\\test_stationindex_station_range_u10.py holds the contract of the new shape.
 # Phase ST-3b (the Current jump wiring): the value moved from 009BA364... after the changed lines were re-audited (the jump transaction, the one-shot StationIndex re-initialisation, the canonical numbers; every shape pin of this
 # file was re-pinned or flipped as the module docstring says, and tests\\test_stationindex_current_st3b.py holds the contract of the new shape).
 # Phase ST-1A (J3-G2: R1 / R5 / R6 in their observation-only form): the value moved from 29613E14... after the changed lines were re-audited. The change is ADDITIVE and only the
