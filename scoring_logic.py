@@ -1429,8 +1429,9 @@ def update_physics_and_scoring(self, current_time, dt):
         self.prev_door = getattr(self, 'bve_door', 0)
         self.prev_doordir = getattr(self, 'bve_doordir', 1)
         self.prev_next_loc = self.bve_next_loc
-        if abs(self.bve_next_loc - self.bve_location) > 100.0:
-            self.is_first_station = False
+        # Phase ST-2c: where the train is on the first line decides nothing (it used to clear is_first_station when NEXTLOC was more than 100 m away, which is the case while the
+        # jump to the start station has not moved the train yet). The latch is set by the scoring start / the retry to the first checkpoint, whose station identity was verified,
+        # and is reset only by the departure and the change of NEXTLOC below (and by a retry to a later checkpoint).
         self.is_first_udp = False
 
     if (

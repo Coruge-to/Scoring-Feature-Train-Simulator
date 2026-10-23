@@ -2179,7 +2179,7 @@ class Z_Meta(unittest.TestCase):
         hundreds = [n.value for n in ast.walk(retry) if isinstance(n, ast.Constant) and isinstance(n.value, float) and n.value == 100.0]
         self.assertEqual(len(hundreds), 0)                                              # Phase ST-2b: the 100 m search of the retry is gone (the first-station 100 m rule below is ST-2c)
         update = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "update_physics_and_scoring"][0]
-        self.assertEqual(len([n for n in ast.walk(update) if isinstance(n, ast.Constant) and isinstance(n.value, float) and n.value == 100.0]), 1)      # ... and so is the first-station 100 m rule (ST-2c)
+        self.assertEqual(len([n for n in ast.walk(update) if isinstance(n, ast.Constant) and isinstance(n.value, float) and n.value == 100.0]), 0)      # ... and so is the first-station 100 m rule (Phase ST-2c: was 1)
         create = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "create_save_data"][0]
         ones = [n.value for n in ast.walk(create) if isinstance(n, ast.Constant) and isinstance(n.value, float) and n.value == 1.0]
         self.assertEqual(ones, [])                                                      # the 1 m reverse lookup of the Save is gone ...

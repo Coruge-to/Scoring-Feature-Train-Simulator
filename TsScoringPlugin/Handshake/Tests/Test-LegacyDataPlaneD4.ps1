@@ -149,6 +149,11 @@ $fnStart = 0
 $fnEnd = $slLines.Count
 for ($i = 0; $i -lt $slLines.Count; $i++) { if ($slLines[$i] -match '^def execute_retry\(') { $fnStart = $i + 1; break } }
 for ($i = $fnStart; $i -lt $slLines.Count; $i++) { if ($slLines[$i] -match '^def ') { $fnEnd = $i; break } }
+# Phase ST-2c (on purpose): and inside update_physics_and_scoring (the first UDP line no longer clears is_first_station by a 100 m distance)
+$upStart = 0
+$upEnd = $slLines.Count
+for ($i = 0; $i -lt $slLines.Count; $i++) { if ($slLines[$i] -match '^def update_physics_and_scoring\(') { $upStart = $i + 1; break } }
+for ($i = $upStart; $i -lt $slLines.Count; $i++) { if ($slLines[$i] -match '^def ') { $upEnd = $i; break } }
 $slOutside = @()
 foreach ($h in @((& git -C $repo diff -U0 HEAD -- scoring_logic.py) | Where-Object { $_ -match '^@@ ' })) {
     if ($h -match '\+(\d+)(,(\d+))? @@') {
@@ -156,10 +161,10 @@ foreach ($h in @((& git -C $repo diff -U0 HEAD -- scoring_logic.py) | Where-Obje
         $count = 1
         if ($Matches[3]) { $count = [int]$Matches[3] }
         $last = $first + [Math]::Max($count, 1) - 1
-        if (-not (($last -le 12) -or (($first -ge $fnStart) -and ($last -le $fnEnd)))) { $slOutside += $h }
+        if (-not (($last -le 12) -or (($first -ge $fnStart) -and ($last -le $fnEnd)) -or (($first -ge $upStart) -and ($last -le $upEnd)))) { $slOutside += $h }
     }
 }
-Check 'F07 scoring_logic.py differs from HEAD only in its imports and inside execute_retry, and managed_input.py only in the stidx / jump-settled caps, the jump_expectation state and the close of the open transaction' (($slOutside.Count -eq 0) -and ($miOutside.Count -eq 0) -and ($miChanged.Count -le 16))
+Check 'F07 scoring_logic.py differs from HEAD only in its imports and inside execute_retry and update_physics_and_scoring, and managed_input.py only in the stidx / jump-settled caps, the jump_expectation state and the close of the open transaction' (($slOutside.Count -eq 0) -and ($miOutside.Count -eq 0) -and ($miChanged.Count -le 16))
 $tel = Join-Path $Root 'Telemetry'
 $legacySrc = @(Get-ChildItem (Join-Path $tel 'Legacy\src') -Filter *.cs)
 $legacyCode = ($legacySrc | ForEach-Object { Code ([IO.File]::ReadAllText($_.FullName)) }) -join "`n"

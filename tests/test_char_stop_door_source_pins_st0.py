@@ -293,10 +293,13 @@ class Pins(ShortCase):
         self.assertNotIn("< 100.0", src)
         self.assertIn("station_identity.check_retry_checkpoint", src)
 
-    @st0("T20", "KNOWN-DEFECT-BEHAVIOR", items=(20,), note="DS02: is_first_station is cleared by 'abs(NEXTLOC - location) > 100.0' on the first line")
-    def test_PIN_ITEM20_is_first_station_is_a_100_m_distance_test(self):
+    @st0("T20", "KNOWN-DEFECT-BEHAVIOR", items=(20,), note="DS02 (Phase ST-2c: inverted - it was: is_first_station is cleared by 'abs(NEXTLOC - location) > 100.0' on the first line): no distance test is left in scoring_logic.py")
+    def test_PIN_ITEM20_is_first_station_has_no_100_m_distance_test(self):
         sl = re.sub(r"\s+", " ", py_text("scoring_logic.py"))
-        self.assertIn("if abs(self.bve_next_loc - self.bve_location) > 100.0: self.is_first_station = False self.is_first_udp = False", sl)
+        self.assertNotIn("if abs(self.bve_next_loc - self.bve_location) > 100.0", sl)
+        self.assertEqual(floats_in(ast.parse(py_text("scoring_logic.py"))).count(100.0), 0)
+        self.assertIn("self.prev_next_loc = self.bve_next_loc", sl)
+        self.assertIn("self.is_first_udp = False", sl)
 
     @st0("T20", "KNOWN-DEFECT-BEHAVIOR", items=(16, 19), note="C-ID-7: the checkpoint duplicate key is the float equality of target_loc")
     def test_PIN_ITEM19_the_checkpoint_duplicate_key_is_the_station_index_under_its_scope(self):

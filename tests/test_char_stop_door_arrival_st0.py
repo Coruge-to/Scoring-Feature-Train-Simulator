@@ -438,7 +438,7 @@ class F_Departure(Base):
 
 
 # ==============================================================================================================================================
-# T20 : the first-station decision of the first UDP line is a 100 m distance test
+# T20 : the first-station decision of the first UDP line (Phase ST-2c: it was a 100 m distance test; now the first line clears nothing)
 # ==============================================================================================================================================
 class G_FirstStation(Base):
     def first_udp_scene(self, d):
@@ -452,9 +452,10 @@ class G_FirstStation(Base):
         o.is_first_station = True
         return o
 
-    @st0("T20", "KNOWN-DEFECT-BEHAVIOR", items=(20,), note="DS02: 'start station' is decided by 'NEXTLOC more than 100 m away', not by a station identity; exactly 100.0 m still counts as the start station")
-    def test_CHAR_T20_is_first_station_is_cleared_by_a_100_m_distance_test(self):
-        for d, stays_first in ((99.999, True), (100.0, True), (100.001, False), (-100.001, False)):
+    @st0("T20", "KNOWN-DEFECT-BEHAVIOR", items=(20,), note="DS02 (Phase ST-2c: inverted - it was: 'start station' is decided by 'NEXTLOC more than 100 m away', 100.001 m and -100.001 m cleared it): the first line clears nothing, whatever the distance")
+    def test_CHAR_T20_is_first_station_is_not_cleared_by_the_distance_of_the_first_line(self):
+        # (d, stays_first): before Phase ST-2c the last two rows of the old table, 100.001 and -100.001, were False; the contract tests are in test_stationindex_first_station_st2c.py
+        for d, stays_first in ((99.999, True), (100.0, True), (100.001, True), (-100.001, True), (5000.0, True)):
             with self.subTest(d=d):
                 self.rig.close()
                 self.setUp()

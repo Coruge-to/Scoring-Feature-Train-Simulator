@@ -1694,8 +1694,14 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
             'cmd = f"JUMP_LOC_TIME:{ideal_loc}:{cp[\'time_ms\']}"',
             'else:',
         )
+        # Phase ST-2c (on purpose): the first UDP line no longer clears is_first_station when NEXTLOC is more than 100 m from the train (the 100 m is a search radius of the old identity test, not a
+        # score constant). These are the 2 distinct lines (stripped) that left; no score, no rule and no constant is among them.
+        st2c_first_station_distance = (
+            'if abs(self.bve_next_loc - self.bve_location) > 100.0:',
+            'self.is_first_station = False',
+        )
         self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport) + st2a_checkpoint_identity + st2b_retry_by_saved_index
-                                   + st3d_request_by_the_one_builder], removed)
+                                   + st3d_request_by_the_one_builder + st2c_first_station_distance], removed)
 
     def test_the_scoring_function_bodies_are_ast_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":scoring_logic.py")
@@ -1712,7 +1718,8 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
         # only the diagnostic writer got the switch and (PID-D6) execute_retry's one transport line; no score, no rule, no constant
         # Phase ST-2a (on purpose): create_save_data takes the station of the checkpoint from the verified arrival index, evaluate_arrival names the judged position in its one call of it,
         # and note_save_skipped (new) records a refusal; the points, the rules and the constants are not among them
-        self.assertEqual(changed, ["create_save_data", "evaluate_arrival", "execute_retry", "write_limit_debug_log"])
+        # Phase ST-2c (on purpose): update_physics_and_scoring lost the 100 m test of the first UDP line (test_stationindex_first_station_st2c.py pins what is left); no score, no rule, no constant
+        self.assertEqual(changed, ["create_save_data", "evaluate_arrival", "execute_retry", "update_physics_and_scoring", "write_limit_debug_log"])
 
     def test_the_config_constants_are_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":config.py")
