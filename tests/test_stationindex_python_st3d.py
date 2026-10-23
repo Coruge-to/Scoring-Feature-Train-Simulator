@@ -73,7 +73,8 @@ STALIST_FAR = ("STALIST:A=1=2000000000.0=-1=-1=-1=15000=0=0,B=1=1000.0=-1=-1=-1=
 
 # the files ST-3d does not touch (the C# products of Current and Legacy, the shared codec, the vector table, the Python client and the contract): git blob ids at ea0a3fb
 FROZEN = {
-    "TsScoringPlugin/Handshake/Telemetry/Legacy/TSScoringPlugin.AtsExLegacy.Telemetry.csproj": "defbe148ff815741c6b627cadaf8d024f649f804",
+    # Phase ST-3e0 changes both projects on purpose (exactly one Compile item of Shared\PackageContract.cs each; the blobs moved from defbe148... / 61092229...): their rows are gone; they are held by
+    # tests/test_stationindex_package_st3e0.py (E0-25: each differs from the blob of 0b8e511 by that one item only)
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/AssemblyInfo.cs": "d601dec6a3a0feff0e7e6ed54c610ecb0d53bd51",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyApi.cs": "890208dd6a69d9e2b1fd2f3a8a4d3a4907f0bbb7",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyDataPlaneSink.cs": "f5e11a9579ea5ba12544b9f00c0a48693f638819",
@@ -102,7 +103,6 @@ FROZEN = {
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs": "3e0d3bffbb74e4a2ecc6d10d378a8b6e2788ae6f",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs": "8a54d6a14100e0021ca248d28369c335f965fafe",
     "TsScoringPlugin/TsScoringPlugin/Properties/AssemblyInfo.cs": "e704abd24867f658d3a0391e231395dff85ad5d2",
-    "TsScoringPlugin/TsScoringPlugin/TsScoringPlugin.csproj": "61092229f34e5e4ceb52a4fb6e52280824ec2578",
     "TsScoringPlugin/TsScoringPlugin/packages.config": "9941b75a35df1b68f9e504da7bc4c9238d41ccb9",
     "current_jump_client.py": "bfcee44c0a0f79a76a8a6e950c738084523f1cf9",
     "dataplane_contract.py": "56da8579207ae7f6d866f17ce4aafe6d0553c23f",

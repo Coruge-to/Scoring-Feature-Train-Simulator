@@ -52,14 +52,14 @@ UNTOUCHED = {
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs": "3e0d3bffbb74e4a2ecc6d10d378a8b6e2788ae6f",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs": "8a54d6a14100e0021ca248d28369c335f965fafe",
     "TsScoringPlugin/TsScoringPlugin/CurrentDataPlane.cs": "71b0ebaa6f52871ceb2a59456a2b527041241c46",
-    "TsScoringPlugin/TsScoringPlugin/TsScoringPlugin.csproj": "61092229f34e5e4ceb52a4fb6e52280824ec2578",
+    # Phase ST-3e0 changes both projects on purpose (exactly one Compile item of Shared\PackageContract.cs each; the blobs moved from 61092229... / defbe148...): their rows are gone; the projects are held by
+    # tests/test_stationindex_package_st3e0.py (E0-25: each differs from the blob of 0b8e511 by that one item only) and by the compile lists of this file and of test_jf1_current_csharp_source_pins.py
     "TsScoringPlugin/TsScoringPlugin/AtsLoggerPlugin.cs": "22209df3e50762dd17c68c9bb788af6f8faf98b7",
     "TsScoringPlugin/TsScoringPlugin/Properties/AssemblyInfo.cs": "e704abd24867f658d3a0391e231395dff85ad5d2",
     "TsScoringPlugin/Handshake/Telemetry/Shared/JumpWire.cs": "dff2a85a25ff22f76892b3d19209b1da9c089387",
     "TsScoringPlugin/Handshake/Telemetry/Shared/DataPlaneProtocol.cs": "bed2ed8585b502578d4d4e17f64307206d0920fc",
     "TsScoringPlugin/Handshake/Telemetry/Shared/StationListIdentity.cs": "bfa15b21eb2d815e1bd158aa890ddb168475898f",
     "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs": "cde81d8f5411df680cb17b10288a3c8d9b01f561",
-    "TsScoringPlugin/Handshake/Telemetry/Legacy/TSScoringPlugin.AtsExLegacy.Telemetry.csproj": "defbe148ff815741c6b627cadaf8d024f649f804",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/AssemblyInfo.cs": "d601dec6a3a0feff0e7e6ed54c610ecb0d53bd51",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "12a0f84ad865443ad64c76e308907f5b7bcfdcf9",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpCommandQueue.cs": "c9517db9074f45ef447991cd52280ef512047070",
@@ -341,7 +341,9 @@ class F_Untouched(unittest.TestCase):
     @guard("N-69")
     def test_N69_the_Legacy_project_compiles_exactly_the_sources_it_did(self):
         names = [i for i, _ in compile_items(LEGACY_CSPROJ)]
-        self.assertEqual(len(names), 23)                                                              # 22 AtsEx free sources + LegacyTelemetryExtension.cs
+        # Phase ST-3e0 adds exactly one compile item (..\Shared\PackageContract.cs, the package contract, constants only): the 23 sources of ST-3c are all still there
+        self.assertEqual(len([n for n in names if not n.endswith("PackageContract.cs")]), 23)         # 22 AtsEx free sources + LegacyTelemetryExtension.cs
+        self.assertEqual(names.count("..\\Shared\\PackageContract.cs"), 1)
         self.assertNotIn("src\\LegacyJumpJudge.cs", names)                                           # the judgement lives in LegacyJumpExecutor.cs: no new product file
         self.assertTrue(all(n in names for n in ("src\\LegacyJumpExecutor.cs", "src\\LegacyJumpControlPlane.cs", "src\\LegacyStationTimeline.cs", "..\\Shared\\JumpWire.cs")))
 

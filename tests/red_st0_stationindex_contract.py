@@ -509,15 +509,14 @@ class StaticReds(RedMixin, unittest.TestCase):
 # ==============================================================================================================================================
 # guards (not REDs)
 # ==============================================================================================================================================
-class Guards(RedMixin, unittest.TestCase):          # (Phase ST-2b: U13 is a declared RED here until ST-3 turns it back into a GUARD; the mixin gives it contract())
-    @red("U13", "PYTHON-AHEAD-OF-CSHARP-REQUEST-FIXING", items=(13,), artifact="OD-NEW-3 / 12 section 0: ST-2 is never accepted alone (Phase ST-2b: a DECLARED RED until ST-3)",
-         note="Python uses the saved station_index for the retry (ST-2b) while the Current sender still re-selects by 50 m (ST-3 missing): this state is the declared intermediate violation - no package, no BVE until ST-3 turns it back into a GUARD")
-    def test_RED_U13_the_python_saved_index_and_the_csharp_fixed_request_land_together(self):
-        """Phase ST-2b (owner decision OD-B2): U13 was a GUARD that passed while Python did not use the saved index. Python does use it now (execute_retry verifies the
-        chosen checkpoint with station_identity.check_retry_checkpoint), the C# senders still re-select the target by 50 m, so the condition is violated ON PURPOSE: the
-        test is a declared RED, not deleted and not skipped, and the condition below is unchanged except that the Python side is also detected through the verification
-        function (the string 'station_index' no longer has to appear in execute_retry). ST-3 fixes the request index in Current AND Legacy, turns this back into a GUARD
-        (and adds the Legacy condition) and moves the package-level duty to N-12. ST-2b alone must never be built, deployed or run with BVE."""
+class Guards(RedMixin, unittest.TestCase):          # (Phase ST-3e0: U13 is a GUARD again - a declared RED from ST-2b to ST-3d; the mixin gives it contract())
+    @guard("U13", items=(13,), artifact="OD-NEW-3 / 12 section 0: ST-2 is never accepted alone; ST-3 Start Audit 12 (N-12: package/source_package.py, Handshake/Tests/Test-PackageGuardST3.ps1)",
+           note="code and package consistency only: the request chain is complete in the source (Current, Legacy, Python) and the four source sets carry the same TSJUMP2 bundle and match the Git-managed manifest; "
+                "a package of one half, or one that differs from its manifest, is refused. It is not a build, deployment or live-acceptance result (ST-3e1 builds, ST-3e2 / ST-3e3 accept on the machine)")
+    def test_GUARD_U13_the_python_saved_index_and_the_csharp_fixed_request_land_together(self):
+        """Phase ST-2b (owner decision OD-B2) made U13 a declared RED while Python used the saved index and the C# senders still re-selected the target by 50 m. ST-3b (Current), ST-3c (Legacy,
+        R1-B) and ST-3d (Python v2 settlement) completed the request chain and ST-3e0 adds the package duty (N-12), so it is a GUARD again: never deleted, never skipped. Its meaning is CODE AND
+        PACKAGE CONSISTENCY - not a build, a deployment or a live acceptance (those stay with ST-3e1 / ST-3e2 / ST-3e3). The condition below is the one the RED carried, plus the package guard's verdict."""
         tree = ast.parse(read_text(os.path.join(ROOT, "scoring_logic.py")))
         fn = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "execute_retry"]
         self.assertEqual(len(fn), 1)
@@ -539,10 +538,20 @@ class Guards(RedMixin, unittest.TestCase):          # (Phase ST-2b: U13 is a dec
                                 and re.search(r"sink\.Send\(staList\); staListSent = true;", legacy_session) is None)
         python_settles_v2 = any((isinstance(n, ast.Name) and n.id == "build_jump_request") or (isinstance(n, ast.Attribute) and n.attr == "build_jump_request") for n in ast.walk(fn[0]))
         package_guard_exists = os.path.isfile(os.path.join(PLUGIN, "Handshake", "Tests", "Test-PackageGuardST3.ps1"))
-        csharp_fixes_request = csharp_fixes_request_current and csharp_fixes_request_legacy and legacy_stalist_acked and python_settles_v2 and package_guard_exists
+        # Phase ST-3e0: the package duty. The guard (offline, read only) judges the work tree against the Git-managed manifest: one TSJUMP2 bundle in Python, Current and Legacy, every runtime source the
+        # one the manifest names. A tree that differs from its manifest is refused here too, so a runtime source can not be edited without regenerating the manifest (package/source_package.py generate).
+        spec = importlib.util.spec_from_file_location("source_package", os.path.join(ROOT, "package", "source_package.py"))
+        source_package = importlib.util.module_from_spec(spec)
+        sys.modules["source_package"] = source_package
+        spec.loader.exec_module(source_package)
+        with open(os.path.join(ROOT, "package", "source-package-manifest.json"), "rb") as handle:
+            verdict = source_package.evaluate(source_package.DiskTree(ROOT), handle.read())
+        package_guard_accepts = verdict.accepted
+        csharp_fixes_request = (csharp_fixes_request_current and csharp_fixes_request_legacy and legacy_stalist_acked and python_settles_v2 and package_guard_exists
+                                and package_guard_accepts)
         self.contract(not (python_uses_saved_index and not csharp_fixes_request), "U13", "PYTHON-AHEAD-OF-CSHARP-REQUEST-FIXING",
-                      "Python retries by the saved station_index but the request chain is not complete (Current: %s, Legacy RequestTarget: %s, Legacy STALIST acknowledged: %s, Python v2 settlement: %s, N-12 package guard: %s - ST-3e0 missing)"
-                      % (csharp_fixes_request_current, csharp_fixes_request_legacy, legacy_stalist_acked, python_settles_v2, package_guard_exists))
+                      "Python retries by the saved station_index but the request chain or the package is not consistent (Current: %s, Legacy RequestTarget: %s, Legacy STALIST acknowledged: %s, Python v2 settlement: %s, N-12 package guard: %s, package accepted: %s %s)"
+                      % (csharp_fixes_request_current, csharp_fixes_request_legacy, legacy_stalist_acked, python_settles_v2, package_guard_exists, package_guard_accepts, list(verdict.findings)[:8]))
 
     @guard("T22", items=(), artifact="the vector table is part of the RED validity",
            note="the shared vector table is well formed: unique ids, CRC-32 values equal to the standard library, the verdict words of the audit only")

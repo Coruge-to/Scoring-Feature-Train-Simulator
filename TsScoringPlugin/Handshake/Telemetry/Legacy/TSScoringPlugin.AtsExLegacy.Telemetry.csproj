@@ -111,6 +111,9 @@
     <Compile Include="..\Shared\JumpWire.cs">
       <Link>Shared\JumpWire.cs</Link>
     </Compile>
+    <Compile Include="..\Shared\PackageContract.cs">
+      <Link>Shared\PackageContract.cs</Link>
+    </Compile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

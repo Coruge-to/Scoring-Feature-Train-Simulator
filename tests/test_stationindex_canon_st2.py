@@ -2129,14 +2129,15 @@ class Z_Meta(unittest.TestCase):
                 self.assertTrue(getattr(getattr(getattr(red, cls_name), name), "__unittest_skip__", False))
 
     def test_u13_is_a_declared_red_until_st3_and_never_deleted_or_skipped(self):
-        """OD-B2: Python uses the saved index (ST-2b) while the C# senders still re-select by 50 m (ST-3): U13 stays in the RED file as a declared RED (not a GUARD, not
-        skipped); ST-3 turns it back into a GUARD (Current and Legacy) and N-12 takes over the package duty."""
+        """OD-B2: Python uses the saved index (ST-2b) while the C# senders still re-select by 50 m (ST-3): U13 stayed in the RED file as a declared RED from ST-2b to ST-3d (not a
+        GUARD, not skipped). Phase ST-3e0 (the intended change): the request chain is complete (Current ST-3b, Legacy ST-3c, Python ST-3d) and N-12 owns the package duty, so U13 is a GUARD
+        again - never deleted, never skipped, no RED twin left behind. (The name of this test is kept: it is the canon's test of U13's lifecycle.)"""
         import red_st0_stationindex_contract as red
-        fn = red.Guards.test_RED_U13_the_python_saved_index_and_the_csharp_fixed_request_land_together
+        fn = red.Guards.test_GUARD_U13_the_python_saved_index_and_the_csharp_fixed_request_land_together
         meta = fn.st0red
-        self.assertEqual((meta["kind"], meta["id"], meta["code"]), ("RED", "U13", "PYTHON-AHEAD-OF-CSHARP-REQUEST-FIXING"))
+        self.assertEqual((meta["kind"], meta["id"], meta["code"]), ("GUARD", "U13", ""))
         self.assertFalse(getattr(fn, "__unittest_skip__", False))
-        self.assertFalse(hasattr(red.Guards, "test_GUARD_U13_the_python_saved_index_and_the_csharp_fixed_request_land_together"))
+        self.assertFalse(hasattr(red.Guards, "test_RED_U13_the_python_saved_index_and_the_csharp_fixed_request_land_together"))
 
     def test_every_n_red_has_a_declared_code_and_the_five_ids_are_all_there(self):
         found = {}

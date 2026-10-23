@@ -36,6 +36,7 @@ import station_index_contract
 import station_identity
 import jump_transaction
 import jump_wire
+import package_contract
 import telemetry_dataplane_receiver
 import current_jump_client
 import telemetry_gate

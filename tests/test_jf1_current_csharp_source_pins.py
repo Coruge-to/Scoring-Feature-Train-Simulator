@@ -354,14 +354,15 @@ class Pins(unittest.TestCase):
         ("src\\LegacyScoringProbe.cs", None), ("src\\LegacyStationTimeline.cs", None), ("src\\LegacyTelemetrySession.cs", None), ("src\\LegacyTelemetryExtension.cs", None),
         ("..\\Shared\\TelemetryContract.cs", "Shared\\TelemetryContract.cs"),
         ("..\\Shared\\StationListIdentity.cs", "Shared\\StationListIdentity.cs"),           # Phase ST-1A (pin moved): the one shared file of the STIDX supply
-        ("..\\Shared\\JumpWire.cs", "Shared\\JumpWire.cs")], key=lambda t: t[0])                    # Phase ST-3b / G-PC-1 (pin moved): the compile-only link of the wire codec (nothing of Legacy calls it before ST-3c)
+        ("..\\Shared\\JumpWire.cs", "Shared\\JumpWire.cs"),                                          # Phase ST-3b / G-PC-1 (pin moved): the compile-only link of the wire codec (nothing of Legacy calls it before ST-3c)
+        ("..\\Shared\\PackageContract.cs", "Shared\\PackageContract.cs")], key=lambda t: t[0])       # Phase ST-3e0 (pin moved): the package contract (TSJUMP2, constants only), the one file both projects compile
 
     @jf0("F32", "CURRENT")
     def test_CURRENT_F32_the_legacy_project_links_exactly_this_set_of_sources_with_the_one_shared_current_jump_endpoint_link_and_the_current_project_keeps_its_own(self):
-        # (1) the Legacy project: the exact (Include, Link) pairs, 23 of them (22 before Phase ST-3b, 21 before Phase ST-1A, 20 before Phase LJX-1)
+        # (1) the Legacy project: the exact (Include, Link) pairs, 24 of them (23 before Phase ST-3e0, 22 before Phase ST-3b, 21 before Phase ST-1A, 20 before Phase LJX-1)
         legacy = compile_items(LEGACY_CSPROJ)
         self.assertEqual(sorted(legacy, key=lambda t: t[0]), self.LEGACY_EXPECTED_ITEMS)
-        self.assertEqual(len(legacy), 23)
+        self.assertEqual(len(legacy), 24)
         # (2) the shared link: exactly one element, exactly this Include and this Link; nothing else of the Current plugin folder besides CurrentDataPlane.cs
         endpoint_links = [t for t in legacy if t[0].endswith("CurrentJumpEndpoint.cs")]
         self.assertEqual(endpoint_links, [self.LEGACY_SHARED_LINK])
@@ -375,6 +376,9 @@ class Pins(unittest.TestCase):
         self.assertEqual([t for t in current if t[0].endswith("JumpWire.cs")], [("..\\Handshake\\Telemetry\\Shared\\JumpWire.cs", "Shared\\JumpWire.cs")])
         self.assertEqual([t for t in current if t[0].endswith("CurrentJumpExecution.cs")], [("CurrentJumpExecution.cs", None)])
         self.assertEqual([t for t in legacy if "CurrentJumpExecution" in t[0]], [])
+        # Phase ST-3e0: both projects compile the one package contract file (TSJUMP2) once, in the form of the other shared links
+        self.assertEqual([t for t in current if t[0].endswith("PackageContract.cs")], [("..\\Handshake\\Telemetry\\Shared\\PackageContract.cs", "Shared\\PackageContract.cs")])
+        self.assertEqual([t for t in legacy if t[0].endswith("PackageContract.cs")], [("..\\Shared\\PackageContract.cs", "Shared\\PackageContract.cs")])
         # (4) the shared source is the same file for both projects and defines the shared types once (no copy of them in any Legacy-compiled source)
         shared_types = re.findall(r"\b(?:class|struct|enum|interface)\s+(JumpCapabilities|CurrentJumpCommand|JumpCommandValidator|JumpDirectoryPublisher|CurrentJumpEndpoint)\b", self.ep)
         self.assertEqual(sorted(shared_types), sorted(["JumpCapabilities", "CurrentJumpCommand", "JumpCommandValidator", "JumpDirectoryPublisher", "CurrentJumpEndpoint"]))

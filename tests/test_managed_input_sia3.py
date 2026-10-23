@@ -1602,7 +1602,9 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
         out = git("diff", "--name-only", BASELINE, "--", ".", ":(exclude)tests", ":(exclude)*.py", ":(exclude)TsScoringPlugin")
         if out is None:
             self.skipTest("baseline commit / git not available (INCONCLUSIVE)")
-        changed = [l for l in out.splitlines() if l.strip() and not l.startswith("TsScoringPlugin/Handshake/Docs/")]
+        # Phase ST-3e0 (on purpose, owner-approved G-CP-B): the Git-managed source package manifest is the one new file outside the C++ / launcher / DenGo files; it is allowed by its exact relative path only
+        st3e0_source_manifest = "package/source-package-manifest.json"
+        changed = [l for l in out.splitlines() if l.strip() and not l.startswith("TsScoringPlugin/Handshake/Docs/") and l.strip() != st3e0_source_manifest]
         self.assertEqual(changed, [])
 
     def test_no_legacy_or_atsex_branch_exists_in_the_python_production_code_that_si_a_added(self):

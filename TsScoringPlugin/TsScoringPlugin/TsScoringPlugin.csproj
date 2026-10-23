@@ -38,6 +38,7 @@
     <Compile Include="..\Handshake\Telemetry\Shared\TelemetryDirectoryReader.cs"><Link>Shared\TelemetryDirectoryReader.cs</Link></Compile>
     <Compile Include="..\Handshake\Telemetry\Shared\StationListIdentity.cs"><Link>Shared\StationListIdentity.cs</Link></Compile>
     <Compile Include="..\Handshake\Telemetry\Shared\JumpWire.cs"><Link>Shared\JumpWire.cs</Link></Compile>
+    <Compile Include="..\Handshake\Telemetry\Shared\PackageContract.cs"><Link>Shared\PackageContract.cs</Link></Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup><Analyzer Include="..\BveEx.Caller.InputDevice.dll" /></ItemGroup>

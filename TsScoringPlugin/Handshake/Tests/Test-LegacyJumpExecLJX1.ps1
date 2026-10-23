@@ -218,11 +218,13 @@ function Run-Static {
         $proj = ReadText $projFile
         $links = @([regex]::Matches($proj, '<Compile Include="(\.\.\\[^"]+)"') | ForEach-Object { $_.Groups[1].Value })
         # (Phase ST-1A adds the one shared link of the STIDX supply: ..\Shared\StationListIdentity.cs)
-        $okLinks = @('..\..\..\TsScoringPlugin\CurrentDataPlane.cs', '..\..\..\TsScoringPlugin\CurrentJumpEndpoint.cs', '..\Shared\GenericHandleTextContract.cs', '..\Shared\DataPlaneProtocol.cs', '..\Shared\TelemetryDirectoryReader.cs', '..\Shared\TelemetryContract.cs', '..\Shared\StationListIdentity.cs', '..\Shared\JumpWire.cs')      # Phase ST-3b / G-PC-1: the compile-only link of the wire codec
+        $okLinks = @('..\..\..\TsScoringPlugin\CurrentDataPlane.cs', '..\..\..\TsScoringPlugin\CurrentJumpEndpoint.cs', '..\Shared\GenericHandleTextContract.cs', '..\Shared\DataPlaneProtocol.cs', '..\Shared\TelemetryDirectoryReader.cs', '..\Shared\TelemetryContract.cs', '..\Shared\StationListIdentity.cs', '..\Shared\JumpWire.cs', '..\Shared\PackageContract.cs')      # Phase ST-3b / G-PC-1: the compile-only link of the wire codec; Phase ST-3e0 (owner-approved G-CP-A): the shared package contract ..\Shared\PackageContract.cs (9 links, each exactly once)
         $extra = @($links | Where-Object { $okLinks -notcontains $_ })
+        $missing = @($okLinks | Where-Object { $links -notcontains $_ })
+        $dupes = @($links | Group-Object | Where-Object { $_.Count -gt 1 } | ForEach-Object { $_.Name })
         $hasExec = $proj -match 'LegacyJumpExecutor\.cs'
         if (-not $hasExec) { return (Absent 'LegacyJumpExecutor.cs is not in the project' 'files-absent') }
-        @{ Ok = ($extra.Count -eq 0 -and $links.Count -eq 8); Detail = "linked files: $($links.Count); unexpected links: $($extra -join ',')" }
+        @{ Ok = ($extra.Count -eq 0 -and $missing.Count -eq 0 -and $dupes.Count -eq 0 -and $links.Count -eq 9); Detail = "linked files: $($links.Count); unexpected links: $($extra -join ','); missing links: $($missing -join ','); duplicate links: $($dupes -join ',')" }
     }
     SCheck 'S12' {
         # the executor never creates a thread, a timer or a task; the plane keeps its one worker thread

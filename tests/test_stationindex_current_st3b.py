@@ -378,7 +378,8 @@ class F_Projects(unittest.TestCase):
         ("src\\LegacyInputTelemetry.cs", None), ("src\\LegacyJumpCommandQueue.cs", None), ("src\\LegacyJumpControlPlane.cs", None), ("src\\LegacyJumpEndpoint.cs", None),
         ("src\\LegacyJumpExecutor.cs", None), ("src\\LegacyScoringProbe.cs", None), ("src\\LegacyStationTimeline.cs", None), ("src\\LegacyTelemetrySession.cs", None),
         ("src\\LegacyTelemetryExtension.cs", None), ("..\\Shared\\TelemetryContract.cs", "Shared\\TelemetryContract.cs"), ("..\\Shared\\StationListIdentity.cs", "Shared\\StationListIdentity.cs"),
-        ("..\\Shared\\JumpWire.cs", "Shared\\JumpWire.cs")], key=lambda t: t[0])
+        ("..\\Shared\\JumpWire.cs", "Shared\\JumpWire.cs"),
+        ("..\\Shared\\PackageContract.cs", "Shared\\PackageContract.cs")], key=lambda t: t[0])             # Phase ST-3e0 (pin moved): the package contract (TSJUMP2, constants only) is the one more link
 
     @red("G-PC-1", "legacy-jumpwire-link-missing")
     def test_GPC1_the_legacy_project_gets_one_compile_only_link_of_jumpwire_and_nothing_else_changes(self):
