@@ -1725,7 +1725,9 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
                 # Phase ST-2a (on purpose): create_save_data takes the station of the checkpoint from the verified arrival index and evaluate_arrival names the judged position in its one call of it;
                 # note_save_skipped (new) records a refused checkpoint and scoring_logic imports station_identity (the pure identity module); no score, no rule, no constant
                 # Phase ST-2c (on purpose): update_physics_and_scoring no longer clears is_first_station by the 100 m distance of NEXTLOC on the first UDP line (two lines left); no score, no rule, no constant
-                ("scoring_logic.py", old_scoring, {"write_limit_debug_log", "execute_retry", "create_save_data", "evaluate_arrival", "update_physics_and_scoring"},
+                # Time Fix B (on purpose): evaluate_departure judges the departure range of an operational stop with the range kept at its arrival (update_physics_and_scoring keeps it, reset_station_evaluation_state
+                # clears it); no score, no rule, no constant
+                ("scoring_logic.py", old_scoring, {"write_limit_debug_log", "execute_retry", "create_save_data", "evaluate_arrival", "update_physics_and_scoring", "evaluate_departure", "reset_station_evaluation_state"},
                  {"note_save_skipped", "Import(names=[alias(name='station_identity')])",
                   "Import(names=[alias(name='jump_transaction')])", "Import(names=[alias(name='jump_wire')])"}),         # Phase ST-3d (on purpose): execute_retry builds its request with jump_transaction / jump_wire (the Jump wire v2)
                 ("utils.py", old_utils, {"write_desktop_log"}, {"set_desktop_log_enabled", "desktop_log_enabled", "desktop_log_requested"})):

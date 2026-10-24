@@ -71,6 +71,7 @@ def reset_station_evaluation_state(self):
     self.is_stopped_out_of_range = False
     self.has_scored_time_this_station = False
     self.has_scored_stop_this_station = False
+    self.operational_stop_margins = None                  # 運転停車の到着駅の停止位置許容幅(MARGINF, MARGINB)は駅単位の状態
     self.bb_first_valid_stop_detected = False
     self.bb_moved_after_first_valid_stop = False
 
@@ -1018,8 +1019,16 @@ def evaluate_departure(self, current_time):
             if not getattr(self, 'has_scored_time_this_station', False):
                 d = p_loc - self.bve_location
 
+                # 判定に使う停止位置許容幅。この時点のbve_margin_*はtgt切替後の次駅のものなので、運転停車では到着時に保持した到着駅の許容幅を使う
+                margin_f = self.bve_margin_f
+                margin_b = self.bve_margin_b
+                if getattr(self, 'prev_doordir', 1) == 0:
+                    kept_margins = getattr(self, 'operational_stop_margins', None)
+                    if kept_margins is not None:
+                        margin_f, margin_b = kept_margins
+
                 # 過去にちゃんと許容範囲で止まっており、かつ、出発時刻の今この瞬間も許容範囲内にいること
-                if (getattr(self, 'has_scored_stop_this_station', False) or getattr(self, 'is_official_retry', False)) and (-self.bve_margin_f <= d <= self.bve_margin_b):
+                if (getattr(self, 'has_scored_stop_this_station', False) or getattr(self, 'is_official_retry', False)) and (-margin_f <= d <= margin_b):
                     # 発車時刻(raw_dep)を自力で引っ張り出して計算
                     dep_target_s = -1
                     if p_idx >= 0:
@@ -1539,6 +1548,8 @@ def update_physics_and_scoring(self, current_time, dt):
                 # 2. そのあとに到着判定（ここで終了フラグ is_scoring_finished が立つ）
                 evaluate_arrival(self, current_time)
 
+            # 運転停車の到着が成立した時点で、到着した駅の停止位置許容幅を保持する（発車時のtgt切替後に次駅の許容幅を使わないため）
+            self.operational_stop_margins = (self.bve_margin_f, self.bve_margin_b)
             self.has_scored_stop_this_station = True
 
     # 通常停車駅の開扉時は、BVE公式が現在示している駅を対象にする

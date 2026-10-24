@@ -190,7 +190,10 @@ class Pins(ShortCase):
         # apply_stop_score (d_m), the departure judgement and the out-of-range detection (d), the first-valid-stop gate of the basic braking and the operational
         # arrival (dist_to_stop), the door-edge arrival (arrival_stop_error): six places, one inequality
         found = {v: len(re.findall(r"-\s?self\.bve_margin_f <= " + v + r" <= self\.bve_margin_b", text)) for v in ("d_m", "d", "dist_to_stop", "arrival_stop_error")}
-        self.assertEqual(found, {"d_m": 1, "d": 2, "dist_to_stop": 2, "arrival_stop_error": 1})
+        # Time Fix B (on purpose, was "d": 2): the departure judgement of evaluate_departure takes its range from the local margin_f / margin_b (the telemetry margin of the new target for a normal stop,
+        # the range kept at the arrival for an operational stop) - the SAME inequality on the local names, pinned below; the out-of-range detection keeps the telemetry names
+        self.assertEqual(found, {"d_m": 1, "d": 1, "dist_to_stop": 2, "arrival_stop_error": 1})
+        self.assertEqual(len(re.findall(r"-\s?margin_f <= d <= margin_b", text)), 1)
 
     # -- the stop kind (items 5, 6, 8, 9; T14, T15) ---------------------------------------------------------------------------------------------
     @st0("T14", "REQUIREMENT-BACKED", items=(5, 6), note="the stop kind comes from author-defined Station values: Pass and DoorSideNumber (Current) / DoorSide (Legacy); Python derives is_operational_stop from ISPASS and DOORDIR only")

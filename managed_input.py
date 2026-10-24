@@ -97,6 +97,7 @@ GENERATION_DROP = frozenset({
     "current_flashing_key", "active_features_str", "active_next_sta_name", "active_next_sta_timing", "active_rule_basic_apply",
     "active_rule_basic_release", "active_rule_init_apply", "active_rule_init_release", "bb_first_valid_stop_detected",
     "bb_moved_after_first_valid_stop", "has_evaluated_initial_brake", "idle_entered_while_stopped", "prev_stop_detection_speed", "dbg_active_reds",
+    "operational_stop_margins",
     "last_debug_state_key", "last_pending_log", "bve_door_close_time_ms", "is_base_off", "is_time_off",
 })
 

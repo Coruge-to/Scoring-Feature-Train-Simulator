@@ -1702,8 +1702,13 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
             'if abs(self.bve_next_loc - self.bve_location) > 100.0:',
             'self.is_first_station = False',
         )
+        # Time Fix B (on purpose): the departure range check of evaluate_departure uses the local margin_f / margin_b (see tests/test_timefix_b_operational_stop_margin.py): the one condition line changed its
+        # two names (-self.bve_margin_f ... self.bve_margin_b -> -margin_f ... margin_b); no score, no rule and no constant is among it. This is the 1 distinct line (stripped) that left.
+        timefix_b_departure_margins = (
+            "if (getattr(self, 'has_scored_stop_this_station', False) or getattr(self, 'is_official_retry', False)) and (-self.bve_margin_f <= d <= self.bve_margin_b):",
+        )
         self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport) + st2a_checkpoint_identity + st2b_retry_by_saved_index
-                                   + st3d_request_by_the_one_builder + st2c_first_station_distance], removed)
+                                   + st3d_request_by_the_one_builder + st2c_first_station_distance + timefix_b_departure_margins], removed)
 
     def test_the_scoring_function_bodies_are_ast_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":scoring_logic.py")
@@ -1721,7 +1726,9 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
         # Phase ST-2a (on purpose): create_save_data takes the station of the checkpoint from the verified arrival index, evaluate_arrival names the judged position in its one call of it,
         # and note_save_skipped (new) records a refusal; the points, the rules and the constants are not among them
         # Phase ST-2c (on purpose): update_physics_and_scoring lost the 100 m test of the first UDP line (test_stationindex_first_station_st2c.py pins what is left); no score, no rule, no constant
-        self.assertEqual(changed, ["create_save_data", "evaluate_arrival", "execute_retry", "update_physics_and_scoring", "write_limit_debug_log"])
+        # Time Fix B (on purpose): evaluate_departure takes the departure range of an operational stop from the range kept at its arrival (update_physics_and_scoring keeps it at the arrival,
+        # reset_station_evaluation_state clears it); the points, the rules and the constants are not among them (tests/test_timefix_b_operational_stop_margin.py pins the behaviour)
+        self.assertEqual(changed, ["create_save_data", "evaluate_arrival", "evaluate_departure", "execute_retry", "reset_station_evaluation_state", "update_physics_and_scoring", "write_limit_debug_log"])
 
     def test_the_config_constants_are_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":config.py")
