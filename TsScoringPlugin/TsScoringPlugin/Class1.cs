@@ -912,9 +912,11 @@ namespace TsScoringPlugin
                                         stationList[i].ArrTime
                                         + stationList[i].StoppageTime;
                                 }
+                                // 到着時刻の補完は、駅の役割(終着駅か)ではなく発車時刻の有効性で決める。
+                                // 発車時刻が通常時刻なら終着駅でも補完し、未定義(-1)やterminal sentinelは補完に使わない。
                                 else if (
-                                    !stationList[i].IsTerminal
-                                    && stationList[i].DepTime > 0
+                                    stationList[i].DepTime > 0
+                                    && stationList[i].DepTime < TerminalDepartureTimeBve6Ms
                                     && stationList[i].ArrTime <= 0
                                 )
                                 {

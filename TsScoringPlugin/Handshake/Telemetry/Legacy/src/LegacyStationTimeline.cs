@@ -456,7 +456,9 @@ namespace TSScoringPlugin.Telemetry
                 sd.RawArrTime = Clean(r.ArrivalMs);
                 sd.RawDepTime = -1;
                 sd.IsTerminal = r.IsTerminal;
-                if (!r.IsTerminal && r.DepartureMs >= -1 && r.DepartureMs < int.MaxValue)
+                // Time Fix A: the departure time is judged by its VALUE (-1 = undefined, a time below Int32.MaxValue = usable; the terminal sentinel is Int32.MaxValue for BVE6 and does not fit
+                // an Int32 for BVE5, so it arrives as Int32.MaxValue or wrapped, and is refused here), not by the role the API states for the station
+                if (r.DepartureMs >= -1 && r.DepartureMs < int.MaxValue)
                 {
                     sd.RawDepTime = r.DepartureMs;
                 }
@@ -513,8 +515,9 @@ namespace TSScoringPlugin.Telemetry
                 {
                     list[i].DepTime = list[i].ArrTime + list[i].StoppageTime;
                 }
-                else if (!list[i].IsTerminal && list[i].DepTime > 0 && list[i].ArrTime <= 0)
+                else if (list[i].DepTime > 0 && list[i].DepTime < int.MaxValue && list[i].ArrTime <= 0)
                 {
+                    // Time Fix A: the arrival is filled in from a USABLE departure time whatever the role of the station (a terminal included); an undefined or sentinel departure never reaches here.
                     list[i].ArrTime = list[i].DepTime - list[i].StoppageTime;
                     if (list[i].ArrTime < 0)
                     {

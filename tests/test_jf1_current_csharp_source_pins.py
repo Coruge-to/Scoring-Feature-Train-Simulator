@@ -51,7 +51,10 @@ DATAPLANE = os.path.join(PLUGIN, "TsScoringPlugin", "CurrentDataPlane.cs")
 LEGACY_CSPROJ = os.path.join(PLUGIN, "Handshake", "Telemetry", "Legacy", "TSScoringPlugin.AtsExLegacy.Telemetry.csproj")
 CURRENT_CSPROJ = os.path.join(PLUGIN, "TsScoringPlugin", "TsScoringPlugin.csproj")
 
-CLASS1_AUDITED_NORMALISED_SHA256 = "830E16A65CA42E16D97A1D15E3871AA642D321B7C29BEC11005EF17675FC5BEC"
+# Time Fix A (pin moved from 830E16A6...): the changed lines were re-audited - ONE statement in the arrival / departure fill-in loop of the station list builder: the arrival fill-in
+# (arrival undefined, departure usable) no longer asks whether the station is the terminal; it asks whether the departure is a usable time (> 0 and below the BVE6 terminal sentinel). Nothing else
+# of Class1.cs moved; every shape pin of this file stays in force and tests\test_timefix_a_terminal_arrival.py / Handshake\Tests\Test-TimeFixA.ps1 hold the new rule.
+CLASS1_AUDITED_NORMALISED_SHA256 = "34213555A4F28F01C24B12835B9A0B11B19047061F4B94BE50B652C5F30E88B2"
 # Phase U10 (the stop range of the station list builder): the value moved from 4D8FF9CB... after the changed lines were re-audited (ReadStationRange, RejectStationList, the latch stationRangeRejected and its gate; the 5.0 / 5.0
 # fallback of an unreadable range is gone). Every shape pin of this file still passes unchanged; tests\\test_stationindex_station_range_u10.py holds the contract of the new shape.
 # Phase ST-3b (the Current jump wiring): the value moved from 009BA364... after the changed lines were re-audited (the jump transaction, the one-shot StationIndex re-initialisation, the canonical numbers; every shape pin of this

@@ -84,7 +84,8 @@ BASE_BLOBS = {
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpEndpoint.cs": "eb3a0233d799e8abbeea47e7d01b46034ee68584",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpExecutor.cs": "b95754144e06ae9eb85b98bf04ea3731eab98600",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyScoringProbe.cs": "1f0be23bc1c911e4bf83933a22016613834c2f48",
-    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs": "1bae94a187e8ef689bda513c2e478fcf2ac7b9f2",
+    # Time Fix A changed LegacyStationTimeline.cs and Class1.cs on purpose (the arrival fill-in, tests/test_timefix_a_terminal_arrival.py): the blobs moved from 1bae94a1... / a9b420a0... (0b8e511); the package manifest is regenerated for them
+    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs": "4bb9c3122eca46f4ede56569368e8433f25d6a71",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "12a0f84ad865443ad64c76e308907f5b7bcfdcf9",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetrySession.cs": "5dd33902438d358f038a03a8900976816d589af0",
     "TsScoringPlugin/Handshake/Telemetry/Shared/DataPlaneProtocol.cs": "bed2ed8585b502578d4d4e17f64307206d0920fc",
@@ -94,7 +95,7 @@ BASE_BLOBS = {
     "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryContract.cs": "c7be611e9b1d704a17014b9294a532cf82abc0b9",
     "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs": "cde81d8f5411df680cb17b10288a3c8d9b01f561",
     "TsScoringPlugin/TsScoringPlugin/AtsLoggerPlugin.cs": "22209df3e50762dd17c68c9bb788af6f8faf98b7",
-    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "a9b420a0e0da76bac286815f697cf0010144bd72",
+    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "b703adb04ae32258d0adeced4ac6f3d87bdcf9ef",
     "TsScoringPlugin/TsScoringPlugin/CurrentDataPlane.cs": "71b0ebaa6f52871ceb2a59456a2b527041241c46",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs": "3e0d3bffbb74e4a2ecc6d10d378a8b6e2788ae6f",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs": "8a54d6a14100e0021ca248d28369c335f965fafe",

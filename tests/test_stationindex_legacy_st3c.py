@@ -48,7 +48,8 @@ RED_ST0 = os.path.join(HERE, "red_st0_stationindex_contract.py")
 # the files that ST-3c does not touch, as committed by ST-3b (9d8ef74): git blob ids. Phase ST-3d changes three of the Python ones on purpose (main.py, scoring_logic.py, managed_input.py: their rows are gone;\n# the Python side of the transaction is held by tests/test_stationindex_python_st3d.py now); station_identity.py, jump_wire.py, current_jump_client.py and dataplane_contract.py stay byte-identical.
 UNTOUCHED = {
     # Phase U10 changed Class1.cs on purpose (the stop range of the station list builder, tests\test_stationindex_station_range_u10.py): the blob moved from a1c34ae7... (ST-3b); ST-3c itself still does not touch it
-    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "a9b420a0e0da76bac286815f697cf0010144bd72",
+    # Time Fix A changed Class1.cs on purpose (the arrival fill-in of the station list builder, tests\test_timefix_a_terminal_arrival.py): the blob moved from a9b420a0... (U10)
+    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "b703adb04ae32258d0adeced4ac6f3d87bdcf9ef",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs": "3e0d3bffbb74e4a2ecc6d10d378a8b6e2788ae6f",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs": "8a54d6a14100e0021ca248d28369c335f965fafe",
     "TsScoringPlugin/TsScoringPlugin/CurrentDataPlane.cs": "71b0ebaa6f52871ceb2a59456a2b527041241c46",
