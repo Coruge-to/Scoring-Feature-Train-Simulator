@@ -614,19 +614,20 @@ class C_Keys(Base):
         for handle in self.kb.active_handles():
             self.assertIsNone(self.kb.callbacks[handle](object()))
 
-    def test_F8_is_suppressed_from_0_1_kmh_upwards_only(self):
-        self.scoring(speed=0.09)
+    def test_F8_is_suppressed_for_any_speed_other_than_exactly_zero(self):
+        """Time Fix B3 (on purpose; was "from 0.1 km/h upwards only"): BVE supplies exactly 0.0 while the train stands, so the F8 hook follows speed != 0.0 (tests/test_timefix_b3_zero_speed_contract.py holds the full matrix)."""
+        self.scoring(speed=0.0)
         self.tick()
         self.assertEqual(self.kb.active(), ["f7", "p"])
-        self.o.bve_speed = 0.1
+        self.o.bve_speed = 0.09
         self.tick()
         self.assertEqual(self.kb.active(), ["f7", "f8", "p"])
 
-    def test_CURRENT_a_negative_speed_does_not_suppress_F8_but_the_fast_forward_release_uses_the_absolute_value(self):
-        """CURRENT inconsistency: the F8 hook needs speed >= 0.1 (signed), the fast-forward release needs abs(speed) >= 0.1."""
+    def test_a_negative_speed_suppresses_F8_and_releases_the_fast_forward_like_a_positive_one(self):
+        """Time Fix B3 (on purpose; was the CURRENT inconsistency "the F8 hook needs speed >= 0.1 (signed), the fast-forward release needs abs(speed) >= 0.1"): moving is speed != 0.0 in either direction for both."""
         self.scoring(speed=-5.0)
         self.tick()
-        self.assertEqual(self.kb.active(), ["f7", "p"])
+        self.assertEqual(self.kb.active(), ["f7", "f8", "p"])
         self.tick()
         self.clock.now += 0.06
         self.o.bve_time_ms += 1000
@@ -713,8 +714,8 @@ class C_Keys(Base):
                          [(self.HWND, R.WM_KEYDOWN, F8_KEY, 0), (self.HWND, R.WM_KEYUP, F8_KEY, 0)])
         self.assertFalse(self.o.is_fast_forwarding)
 
-    def test_the_release_does_not_happen_below_0_1_kmh_or_for_a_finished_scoring_or_during_an_official_jump(self):
-        for speed, finished, jumping in ((0.09, False, False), (5.0, True, False), (5.0, False, True)):
+    def test_the_release_does_not_happen_at_speed_zero_or_for_a_finished_scoring_or_during_an_official_jump(self):
+        for speed, finished, jumping in ((0.0, False, False), (5.0, True, False), (5.0, False, True)):                 # Time Fix B3: standing is exactly 0.0 (was < 0.1 km/h)
             self.api.posted.clear()
             self.o.is_fast_forwarding = False
             self.o.ff_check_real_time = 0.0

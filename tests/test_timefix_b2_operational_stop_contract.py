@@ -478,13 +478,14 @@ class D_SourcePins(unittest.TestCase):
     def test_B2_pin_the_new_state_is_classified_as_a_getattr_default_attribute(self):
         self.assertIn('"operational_stop_latch"', self.managed)
 
-    def test_B2_pin_the_senders_leave_an_operational_stop_at_more_than_0_1_kmh_once_the_stop_was_made(self):
+    def test_B2_pin_the_senders_leave_an_operational_stop_when_the_vehicle_moves_once_the_stop_was_made(self):
+        """Time Fix B3 (an owner-approved supersession): the 0.1 km/h band of B2 (leaving = |speed| > 0.1, stopped = |speed| < 0.1) is replaced by the exact zero-speed contract (leaving = speed != 0.0, stopped = speed == 0.0)."""
         current = read("TsScoringPlugin/TsScoringPlugin/Class1.cs")
         legacy = read("TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs")
-        self.assertEqual(len(re.findall(r"hasDoorOpenedAtTarget && opStopMadeIndex == targetStationIndex && !isTerminal && Math\.Abs\(speed\) > 0\.1\b", current)), 1)
-        self.assertEqual(len(re.findall(r"hasDoorOpenedAtTarget && opStopMadeIndex == target && !isTerminal && Math\.Abs\(speedKmh\) > 0\.1\b", legacy)), 1)
-        self.assertEqual(len(re.findall(r"Math\.Abs\(speed\) < 0\.1\b", current)), 1)               # the stop test is unchanged
-        self.assertEqual(len(re.findall(r"Math\.Abs\(speedKmh\) < 0\.1\b", legacy)), 1)
+        self.assertEqual(len(re.findall(r"hasDoorOpenedAtTarget && opStopMadeIndex == targetStationIndex && !isTerminal && speed != 0\.0\)", current)), 1)
+        self.assertEqual(len(re.findall(r"hasDoorOpenedAtTarget && opStopMadeIndex == target && !isTerminal && speedKmh != 0\.0\)", legacy)), 1)
+        self.assertEqual(len(re.findall(r"bool isStopped = speed == 0\.0;", current)), 1)
+        self.assertEqual(len(re.findall(r"bool isStopped = speedKmh == 0\.0;", legacy)), 1)
 
 
 if __name__ == "__main__":

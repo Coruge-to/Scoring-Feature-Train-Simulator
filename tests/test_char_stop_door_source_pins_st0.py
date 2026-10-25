@@ -241,10 +241,12 @@ class Pins(ShortCase):
         self.assertIn("if (st.IsPass) { if (location > nextStationLoc && !isTerminal) { target++;", self.ltl)
 
     # -- thresholds (items 14, 15; T14) ------------------------------------------------------------------------------------------------------------
-    @st0("T14", "CROSS-LAYER-DIFFERENCE", items=(14,), note="F-ST-3: the senders call < 0.1 km/h 'stopped'; Python calls exactly 0.0 'stopped' (is_exact_stop and the operational arrival)")
-    def test_PIN_T14_the_stop_threshold_is_0_1_kmh_in_the_senders_and_exactly_zero_in_python(self):
-        self.assertIn("bool isStopped = Math.Abs(speed) < 0.1;", self.cur)
-        self.assertIn("bool isStopped = Math.Abs(speedKmh) < 0.1;", self.ltl)
+    # Time Fix B3 (an intended change, owner decision): the cross-layer difference F-ST-3 is RESOLVED - the senders called < 0.1 km/h 'stopped', Python called exactly 0.0 'stopped'. BVE supplies exactly 0.0 while the
+    # train stands, so all three now use speed == 0.0 (tests/test_timefix_b3_zero_speed_contract.py, Handshake/Tests/Test-TimeFixB3.ps1 hold the contract).
+    @st0("T14", "CURRENT-BEHAVIOR-ONLY", items=(14,), note="Time Fix B3: the senders and Python all call exactly 0.0 'stopped' (the 0.1 km/h band of the senders is gone; F-ST-3 resolved)")
+    def test_PIN_T14_the_stop_threshold_is_exactly_zero_in_the_senders_and_in_python(self):
+        self.assertIn("bool isStopped = speed == 0.0;", self.cur)
+        self.assertIn("bool isStopped = speedKmh == 0.0;", self.ltl)
         sl = re.sub(r"\s+", " ", py_text("scoring_logic.py"))
         self.assertIn("is_exact_stop = self.bve_speed == 0.0", sl)
         self.assertIn("and self.bve_speed == 0.0 and not getattr(self, 'has_scored_stop_this_station', False)", sl)

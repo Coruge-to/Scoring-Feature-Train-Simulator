@@ -1057,13 +1057,15 @@ def evaluate_departure(self, current_time):
     if p_idx >= 0:
         # F6メニューの設定(override)も含めて判定する関数を呼ぶ
         is_timing_active = self.is_station_timing(p_idx)
+    # Time Fix B3: 公式ジャンプの完了待ちの間に起きた運転停車の発車(targetの切替)は、ジャンプが置き換える前の世界の出来事なので運転時分を採点しない
+    is_stale_operational_stop = getattr(self, 'prev_doordir', 1) == 0 and getattr(self, 'is_official_jumping', False)
     if not getattr(self, 'ignore_next_pass_score', False) and allow_score and not getattr(self, 'is_first_station', False):
         if getattr(self, 'prev_is_pass', 0) == 1 and is_timing_active:
             if not getattr(self, 'has_scored_time_this_station', False):
                 apply_time_score(self, getattr(self, 'prev_diff_s', 0), current_time)
                 self.has_scored_time_this_station = True
                 self.is_official_retry = False
-        elif getattr(self, 'prev_is_pass', 0) == 0 and is_timing_active:
+        elif getattr(self, 'prev_is_pass', 0) == 0 and is_timing_active and not is_stale_operational_stop:
             if not getattr(self, 'has_scored_time_this_station', False):
                 d = p_loc - self.bve_location
 
@@ -1574,7 +1576,8 @@ def update_physics_and_scoring(self, current_time, dt):
 
     self.prev_stop_detection_speed = self.bve_speed
 
-    if is_operational_stop and getattr(self, 'is_approaching', False) and self.bve_speed == 0.0 and not getattr(self, 'has_scored_stop_this_station', False):
+    # Time Fix B3: 公式ジャンプの完了待ちの間のテレメトリは、ジャンプが置き換える前の世界(旧位置・旧時刻)を表す。運転停車の停止成立・latchは作らない(着地後の最初の停止から作り直す)
+    if is_operational_stop and getattr(self, 'is_approaching', False) and self.bve_speed == 0.0 and not getattr(self, 'has_scored_stop_this_station', False) and not getattr(self, 'is_official_jumping', False):
         # 作者定義の停止位置許容範囲内（-margin_f～margin_b）で停車した場合にのみ到着処理を行う
         dist_to_stop = self.bve_next_loc - self.bve_location
         if (-self.bve_margin_f <= dist_to_stop <= self.bve_margin_b):
@@ -1604,11 +1607,13 @@ def update_physics_and_scoring(self, current_time, dt):
                 # 2. そのあとに到着判定（ここで終了フラグ is_scoring_finished が立つ）
                 evaluate_arrival(self, current_time)
 
-            # 運転停車の到着が成立した時点で、到着した駅の停止位置許容幅を保持する（発車時のtgt切替後に次駅の許容幅を使わないため）
-            self.operational_stop_margins = (self.bve_margin_f, self.bve_margin_b)
-            # Time Fix B2: 停止成立時刻と予定発車時刻も保持する(発車時は許容範囲を再判定せず、この記録で運転時分を確定する)
-            latch_index, latch_scheduled_ms = operational_stop_station(self)
-            self.operational_stop_latch = (latch_index, self.bve_time_ms, latch_scheduled_ms)
+            # Time Fix B3: 採点終了駅の運転停車は、この到着で採点が終了する(発車は評価しない)ので、停止成立の記録は残さない
+            if not getattr(self, 'is_scoring_finished', False):
+                # 運転停車の到着が成立した時点で、到着した駅の停止位置許容幅を保持する（発車時のtgt切替後に次駅の許容幅を使わないため）
+                self.operational_stop_margins = (self.bve_margin_f, self.bve_margin_b)
+                # Time Fix B2: 停止成立時刻と予定発車時刻も保持する(発車時は許容範囲を再判定せず、この記録で運転時分を確定する)
+                latch_index, latch_scheduled_ms = operational_stop_station(self)
+                self.operational_stop_latch = (latch_index, self.bve_time_ms, latch_scheduled_ms)
             self.has_scored_stop_this_station = True
 
     # 通常停車駅の開扉時は、BVE公式が現在示している駅を対象にする
@@ -1880,7 +1885,8 @@ def update_physics_and_scoring(self, current_time, dt):
     self.blink_active = False
     self.target_type = self.base_limit_type
 
-    if self.bve_speed > 0.1:
+    # Time Fix B3: 走行中(速度が0.0以外。正負を問わない)だけ制限速度の案内を点滅表示する。停止中(0.0)は通常表示
+    if self.bve_speed != 0.0:
         if active_red:
             self.disp_limit = active_red['val']
             self.limit_color = COLOR_B_EMG

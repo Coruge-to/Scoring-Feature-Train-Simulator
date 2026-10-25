@@ -179,6 +179,16 @@ TIMEFIX_B_EVALUATE_DEPARTURE_PIN = ("slice", "2D7A28AD96FF44159A25F37EC4CEAF572B
 # 2D7A28AD...); every other SLICE region is still compared with the blob of the formal LJX-1 commit (identical).
 TIMEFIX_B2_EVALUATE_DEPARTURE_PIN = ("slice", "CEA6E1FA983E7E338A5EF4638B945C9EE1A357F5F483624D7FFF39416F43384E", 7)
 
+# Time Fix B3 (an INTENDED change of the same scoring region, not of the jump contract): the departure scoring of a timed non-pass stop is not run for an operational stop whose departure is seen while an official
+# jump is outstanding (the telemetry then describes the world the jump is about to replace: tests/test_timefix_b3_zero_speed_contract.py Z-T17). ONE more statement names `is_official_jumping` (7 -> 8 jump records). The new
+# digest is pinned on its own (it was CEA6E1FA...); every other SLICE region is still compared with the blob of the formal LJX-1 commit (identical).
+TIMEFIX_B3_EVALUATE_DEPARTURE_PIN = ("slice", "E2F27FF844D94A4D24756620B2F1379505F9DF5453F7DF560943653B9BA0EFAF", 8)
+
+# Time Fix B3 (an INTENDED change of the same kind): the arrival of an operational stop (update_physics_and_scoring) is not formed while an official jump is outstanding - the telemetry then describes the world the jump
+# is about to replace (old position, old clock), so it must not become the stop of the retried attempt (tests/test_timefix_b3_zero_speed_contract.py Z-T16b / Z-T18 / Z-T19). ONE more statement names `is_official_jumping`
+# (24 -> 25 jump records). The new digest is pinned on its own (it was 4843D2F5...); every other SLICE region is still compared with the blob of the formal LJX-1 commit (identical).
+TIMEFIX_B3_UPDATE_PHYSICS_PIN = ("slice", "5EBC117E7527A6BA6ED3F3440878F7344867FF7964BA36459024E5C9D36A38FE", 25)
+
 STATIONS = [0.0, 1000.0, 2000.0, 3000.0]
 SCORING_TOKENS = ["time", "speed", "loc", "station", "door", "handle", "brake_type", "brake_cab", "prates"]
 
@@ -257,8 +267,10 @@ class A2_TheLegacyJumpContractRegionsOfThePythonSide(unittest.TestCase):
         self.assertTrue(all(value is not None for value in then.values()), then)
         self.assertEqual(now.pop("execute_retry"), ST3D_EXECUTE_RETRY_PIN)           # Phase ST-2b / ST-3d: the intended changes, pinned on their own (the ST-2b value stays above as history)
         then.pop("execute_retry")
-        self.assertEqual(now.pop("evaluate_departure"), TIMEFIX_B2_EVALUATE_DEPARTURE_PIN)     # Time Fix B / B2: the intended changes, pinned on their own (the Time Fix B value stays above as history)
+        self.assertEqual(now.pop("evaluate_departure"), TIMEFIX_B3_EVALUATE_DEPARTURE_PIN)     # Time Fix B / B2 / B3: the intended changes, pinned on their own (the Time Fix B and B2 values stay above as history)
         then.pop("evaluate_departure")
+        self.assertEqual(now.pop("update_physics_and_scoring"), TIMEFIX_B3_UPDATE_PHYSICS_PIN)   # Time Fix B3: the intended change, pinned on its own
+        then.pop("update_physics_and_scoring")
         self.assertEqual(now, then)
         self.assertEqual(now_undeclared, [])
 

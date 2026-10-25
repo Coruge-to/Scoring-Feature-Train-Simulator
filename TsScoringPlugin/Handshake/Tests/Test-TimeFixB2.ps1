@@ -2,6 +2,8 @@ param(
     [string]$RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 )
 # TIME FIX B2 (operational stop contract) - offline BEHAVIOUR test of the target switch of an operational stop (DoorDir == 0), Current AND Legacy.
+# NOTE (Time Fix B3): the 0.1 km/h speed band of this contract was replaced by the exact zero-speed contract (speed == 0.0 stopped, speed != 0.0 moving, either sign; Test-TimeFixB3.ps1). Only the case C-T06 follows B3;
+# every other case of this file is unchanged and still holds. The text of the rule below is the B2 one.
 #
 # The rule under test (the SENDER half of the contract; the scoring half is tests\test_timefix_b2_operational_stop_contract.py):
 #   * the stop is established ONCE: |speed| < 0.1 km/h inside the author-defined range of the target station (MarginMin short side, MarginMax past side, both bounds inclusive) - unchanged;
@@ -275,12 +277,18 @@ function Run-Suite([string]$kind) {
         Check ($k + ' C-T05/T07 [RED-B2] backward ' + $v + ' km/h is leaving: the target is C at once') ($p.Target -eq 2)
     }
 
-    # C-T06 exactly 0.1 km/h (and below) is not leaving
-    foreach ($v in @(0.1, -0.1, 0.0999, -0.0999, 0.05, 0.0)) {
+    # C-T06 Time Fix B3 (an owner-approved supersession): the 0.1 km/h band of Time Fix B2 ("0.1 and below is not leaving") is gone. BVE supplies exactly 0.0 while the train stands, so ONLY 0.0 / -0.0 is not leaving;
+    # 0.1 / -0.1 / 0.0999 / 0.05 are moving (see Test-TimeFixB3.ps1 Z-T03..Z-T10, which holds the exact zero-speed contract for both senders)
+    foreach ($v in @(0.0, [BitConverter]::Int64BitsToDouble([long]::MinValue))) {
         $p = NewLatched $k
         $p.Step(1000.0, $v, ($DEP - 20000), $true)
         $p.Step(1000.0, $v, ($DEP - 10000), $true)
-        Check ($k + ' C-T06 ' + $v + ' km/h is not leaving: the target stays B, NEXTTIME = departure') (($p.Target -eq 1) -and ($p.NextTime -eq $DEP))
+        Check ($k + ' C-T06 ' + $v.ToString('R', [Globalization.CultureInfo]::InvariantCulture) + ' km/h is not leaving: the target stays B, NEXTTIME = departure') (($p.Target -eq 1) -and ($p.NextTime -eq $DEP))
+    }
+    foreach ($v in @(0.1, -0.1, 0.0999, -0.0999, 0.05)) {
+        $p = NewLatched $k
+        $p.Step(1000.0, $v, ($DEP - 20000), $true)
+        Check ($k + ' C-T06 (B3) ' + $v + ' km/h is leaving (no 0.1 km/h band): the target is C at once') ($p.Target -eq 2)
     }
 
     # C-T08 the first stop inside the range comes after the departure time: the stop is the arrival event, the target follows after the hold (the actual time is the Python side's record of the stop)

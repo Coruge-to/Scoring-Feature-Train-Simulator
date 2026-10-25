@@ -89,7 +89,8 @@ FROZEN = {
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyScoringProbe.cs": "1f0be23bc1c911e4bf83933a22016613834c2f48",
     # Time Fix A changed LegacyStationTimeline.cs on purpose (the departure reader and the arrival fill-in, tests\test_timefix_a_terminal_arrival.py): the blob moved from 1bae94a1... (ST-3c)
     # Time Fix B2 changed LegacyStationTimeline.cs on purpose (the same branch, tests\test_timefix_b2_operational_stop_contract.py / Handshake\Tests\Test-TimeFixB2.ps1): the blob moved from 4bb9c312... (Time Fix A)
-    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs": "4554795a596bbe6ed2040061257a200e13893664",
+    # Time Fix B3 changed LegacyStationTimeline.cs on purpose (the same two comparisons, tests\test_timefix_b3_zero_speed_contract.py / Handshake\Tests\Test-TimeFixB3.ps1): the blob moved from 4554795a... (Time Fix B2)
+    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs": "d33ecdba3a4517cf3261731d532775a1a4b42b0e",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "12a0f84ad865443ad64c76e308907f5b7bcfdcf9",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetrySession.cs": "5dd33902438d358f038a03a8900976816d589af0",
     "TsScoringPlugin/Handshake/Telemetry/Shared/DataPlaneProtocol.cs": "bed2ed8585b502578d4d4e17f64307206d0920fc",
@@ -102,7 +103,8 @@ FROZEN = {
     # Phase U10 changed Class1.cs on purpose (tests\test_stationindex_station_range_u10.py): the blob moved from a1c34ae7... (ST-3b); ST-3d itself still does not touch it
     # Time Fix A changed Class1.cs on purpose (the arrival fill-in, tests\test_timefix_a_terminal_arrival.py): the blob moved from a9b420a0... (U10)
     # Time Fix B2 changed Class1.cs on purpose (the operational stop leaves the target at once when the vehicle leaves, tests\test_timefix_b2_operational_stop_contract.py / Handshake\Tests\Test-TimeFixB2.ps1): the blob moved from b703adb0... (Time Fix A)
-    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "04a120116b8ab9e12af28ceb297e57e416ae9b27",
+    # Time Fix B3 changed Class1.cs on purpose (BVE supplies exactly 0.0 while the train stands: speed == 0.0 is stopped, speed != 0.0 is moving; the 0.1 km/h band is gone, tests\test_timefix_b3_zero_speed_contract.py / Handshake\Tests\Test-TimeFixB3.ps1): the blob moved from 04a12011... (Time Fix B2)
+    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "4aa4aac50dddf1b7a3de7cf3fa73b9588c5c172f",
     "TsScoringPlugin/TsScoringPlugin/CurrentDataPlane.cs": "71b0ebaa6f52871ceb2a59456a2b527041241c46",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs": "3e0d3bffbb74e4a2ecc6d10d378a8b6e2788ae6f",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs": "8a54d6a14100e0021ca248d28369c335f965fafe",

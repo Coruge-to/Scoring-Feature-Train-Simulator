@@ -831,6 +831,10 @@ class Overlay(QWidget):
                                 reset_speed_penalty_state(self)
                                 reset_roll_state(self)
 
+                                # Time Fix B3: 前シナリオの運転停車の停止成立記録(latch・停止位置許容幅)を残さない
+                                self.operational_stop_latch = None
+                                self.operational_stop_margins = None
+
                             self.needs_margin_recalc = True
                             self.current_scenario_id = new_id
                             
@@ -2214,9 +2218,9 @@ class Overlay(QWidget):
             self.ff_check_real_time = real_now
             self.ff_check_bve_time = self.bve_time_ms
 
-        # フラグON かつ 採点中 かつ 走行中(0.1km/h以上) に早送りを検知したら強制解除
+        # フラグON かつ 採点中 かつ 走行中(速度が0.0以外。正負を問わない) に早送りを検知したら強制解除
         if self.F8_disable and getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False):
-            if abs(self.bve_speed) >= 0.1 and self.is_fast_forwarding:
+            if self.bve_speed != 0.0 and self.is_fast_forwarding:
                 # 公式ジャンプによる時間変化を早送りとして扱わない
                 if not getattr(self, 'is_official_jumping', False):
                     if self.bve_hwnd:
@@ -2272,8 +2276,8 @@ class Overlay(QWidget):
 
     def _sync_f8_suppression(self, is_bve_active):
         """F8 is not passed to BVE while a scoring run is driving (the menu hooks own F8 while a menu is open)."""
-        # 採点中かつ走行中はF8入力を抑止する
-        should_block_f8 = self.F8_disable and getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False) and self.bve_speed >= 0.1 and is_bve_active and self.menu_state == 0
+        # 採点中かつ走行中(速度が0.0以外。正負を問わない)はF8入力を抑止する
+        should_block_f8 = self.F8_disable and getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False) and self.bve_speed != 0.0 and is_bve_active and self.menu_state == 0
         
         # メニュー用キーフック(f8を含む)が登録中は、同じキー名f8の採点用フックを登録しない
         # (メニューを閉じた直後のtickで両フックが重なり、解除時にKeyErrorで採点用フックが残るのを防ぐ)

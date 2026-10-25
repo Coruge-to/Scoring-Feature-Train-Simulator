@@ -223,7 +223,8 @@ namespace TSScoringPlugin.Telemetry
                 {
                     double distToStop = nextStationLoc - location;
                     bool isInMargin = distToStop >= -marginFront && distToStop <= marginBack;
-                    bool isStopped = Math.Abs(speedKmh) < 0.1;
+                    // Time Fix B3: BVE supplies exactly 0.0 while the train stands, so there is no noise band: speed == 0.0 (+0.0 and -0.0) is STOPPED, any other speed (either sign) is MOVING.
+                    bool isStopped = speedKmh == 0.0;
                     int depTime = st.DepTime > 0 ? st.DepTime : st.InterpolatedTime;
 
                     if (isStopped && isInMargin)
@@ -236,10 +237,10 @@ namespace TSScoringPlugin.Telemetry
                         opStopMadeIndex = target;
                     }
 
-                    // Time Fix B2: once the stop was made inside the author-defined range, the vehicle LEAVING ends the operational stop at once: |speed| > 0.1 km/h in either direction
-                    // (exactly 0.1 is not leaving). The range is not tested again, and neither the departure time nor the 300 ms hold is waited for; a vehicle that never stopped inside the range keeps the target.
+                    // Time Fix B2/B3: once the stop was made inside the author-defined range, the vehicle MOVING (speed != 0.0, either sign) ends the operational stop at once on that Tick.
+                    // The range is not tested again, and neither the departure time nor the 300 ms hold is waited for; a vehicle that never stopped inside the range keeps the target.
                     // "The stop was made" is its own record (opStopMadeIndex): hasDoorOpenedAtTarget can also be PRESET by a target selection (doors open within 50 m) and is no proof of a stop.
-                    if (hasDoorOpenedAtTarget && opStopMadeIndex == target && !isTerminal && Math.Abs(speedKmh) > 0.1)
+                    if (hasDoorOpenedAtTarget && opStopMadeIndex == target && !isTerminal && speedKmh != 0.0)
                     {
                         target++;
                         hasDoorOpenedAtTarget = false;

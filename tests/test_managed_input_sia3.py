@@ -1707,8 +1707,16 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
         timefix_b_departure_margins = (
             "if (getattr(self, 'has_scored_stop_this_station', False) or getattr(self, 'is_official_retry', False)) and (-self.bve_margin_f <= d <= self.bve_margin_b):",
         )
+        # Time Fix B3 (on purpose): the speed limit guidance gate `if self.bve_speed > 0.1:` became `!= 0.0` (moving, either sign), the operational stop is not formed on the telemetry of an outstanding official jump
+        # (one more condition on the arrival line), and the departure scoring of a timed non-pass stop does not run for an operational stop of that stale world (one more condition on the elif). These are the 3 distinct
+        # lines (stripped) that the diff shows as removed because they gained a condition or changed their comparison; no score, no rule and no constant is among them.
+        timefix_b3_zero_speed_and_jump_boundary = (
+            "if self.bve_speed > 0.1:",
+            "if is_operational_stop and getattr(self, 'is_approaching', False) and self.bve_speed == 0.0 and not getattr(self, 'has_scored_stop_this_station', False):",
+            "elif getattr(self, 'prev_is_pass', 0) == 0 and is_timing_active:",
+        )
         self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport) + st2a_checkpoint_identity + st2b_retry_by_saved_index
-                                   + st3d_request_by_the_one_builder + st2c_first_station_distance + timefix_b_departure_margins], removed)
+                                   + st3d_request_by_the_one_builder + st2c_first_station_distance + timefix_b_departure_margins + timefix_b3_zero_speed_and_jump_boundary], removed)
 
     def test_the_scoring_function_bodies_are_ast_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":scoring_logic.py")
