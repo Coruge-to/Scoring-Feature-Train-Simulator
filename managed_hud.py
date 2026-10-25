@@ -24,6 +24,17 @@ Phase SI-A6: an optional PauseDataRecovery (attach_recovery) is ticked after eve
 Driving OFF / PAUSED / no data" is enough - is gone: it fired on ordinary scenario loads. P is pressed only for a token of a concrete operation (F5 while paused).
 
 Diagnostics: one `[MANAGED] ...` line per STATE CHANGE (fixed words and numbers; no path, no HUD text); identical readings are only counted.
+
+Phase UI-ALT-F4 (the Overlay is ONE window with two input modes, and the close the user asks for):
+    HUD               no menu open: click-through, never in front, every key and click reaches BVE (unchanged).
+    operation screen  a menu is open (F1 top, the scoring settings, the retry list, the confirmations, the result screen): the SAME window receives the mouse and the
+                      keyboard and takes the foreground (from BVE, never from another application or from the result save dialog); nothing reaches BVE behind it.
+                      When the screen is closed the foreground goes back to BVE. The switch is the click-through style of the window (Overlay.set_input_ownership).
+    user close        Alt+F4 while the Overlay is in front arrives as a close the user asked for: the Overlay stays (neither hidden nor destroyed) and BVE is asked to end
+                      with ONE close message (request_user_close); BVE then ends the usual way and the Caller's Stop ends this process. The F11 hold of the Caller stays
+                      the only owner of the F11 state; this module restores, closes and ends nothing.
+    shown flag        `_shown` is re-aligned with the real Overlay (_reconcile_shown) so that an Overlay that vanished is shown again.
+The window operations themselves (style, foreground, the close message) are methods of the Overlay (main.py); this module decides when, and reports.
 """
 import time
 
@@ -38,6 +49,10 @@ IDLE_INTERVAL_MS = 100           # while nothing is shown: only the state block 
 WINDOW_SEARCH_INTERVAL_S = 0.5   # EnumWindows is not run more often than this while no BVE window is linked
 MAX_HUD_ERROR_LINES = 5
 MAX_ZORDER_LINES = 5             # hud-zorder-set / hud-zorder-error lines; further ones are only counted
+FOREGROUND_TRIES = 30            # Phase UI-ALT-F4: ticks (about half a second) an operation screen tries to take the foreground; afterwards it only waits for the user's click
+HUD_FOREGROUND_RETRIES = 5       # Phase UI-ALT-F4: consecutive failures to hand the foreground back to BVE while the HUD is click-through
+MAX_RECONCILES_PER_GENERATION = 3   # Phase UI-ALT-F4: the shown flag is re-aligned with the real Overlay at most this often per ScenarioGeneration
+INPUT_LINE_CAPS = {"hud-input-mode": 8, "hud-input-focus": 6, "hud-user-close": 4, "hud-reconcile": 3}
 
 
 class Win32WindowApi(object):
@@ -70,6 +85,10 @@ class Win32WindowApi(object):
 
     def is_window(self, hwnd):
         return bool(self._gui.IsWindow(hwnd))
+
+    def foreground_window(self):
+        """The foreground window (0 when there is none). Phase UI-ALT-F4: a read, the HUD never changes the foreground through this module."""
+        return int(self._gui.GetForegroundWindow() or 0)
 
     def is_iconic(self, hwnd):
         return bool(self._gui.IsIconic(hwnd))
@@ -131,6 +150,8 @@ class ManagedHudController(object):
     overlay     needs show / hide / isVisible / setGeometry / geometry / winId / update (the real Overlay; a fake in tests)
     timer       the Overlay's one QTimer (setInterval only; the controller never creates a timer)
     window_api  find_bve_window / is_window / is_iconic / client_rect_on_screen / owner_of / set_owner / z_above / is_topmost / place_below
+                (Phase UI-ALT-F4, optional: foreground_window. Without it, and without the Overlay methods set_input_ownership / has_input_ownership /
+                bring_to_foreground, the input-ownership switch of the operation screens does not exist: the Overlay stays click-through, as in Phase E4.)
     update_step called once per tick while ACTIVE
     telemetry   Phase L3: the strict TelemetryGate (telemetry_gate.py) or None. With it the HUD is only shown while real telemetry of the CURRENT
                 ScenarioGeneration has been received (and the sender has not moved on to the next scenario); without it (None) nothing is waited for.
@@ -163,6 +184,13 @@ class ManagedHudController(object):
         self._recovery = None           # Phase SI-A6: the pause data recovery (pause_recovery), attached by main._attach_managed_hud; None = none
         self._closed_seen = False       # the Caller withdrew the state (Closed flag): the NORMAL end
         self._epoch_last = (False, False, 0)   # Phase SI-A7 (M1a): the Ready epoch last reported (supported, tick seen, number); diagnostic only
+        self._operation = False         # Phase UI-ALT-F4: the Overlay is in the operation-screen input mode (it owns the mouse / keyboard); False = HUD (click-through)
+        self._foreground_tries = 0      # ticks left to take the foreground for the open operation screen
+        self._hud_return_failures = 0   # consecutive failed hand-backs of the foreground to BVE while the HUD is click-through
+        self._user_close_sent = False   # the ONE close request to the BVE window was sent (the latch of a close the user asked for; never re-armed)
+        self._stop_probe = None         # callable: has the end of this process been requested (set by main.run_managed); None = only shutdown() counts
+        self._reconciles_generation = 0
+        self._line_counts = {}
         self.startup_failure = None     # why start() failed (the managed contract is not met)
         self.failsafes = 0
         # counters (tests and the summary line)
@@ -178,6 +206,15 @@ class ManagedHudController(object):
         self.z_errors = 0
         self.owner_releases = 0
         self.errors = 0
+        # Phase UI-ALT-F4 counters (tests and the summary lines)
+        self.input_modes = 0            # entries into the operation-screen input mode
+        self.foreground_takes = 0
+        self.foreground_refusals = 0
+        self.foreground_returns = 0
+        self.input_errors = 0
+        self.user_close_sent = 0
+        self.user_close_skipped = 0
+        self.reconciles = 0
 
     # -- diagnostics --------------------------------------------------------------------------------------------------------------------
     def _emit(self, event, **fields):
@@ -199,6 +236,14 @@ class ManagedHudController(object):
             self._log(text)
         except Exception:
             pass
+
+    def _emit_capped(self, event, **fields):
+        """Phase UI-ALT-F4: a compact line, at most INPUT_LINE_CAPS[event] of them per process (the Caller keeps only a bounded number of application lines)."""
+        count = self._line_counts.get(event, 0)
+        if count >= INPUT_LINE_CAPS.get(event, 4):
+            return
+        self._line_counts[event] = count + 1
+        self.emit_event(event, **fields)
 
     @property
     def shown(self):
@@ -252,6 +297,46 @@ class ManagedHudController(object):
     def find_bve_window(self):
         """The window of THIS BVE process (matched by process id, never by title alone), searching at most every WINDOW_SEARCH_INTERVAL_S; None if there is none."""
         return self._hwnd if self._ensure_window() else None
+
+    # -- Phase UI-ALT-F4: the close the USER asked for ----------------------------------------------------------------------------------
+    def set_stop_probe(self, probe):
+        """`probe()` is True once the end of this process was requested (the Caller's Stop event, the parent gone): a close of the Overlay then belongs to the shutdown."""
+        self._stop_probe = probe
+
+    def _ending(self):
+        if self._shutdown:
+            return True
+        probe = self._stop_probe
+        if probe is None:
+            return False
+        try:
+            return bool(probe())
+        except Exception:
+            return False
+
+    def request_user_close(self):
+        """Overlay.user_close_handler: the USER closed the Overlay (Alt+F4 while it is in front, the window menu). The Overlay is neither hidden nor destroyed;
+        the end of the session is asked of BVE instead - ONE close request to the BVE window, the same message as its close button, and BVE ends the way it
+        always does (the Caller's Stop reaches this process). Nothing is restored, closed or ended from here: the F11 hold of the Caller (restore, then one
+        re-posted close) stays the only owner of the F11 state. Returns the outcome as a fixed word."""
+        if self._user_close_sent:
+            outcome = "already-sent"
+        elif self._ending():
+            outcome = "stopping"
+        elif self._hwnd is None or not self._api.is_window(self._hwnd):
+            outcome = "no-window"
+        else:
+            self._user_close_sent = True             # the latch: set before the post, kept when the post fails
+            if self._overlay.post_close_to_bve(self._hwnd):
+                self.user_close_sent += 1
+                self._emit_capped("hud-user-close", sent=1)
+                return "sent"
+            self.user_close_skipped += 1
+            self._emit_capped("hud-user-close", skipped=1, reason="post-failed")
+            return "post-failed"
+        self.user_close_skipped += 1
+        self._emit_capped("hud-user-close", skipped=1, reason=outcome)
+        return outcome
 
     @property
     def input_allowed(self):
@@ -355,6 +440,7 @@ class ManagedHudController(object):
     def _on_generation(self, generation):
         """Phase L3: a new ScenarioGeneration. The telemetry of the previous one is retired; when the sender had already moved on to the new scenario
         its newest datagram was held and is applied now (the HUD then needs no further datagram to appear, e.g. while the simulation is paused)."""
+        self._reconciles_generation = 0
         if self._input is not None:
             self._input.on_generation(generation)       # scoring inactive, the previous scenario's state discarded, the input released (BEFORE the held line)
         if self._telemetry is None:
@@ -407,6 +493,7 @@ class ManagedHudController(object):
                     if rect is not None and rect != self._geom:
                         overlay.setGeometry(*rect)
                         self._geom = rect
+                    self._reconcile_shown()
                     shown_now = self._show()
                     self._ensure_owner()
                     if shown_now:
@@ -417,6 +504,113 @@ class ManagedHudController(object):
         if self._update_step is not None:
             self._update_step(overlay)
             self.updates += 1
+        self._sync_input_mode()
+
+    def _reconcile_shown(self):
+        """Phase UI-ALT-F4 (secondary defence): `_shown` must not outlive the real Overlay. When it says "shown" but the Overlay is not visible (or has no
+        native window), the flag is dropped and the ordinary show of this same tick brings the HUD back (owner released, show, owner set, Z order: the usual
+        steps). Never after the user's close request (that request is the user's answer, not a loss), never while the process ends, and at most
+        MAX_RECONCILES_PER_GENERATION times per ScenarioGeneration."""
+        if not self._shown or self._user_close_sent or self._ending():
+            return
+        overlay = self._overlay
+        if overlay.isVisible() and int(overlay.winId()):
+            return
+        if self._reconciles_generation >= MAX_RECONCILES_PER_GENERATION:
+            return
+        self._reconciles_generation += 1
+        self.reconciles += 1
+        self._shown = False
+        self._emit_capped("hud-reconcile", reason="overlay-not-visible", n=self.reconciles)
+
+    # -- Phase UI-ALT-F4: who owns the input (HUD: BVE; operation screens: the Overlay) ---------------------------------------------------
+    def _input_ownership_available(self):
+        return (self._hwnd is not None and hasattr(self._overlay, "set_input_ownership") and hasattr(self._overlay, "has_input_ownership")
+                and hasattr(self._overlay, "bring_to_foreground") and hasattr(self._api, "foreground_window"))
+
+    def _sync_input_mode(self):
+        """The Overlay is ONE window with two input modes. HUD (no menu): click-through, never in front, every key and click reaches BVE. Operation screen
+        (the F1 menu and everything behind it, the result screen): the SAME window takes the mouse and the keyboard and the foreground, nothing reaches BVE
+        behind it. Only the click-through style of the window changes; the handle, the owner and the Z order stay. The foreground is taken from BVE (or from
+        nobody), never from another application or from the result save dialog, and handed back to BVE when the operation screen is closed."""
+        if not self._shown or not self._input_ownership_available():
+            return
+        try:
+            if getattr(self._overlay, "menu_state", 0):
+                self._enter_operation()
+            elif self._operation:
+                self._leave_operation()
+            else:
+                self._guard_hud_foreground()
+        except Exception as e:
+            self.input_errors += 1
+            self._emit_capped("hud-input-mode", error=describe_exception(e), n=self.input_errors)
+
+    def _enter_operation(self):
+        overlay, api = self._overlay, self._api
+        overlay_hwnd = int(overlay.winId())
+        if not self._operation:
+            self._operation = True
+            self._foreground_tries = FOREGROUND_TRIES
+            self.input_modes += 1
+            self._emit_capped("hud-input-mode", mode="operation", n=self.input_modes)
+        if not overlay.has_input_ownership():
+            overlay.set_input_ownership(True)           # a window that Qt created again starts click-through
+        if self._foreground_tries <= 0:
+            return
+        front = api.foreground_window()
+        if front == overlay_hwnd:
+            self._foreground_tries = 0
+            self.foreground_takes += 1
+            self._emit_capped("hud-input-focus", result="taken")
+        elif front in (0, self._hwnd):
+            if front:
+                self._foreground_tries -= 1             # (a moment with no foreground window at all does not use up the tries)
+            if overlay.bring_to_foreground(overlay_hwnd):
+                self._foreground_tries = 0
+                self.foreground_takes += 1
+                self._emit_capped("hud-input-focus", result="taken")
+            elif self._foreground_tries <= 0:
+                self.foreground_refusals += 1
+                self._emit_capped("hud-input-focus", result="refused")
+        else:
+            self._foreground_tries = 0                  # another window (the save dialog, another application) is in front: it keeps the foreground
+            self._emit_capped("hud-input-focus", result="other-window")
+
+    def _leave_operation(self):
+        overlay, api = self._overlay, self._api
+        self._operation = False
+        self._foreground_tries = 0
+        overlay.set_input_ownership(False)               # click-through FIRST: whatever happens to the foreground, the HUD must not keep the mouse
+        returned = "no"
+        if api.foreground_window() == int(overlay.winId()) and overlay.bring_to_foreground(self._hwnd):
+            returned = "yes"
+            self.foreground_returns += 1
+        self._emit_capped("hud-input-mode", mode="hud", returned=returned)
+
+    def _guard_hud_foreground(self):
+        """The HUD is click-through and never keeps the foreground (it would take the driving keys from BVE): when the Overlay still owns the input (a failed
+        switch) it is made click-through again, and when it is in front while no operation screen is open (the owner gets the activation back when a dialog of its
+        own closes), the foreground goes back to BVE."""
+        overlay = self._overlay
+        if overlay.has_input_ownership():
+            overlay.set_input_ownership(False)
+        if self._api.foreground_window() != int(overlay.winId()):
+            self._hud_return_failures = 0
+            return
+        if self._hud_return_failures >= HUD_FOREGROUND_RETRIES:
+            return
+        try:
+            returned = overlay.bring_to_foreground(self._hwnd)
+        except Exception:
+            returned = False
+            self.input_errors += 1
+        if returned:
+            self._hud_return_failures = 0
+            self.foreground_returns += 1
+            self._emit_capped("hud-input-mode", mode="hud", returned="yes")
+        else:
+            self._hud_return_failures += 1
 
     def _tick_waiting_input(self):
         """Session ON and Driving ON but no telemetry of this generation yet: the input is released, only the linked window is looked for. (Phase SI-A6: no
@@ -534,6 +728,15 @@ class ManagedHudController(object):
     def _hide(self, reason):
         if not self._shown:
             return
+        if self._operation:
+            self._operation = False                      # a hidden Overlay is click-through again, so the next show starts as the HUD
+            self._foreground_tries = 0
+            try:
+                self._overlay.set_input_ownership(False)
+                if reason not in ("shutdown", "bve-minimized") and self._hwnd is not None and self._api.foreground_window() == int(self._overlay.winId()):
+                    self._overlay.bring_to_foreground(self._hwnd)      # the Overlay in front is going away: BVE gets the foreground, not an arbitrary window
+            except Exception:
+                self.input_errors += 1
         self._overlay.hide()
         self._shown = False
         self.hides += 1
@@ -606,6 +809,13 @@ class ManagedHudController(object):
                    coalesced=self.gate.skipped_changes, links=self.link_count, owner_sets=self.owner_sets, errors=self.errors)
         if self.z_sets or self.z_errors or self.owner_releases:
             self.emit_event("hud-zorder-summary", sets=self.z_sets, releases=self.owner_releases, errors=self.z_errors)    # only when the Z order was ever touched; a line of its own, hud-summary is already longer than the Caller transcribes
+        if self.input_modes or self.input_errors or self.foreground_returns:
+            self.emit_event("input-mode-summary", operations=self.input_modes, takes=self.foreground_takes, refusals=self.foreground_refusals,
+                            returns=self.foreground_returns, errors=self.input_errors)    # only when the input ownership was ever used
+        if self.user_close_sent or self.user_close_skipped:
+            self.emit_event("user-close-summary", sent=self.user_close_sent, skipped=self.user_close_skipped)    # only when the user ever asked for a close
+        if self.reconciles:
+            self.emit_event("hud-reconcile-summary", n=self.reconciles)
         if self._telemetry is not None:
             self.emit_event("telemetry-summary", **self._telemetry.summary_fields())     # a line of its own: hud-summary is already longer than the Caller transcribes
         if self._input is not None:

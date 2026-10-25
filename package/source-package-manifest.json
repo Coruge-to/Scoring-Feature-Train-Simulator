@@ -74,9 +74,9 @@
     {"set": "python", "path": "hud_ui.py", "blob_sha256": "CC5E577B33018CFB52BA050EFAD6E1DA033D5976569F2DF159A779BEB140E427", "blob_size": 23011, "blob_eol": "lf"},
     {"set": "python", "path": "jump_transaction.py", "blob_sha256": "D647A905CC5100EFC74DAF508ECB58663728CA12AE9CB75CA32E69445DBB81B1", "blob_size": 17015, "blob_eol": "lf"},
     {"set": "python", "path": "jump_wire.py", "blob_sha256": "3F24A9F733FDD8E2FD8A1BC0FE24DB594916671FE78608B76879538B9B35EA27", "blob_size": 20563, "blob_eol": "lf"},
-    {"set": "python", "path": "main.py", "blob_sha256": "29D8C66E615E9C0BEE62892E70CC388D8C9CCFFFB32D4B4474DE18074D18F7EE", "blob_size": 164916, "blob_eol": "lf"},
+    {"set": "python", "path": "main.py", "blob_sha256": "7626FAC420027F22DA2FDF7FD7CF5F71DFA743F09D3F059DACE68C6AE38387DB", "blob_size": 170457, "blob_eol": "lf"},
     {"set": "python", "path": "managed_app_directory.py", "blob_sha256": "7B77DA8C4D04B32603AE7BFFAA1A74FCE07253B1BE2084ECB11EBBE5B46DCA8A", "blob_size": 12303, "blob_eol": "lf"},
-    {"set": "python", "path": "managed_hud.py", "blob_sha256": "91CD477F68AD79BEC7EB98913962918C4035F1A87877C892A2AFB9D13E4436A3", "blob_size": 33625, "blob_eol": "lf"},
+    {"set": "python", "path": "managed_hud.py", "blob_sha256": "8587FF4CB4AF8B2D5774C939F12E79EFDF40F0628C1BC20E124696E5A506FC04", "blob_size": 47203, "blob_eol": "lf"},
     {"set": "python", "path": "managed_input.py", "blob_sha256": "D7DA2C5FC31B1319172E3C2ADC0DDD4AE3659061898584BB5C8CF2170B5F8925", "blob_size": 34710, "blob_eol": "lf"},
     {"set": "python", "path": "managed_mode.py", "blob_sha256": "8ACE27B1D4F3BF904E9666DFE2FF6BFD397F716A27823B2756D31D06CFD892E2", "blob_size": 30132, "blob_eol": "lf"},
     {"set": "python", "path": "managed_state.py", "blob_sha256": "97E2FC6433E8E7C0B992049A84A34FCC90C0D98E8599965D63D19B840EAD3CA0", "blob_size": 20718, "blob_eol": "lf"},
@@ -122,5 +122,5 @@
     {"set": "shared", "path": "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryContract.cs", "blob_sha256": "ABDBBF4C5BA1567AABC600B28283C87F30BCB4019D82E2A1574B9C847E63B694", "blob_size": 8953, "blob_eol": "lf"},
     {"set": "shared", "path": "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs", "blob_sha256": "9D6C47493457FD840E8CA5186C8E16181F0B5CF85C10721087C9098DD6644680", "blob_size": 6615, "blob_eol": "lf"}
   ],
-  "fingerprint": "9AF9D9933BAD89E0BD4FB57882E61789759F4B19E6EA5C554C70779A0EAC0996"
+  "fingerprint": "8EA6453A6E971B8B1E43FD46A8B9C48C913AE5B5207B906B6BD0C38D5D79A54D"
 }

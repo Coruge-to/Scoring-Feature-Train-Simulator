@@ -58,7 +58,8 @@ BASE_BLOBS = {
     "jump_transaction.py": "69ac19a6befca5a7a8810cbd544a48115cfd6c81",
     "jump_wire.py": "00579f8031221333f2f6e471d7e30ab3f8b1a365",
     "managed_app_directory.py": "77bf8671ef364b05fb6a6524858ce2ffc2930060",
-    "managed_hud.py": "38a2e4b9bfa0dd16a896ebb095e97bcabe09f5ee",
+    # UI-ALT-F4 changed managed_hud.py on purpose (the Overlay's input ownership for the operation screens, the one close request to BVE for a close the user asked for, the shown flag re-aligned with the real Overlay, tests/test_managed_hud_input_ownership.py / tests/test_overlay_user_close_altf4.py / tests/test_managed_hud_shown_reconcile.py): the blob moved from 38a2e4b9... (0b8e511); the package manifest is regenerated for it
+    "managed_hud.py": "b8f0430481039dca62c4ad5233e4c151f3e84407",
     # Time Fix B changed managed_input.py (one name added to GENERATION_DROP) and scoring_logic.py (the operational stop keeps its arrival range, tests/test_timefix_b_operational_stop_margin.py) on purpose: the blobs moved from 73aff45b... / 140d8471... (0b8e511); the package manifest is regenerated for them
     # Time Fix B2 changed managed_input.py (one more name in GENERATION_DROP) and scoring_logic.py (the operational stop is latched at its stop and completed by that record, tests/test_timefix_b2_operational_stop_contract.py): the blobs moved from 293b4a21... / 5be7a006... (Time Fix B)
     "managed_input.py": "7933e16d4cbebb140de10f4a642cf3a26ed2f2db",
@@ -110,7 +111,8 @@ BASE_BLOBS = {
 }
 # Time Fix B3 changed main.py on purpose (the F8 hook and the fast-forward release test speed != 0.0 instead of >= 0.1 km/h / abs >= 0.1; a new scenario in the plain mode leaves no operational stop record): the blob (without its contract import)
 # moved from f2031b37... (Time Fix B2; main.py had been unchanged since 0b8e511 apart from the contract import)
-BASE_MAIN = "af943ef02dd14b01719adda6762944b07b93ebc1"
+# UI-ALT-F4 changed main.py on purpose (Overlay.closeEvent / set_input_ownership / has_input_ownership / bring_to_foreground / post_close_to_bve, the "in front" of the managed step follows the Overlay, the wiring of the user close handler and the stop probe, the shutdown disarms the handler; tests/test_overlay_user_close_altf4.py / tests/test_managed_hud_input_ownership.py): the blob (without its contract import) moved from af943ef0... (Time Fix B3)
+BASE_MAIN = "bd8c31c96fad6bb9c86275d77a4d9d91815d8b82"
 BASE_PROJECTS = {CURRENT_PROJECT: "61092229f34e5e4ceb52a4fb6e52280824ec2578", LEGACY_PROJECT: "defbe148ff815741c6b627cadaf8d024f649f804"}
 CODEC_FILES = ("jump_wire.py", "station_index_contract.py", "dataplane_contract.py", "telemetry_contract.py", "station_identity.py",
                SHARED_DIR + "/JumpWire.cs", SHARED_DIR + "/StationListIdentity.cs", SHARED_DIR + "/DataPlaneProtocol.cs", SHARED_DIR + "/TelemetryDirectoryReader.cs",

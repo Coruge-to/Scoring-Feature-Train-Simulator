@@ -2672,13 +2672,94 @@ class Overlay(QWidget):
         window disappears do not exist here: the lifetime of the process belongs to the Stop request). The kick start's first half is NOT part of it
         (Phase SI-A6): managed mode presses P only for a recovery token (press_p_for_recovery)."""
         self.adopt_bve_window(hwnd)
-        is_bve_active = (win32gui.GetForegroundWindow() == hwnd)
+        front = win32gui.GetForegroundWindow()
+        # "in front" is BVE, or this window while an operation screen owns the input (set_input_ownership): the keys and the mouse of the step belong to the game side
+        is_bve_active = (front == hwnd) or (front != 0 and front == int(self.winId()))
         self._run_input_and_scoring_step(is_bve_active)
 
     def restore_bve_window(self):
         """Managed shutdown: a BVE window that F11 made borderless is put back (best effort; nothing happens for a window that is gone)."""
         if self.is_borderless_fullscreen and self.bve_hwnd and win32gui.IsWindow(self.bve_hwnd):
             self.toggle_borderless_fullscreen()
+
+    # -- Phase UI-ALT-F4: the input ownership of the operation screens and the close the user asked for (managed mode; the normal mode never installs a handler) ----
+    user_close_handler = None    # managed mode: called for a close that the USER asked for (Alt+F4 while this window is in front, the window menu); None = Qt's default close
+
+    def closeEvent(self, event):
+        """A close that comes from the user (spontaneous: Alt+F4, the window menu) is not carried out: the window stays as it is and the handler asks BVE to end
+        (managed_hud.ManagedHudController.request_user_close). A close that the program asks for (overlay.close() of the shutdown, not spontaneous) and every
+        close without a handler (normal mode) is Qt's default."""
+        handler = self.user_close_handler
+        if handler is None or not event.spontaneous():
+            super().closeEvent(event)
+            return
+        event.ignore()
+        try:
+            handler()
+        except Exception as e:
+            try:
+                self._emit_input_event("user-close-error", type=type(e).__name__)
+            except Exception:
+                pass                                  # (nothing may escape a Qt virtual)
+
+    def set_input_ownership(self, operation):
+        """operation=True: this window receives the mouse and the keyboard (the operation screens); False: click-through again (the HUD). Only WS_EX_TRANSPARENT
+        of the SAME native window changes - Qt's WindowTransparentForInput is this extended style and nothing else - so handle, owner and Z order stay.
+        Returns whether the style changed."""
+        hwnd = int(self.winId())
+        style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+        wanted = (style & ~win32con.WS_EX_TRANSPARENT) if operation else (style | win32con.WS_EX_TRANSPARENT)
+        if wanted == style:
+            return False
+        win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, wanted)
+        return True
+
+    def has_input_ownership(self):
+        return not (win32gui.GetWindowLong(int(self.winId()), win32con.GWL_EXSTYLE) & win32con.WS_EX_TRANSPARENT)
+
+    def bring_to_foreground(self, hwnd):
+        """Makes `hwnd` (this window, or BVE when the foreground is handed back) the foreground window. A process that is not in front may not simply call
+        SetForegroundWindow, so when that is refused the input queue of the current foreground thread is joined for the duration of that one call. Returns
+        whether `hwnd` is the foreground window afterwards."""
+        if win32gui.GetForegroundWindow() == hwnd:
+            return True
+        try:
+            win32gui.SetForegroundWindow(hwnd)
+        except Exception:
+            pass
+        if win32gui.GetForegroundWindow() == hwnd:
+            return True
+        import win32process
+        front = win32gui.GetForegroundWindow()
+        front_thread = win32process.GetWindowThreadProcessId(front)[0] if front else 0
+        own_thread = win32api.GetCurrentThreadId()
+        joined = False
+        try:
+            if front_thread and front_thread != own_thread:
+                try:
+                    joined = bool(win32process.AttachThreadInput(own_thread, front_thread, True))
+                except Exception:
+                    joined = False                    # (a front window of a higher integrity level refuses it: then only the plain call above could work)
+            try:
+                win32gui.SetForegroundWindow(hwnd)
+            except Exception:
+                pass
+        finally:
+            if joined:
+                try:
+                    win32process.AttachThreadInput(own_thread, front_thread, False)
+                except Exception:
+                    pass
+        return win32gui.GetForegroundWindow() == hwnd
+
+    def post_close_to_bve(self, hwnd):
+        """The close request of the user's close: ONE WM_CLOSE to the BVE window - the message of its close button and of Alt+F4 in front of it. Nothing else is
+        done to BVE here (no restore of the F11 window, no quit, no close of this window). Returns whether the message was queued."""
+        try:
+            win32api.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+            return True
+        except Exception:
+            return False
 
     def ask_result_save_path(self, default_path):
         """The save dialog of the result screen. Normal mode: the native static dialog, exactly as it always was. (Managed mode replaces it by a dialog
@@ -2748,6 +2829,9 @@ class _ManagedShutdownBridge(QObject):
 
     @pyqtSlot()
     def on_shutdown_requested(self):
+        overlay = self.overlay
+        if overlay is not None and hasattr(overlay, "user_close_handler"):
+            overlay.user_close_handler = None            # Phase UI-ALT-F4: from here on every close of the Overlay is the shutdown's own (quit() asks the windows to close)
         callback = self.before_quit
         if callback is not None:
             try:
@@ -2769,6 +2853,9 @@ def _attach_managed_hud(overlay, hud, recovery_keys=None):
     attach_recovery = getattr(hud, "attach_recovery", None)
     if attach_recovery is not None and hasattr(overlay, "press_p_for_recovery"):
         attach_recovery(pause_recovery.PauseDataRecovery(hud, overlay, recovery_keys if recovery_keys is not None else pause_recovery.Win32KeyApi(), hud.args))
+    request_user_close = getattr(hud, "request_user_close", None)
+    if request_user_close is not None and hasattr(overlay, "user_close_handler"):
+        overlay.user_close_handler = request_user_close          # Phase UI-ALT-F4: a close that the user asks for asks BVE to end instead of closing the Overlay
     timer = overlay.timer
     timer.stop()
     try:
@@ -2790,6 +2877,8 @@ def _release_overlay(overlay, hud=None):
     timer = getattr(overlay, 'timer', None)
     if timer is not None:
         timer.stop()
+    if hasattr(overlay, 'user_close_handler'):
+        overlay.user_close_handler = None                         # the close below is the shutdown's own: it must never ask BVE to end
     for name in ('hook_dict', 'sys_hook_dict', 'f8_hook_dict'):
         for hook in list(getattr(overlay, name, {}).values()):
             if hook:
@@ -2969,6 +3058,9 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
                     directory_reader = None          # ManagedHudController owns and closes the shared reader now.
             else:
                 hud = hud_factory(overlay, args, log)
+            set_stop_probe = getattr(hud, "set_stop_probe", None)
+            if set_stop_probe is not None:
+                set_stop_probe(lambda: life.stop_requested)          # Phase UI-ALT-F4: a user close while the process already ends sends nothing
             # opens the state block and takes the first reading BEFORE AppReady is published. The block is a required part of the contract:
             # without a valid one the process fails its initialisation (exit code 4) and never publishes AppReady.
             contract_ok = hud is None or _attach_managed_hud(overlay, hud)
