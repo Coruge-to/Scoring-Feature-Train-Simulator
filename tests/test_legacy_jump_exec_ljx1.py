@@ -174,6 +174,11 @@ ST3D_EXECUTE_RETRY_PIN = ("whole", "E5DB2D56A0FC1A4894DD4FBDA7D7CFF63BEB4EB78E74
 # The region keeps its 6 jump records; its new digest is pinned on its own (it was C07D9550...). Every other SLICE region is still compared with the blob of the formal LJX-1 commit (identical).
 TIMEFIX_B_EVALUATE_DEPARTURE_PIN = ("slice", "2D7A28AD96FF44159A25F37EC4CEAF572BB6015F8F2AFD78B5F414E4C24A45F0", 6)
 
+# Time Fix B2 (an INTENDED change of the same scoring region, not of the jump contract): a LATCHED operational stop (written at its stop, tests/test_timefix_b2_operational_stop_contract.py) is completed by its record
+# before the range check is reached, and consumes the retry flag like the range path does: ONE more statement that names `is_official_retry` (6 -> 7 jump records). The new digest is pinned on its own (it was
+# 2D7A28AD...); every other SLICE region is still compared with the blob of the formal LJX-1 commit (identical).
+TIMEFIX_B2_EVALUATE_DEPARTURE_PIN = ("slice", "CEA6E1FA983E7E338A5EF4638B945C9EE1A357F5F483624D7FFF39416F43384E", 7)
+
 STATIONS = [0.0, 1000.0, 2000.0, 3000.0]
 SCORING_TOKENS = ["time", "speed", "loc", "station", "door", "handle", "brake_type", "brake_cab", "prates"]
 
@@ -252,7 +257,7 @@ class A2_TheLegacyJumpContractRegionsOfThePythonSide(unittest.TestCase):
         self.assertTrue(all(value is not None for value in then.values()), then)
         self.assertEqual(now.pop("execute_retry"), ST3D_EXECUTE_RETRY_PIN)           # Phase ST-2b / ST-3d: the intended changes, pinned on their own (the ST-2b value stays above as history)
         then.pop("execute_retry")
-        self.assertEqual(now.pop("evaluate_departure"), TIMEFIX_B_EVALUATE_DEPARTURE_PIN)      # Time Fix B: the intended change, pinned on its own
+        self.assertEqual(now.pop("evaluate_departure"), TIMEFIX_B2_EVALUATE_DEPARTURE_PIN)     # Time Fix B / B2: the intended changes, pinned on their own (the Time Fix B value stays above as history)
         then.pop("evaluate_departure")
         self.assertEqual(now, then)
         self.assertEqual(now_undeclared, [])

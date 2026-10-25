@@ -339,11 +339,13 @@ public static class St1aResolver
 
 $scenarios = @(
     @{ Name = 'D1 four stations, a normal walk'; Make = { param($a) Stations4 $a }; Steps = { Walk @(0.0, 1000.0, 2000.0, 3000.0) } },
-    @{ Name = 'D2 pass, operational stop, same-position pair, terminal'; Make = { param($a) Stations6 $a }; Steps = { Walk @(0.0, 800.0, 1600.0, 2400.0, 3200.0) } },
+    # Time Fix B2 (an INTENDED difference, not a drift): the operational stop S2 (1600 m) is left by the target as soon as the vehicle leaves it (|speed| > 0.1 km/h) - the audited DLL waits for the departure time + 300 ms.
+    # B2Leave = (the NEXTLOC of the audited DLL, the NEXTLOC of the new sender) on the first datagram that differs; Handshake\Tests\Test-TimeFixB2.ps1 holds the rule itself.
+    @{ Name = 'D2 pass, operational stop, same-position pair, terminal'; Make = { param($a) Stations6 $a }; Steps = { Walk @(0.0, 800.0, 1600.0, 2400.0, 3200.0) }; B2Leave = @(1600.0, 2400.0) },
     @{ Name = 'D3 the target runs off the end of the list'; Make = { param($a) StationsRunOff $a }; Steps = { (Walk @(700.0, 1400.0, 2100.0)) + @(Step 2300.0 10.0 $true; Step 2400.0 10.0 $true) } },
     @{ Name = 'D4 time and position jumps in the middle of a run'; Make = { param($a) Stations4 $a }; Steps = { (Walk @(0.0, 1000.0)) + @(Step 2500.0 8.0 $true 90000; Step 2510.0 8.0 $true; Step 2000.0 0.0 $false 0; Step 2000.0 0.0 $true 0; Step 40.0 5.0 $true 400000) + (Walk @(2000.0, 3000.0)) } },
     @{ Name = 'D5 a scenario reload and a growing list'; Make = { param($a) Stations4 $a }; Steps = { (Walk @(0.0)) + @(Step 10.0 0.0 $true 0 'close-open'; Step 10.0 0.0 $true) + (Walk @(1000.0)) + @(Step 1500.0 5.0 $true 0 'more-stations'; Step 1510.0 5.0 $true; Step 1520.0 5.0 $true) } },
-    @{ Name = 'D6 doors unreadable for a while'; Make = { param($a) Stations6 $a }; Steps = { (Walk @(0.0)) + @(Step 60.0 5.0 $true 0 'fail-doors'; Step 70.0 5.0 $false; Step 80.0 5.0 $true 0 'heal-doors'; Step 90.0 5.0 $true) + (Walk @(800.0, 1600.0)) } },
+    @{ Name = 'D6 doors unreadable for a while'; Make = { param($a) Stations6 $a }; Steps = { (Walk @(0.0)) + @(Step 60.0 5.0 $true 0 'fail-doors'; Step 70.0 5.0 $false; Step 80.0 5.0 $true 0 'heal-doors'; Step 90.0 5.0 $true) + (Walk @(800.0, 1600.0)) }; B2Leave = @(1600.0, 2400.0) },
     @{ Name = 'D7 random walk, seed 11'; Make = { param($a) Stations6 $a }; Steps = { RandomSteps 11 400 0.0 3300.0 } },
     @{ Name = 'D8 random walk, seed 23'; Make = { param($a) Stations6 $a }; Steps = { RandomSteps 23 400 0.0 3300.0 } },
     @{ Name = 'D9 random walk, seed 97, run-off list'; Make = { param($a) StationsRunOff $a }; Steps = { RandomSteps 97 400 650.0 2300.0 } }
@@ -370,10 +372,22 @@ if ($true) {
             $stripped = @($newSent | ForEach-Object { Strip $_ })
             $same = ($stripped.Count -eq $oldSent.Count)
             $firstDiff = ''
+            $diffIndex = -1
             if ($same) {
-                for ($i = 0; $i -lt $oldSent.Count; $i++) { if ($stripped[$i] -cne $oldSent[$i]) { $same = $false; $firstDiff = ' (datagram ' + $i + ')'; break } }
+                for ($i = 0; $i -lt $oldSent.Count; $i++) { if ($stripped[$i] -cne $oldSent[$i]) { $same = $false; $diffIndex = $i; $firstDiff = ' (datagram ' + $i + ')'; break } }
             } else { $firstDiff = ' (' + $stripped.Count + ' vs ' + $oldSent.Count + ' datagrams)' }
-            Check ($sc.Name + ': every datagram equals the audited DLL except for the STIDX part (' + $oldSent.Count + ' datagrams)' + $firstDiff) $same
+            if ($sc.ContainsKey('B2Leave')) {
+                # Time Fix B2: equal up to the first difference (the loop above), and that difference is exactly the intended one: the target is already the next station while the audited DLL still holds the operational stop
+                $newLoc = -1.0; $oldLoc = -1.0
+                if ($diffIndex -ge 0) {
+                    $mn = [regex]::Match($stripped[$diffIndex], ',NEXTLOC:([^,]+)'); $mo = [regex]::Match($oldSent[$diffIndex], ',NEXTLOC:([^,]+)')
+                    if ($mn.Success) { $newLoc = [double]::Parse($mn.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture) }
+                    if ($mo.Success) { $oldLoc = [double]::Parse($mo.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture) }
+                }
+                Check ($sc.Name + ': Time Fix B2 - every datagram equals the audited DLL except for the STIDX part up to datagram ' + $diffIndex + ' of ' + $oldSent.Count + ', where the new sender leaves the operational stop (NEXTLOC ' + $sc.B2Leave[1] + ' instead of ' + $sc.B2Leave[0] + ')') (($diffIndex -ge 0) -and ($oldLoc -eq $sc.B2Leave[0]) -and ($newLoc -eq $sc.B2Leave[1]))
+            } else {
+                Check ($sc.Name + ': every datagram equals the audited DLL except for the STIDX part (' + $oldSent.Count + ' datagrams)' + $firstDiff) $same
+            }
         } else {
             Skip ($sc.Name + ': differential against the audited DLL (reference DLL is not the audited one)')
         }

@@ -1727,8 +1727,10 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
                 # Phase ST-2c (on purpose): update_physics_and_scoring no longer clears is_first_station by the 100 m distance of NEXTLOC on the first UDP line (two lines left); no score, no rule, no constant
                 # Time Fix B (on purpose): evaluate_departure judges the departure range of an operational stop with the range kept at its arrival (update_physics_and_scoring keeps it, reset_station_evaluation_state
                 # clears it); no score, no rule, no constant
+                # Time Fix B2 (on purpose): the operational stop is latched at its stop (update_physics_and_scoring writes the record, reset_station_evaluation_state clears it) and evaluate_departure completes a latched stop
+                # by that record; the two new functions are pure helpers (the verified station + scheduled time of the stop, and the cause / error of the completion); the points, the rules and the constants are not among them
                 ("scoring_logic.py", old_scoring, {"write_limit_debug_log", "execute_retry", "create_save_data", "evaluate_arrival", "update_physics_and_scoring", "evaluate_departure", "reset_station_evaluation_state"},
-                 {"note_save_skipped", "Import(names=[alias(name='station_identity')])",
+                 {"note_save_skipped", "operational_stop_station", "resolve_operational_stop_completion", "Import(names=[alias(name='station_identity')])",
                   "Import(names=[alias(name='jump_transaction')])", "Import(names=[alias(name='jump_wire')])"}),         # Phase ST-3d (on purpose): execute_retry builds its request with jump_transaction / jump_wire (the Jump wire v2)
                 ("utils.py", old_utils, {"write_desktop_log"}, {"set_desktop_log_enabled", "desktop_log_enabled", "desktop_log_requested"})):
             with open(os.path.join(ROOT, name), encoding="utf-8") as f:

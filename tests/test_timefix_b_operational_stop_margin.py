@@ -10,6 +10,11 @@ tgt / arr / arrseq are NOT touched (this module never writes bve_tgt_idx / bve_a
 stop, a pass station and the scoring-finish station keep their behaviour (the normal stop keeps the ST-0 T19 KNOWN-DEFECT behaviour pinned in test_char_stop_door_arrival_st0.py).
 
 Cases tagged [RED-B] fail on the code before Time Fix B. Without PyQt6 (python -I) the behaviour tests are SKIPPED; the source pins always run.
+
+TIME FIX B2 NOTE (the contract of tests/test_timefix_b2_operational_stop_contract.py): the operational stop is judged ONCE, at the stop, with the range of the station that is arrived at; the position of the vehicle on the Tick of
+the target switch is no longer judged. The four cases that asserted "left outside the arrival range -> no time score" (B_T2, B_T4, B_T5b, B_T6b) are SUPERSEDED: they now assert the same intent at the stop - a stop
+outside the range of the arrived station is no operational stop, whatever the range of the next station is. The superseded situations (stopped inside, then outside the range at the switch) score 300 under B2
+(test_C_T01b in the B2 file).
 """
 import ast
 import os
@@ -155,8 +160,8 @@ class A_OperationalStop(Base):
         self.assertEqual(o.score_details["time"], 300)
 
     def test_B_T2_arrival_range_outside_next_range_inside_does_not_score_the_time(self):
-        """[RED-B] left 3 m short of B: outside B's +-2 m, inside C's +-5 m -> no time score (the range of the next station must not grant it)."""
-        o, _ = self.departure(2.0, 2.0, 5.0, 5.0, d_arrive=1.0, d_depart=3.0)
+        """[RED-B] [SUPERSEDED-BY-B2: judged at the stop] stopped 3 m short of B: outside B's +-2 m, inside C's +-5 m -> no operational stop, no time score (the range of the next station must not grant it)."""
+        o, _ = self.departure(2.0, 2.0, 5.0, 5.0, d_arrive=3.0, d_depart=3.0)
         self.assertEqual(o.score_details["time"], 0)
 
     def test_B_T3_both_ranges_inside_scores_the_time_as_before(self):
@@ -164,7 +169,8 @@ class A_OperationalStop(Base):
         self.assertEqual(o.score_details["time"], 300)
 
     def test_B_T4_both_ranges_outside_does_not_score_the_time(self):
-        o, _ = self.departure(2.0, 2.0, 2.5, 2.5, d_arrive=1.0, d_depart=3.0)
+        """[SUPERSEDED-BY-B2: judged at the stop] stopped 3 m short of B: outside both ranges -> no operational stop, no time score."""
+        o, _ = self.departure(2.0, 2.0, 2.5, 2.5, d_arrive=3.0, d_depart=3.0)
         self.assertEqual(o.score_details["time"], 0)
 
     def test_B_T5_equal_ranges_keep_the_run_c_result(self):
@@ -173,9 +179,10 @@ class A_OperationalStop(Base):
         self.assertEqual(o.score_details["time"], 300)
 
     def test_B_T5b_equal_ranges_outside_still_do_not_score(self):
+        """[SUPERSEDED-BY-B2: judged at the stop] stopped 5.5 m short of B with equal +-5 m ranges: outside -> no operational stop, no time score."""
         self.rig.close()
         self.setUp()
-        o, _ = self.departure(5.0, 5.0, 5.0, 5.0, d_arrive=1.0, d_depart=5.5)
+        o, _ = self.departure(5.0, 5.0, 5.0, 5.0, d_arrive=5.5, d_depart=5.5)
         self.assertEqual(o.score_details["time"], 0)
 
     def test_B_T6_the_reference_range_does_not_change_across_the_target_switch(self):
@@ -188,8 +195,8 @@ class A_OperationalStop(Base):
         self.assertFalse(o.has_scored_stop_this_station)
 
     def test_B_T6b_the_past_side_uses_the_arrived_stations_marginf(self):
-        """[RED-B] 4 m past B: outside B's MARGINF = 3, inside C's MARGINF = 5 -> no time score."""
-        o, _ = self.departure(3.0, 8.0, 5.0, 5.0, d_arrive=1.0, d_depart=-4.0)
+        """[RED-B] [SUPERSEDED-BY-B2: judged at the stop] stopped 4 m past B: outside B's MARGINF = 3, inside C's MARGINF = 5 -> no operational stop, no time score."""
+        o, _ = self.departure(3.0, 8.0, 5.0, 5.0, d_arrive=-4.0, d_depart=-4.0)
         self.assertEqual(o.score_details["time"], 0)
 
     def test_B_T9_a_retry_before_an_operational_stop_is_judged_with_the_arrived_stations_range(self):

@@ -60,12 +60,13 @@ BASE_BLOBS = {
     "managed_app_directory.py": "77bf8671ef364b05fb6a6524858ce2ffc2930060",
     "managed_hud.py": "38a2e4b9bfa0dd16a896ebb095e97bcabe09f5ee",
     # Time Fix B changed managed_input.py (one name added to GENERATION_DROP) and scoring_logic.py (the operational stop keeps its arrival range, tests/test_timefix_b_operational_stop_margin.py) on purpose: the blobs moved from 73aff45b... / 140d8471... (0b8e511); the package manifest is regenerated for them
-    "managed_input.py": "293b4a213ca747a689e19b4d5c76342d3491f307",
+    # Time Fix B2 changed managed_input.py (one more name in GENERATION_DROP) and scoring_logic.py (the operational stop is latched at its stop and completed by that record, tests/test_timefix_b2_operational_stop_contract.py): the blobs moved from 293b4a21... / 5be7a006... (Time Fix B)
+    "managed_input.py": "7933e16d4cbebb140de10f4a642cf3a26ed2f2db",
     "managed_mode.py": "60413e37938808b1f15c52c3b81db9353fd7a84a",
     "managed_state.py": "d8b75db1e870f3f01f825961ec37e7471244d2bc",
     "menu_ui.py": "412e722fb533e1627fa9c4a348e242144c6866df",
     "pause_recovery.py": "6c01fd0ebe2ca6fae3c501129381046b5e645a95",
-    "scoring_logic.py": "5be7a006f082063db6468a12373ccdaa51ffbeca",
+    "scoring_logic.py": "db5145a0346a966784be03306134b149bb60f357",
     "station_identity.py": "93ce7abce5a7050896c00ba6eddd3290e7b192d2",
     "station_index_contract.py": "73c9ec9a75ca6dca450637f47d15d0ebdbdda423",
     "telemetry_contract.py": "6eab0e7ee54b4a166e343ca5ca5b1bccac1538fb",
@@ -86,7 +87,8 @@ BASE_BLOBS = {
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpExecutor.cs": "b95754144e06ae9eb85b98bf04ea3731eab98600",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyScoringProbe.cs": "1f0be23bc1c911e4bf83933a22016613834c2f48",
     # Time Fix A changed LegacyStationTimeline.cs and Class1.cs on purpose (the arrival fill-in, tests/test_timefix_a_terminal_arrival.py): the blobs moved from 1bae94a1... / a9b420a0... (0b8e511); the package manifest is regenerated for them
-    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs": "4bb9c3122eca46f4ede56569368e8433f25d6a71",
+    # Time Fix B2 changed LegacyStationTimeline.cs on purpose (the same branch, tests\test_timefix_b2_operational_stop_contract.py / Handshake\Tests\Test-TimeFixB2.ps1): the blob moved from 4bb9c312... (Time Fix A)
+    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs": "4554795a596bbe6ed2040061257a200e13893664",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "12a0f84ad865443ad64c76e308907f5b7bcfdcf9",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetrySession.cs": "5dd33902438d358f038a03a8900976816d589af0",
     "TsScoringPlugin/Handshake/Telemetry/Shared/DataPlaneProtocol.cs": "bed2ed8585b502578d4d4e17f64307206d0920fc",
@@ -96,7 +98,8 @@ BASE_BLOBS = {
     "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryContract.cs": "c7be611e9b1d704a17014b9294a532cf82abc0b9",
     "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs": "cde81d8f5411df680cb17b10288a3c8d9b01f561",
     "TsScoringPlugin/TsScoringPlugin/AtsLoggerPlugin.cs": "22209df3e50762dd17c68c9bb788af6f8faf98b7",
-    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "b703adb04ae32258d0adeced4ac6f3d87bdcf9ef",
+    # Time Fix B2 changed Class1.cs on purpose (the operational stop leaves the target at once when the vehicle leaves, tests\test_timefix_b2_operational_stop_contract.py / Handshake\Tests\Test-TimeFixB2.ps1): the blob moved from b703adb0... (Time Fix A)
+    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "04a120116b8ab9e12af28ceb297e57e416ae9b27",
     "TsScoringPlugin/TsScoringPlugin/CurrentDataPlane.cs": "71b0ebaa6f52871ceb2a59456a2b527041241c46",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs": "3e0d3bffbb74e4a2ecc6d10d378a8b6e2788ae6f",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs": "8a54d6a14100e0021ca248d28369c335f965fafe",

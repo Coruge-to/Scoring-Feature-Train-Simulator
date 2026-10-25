@@ -915,7 +915,9 @@ class D_Boundary(unittest.TestCase):
         writes = re.findall(r"targetStationIndex\s*(\+\+|=(?!=))", c1)
         # Phase ST-3b (an intended change): ONE new write of the target, SelectTargetByRequestedIndex (the adopted StationIndex of an official jump); the declaration, the position search and the three
         # advances are the ones of before (tests\test_stationindex_current_st3b.py pins that the new write is reached only with an index and the old one only without)
-        self.assertEqual(sorted(writes), sorted(["=", "=", "=", "++", "++", "++"]))
+        # Time Fix B2 (an intended change): ONE more advance, the operational stop that is LEFT (the stop was made and |speed| > 0.1 km/h); the stop test and the departure-time hold above are the statements of before
+        self.assertIn("if (hasDoorOpenedAtTarget && opStopMadeIndex == targetStationIndex && !isTerminal && Math.Abs(speed) > 0.1) { targetStationIndex++;", c1)
+        self.assertEqual(sorted(writes), sorted(["=", "=", "=", "++", "++", "++", "++"]))
 
     def test_legacy_group_carries_stidx_as_its_last_key_inside_the_one_all_or_nothing_group(self):
         ls = self.lses
@@ -938,7 +940,9 @@ class D_Boundary(unittest.TestCase):
         writes = re.findall(r"\btarget\s*(\+\+|=(?!=))", ltl)
         # Phase ST-3c (intended update; was three "="): the fourth "=" is SelectRequestedTarget (the target of an official v2 jump: the adopted index, no position involved); Reset, "no station in range"
         # and the position search are the three of before, and the three advances are untouched
-        self.assertEqual(sorted(writes), sorted(["=", "=", "=", "=", "++", "++", "++"]))
+        # Time Fix B2 (an intended change): ONE more advance, the operational stop that is LEFT (the stop was made and |speedKmh| > 0.1)
+        self.assertIn("if (hasDoorOpenedAtTarget && opStopMadeIndex == target && !isTerminal && Math.Abs(speedKmh) > 0.1) { target++;", ltl)
+        self.assertEqual(sorted(writes), sorted(["=", "=", "=", "=", "++", "++", "++", "++"]))
 
     def test_the_senders_link_the_shared_file_and_the_probe_project_compiles_what_the_product_compiles(self):
         for path in (CURRENT_CSPROJ, LEGACY_CSPROJ, B1PROBE_CSPROJ):

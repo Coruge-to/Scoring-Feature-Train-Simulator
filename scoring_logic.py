@@ -72,6 +72,7 @@ def reset_station_evaluation_state(self):
     self.has_scored_time_this_station = False
     self.has_scored_stop_this_station = False
     self.operational_stop_margins = None                  # 運転停車の到着駅の停止位置許容幅(MARGINF, MARGINB)は駅単位の状態
+    self.operational_stop_latch = None                    # 運転停車の停止成立記録(駅index, 停止成立時刻, 予定発車時刻)は駅単位の状態
     self.bb_first_valid_stop_detected = False
     self.bb_moved_after_first_valid_stop = False
 
@@ -992,6 +993,53 @@ def evaluate_arrival(self, current_time, arrival_target_loc=None):
         if not getattr(self, 'jump_lock', False):
             create_save_data(self, p_loc)
 
+def operational_stop_station(self):
+    """Time Fix B2: (station index, scheduled departure ms) of the operational stop that is arrived at. The index is the sender's arrival index VERIFIED against the adopted station list and the position the
+    stop was judged against (station_identity.arrival_snapshot: the identity the checkpoint of this arrival uses; nothing is searched by a position); the time is the departure time of that entry of the
+    list (the NEXTTIME the sender shows once the stop is made when the list has none). (-1, -1) when the identity is not verified: the latch then names no station and the departure keeps the range rule of Time Fix B."""
+    snapshot = station_identity.arrival_snapshot(
+        getattr(self, 'current_scenario_id', -1), getattr(self, 'bve_list_id', ""), getattr(self, 'station_list', None),
+        getattr(self, 'bve_arr_idx', -1), getattr(self, 'bve_next_loc', None))
+    if not snapshot.valid:
+        return -1, -1
+    scheduled_ms = self.station_list[snapshot.station_index].get("raw_dep", -1)
+    if scheduled_ms <= 0:
+        scheduled_ms = getattr(self, 'bve_next_time', -1)
+    return snapshot.station_index, scheduled_ms
+
+
+def resolve_operational_stop_completion(latch, now_ms):
+    """Time Fix B2: how a LATCHED operational stop is completed on the Tick on which the sender switches the target to the next station.
+
+    latch   (station index, time of the stop, scheduled departure time) in ms of the BVE clock, written when the stop was made inside the author-defined range
+    now_ms  the time of the Tick of the switch
+    The stop is NOT judged again (the vehicle may have crept away while it waited); the cause is read from the record alone, in this order:
+      late-arrival            the stop was made after the scheduled departure: the time of the stop is the actual time
+      scheduled-time-reached  the Tick is at or after the scheduled departure (a movement on that Tick has no priority over it): error 0
+      early-movement          otherwise the vehicle left before the scheduled departure: the time of the Tick is the actual time
+    Returns None when there is no usable scheduled departure time (nothing is scored), else a dict with reason, station_index, scheduled_ms, actual_ms, signed_error_ms (actual - scheduled),
+    absolute_error_ms and diff_s: the error in whole seconds as apply_time_score reads it (each time floored to the second, as everywhere in this module; 0 for scheduled-time-reached)."""
+    station_index, stopped_ms, scheduled_ms = latch
+    if scheduled_ms <= 0:
+        return None
+    if stopped_ms > scheduled_ms:
+        reason, actual_ms = "late-arrival", stopped_ms
+    elif now_ms >= scheduled_ms:
+        reason, actual_ms = "scheduled-time-reached", scheduled_ms
+    else:
+        reason, actual_ms = "early-movement", now_ms
+    signed_error_ms = actual_ms - scheduled_ms
+    return {
+        "reason": reason,
+        "station_index": station_index,
+        "scheduled_ms": scheduled_ms,
+        "actual_ms": actual_ms,
+        "signed_error_ms": signed_error_ms,
+        "absolute_error_ms": abs(signed_error_ms),
+        "diff_s": 0 if reason == "scheduled-time-reached" else scheduled_ms // 1000 - actual_ms // 1000,
+    }
+
+
 def evaluate_departure(self, current_time):
     if getattr(self, 'is_scoring_finished', False): return
     allow_score = not getattr(self, 'jump_lock', False) or getattr(self, 'is_official_retry', False)
@@ -1027,8 +1075,16 @@ def evaluate_departure(self, current_time):
                     if kept_margins is not None:
                         margin_f, margin_b = kept_margins
 
+                # Time Fix B2: 運転停車は到着時に作者定義の許容範囲内で一度停止成立を判定済み(latch)。発車時は位置を再判定せず、senderがtargetを切り替えたTickの時刻で確定する
+                op_latch = getattr(self, 'operational_stop_latch', None) if getattr(self, 'prev_doordir', 1) == 0 else None
+                if op_latch is not None and op_latch[0] == p_idx:
+                    completion = resolve_operational_stop_completion(op_latch, self.bve_time_ms)
+                    if completion is not None:
+                        apply_time_score(self, completion["diff_s"], current_time)
+                    self.has_scored_time_this_station = True
+                    self.is_official_retry = False
                 # 過去にちゃんと許容範囲で止まっており、かつ、出発時刻の今この瞬間も許容範囲内にいること
-                if (getattr(self, 'has_scored_stop_this_station', False) or getattr(self, 'is_official_retry', False)) and (-margin_f <= d <= margin_b):
+                elif (getattr(self, 'has_scored_stop_this_station', False) or getattr(self, 'is_official_retry', False)) and (-margin_f <= d <= margin_b):
                     # 発車時刻(raw_dep)を自力で引っ張り出して計算
                     dep_target_s = -1
                     if p_idx >= 0:
@@ -1550,6 +1606,9 @@ def update_physics_and_scoring(self, current_time, dt):
 
             # 運転停車の到着が成立した時点で、到着した駅の停止位置許容幅を保持する（発車時のtgt切替後に次駅の許容幅を使わないため）
             self.operational_stop_margins = (self.bve_margin_f, self.bve_margin_b)
+            # Time Fix B2: 停止成立時刻と予定発車時刻も保持する(発車時は許容範囲を再判定せず、この記録で運転時分を確定する)
+            latch_index, latch_scheduled_ms = operational_stop_station(self)
+            self.operational_stop_latch = (latch_index, self.bve_time_ms, latch_scheduled_ms)
             self.has_scored_stop_this_station = True
 
     # 通常停車駅の開扉時は、BVE公式が現在示している駅を対象にする

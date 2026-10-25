@@ -49,7 +49,8 @@ RED_ST0 = os.path.join(HERE, "red_st0_stationindex_contract.py")
 UNTOUCHED = {
     # Phase U10 changed Class1.cs on purpose (the stop range of the station list builder, tests\test_stationindex_station_range_u10.py): the blob moved from a1c34ae7... (ST-3b); ST-3c itself still does not touch it
     # Time Fix A changed Class1.cs on purpose (the arrival fill-in of the station list builder, tests\test_timefix_a_terminal_arrival.py): the blob moved from a9b420a0... (U10)
-    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "b703adb04ae32258d0adeced4ac6f3d87bdcf9ef",
+    # Time Fix B2 changed Class1.cs on purpose (the operational stop leaves the target at once when the vehicle leaves, tests\test_timefix_b2_operational_stop_contract.py / Handshake\Tests\Test-TimeFixB2.ps1): the blob moved from b703adb0... (Time Fix A)
+    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "04a120116b8ab9e12af28ceb297e57e416ae9b27",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs": "3e0d3bffbb74e4a2ecc6d10d378a8b6e2788ae6f",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs": "8a54d6a14100e0021ca248d28369c335f965fafe",
     "TsScoringPlugin/TsScoringPlugin/CurrentDataPlane.cs": "71b0ebaa6f52871ceb2a59456a2b527041241c46",

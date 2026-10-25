@@ -62,6 +62,7 @@ namespace TSScoringPlugin.Telemetry
         private bool hasDoorOpenedAtTarget;
         private bool isInitialized;
         private int opStopDelayStartMs = -1;
+        private int opStopMadeIndex = -1;       // Time Fix B2: the target at which an operational stop was actually MADE (stopped inside the range); -1 = none. Cleared by Reset() and by every (re)selection of the target.
         private int terminalFrozenDiffSeconds = -999;
         private bool wasTerminalDoorOpened;
 
@@ -107,6 +108,7 @@ namespace TSScoringPlugin.Telemetry
             hasDoorOpenedAtTarget = false;
             isInitialized = false;
             opStopDelayStartMs = -1;
+            opStopMadeIndex = -1;
             terminalFrozenDiffSeconds = -999;
             wasTerminalDoorOpened = false;
             arrivalIndex = -1;
@@ -179,6 +181,7 @@ namespace TSScoringPlugin.Telemetry
             {
                 Build(raw);
                 SelectTarget(location, areDoorsClosed);
+                opStopMadeIndex = -1;
                 isInitialized = true;
             }
 
@@ -228,7 +231,21 @@ namespace TSScoringPlugin.Telemetry
                         hasDoorOpenedAtTarget = true;
                     }
 
-                    if (hasDoorOpenedAtTarget && timeMs >= depTime && !isTerminal)
+                    if (isStopped && isInMargin)
+                    {
+                        opStopMadeIndex = target;
+                    }
+
+                    // Time Fix B2: once the stop was made inside the author-defined range, the vehicle LEAVING ends the operational stop at once: |speed| > 0.1 km/h in either direction
+                    // (exactly 0.1 is not leaving). The range is not tested again, and neither the departure time nor the 300 ms hold is waited for; a vehicle that never stopped inside the range keeps the target.
+                    // "The stop was made" is its own record (opStopMadeIndex): hasDoorOpenedAtTarget can also be PRESET by a target selection (doors open within 50 m) and is no proof of a stop.
+                    if (hasDoorOpenedAtTarget && opStopMadeIndex == target && !isTerminal && Math.Abs(speedKmh) > 0.1)
+                    {
+                        target++;
+                        hasDoorOpenedAtTarget = false;
+                        opStopDelayStartMs = -1;
+                    }
+                    else if (hasDoorOpenedAtTarget && timeMs >= depTime && !isTerminal)
                     {
                         if (opStopDelayStartMs < 0)
                         {

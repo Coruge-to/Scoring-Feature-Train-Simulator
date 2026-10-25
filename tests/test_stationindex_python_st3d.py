@@ -88,7 +88,8 @@ FROZEN = {
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpExecutor.cs": "b95754144e06ae9eb85b98bf04ea3731eab98600",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyScoringProbe.cs": "1f0be23bc1c911e4bf83933a22016613834c2f48",
     # Time Fix A changed LegacyStationTimeline.cs on purpose (the departure reader and the arrival fill-in, tests\test_timefix_a_terminal_arrival.py): the blob moved from 1bae94a1... (ST-3c)
-    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs": "4bb9c3122eca46f4ede56569368e8433f25d6a71",
+    # Time Fix B2 changed LegacyStationTimeline.cs on purpose (the same branch, tests\test_timefix_b2_operational_stop_contract.py / Handshake\Tests\Test-TimeFixB2.ps1): the blob moved from 4bb9c312... (Time Fix A)
+    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs": "4554795a596bbe6ed2040061257a200e13893664",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "12a0f84ad865443ad64c76e308907f5b7bcfdcf9",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetrySession.cs": "5dd33902438d358f038a03a8900976816d589af0",
     "TsScoringPlugin/Handshake/Telemetry/Shared/DataPlaneProtocol.cs": "bed2ed8585b502578d4d4e17f64307206d0920fc",
@@ -100,7 +101,8 @@ FROZEN = {
     "TsScoringPlugin/TsScoringPlugin/AtsLoggerPlugin.cs": "22209df3e50762dd17c68c9bb788af6f8faf98b7",
     # Phase U10 changed Class1.cs on purpose (tests\test_stationindex_station_range_u10.py): the blob moved from a1c34ae7... (ST-3b); ST-3d itself still does not touch it
     # Time Fix A changed Class1.cs on purpose (the arrival fill-in, tests\test_timefix_a_terminal_arrival.py): the blob moved from a9b420a0... (U10)
-    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "b703adb04ae32258d0adeced4ac6f3d87bdcf9ef",
+    # Time Fix B2 changed Class1.cs on purpose (the operational stop leaves the target at once when the vehicle leaves, tests\test_timefix_b2_operational_stop_contract.py / Handshake\Tests\Test-TimeFixB2.ps1): the blob moved from b703adb0... (Time Fix A)
+    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "04a120116b8ab9e12af28ceb297e57e416ae9b27",
     "TsScoringPlugin/TsScoringPlugin/CurrentDataPlane.cs": "71b0ebaa6f52871ceb2a59456a2b527041241c46",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs": "3e0d3bffbb74e4a2ecc6d10d378a8b6e2788ae6f",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs": "8a54d6a14100e0021ca248d28369c335f965fafe",

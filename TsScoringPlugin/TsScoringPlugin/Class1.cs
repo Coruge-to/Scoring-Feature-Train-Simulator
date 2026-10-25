@@ -83,6 +83,7 @@ namespace TsScoringPlugin
         private double requestedTargetLocation = 0.0;
         private TSScoringPlugin.DataPlane.CurrentJumpEndpoint jumpEndpoint;
         private int opStopDelayStartMs = -1;
+        private int opStopMadeIndex = -1;       // Time Fix B2: the target at which an operational stop was actually MADE (stopped inside the range); -1 = none. Cleared by every (re)selection of the target.
         private bool initialStaListSent = false;
         private DateTime lastStaListSendTime = DateTime.MinValue;
         private DateTime lastHeartbeatTime = DateTime.MinValue;
@@ -1048,6 +1049,7 @@ namespace TsScoringPlugin
                         }
                         if (requestedStationIndex >= 0) SelectTargetByRequestedIndex(requestedStationIndex, location, areDoorsClosed);
                         else if (!requestedTargetRefused) SelectTargetByPosition(location, areDoorsClosed);
+                        opStopMadeIndex = -1;
                         isInitialized = true;
                     }
 
@@ -1114,8 +1116,18 @@ namespace TsScoringPlugin
                             int depTime = targetSt.DepTime > 0 ? targetSt.DepTime : targetSt.InterpolatedTime;
 
                             if (isStopped && isInMargin) hasDoorOpenedAtTarget = true;
+                            if (isStopped && isInMargin) opStopMadeIndex = targetStationIndex;
 
-                            if (hasDoorOpenedAtTarget && timeMs >= depTime && !isTerminal)
+                            // Time Fix B2: once the stop was made inside the author-defined range, the vehicle LEAVING ends the operational stop at once: |speed| > 0.1 km/h in either direction
+                            // (exactly 0.1 is not leaving). The range is not tested again, and neither the departure time nor the 300 ms hold is waited for; a vehicle that never stopped inside the range keeps the target.
+                            // "The stop was made" is its own record (opStopMadeIndex): hasDoorOpenedAtTarget can also be PRESET by a target selection (doors open within 50 m) and is no proof of a stop.
+                            if (hasDoorOpenedAtTarget && opStopMadeIndex == targetStationIndex && !isTerminal && Math.Abs(speed) > 0.1)
+                            {
+                                targetStationIndex++;
+                                hasDoorOpenedAtTarget = false;
+                                opStopDelayStartMs = -1;
+                            }
+                            else if (hasDoorOpenedAtTarget && timeMs >= depTime && !isTerminal)
                             {
                                 if (opStopDelayStartMs < 0) opStopDelayStartMs = timeMs;
                                 else if (timeMs >= opStopDelayStartMs + 300)

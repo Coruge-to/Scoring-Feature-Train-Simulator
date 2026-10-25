@@ -1720,7 +1720,9 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
             return {n.name: ast.dump(n) for n in ast.parse(src).body if isinstance(n, ast.FunctionDef)}
 
         a, b = functions(old.replace("\r\n", "\n")), functions(new)
-        self.assertEqual(set(a) | {"note_save_skipped"}, set(b))      # Phase ST-2a (on purpose): the one new function records a refused checkpoint (a diagnostic line, no score)
+        # Phase ST-2a (on purpose): note_save_skipped records a refused checkpoint (a diagnostic line, no score); Time Fix B2 (on purpose): operational_stop_station and resolve_operational_stop_completion are the two
+        # pure helpers of the operational stop latch (the verified station + scheduled time of the stop; the cause and the error of its completion: no score, no rule, no constant)
+        self.assertEqual(set(a) | {"note_save_skipped", "operational_stop_station", "resolve_operational_stop_completion"}, set(b))
         changed = sorted(n for n in a if a[n] != b[n])
         # only the diagnostic writer got the switch and (PID-D6) execute_retry's one transport line; no score, no rule, no constant
         # Phase ST-2a (on purpose): create_save_data takes the station of the checkpoint from the verified arrival index, evaluate_arrival names the judged position in its one call of it,

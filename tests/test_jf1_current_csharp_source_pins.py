@@ -54,7 +54,10 @@ CURRENT_CSPROJ = os.path.join(PLUGIN, "TsScoringPlugin", "TsScoringPlugin.csproj
 # Time Fix A (pin moved from 830E16A6...): the changed lines were re-audited - ONE statement in the arrival / departure fill-in loop of the station list builder: the arrival fill-in
 # (arrival undefined, departure usable) no longer asks whether the station is the terminal; it asks whether the departure is a usable time (> 0 and below the BVE6 terminal sentinel). Nothing else
 # of Class1.cs moved; every shape pin of this file stays in force and tests\test_timefix_a_terminal_arrival.py / Handshake\Tests\Test-TimeFixA.ps1 hold the new rule.
-CLASS1_AUDITED_NORMALISED_SHA256 = "34213555A4F28F01C24B12835B9A0B11B19047061F4B94BE50B652C5F30E88B2"
+# Time Fix B2 (pin moved from 34213555...): the changed lines were re-audited - ONE new branch of the operational stop in the station part of the Tick: once the stop was made (hasDoorOpenedAtTarget) the vehicle
+# leaving (Math.Abs(speed) > 0.1, not the terminal) advances the target at once; the stop test, the departure-time hold, the customer stop, the pass station and the STIDX part are untouched. Every shape pin of this
+# file stays in force; Handshake\Tests\Test-TimeFixB2.ps1 holds the new rule.
+CLASS1_AUDITED_NORMALISED_SHA256 = "A3ABF20A62AD6AA586A560ECAEE0B750AD9916AEB32D6DC99AEA88E14B189887"
 # Phase U10 (the stop range of the station list builder): the value moved from 4D8FF9CB... after the changed lines were re-audited (ReadStationRange, RejectStationList, the latch stationRangeRejected and its gate; the 5.0 / 5.0
 # fallback of an unreadable range is gone). Every shape pin of this file still passes unchanged; tests\\test_stationindex_station_range_u10.py holds the contract of the new shape.
 # Phase ST-3b (the Current jump wiring): the value moved from 009BA364... after the changed lines were re-audited (the jump transaction, the one-shot StationIndex re-initialisation, the canonical numbers; every shape pin of this
@@ -284,8 +287,8 @@ class Pins(unittest.TestCase):
         self.assertIn("isInitialized = false;", block.group(1))
         self.assertNotIn("targetStationIndex", block.group(1))
         writes = re.findall(r"targetStationIndex\s*(\+\+|=(?!=))", self.c1)
-        # the declaration, the requested-index selector (ST-3b), the position search, three advances: no reset anywhere
-        self.assertEqual(sorted(writes), sorted(["=", "=", "=", "++", "++", "++"]))
+        # the declaration, the requested-index selector (ST-3b), the position search, four advances (Time Fix B2 added the one of the operational stop that is left): no reset anywhere
+        self.assertEqual(sorted(writes), sorted(["=", "=", "=", "++", "++", "++", "++"]))
 
     # -- C16 / F28 / F11 -------------------------------------------------------------------------------------------------------------------------
     @jf0("C16", "CURRENT")
