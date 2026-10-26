@@ -62,7 +62,8 @@ BASE_BLOBS = {
     "managed_hud.py": "b8f0430481039dca62c4ad5233e4c151f3e84407",
     # Time Fix B changed managed_input.py (one name added to GENERATION_DROP) and scoring_logic.py (the operational stop keeps its arrival range, tests/test_timefix_b_operational_stop_margin.py) on purpose: the blobs moved from 73aff45b... / 140d8471... (0b8e511); the package manifest is regenerated for them
     # Time Fix B2 changed managed_input.py (one more name in GENERATION_DROP) and scoring_logic.py (the operational stop is latched at its stop and completed by that record, tests/test_timefix_b2_operational_stop_contract.py): the blobs moved from 293b4a21... / 5be7a006... (Time Fix B)
-    "managed_input.py": "7933e16d4cbebb140de10f4a642cf3a26ed2f2db",
+    # UI-Q1-B changed managed_input.py on purpose (the Qt translation of the locale is installed for the result save dialog, the file filters are named in Japanese, tests/test_ui_q1b_result_dialog_localization.py): the blob moved from 7933e16d... (Time Fix B2)
+    "managed_input.py": "6b0bda0bb5e95e22d14d58efa868a14ff004904d",
     "managed_mode.py": "60413e37938808b1f15c52c3b81db9353fd7a84a",
     "managed_state.py": "d8b75db1e870f3f01f825961ec37e7471244d2bc",
     "menu_ui.py": "412e722fb533e1627fa9c4a348e242144c6866df",

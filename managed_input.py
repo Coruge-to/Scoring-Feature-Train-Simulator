@@ -256,15 +256,68 @@ class GuiInputApi(object):
         self._gui.EnableWindow(hwnd, True)
 
 
-def attach_result_dialog(overlay):
+# the Qt translators that are installed in this process: a QTranslator that is garbage collected stops translating, so they are held here for the life of the process
+_HELD_QT_TRANSLATORS = []
+_INSTALLED_QT_TRANSLATORS = {}
+
+
+def install_qt_translator(app=None, locale=None, translations_path=None):
+    """Phase UI-Q1-B: installs the Qt base translation (qtbase_<language>.qm) of the locale, from the translations directory that PyQt6 itself ships (QLibraryInfo), so that
+    the standard strings of Qt's own dialogs - the result save dialog is a non-native QFileDialog - follow the OS / Qt locale instead of staying English. No translation
+    file is part of the product tree. Returns the installed QTranslator, or None when there is no application, no translation of the locale or no translations directory:
+    that is NOT an error (the dialog then keeps Qt's English). Nothing raises. Installed once per application, kept for the life of the process."""
+    try:
+        from PyQt6.QtCore import QCoreApplication, QLibraryInfo, QLocale, QTranslator
+        app = app if app is not None else QCoreApplication.instance()
+        if app is None:
+            return None
+        wanted = locale if locale is not None else QLocale()
+        path = translations_path if translations_path is not None else QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+        key = (id(app), wanted.name(), path)
+        if key in _INSTALLED_QT_TRANSLATORS:
+            return _INSTALLED_QT_TRANSLATORS[key]
+        translator = QTranslator(app)
+        if not translator.load(wanted, "qtbase", "_", path):
+            return None
+        if not app.installTranslator(translator):
+            return None
+        _HELD_QT_TRANSLATORS.append(translator)
+        _INSTALLED_QT_TRANSLATORS[key] = translator
+        return translator
+    except Exception:
+        return None
+
+
+def _use_previous_label_translations(dialog):
+    """The Qt 6 file dialog asks for the labels "&Look in:" and "Files of &type:"; the Japanese catalog that PyQt6 ships still holds only the older keys "Look in:" and
+    "Files of type:". When the new key has no translation and the older key of the same catalog has one, the older translation is used for that label (no text of the
+    product, no asset). With no translation installed nothing changes. Nothing raises."""
+    try:
+        from PyQt6.QtCore import QCoreApplication
+        from PyQt6.QtWidgets import QFileDialog
+        for label, modern, previous in ((QFileDialog.DialogLabel.LookIn, "&Look in:", "Look in:"), (QFileDialog.DialogLabel.FileType, "Files of &type:", "Files of type:")):
+            if QCoreApplication.translate("QFileDialog", modern) != modern:
+                continue
+            older = QCoreApplication.translate("QFileDialog", previous)
+            if older and older != previous:
+                dialog.setLabelText(label, older)
+    except Exception:
+        pass
+
+
+def attach_result_dialog(overlay, translations_path=None, locale=None):
     """Managed mode: the result save dialog is a Qt dialog INSTANCE, not the native static dialog, so that the Stop request (or the loss of the parent
     process) can close it (Overlay.close_result_dialog -> reject) and its nested event loop returns before the application quits. The caller of the dialog
-    (Overlay.take_result_screenshot) is unchanged."""
+    (Overlay.take_result_screenshot) is unchanged. Phase UI-Q1-B: the Qt translation of the locale is installed first (install_qt_translator; no translation = Qt's
+    English) and the file filters are named in Japanese like the title; the owner / parent (the Overlay), DontUseNativeDialog, exec() and reject() are as they were."""
+    install_qt_translator(None, locale, translations_path)
+
     def ask(default_path):
         from PyQt6.QtWidgets import QFileDialog
-        dialog = QFileDialog(overlay, "採点結果を保存", default_path, "JPEG Image (*.jpg);;PNG Image (*.png)")
+        dialog = QFileDialog(overlay, "採点結果を保存", default_path, "JPEG画像 (*.jpg);;PNG画像 (*.png)")
         dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
         dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
+        _use_previous_label_translations(dialog)
         overlay.result_dialog = dialog
         try:
             accepted = dialog.exec()
