@@ -35,9 +35,9 @@ for _p in (ROOT, HERE):
 VECTORS_PATH = os.path.join(HERE, "official_target_vectors.json")
 
 # =====================================================================================================================================================================================
-# A. PROVISIONAL wire / attribute / verdict vocabulary (E-10: edit HERE to fix the wire)
+# A. Official wire / attribute / verdict vocabulary (E-10 fixed in SI-R2.2-S2a: the wire below is the product format)
 # =====================================================================================================================================================================================
-PROVISIONAL = True
+PROVISIONAL = False
 PART_NAME = "OFFTGT"
 WIRE_VERSION = 1
 FIELD_ORDER = ("state", "idx", "count", "hash", "loc", "mb", "mf")      # after "OFFTGT:<version>:"
