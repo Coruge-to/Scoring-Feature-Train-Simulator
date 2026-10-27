@@ -43,8 +43,9 @@ THIS_FILE = "tests/test_stationindex_package_st3e0.py"
 SET_RANK = {"python": 0, "current": 1, "legacy": 2, "shared": 3}
 
 REQUIRED_PYTHON = ("main.py", "scoring_logic.py", "managed_input.py", "station_identity.py", "jump_wire.py", "jump_transaction.py")
-PYTHON_22 = ("config", "current_jump_client", "dataplane_contract", "hud_ui", "jump_transaction", "jump_wire", "main", "managed_app_directory", "managed_hud", "managed_input",
-             "managed_mode", "managed_state", "menu_ui", "pause_recovery", "scoring_logic", "station_identity", "station_index_contract", "telemetry_contract",
+# SI-R2.2-S2a added official_target_contract.py (the receiver of the OFFTGT part, imported by main.py): the closure is the 22 modules of 0b8e511 plus this one (plus package_contract)
+PYTHON_23 = ("config", "current_jump_client", "dataplane_contract", "hud_ui", "jump_transaction", "jump_wire", "main", "managed_app_directory", "managed_hud", "managed_input",
+             "managed_mode", "managed_state", "menu_ui", "official_target_contract", "pause_recovery", "scoring_logic", "station_identity", "station_index_contract", "telemetry_contract",
              "telemetry_dataplane_receiver", "telemetry_gate", "telemetry_receiver_directory", "utils")
 CAPABILITIES = ("jump-request-v2", "jump-completion-v2", "current-selected-idx", "legacy-selected-idx", "python-completion-settlement", "stationindex-transaction",
                 "target-reinitialization", "retry-history-settlement", "legacy-r1b", "current-station-range-fail-closed", "whole-list-reject", "partial-list-not-published")
@@ -72,7 +73,8 @@ BASE_BLOBS = {
     "scoring_logic.py": "e8d1a3d0879933f182bbc829a82d8748b6f697b6",
     "station_identity.py": "93ce7abce5a7050896c00ba6eddd3290e7b192d2",
     "station_index_contract.py": "73c9ec9a75ca6dca450637f47d15d0ebdbdda423",
-    "telemetry_contract.py": "6eab0e7ee54b4a166e343ca5ca5b1bccac1538fb",
+    # SI-R2.2-S2a changed telemetry_contract.py on purpose (OFFTGT is a token of the station group; telemetry_state_defaults() carries the six published values of the OFFTGT part, tests/test_official_target_supply_s2a.py): the blob moved from 6eab0e7e... (0b8e511)
+    "telemetry_contract.py": "0cc2ef6a9e412e189ab34c84f435c59bdca061e4",
     "telemetry_dataplane_receiver.py": "87240b408cef4e70d3d31fccbc63292cb5f03ace",
     "telemetry_gate.py": "2e0c8b70041a1e9339c2fdf116edb7e57fce8219",
     "telemetry_receiver_directory.py": "5219d2940ca8b714fb999cae51341fc3881067d1",
@@ -113,7 +115,8 @@ BASE_BLOBS = {
 # Time Fix B3 changed main.py on purpose (the F8 hook and the fast-forward release test speed != 0.0 instead of >= 0.1 km/h / abs >= 0.1; a new scenario in the plain mode leaves no operational stop record): the blob (without its contract import)
 # moved from f2031b37... (Time Fix B2; main.py had been unchanged since 0b8e511 apart from the contract import)
 # UI-ALT-F4 changed main.py on purpose (Overlay.closeEvent / set_input_ownership / has_input_ownership / bring_to_foreground / post_close_to_bve, the "in front" of the managed step follows the Overlay, the wiring of the user close handler and the stop probe, the shutdown disarms the handler; tests/test_overlay_user_close_altf4.py / tests/test_managed_hud_input_ownership.py): the blob (without its contract import) moved from af943ef0... (Time Fix B3)
-BASE_MAIN = "bd8c31c96fad6bb9c86275d77a4d9d91815d8b82"
+# SI-R2.2-S2a changed main.py on purpose (the OFFTGT intake: the import of the receiver module, the six published values and their private judgement state, the capture of the part outside the key loop and the judgement at three moments; tests/test_official_target_supply_s2a.py): the blob (without its contract import) moved from bd8c31c9... (UI-ALT-F4)
+BASE_MAIN = "5da4fb7f6b429699b24bb552d36d4da37b077ce4"
 BASE_PROJECTS = {CURRENT_PROJECT: "61092229f34e5e4ceb52a4fb6e52280824ec2578", LEGACY_PROJECT: "defbe148ff815741c6b627cadaf8d024f649f804"}
 CODEC_FILES = ("jump_wire.py", "station_index_contract.py", "dataplane_contract.py", "telemetry_contract.py", "station_identity.py",
                SHARED_DIR + "/JumpWire.cs", SHARED_DIR + "/StationListIdentity.cs", SHARED_DIR + "/DataPlaneProtocol.cs", SHARED_DIR + "/TelemetryDirectoryReader.cs",
@@ -366,18 +369,19 @@ class A_Tsjump2(unittest.TestCase):
 # ---- B: the source sets ----------------------------------------------------------------------------------------------------------------------------------------------------------
 
 class B_SourceSets(unittest.TestCase):
-    @e0("E0-07", "RED", "PYTHON-RUNTIME-SET-NOT-23-MODULES", "the import closure of main.py is the 22 modules of 0b8e511 plus package_contract: missing 0, duplicate 0, dynamic import 0, network.py outside")
+    # (the code word PYTHON-RUNTIME-SET-NOT-23-MODULES keeps its name: it identifies E0-07 in the handoff records; the closure is now 24 modules = 22 + official_target_contract + package_contract)
+    @e0("E0-07", "RED", "PYTHON-RUNTIME-SET-NOT-23-MODULES", "the import closure of main.py is the 22 modules of 0b8e511 plus official_target_contract (SI-R2.2-S2a) plus package_contract: missing 0, duplicate 0, dynamic import 0, network.py outside")
     def test_RED_E0_07_the_python_runtime_set(self):
         files = base_files()
         modules, dyn = ref_closure(files)
         without = [m for m in modules if m != "package_contract"]
-        self.assertEqual(without, sorted(PYTHON_22), "the 22 modules of the U10 Push Close (a moved closure is RED-INVALID, not a RED)")
+        self.assertEqual(without, sorted(PYTHON_23), "the 22 modules of the U10 Push Close plus official_target_contract of SI-R2.2-S2a (a moved closure is RED-INVALID, not a RED)")
         self.assertEqual(dyn, 0)
         self.assertNotIn("network", modules)
         for name in REQUIRED_PYTHON:
             self.assertIn(name[:-3], modules)
         contract("package_contract" in modules, "E0-07", "PYTHON-RUNTIME-SET-NOT-23-MODULES", "package_contract.py is not in the closure of main.py (%d modules)" % len(modules))
-        contract(len(modules) == 23, "E0-07", "PYTHON-RUNTIME-SET-NOT-23-MODULES", "%d modules" % len(modules))
+        contract(len(modules) == 24, "E0-07", "PYTHON-RUNTIME-SET-NOT-23-MODULES", "%d modules" % len(modules))
         main_lines = [l for l in read_text(os.path.join(ROOT, "main.py")).splitlines() if l.strip() == "import package_contract"]
         self.assertEqual(len(main_lines), 1, "main.py imports the contract once, at the top level")
 
@@ -444,7 +448,7 @@ class C_Manifest(unittest.TestCase):
         for e in m["files"]:
             self.assertEqual(list(e), ["set", "path", "blob_sha256", "blob_size", "blob_eol"])
 
-    @e0("E0-12", "RED", "MANIFEST-ENTRIES-NOT-THE-RUNTIME-SETS", "the entries are exactly the python closure (23), the Current files (7), the Legacy files (16) and the shared files (7): no test, no pycache, no temp")
+    @e0("E0-12", "RED", "MANIFEST-ENTRIES-NOT-THE-RUNTIME-SETS", "the entries are exactly the python closure (24), the Current files (7), the Legacy files (16) and the shared files (7): no test, no pycache, no temp")
     def test_RED_E0_12_the_entries_are_the_runtime_sets(self):
         data, m = load_manifest("E0-12", "MANIFEST-ENTRIES-NOT-THE-RUNTIME-SETS")
         files = base_files()
@@ -458,7 +462,7 @@ class C_Manifest(unittest.TestCase):
         got = {s: sorted(e["path"] for e in m["files"] if e["set"] == s) for s in want}
         for s in want:
             contract(got[s] == want[s], "E0-12", "MANIFEST-ENTRIES-NOT-THE-RUNTIME-SETS", "%s: %s" % (s, sorted(set(got[s]) ^ set(want[s]))))
-        self.assertEqual({s: len(v) for s, v in got.items()}, {"python": 23, "current": 7, "legacy": 16, "shared": 7})
+        self.assertEqual({s: len(v) for s, v in got.items()}, {"python": 24, "current": 7, "legacy": 16, "shared": 7})
         paths = [e["path"] for e in m["files"]]
         self.assertEqual(len(paths), len(set(paths)))
         self.assertEqual(len(paths), len({p.lower() for p in paths}), "no path collision")

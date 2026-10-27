@@ -50,7 +50,9 @@ PYTHON_PINS = {
     "current_jump_client.py": "C2E41A1DFA47274E527A41926D7FEBC52D070A380124BCC05C2536CA0C1F10EC",
     # Phase ST-1A (the pin moved, was 114DAC75...): telemetry_contract.py gained the word STIDX in TOKEN_KEYS["station"] (+ a comment). It does not touch the jump contract;
     # tests\test_stationindex_supply_st1a.py (class D) pins the hooks.
-    "telemetry_contract.py": "792B5C6E1D6BE9181088B0020120B2A22A98AABD322A0154B44E9F6FCDBE6C71",
+    # Phase SI-R2.2-S2a (the pin moved, was 792B5C6E...): telemetry_contract.py gained the word OFFTGT in TOKEN_KEYS["station"] and the six published values of the OFFTGT part in
+    # telemetry_state_defaults() (+ comments). It does not touch the jump contract; the regions of main.py that name the jump contract are unchanged (tests\test_official_target_supply_s2a.py, class F).
+    "telemetry_contract.py": "87A3CAA65FA9E34BACAC9E2A4FBA9425AB57BA5264BCB1F112EA202D9CCC8F32",
     "dataplane_contract.py": "53D23EA683DE8C6344932DEF5D550C0646B3B95ECC5561A3CDAF66F46D9EF27D",
     "telemetry_dataplane_receiver.py": "7E651F9E2523F035C9A15ED1AF7A23EC8D373BDAB99B7085A8E9BA26521A44E9",
     "managed_app_directory.py": "7B77DA8C4D04B32603AE7BFFAA1A74FCE07253B1BE2084ECB11EBBE5B46DCA8A",

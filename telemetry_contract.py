@@ -35,7 +35,8 @@ TOKEN_KEYS = {
     "loc": ("LOCATION",),
     "grad": ("GRADIENT",),
     # STIDX (Phase ST-1A): the versioned station index part, written inside the same group as NEXTLOC
-    "station": ("NEXTLOC", "NEXTTIME", "ISPASS", "ISTIMING", "MARGINB", "MARGINF", "DOORDIR", "TERM", "STATNAME", "STALIST", "STIDX"),
+    # OFFTGT (Phase SI-R2.2-S2a): the versioned part with the target station the host itself names, same group; official_target_contract.py is its receiver
+    "station": ("NEXTLOC", "NEXTTIME", "ISPASS", "ISTIMING", "MARGINB", "MARGINF", "DOORDIR", "TERM", "STATNAME", "STALIST", "STIDX", "OFFTGT"),
     "door": ("DOOR",),
     "siglimit": ("SIGLIMIT",),
     "siglimit_ahead": ("FWDSIGLIMIT", "FWDSIGLOC"),
@@ -87,6 +88,9 @@ def telemetry_state_defaults():
         "bve_pressure_rates": [], "bve_max_pressure": 440.0,
         "cab_brk_count": 8, "has_holding_brake": False, "svc_brk_count": 8,
         "cushion_count": 2, "cushion_min": 1, "cushion_max": 2,
+        # Phase SI-R2.2-S2a: what the OFFTGT part says before the first line of a generation is judged (the same values as official_target_contract.initial_state(); a test keeps them equal)
+        "official_state": "NOT_INITIALIZED", "official_index": -1, "official_location": -1.0, "official_margin_b": -1.0, "official_margin_f": -1.0,
+        "official_reason": "off-not-ready",
     }
 
 

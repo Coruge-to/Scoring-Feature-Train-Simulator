@@ -40,6 +40,7 @@ import package_contract
 import telemetry_dataplane_receiver
 import current_jump_client
 import telemetry_gate
+from official_target_contract import advance as offtgt_advance, capture as offtgt_capture, initial_state as offtgt_initial_state, timer_after_scenario as offtgt_timer_after_scenario
 import telemetry_receiver_directory
 import utils
 
@@ -274,6 +275,13 @@ class Overlay(QWidget):
 
         self.station_list = []
 
+        # Phase SI-R2.2-S2a: the six values the OFFTGT part publishes (the target station the host itself names) and the private state of their judgement; nothing reads them yet
+        for _offtgt_name, _offtgt_value in offtgt_initial_state().items():
+            setattr(self, _offtgt_name, _offtgt_value)
+        self._offtgt_raw = None
+        self._offtgt_since = None
+        self._offtgt_scn = None
+
         # Phase ST-2a: the identity the application publishes for the station list above (written only by _station_identity_apply / _station_identity_clear;
         # -1 / "" = the sender's station indexes can not be used as the identity of a station)
         self.bve_tgt_idx = -1
@@ -469,6 +477,7 @@ class Overlay(QWidget):
             if committed is not None:
                 self.station_list = committed
             self._station_identity_sync()                    # Phase ST-2a: AFTER the line is applied (and observed) and the station list is adopted, never before
+            self._offtgt_sync()                              # Phase SI-R2.2-S2a: the line is judged again against the list it was sent with
 
         self._poll_jump_client()
         try:
@@ -692,6 +701,23 @@ class Overlay(QWidget):
         self.bve_tgt_idx, self.bve_arr_idx, self.bve_arr_seq, self.bve_list_id = station_identity.published_values(station_identity.unavailable(station_identity.NOT_READY))
         self._station_identity = None
 
+    # -- Phase SI-R2.2-S2a: the OFFTGT intake. It only JUDGES the part of the last applied line against the station list the application holds and PUBLISHES the six values
+    # (the receiver module decides; this method is the clock and the setattr). The HUD, the scoring, the ownership of the target and the NEXTTIME derivation do not read them.
+    # It runs at three moments only, each right after a line was applied: the end of apply_telemetry_text, right after read_udp_data adopted the station list of the line, and
+    # right after apply_held_telemetry adopted the held list. A STALIST alone never re-judges, and nothing is kept from an earlier line: a line without the part is ABSENT.
+    def _offtgt_sync(self):
+        try:
+            now_ms = time.monotonic() * 1000.0
+            scenario = getattr(self, 'current_scenario_id', None)
+            since = offtgt_timer_after_scenario(self.__dict__.get('_offtgt_since'), self.__dict__.get('_offtgt_scn'), scenario)
+            self._offtgt_scn = scenario
+            station_list = getattr(self, 'station_list', None)
+            result, self._offtgt_since = offtgt_advance(self.__dict__.get('_offtgt_raw'), station_list, getattr(station_list, 'list_id', None), since, now_ms)
+        except Exception:
+            result, self._offtgt_since = offtgt_initial_state(), None
+        for name, value in result.items():
+            setattr(self, name, value)
+
     def _station_identity_note(self, event, **fields):
         """One fixed-word diagnostic event of the identity (fixed words and numbers only): the managed application's log line. The normal mode installs no sink; there the
         reason stays in the state (self._station_identity, the refusals' return values) and nothing is written anywhere."""
@@ -787,6 +813,8 @@ class Overlay(QWidget):
             setattr(self, name, value)
         self._station_index_reset()
         self._station_identity_clear()
+        self._offtgt_raw = None
+        self._offtgt_since = None
 
     def apply_telemetry_text(self, latest_telemetry):
         """Applies one accepted telemetry datagram to the Overlay state (the part of read_udp_data that always was here; Phase L3 only moved it into
@@ -795,6 +823,7 @@ class Overlay(QWidget):
             self.reset_telemetry_state()
         if latest_telemetry:
             parts = latest_telemetry.split(',')
+            self._offtgt_raw = offtgt_capture(parts)
             for part in parts:
                 try:
                     if part.startswith("SCENARIO_ID:"):
@@ -1013,6 +1042,7 @@ class Overlay(QWidget):
                 self.jump_baseline_pending = False
 
             self._station_index_observe(latest_telemetry)
+            self._offtgt_sync()
 
     def _log_rejected_completion(self, reason):
         """The normal mode installs no diagnostic sink: a completion that proves nothing is still written to the Desktop log, as it always was (a fixed word, nothing of the body)."""
@@ -2782,6 +2812,7 @@ class Overlay(QWidget):
         if held is not None:
             self.station_list = held
         self._station_identity_sync()
+        self._offtgt_sync()
 
     def drop_held_station_list(self):
         self.held_station_list = None
