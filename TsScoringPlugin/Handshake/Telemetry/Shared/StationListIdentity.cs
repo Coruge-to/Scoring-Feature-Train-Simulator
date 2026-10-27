@@ -118,4 +118,251 @@ namespace TSScoringPlugin.Telemetry
             return true;
         }
     }
+
+    // ----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    // Phase SI-R2.2-S2b - the OFFICIAL next-station target of the host (Conductor.Stations: CurrentIndex, Count and the station CurrentIndex + 1), shared by BOTH senders.
+    //
+    //     OFFTGT:1:<s>:<idx>:<count>:<hash>:<loc>:<mb>:<mf>        s = K (known) / T (terminal: no next station) / N (the list is empty) / U (host not ready) / F (read failed)
+    //
+    // The Python twin is official_target_contract.py (S2a). The host is only READ: there is no delegate that writes. Nothing is kept between two Ticks (no field, no static): a Tick that
+    // cannot read the target says U or F, it never repeats an earlier K. C# 5 compatible (the PowerShell test path compiles this file with it).
+    // ----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+    /// <summary>One read of the host's official target (plain data, filled by OfficialTargetReader). A value that could not be read keeps its Ok flag false.</summary>
+    internal sealed class OfficialTargetReading
+    {
+        internal bool HostNull;         // Scenario / Vehicle / Conductor / Stations was null: the host is not ready (U)
+        internal bool CursorOk;
+        internal int Cursor;            // Conductor.Stations.CurrentIndex
+        internal bool CountOk;
+        internal int Count;             // Conductor.Stations.Count
+        internal bool NextOk;
+        internal double NextLocation;   // Location of the station CurrentIndex + 1
+        internal double MarginMin;
+        internal double MarginMax;
+        internal string Error = "-";    // the exception TYPE name of the last failed read (diagnostic only; it never enters the wire)
+    }
+
+    internal sealed class OfficialTargetStation
+    {
+        internal double Location;
+        internal double MarginMin;
+        internal double MarginMax;
+    }
+
+    /// <summary>The host's READ-ONLY accessors as delegates (each sender fills them with one-line typed reads; this file never names a host type).</summary>
+    internal sealed class OfficialTargetHost
+    {
+        internal Func<object> GetStations;                                  // the conductor's station list; null while the host is not ready; may throw
+        internal Func<object, int> GetCursor;
+        internal Func<object, int> GetCount;
+        internal Func<object, int, OfficialTargetStation> ReadStation;
+    }
+
+    internal static class OfficialTargetReader
+    {
+        /// <summary>Reads CurrentIndex, Count and the station CurrentIndex + 1, each read inside a try / catch of its own. Only values of the host's station list are looked at.</summary>
+        internal static OfficialTargetReading Read(OfficialTargetHost host)
+        {
+            OfficialTargetReading r = new OfficialTargetReading();
+            object stations;
+            try
+            {
+                stations = host.GetStations();
+            }
+            catch (Exception ex)
+            {
+                r.Error = ex.GetType().Name;
+                return r;
+            }
+
+            if (stations == null)
+            {
+                r.HostNull = true;
+                return r;
+            }
+
+            try
+            {
+                r.Cursor = host.GetCursor(stations);
+                r.CursorOk = true;
+            }
+            catch (Exception ex)
+            {
+                r.Error = ex.GetType().Name;
+            }
+
+            try
+            {
+                r.Count = host.GetCount(stations);
+                r.CountOk = true;
+            }
+            catch (Exception ex)
+            {
+                r.Error = ex.GetType().Name;
+            }
+
+            if (r.CursorOk && r.CountOk)
+            {
+                int next = r.Cursor + 1;
+                if (next >= 0 && next < r.Count)
+                {
+                    try
+                    {
+                        OfficialTargetStation s = host.ReadStation(stations, next);
+                        r.NextLocation = s.Location;
+                        r.MarginMin = s.MarginMin;
+                        r.MarginMax = s.MarginMax;
+                        r.NextOk = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        r.Error = ex.GetType().Name;
+                    }
+                }
+            }
+
+            return r;
+        }
+    }
+
+    /// <summary>
+    /// The wire form of the OFFTGT telemetry part, shared by BOTH senders. A pure function of one reading and the list identity. Numbers are written in the shortest canonical form
+    /// the receiver accepts (no exponent, no trailing zero, no "-0", invariant culture); a value that has no such form is not written: the state is F.
+    /// </summary>
+    internal static class OfficialTargetWire
+    {
+        internal const string Key = "OFFTGT";
+        internal const int Version = 1;
+
+        /// <summary>The value of the part (everything after "OFFTGT:"): version, state, idx, count, hash, loc, mb, mf. Order of the decision: U, F, N, F, T, K.</summary>
+        internal static string Value(OfficialTargetReading r, string listId)
+        {
+            if (r == null || r.HostNull)
+            {
+                return Placeholder("U");
+            }
+
+            if (!r.CursorOk || !r.CountOk)
+            {
+                return Placeholder("F");
+            }
+
+            if (r.Count == 0)
+            {
+                return Build("N", -1, 0, StationListIdentity.EmptyId, "-1", "-1", "-1");
+            }
+
+            if (r.Count < 0 || r.Cursor < -1 || r.Cursor > r.Count - 1)
+            {
+                return Placeholder("F");
+            }
+
+            string hash = IsHash(listId) ? listId.ToUpperInvariant() : StationListIdentity.EmptyId;
+            if (r.Cursor + 1 >= r.Count)
+            {
+                return Build("T", -1, r.Count, hash, "-1", "-1", "-1");
+            }
+
+            if (!r.NextOk || r.MarginMax < 0.0)
+            {
+                return Placeholder("F");
+            }
+
+            string loc;
+            string mb;
+            string mf;
+            if (!TryReal(r.NextLocation, out loc) || !TryReal(Math.Abs(r.MarginMin), out mb) || !TryReal(r.MarginMax, out mf))
+            {
+                return Placeholder("F");
+            }
+
+            return Build("K", r.Cursor + 1, r.Count, hash, loc, mb, mf);
+        }
+
+        /// <summary>The fixed form of a state that carries no station: "U" (temporarily unavailable); any other word is written as "F" (read failed).</summary>
+        internal static string Placeholder(string state)
+        {
+            return Build(state == "U" ? "U" : "F", -1, -1, StationListIdentity.EmptyId, "-1", "-1", "-1");
+        }
+
+        /// <summary>The whole part as it stands in the telemetry line.</summary>
+        internal static string Part(OfficialTargetReading r, string listId)
+        {
+            return Key + ":" + Value(r, listId);
+        }
+
+        private static string Build(string state, int idx, int count, string hash, string loc, string mb, string mf)
+        {
+            return Version.ToString(CultureInfo.InvariantCulture) + ":" + state + ":" + idx.ToString(CultureInfo.InvariantCulture) + ":" + count.ToString(CultureInfo.InvariantCulture)
+                + ":" + hash + ":" + loc + ":" + mb + ":" + mf;
+        }
+
+        /// <summary>The canonical decimal text of v: -?(0|[1-9][0-9]{0,14})(.[0-9]{0,16}[1-9])?. false = v has no such text (NaN, Infinity, 1e15 or more, or a non-zero value that rounds to zero).</summary>
+        internal static bool TryReal(double v, out string text)
+        {
+            text = null;
+            if (double.IsNaN(v) || double.IsInfinity(v) || Math.Abs(v) >= 1e15)
+            {
+                return false;
+            }
+
+            if (v == 0.0)
+            {
+                text = "0";
+                return true;
+            }
+
+            // The shortest of 15, 16 and 17 significant digits that reads back as v. ("R" is not used: on a 64-bit .NET Framework it can stop at 15 digits for a value that needs 16 or 17.)
+            string s = null;
+            for (int digits = 15; digits <= 17; digits++)
+            {
+                s = v.ToString("G" + digits.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+                double back;
+                if (double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out back) && back == v)
+                {
+                    break;
+                }
+            }
+
+            if (s.IndexOf('E') >= 0 || s.IndexOf('e') >= 0 || FractionDigits(s) > 17)
+            {
+                s = v.ToString("0.#################", CultureInfo.InvariantCulture);
+            }
+
+            if (s == "0" || s == "-0")
+            {
+                return false;
+            }
+
+            text = s;
+            return true;
+        }
+
+        private static int FractionDigits(string s)
+        {
+            int dot = s.IndexOf('.');
+            return dot < 0 ? 0 : s.Length - dot - 1;
+        }
+
+        private static bool IsHash(string s)
+        {
+            if (s == null || s.Length != 8)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < 8; i++)
+            {
+                char c = s[i];
+                bool hex = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
+                if (!hex)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
 }

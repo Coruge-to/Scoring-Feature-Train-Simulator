@@ -39,6 +39,13 @@ namespace TSScoringPlugin.Telemetry
         void Event(string name, string detail);
     }
 
+    /// <summary>Phase SI-R2.2-S2b: the read surface of the host's OFFICIAL next-station target (a port of its own: ILegacyApi is unchanged). null = not wired: the row never carries the OFFTGT key.</summary>
+    internal interface ILegacyOfficialTargetApi
+    {
+        /// <summary>One READ of Conductor.Stations (CurrentIndex, Count, the station CurrentIndex + 1). Never writes. May throw: the session then writes the F form of the key.</summary>
+        OfficialTargetReading ReadOfficialTarget();
+    }
+
     internal sealed class LegacyTelemetrySession : ILegacyJumpSessionPort, ILegacyJumpScopePort
     {
         private const double JumpToleranceMs = 300.0;
@@ -47,6 +54,7 @@ namespace TSScoringPlugin.Telemetry
         private const long PausedAfterMs = 100;
 
         private readonly ILegacyApi api;
+        private readonly ILegacyOfficialTargetApi official;         // Phase SI-R2.2-S2b: null = the row never carries OFFTGT (byte for byte the row of the earlier sender)
         private readonly ITelemetrySink sink;
         private readonly ITelemetrySinkAck ack;     // Phase ST-3c (R1-B): the sink when it can say whether a text was accepted, else null (a plain sink counts every text as sent)
         private readonly Func<long> nowMs;          // monotonic milliseconds
@@ -154,7 +162,14 @@ namespace TSScoringPlugin.Telemetry
         /// phase: the row is byte for byte the row of the earlier sender).
         /// </summary>
         internal LegacyTelemetrySession(ILegacyApi api, ITelemetrySink sink, Func<long> nowMs, Func<long> idSeed, ITelemetryDiag diag, ILegacyInputApi input, ILegacyScoringApi scoring, ILegacyGroundApi groundApi, ILegacyJumpAvailability jumpAvail)
+            : this(api, sink, nowMs, idSeed, diag, input, scoring, groundApi, jumpAvail, null)
         {
+        }
+
+        /// <summary>official = Phase SI-R2.2-S2b: the read surface of the official next-station target. null = not wired: no OFFTGT key is ever written.</summary>
+        internal LegacyTelemetrySession(ILegacyApi api, ITelemetrySink sink, Func<long> nowMs, Func<long> idSeed, ITelemetryDiag diag, ILegacyInputApi input, ILegacyScoringApi scoring, ILegacyGroundApi groundApi, ILegacyJumpAvailability jumpAvail, ILegacyOfficialTargetApi official)
+        {
+            this.official = official;
             this.jumpAvail = jumpAvail;
             this.api = api;
             if (groundApi != null)
@@ -708,6 +723,23 @@ namespace TSScoringPlugin.Telemetry
                         "TERM", TelemetryContract.I(sv.Term),
                         "STATNAME", sv.Name == null ? TelemetryContract.StationName(null) : sv.Name.Replace(",", string.Empty),
                         "STIDX", StationIndexWire.Value(sv.Index, timeline.ArrivalIndex, timeline.ArrivalSeq, timeline.Count, timeline.ListId));
+                    if (official != null)
+                    {
+                        // Phase SI-R2.2-S2b: the OFFTGT key, the last key of the station group. Its value is made in a try / catch of its own: a failure writes the F form and touches no other key.
+                        // It is made afresh every Tick: nothing of an earlier Tick is kept or sent again.
+                        string officialValue;
+                        try
+                        {
+                            officialValue = OfficialTargetWire.Value(official.ReadOfficialTarget(), timeline.ListId);
+                        }
+                        catch
+                        {
+                            officialValue = OfficialTargetWire.Placeholder("F");
+                        }
+
+                        lb.Key(OfficialTargetWire.Key, officialValue);
+                    }
+
                     if (!staListSent || now - lastStaListMs >= StaListIntervalMs)
                     {
                         staList = timeline.ComposeStaList();
@@ -1071,6 +1103,12 @@ namespace TSScoringPlugin.Telemetry
             internal void Token(string token)
             {
                 tokens.Add(token);
+            }
+
+            /// <summary>One more key of the group added last (its token is already announced).</summary>
+            internal void Key(string key, string value)
+            {
+                body.Append(',').Append(key).Append(':').Append(value);
             }
 
             internal void Group(string token, params string[] keyValuePairs)

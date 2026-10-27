@@ -33,7 +33,7 @@ using BveTypes.ClassWrappers;
 //
 // Phase SI-0 (scoring-integration observation, diagnostic log only - nothing below is sent to the telemetry stream), read on the Tick thread only. READ ONLY:
 // no method of the host that moves, re-times, initialises or jumps anything is called (Scenario.Initialize, InitializeTimeAndLocation, TimeManager.SetTime and the
-// list navigation members GoTo / CurrentIndex are deliberately NOT used):
+// list navigation member GoTo are deliberately NOT used; the list cursor is never assigned - its one READ is the official-target reader below, Phase SI-R2.2-S2b):
 //   Scenario.Vehicle.Instruments.BrakeSystem.BrakeController (Smee / Cl BpInitialPressure) and BrakeSystem.Smee / .Cl (the route the Current sender takes)
 //   Scenario.Vehicle.Dynamics.CarLength / FirstCar.Count / MotorCar.Count / TrailerCar.Count
 //   Scenario.Route.SpeedLimits (Count, the indexer, MapObjectBase.Location, ValueNode<double>.Value)
@@ -41,6 +41,12 @@ using BveTypes.ClassWrappers;
 // Phase SI-1 (SENT to the telemetry stream: TRAINLEN, MAPLIMITS, CLEARDIST, and the head limit of MAPHEAD), the same READ ONLY public values as the SI-0 observation:
 //   Scenario.Vehicle.Dynamics.CarLength / MotorCar.Count / TrailerCar.Count  (FirstCar is not read: it is not part of the length)
 //   Scenario.Route.SpeedLimits (Count, the indexer, MapObjectBase.Location, ValueNode<double>.Value)
+//
+// Phase SI-R2.2-S2b (SENT to the telemetry stream: the OFFTGT key, the official next-station target), the only READ of the host's station list cursor. The rule (E-9):
+//   - use: supply of the host's official next-station target and nothing else; it is READ ONLY (CurrentIndex is never assigned; GoTo / GoToByIndex / Insert / Initialize* are never called)
+//   - values: Scenario.Vehicle.Conductor.Stations (public getters CurrentIndex / Count / the indexer) and the station's Location / MarginMin / MarginMax, read by ReadOfficialTarget only
+//   - no correction of any kind: no distance, door, speed, position or map search, no earlier value kept; an unreadable host is U or F, never an earlier K
+//   - the terminal-departure sentinel belongs to the machine target and is not part of this read; the receiver may not use the value to move a target, release a hold or fill in a distance
 //
 // Phase PID-D4 / Slice 1 (the transport, not the reads): the session's texts go through LegacyDataPlaneSink (src\LegacyDataPlaneSink.cs, host independent). NORMAL mode =
 // the plain text to the fixed legacy port as always; MANAGED mode = an Envelope v1 to the Directory-published endpoint of this BVE process, fail closed, no fixed-port
@@ -115,7 +121,7 @@ namespace TSScoringPlugin.Telemetry
                 jumpAvail = null;
             }
 
-            session = new LegacyTelemetrySession(api, sink, delegate { return clock.ElapsedMilliseconds; }, delegate { return DateTime.UtcNow.Ticks; }, diag, api, api, api, jumpAvail);
+            session = new LegacyTelemetrySession(api, sink, delegate { return clock.ElapsedMilliseconds; }, delegate { return DateTime.UtcNow.Ticks; }, diag, api, api, api, jumpAvail, api);
             try
             {
                 api.AttachNative(Native);      // PluginBase.Native: the public route to INative; only held here, read on the Tick thread
@@ -412,7 +418,7 @@ namespace TSScoringPlugin.Telemetry
     }
 
     /// <summary>The Legacy API read into ILegacyApi. Every Try method catches everything: an unreadable value is "not available", never a default.</summary>
-    internal sealed class AtsExLegacyApi : ILegacyApi, ILegacyInputApi, ILegacyScoringApi, ILegacyGroundApi
+    internal sealed class AtsExLegacyApi : ILegacyApi, ILegacyInputApi, ILegacyScoringApi, ILegacyGroundApi, ILegacyOfficialTargetApi
     {
         private IBveHacker hacker;
         private INative nativeHost;
@@ -654,6 +660,35 @@ namespace TSScoringPlugin.Telemetry
             }
 
             return LegacyBrakeKind.None;
+        }
+
+        // -- Phase SI-R2.2-S2b: the official next-station target (ILegacyOfficialTargetApi). Tick thread only; READ ONLY: Conductor.Stations.CurrentIndex / Count and the station are read, nothing is assigned. ------
+        OfficialTargetReading ILegacyOfficialTargetApi.ReadOfficialTarget()
+        {
+            OfficialTargetHost host = new OfficialTargetHost();
+            host.GetStations = delegate
+            {
+                Scenario scenario = current;
+                if (scenario == null) { return null; }
+                Vehicle vehicle = scenario.Vehicle;
+                if (vehicle == null) { return null; }
+                Conductor conductor = vehicle.Conductor;
+                if (conductor == null) { return null; }
+                return conductor.Stations;
+            };
+            host.GetCursor = delegate (object list) { return ((MapObjectList)list).CurrentIndex; };
+            host.GetCount = delegate (object list) { return ((MapObjectList)list).Count; };
+            host.ReadStation = delegate (object list, int index)
+            {
+                MapObjectBase item = ((MapObjectList)list)[index];
+                Station station = item as Station ?? Station.FromSource((object)item.Src);
+                OfficialTargetStation read = new OfficialTargetStation();
+                read.Location = station.Location;
+                read.MarginMin = station.MarginMin;
+                read.MarginMax = station.MarginMax;
+                return read;
+            };
+            return OfficialTargetReader.Read(host);
         }
 
         // -- Phase LI0: the scoring-input observation (ILegacyInputApi). Tick thread only; every Try method turns any exception into a fixed reason. ----------

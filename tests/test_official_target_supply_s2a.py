@@ -37,7 +37,12 @@ S2A_GREEN_ROWS = {
     "ownership": ("R-SEM-01", "R-TERM-2"),
     "reinit": ("R-REINIT-F5-1", "R-REINIT-F5-2", "R-REINIT-F5-3"),
 }
-EXPECTED_AFTER_S2A = {"RED-VALID": 50, "GUARD": 41}
+# SI-R2.2-S2b (intended update, OD-S2B-2) turns more rows to GUARD, stage by stage: the C# senders write the part. C3a (the shared reader and wire helper, the Legacy sender) turns R-CS-SRC-02;
+# C3b (the Current sender) turns R-CS-SRC-01 / 04 / 08. This ledger is the staged-green boundary of the commit it stands in; the meaning contract (decode / evaluate / supply) is not touched.
+S2B_GREEN_ROWS = {
+    "supply": ("R-CS-SRC-02",),
+}
+EXPECTED_AFTER_S2A = {"RED-VALID": 49, "GUARD": 42}                      # S2a: 50 / 41; S2b C3a: 49 / 42
 # the 50 rows that stay RED after S2a fail only for reasons that belong to a later stage: the HUD (SI-R2.3: HUD-DIST / HUD-TIMELEFT / NOT-EQUIVALENT-TO-CSHARP), the C# supply
 # (S2b: the named NOT-IMPLEMENTED words) and the distance search (SI-R2.4: CURRENT- / LEGACY- / DISTANCE-SEARCH-REMAINS). A supply, state, index, location or reason word is a defect of S2a.
 REMAINING_RED_WORD = re.compile(r"^(HUD-DIST:|HUD-TIMELEFT:|NOT-EQUIVALENT-TO-CSHARP|CURRENT-|LEGACY-|DISTANCE-SEARCH-REMAINS|"
@@ -286,7 +291,7 @@ def run_red(runner):
 
 
 class E_StagedGreen(_QtCase):
-    """After S2a: RED 50 / GUARD 41, exactly the 13 listed rows moved, every other row kept its verdict (the intended remainder belongs to S2b, SI-R2.3 and SI-R2.4)."""
+    """The staged-green ledger: exactly the rows of S2A_GREEN_ROWS (13, S2a) and S2B_GREEN_ROWS (S2b, as far as its commits go) moved, every other row kept its verdict (the intended remainder belongs to S2b, SI-R2.3 and SI-R2.4). The name of the test is kept for the ledger of earlier reports."""
 
     def test_exactly_the_thirteen_rows_become_guard(self):
         verdicts = {}
@@ -297,7 +302,7 @@ class E_StagedGreen(_QtCase):
                 verdicts[(runner, rid)] = (verdict, predicted, reason)
         self.assertEqual(len(verdicts), 91)
         moved = {key for key, (verdict, predicted, _r) in verdicts.items() if verdict != predicted}
-        expected = {(runner, rid) for runner, ids in S2A_GREEN_ROWS.items() for rid in ids}
+        expected = {(runner, rid) for runner, ids in S2A_GREEN_ROWS.items() for rid in ids} | {(runner, rid) for runner, ids in S2B_GREEN_ROWS.items() for rid in ids}
         self.assertEqual(sorted(moved), sorted(expected))
         for key in expected:
             self.assertEqual(verdicts[key][0], "GUARD", key)

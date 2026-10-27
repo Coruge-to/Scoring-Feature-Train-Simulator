@@ -922,13 +922,17 @@ class D_Boundary(unittest.TestCase):
         self.assertEqual(sorted(writes), sorted(["=", "=", "=", "++", "++", "++", "++"]))
 
     def test_legacy_group_carries_stidx_as_its_last_key_inside_the_one_all_or_nothing_group(self):
+        # SI-R2.2-S2b (an intended change): the Group( call is unchanged and still ends with STIDX; the OFFTGT key is added AFTER it, by LineBuilder.Key under `if (official != null)`
+        # (the last key of the station group, tests/test_official_target_wire_s2b.py::C_LegacySource), so STIDX is the last key OF THE Group( CALL, no longer of the group
         ls = self.lses
-        m = re.search(r"lb\.Group\(TelemetryContract\.TokStation, (.*?)\); if \(!staListSent", ls)
+        m = re.search(r"lb\.Group\(TelemetryContract\.TokStation, (.*?)\)\); if \(official != null\) \{", ls)
         self.assertIsNotNone(m)
-        keys = re.findall(r'"([A-Z]+)",', m.group(1))
+        keys = re.findall(r'"([A-Z]+)",', m.group(1) + ")")
         self.assertEqual(keys, ["NEXTLOC", "NEXTTIME", "ISPASS", "ISTIMING", "MARGINB", "MARGINF", "DOORDIR", "TERM", "STATNAME", "STIDX"])
         self.assertIn('"STIDX", StationIndexWire.Value(sv.Index, timeline.ArrivalIndex, timeline.ArrivalSeq, timeline.Count, timeline.ListId)', ls)
         self.assertEqual(ls.count("StationIndexWire"), 1)
+        self.assertEqual(ls.count("lb.Key(OfficialTargetWire.Key, officialValue);"), 1)
+        self.assertRegex(ls, r"lb\.Key\(OfficialTargetWire\.Key, officialValue\); \} if \(!staListSent")
 
     def test_legacy_timeline_new_members_are_read_only_by_the_part_and_the_state_machine_is_untouched(self):
         ltl = self.ltl
