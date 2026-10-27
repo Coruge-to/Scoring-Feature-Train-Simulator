@@ -1,0 +1,415 @@
+{
+  "schema": {
+    "version": 1,
+    "purpose": "SI-R2.1 (T-1a) RED vectors of the official BVE target contract. SEMANTIC vectors: a step says WHAT the host reports (state / index) and WHAT the application must then hold and show; it never says how the wire looks (tests/official_target_wire_fixture.py converts, E-10 provisional).",
+    "source_values": "source=observed:<id> marks values copied from the SI-DIAG canon (E1-D 570.00->570.04 index 3->3; E2-D retest 570.00->570.00 index 3->2; start-station F5 d=0.00 index 0->1; terminal T kept across F5). Station geometry of the lists and every distance other than those is SYNTHETIC (source=synthetic): not an observation.",
+    "hud_literals": "hud_dist / hud_time_left are the texts the REAL draw_hud renders; the oracle self-check feeds the expected target (BVE-owned step) or the machine values (TS-owned step) to the REAL HUD and requires the same literal, so a hand-computing mistake is a FIXTURE FAIL.",
+    "clock": "time_ms default 36000000 (10:00:00). L4: A@0 B@1000(arr 10:01:00 dep 10:02:00) C@2000(arr 10:06:00 dep 10:07:00) D@3000 terminal(arr 10:11:00).",
+    "owner": "owner=BVE: the official target is shown (scoring off or finished); owner=TS: the scoring target (the machine target the C# state machine holds) is shown. Rule: target_owner_is_scoring = is_scoring_mode and not is_scoring_finished.",
+    "d7": "D-7 (OD-X2): start station is host-faithful, no d=0 exception, F5 re-acquires the official target, BVE5/BVE6 differences are not compensated (no version field exists in any vector)."
+  },
+  "lists": {
+    "L4": [
+      {"name": "A", "location": 0.0, "arr": 35940000, "dep": 35990000},
+      {"name": "B", "location": 1000.0, "arr": 36060000, "dep": 36120000},
+      {"name": "C", "location": 2000.0, "arr": 36360000, "dep": 36420000},
+      {"name": "D", "location": 3000.0, "arr": 36660000, "dep": -1, "terminal": true}
+    ],
+    "L5": [
+      {"name": "A", "location": 0.0, "arr": 35940000, "dep": 35990000},
+      {"name": "B", "location": 1000.0, "arr": 36060000, "dep": 36120000},
+      {"name": "C", "location": 2000.0, "arr": 36360000, "dep": 36420000},
+      {"name": "D", "location": 3000.0, "arr": 36660000, "dep": 36720000},
+      {"name": "E", "location": 4000.0, "arr": 36960000, "dep": -1, "terminal": true}
+    ],
+    "L5P": [
+      {"name": "A", "location": 0.0, "arr": 35940000, "dep": 35990000},
+      {"name": "B", "location": 1000.0, "arr": 36060000, "dep": 36120000},
+      {"name": "C", "location": 2000.0, "arr": 36360000, "dep": 36420000, "pass": true},
+      {"name": "D", "location": 3000.0, "arr": 36660000, "dep": 36720000},
+      {"name": "E", "location": 4000.0, "arr": 36960000, "dep": -1, "terminal": true}
+    ],
+    "L4Z": [
+      {"name": "A", "location": 0.0, "arr": 35940000, "dep": 35990000},
+      {"name": "B", "location": 1000.0, "arr": 36060000, "dep": 36120000},
+      {"name": "C", "location": 2000.0, "arr": 0, "dep": 0},
+      {"name": "D", "location": 3000.0, "arr": 36660000, "dep": -1, "terminal": true}
+    ],
+    "ELIST": [
+      {"name": "S0", "location": 0.0, "arr": 35000000, "dep": 35050000},
+      {"name": "S1", "location": 300.0, "arr": 35500000, "dep": 35550000},
+      {"name": "S2", "location": 480.0, "arr": 35900000, "dep": 35950000},
+      {"name": "S3", "location": 570.0, "arr": 36000000, "dep": 36060000},
+      {"name": "S4", "location": 900.0, "arr": 36300000, "dep": -1, "terminal": true}
+    ]
+  },
+  "pins": {
+    "stidx_vectors_st0.json": "2f34565396ff64308125c502e50bff607ef6fc8d65ec525907d0538cb00b6ab1",
+    "ILegacyApi_block_normalized": "0bc00715a111f2296e1529972dd34ce1485726a014e88d16fa346ebd517ed0af",
+    "FakeApi_block_normalized": "81f20e2eed1a0e27d2c9dc17978ec3ce579bc088a9e0c4f1ce91e3ad36cc7d24"
+  },
+  "cases": [
+    {"id": "SUP-K", "file": "supply", "source": "synthetic", "list": "L5", "family": "R-OFF-01", "steps": [
+      {"loc": 2500.0, "machine": {"nextloc": 2000.0, "nexttime": 36360000, "tgt": 2}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "official_location": 3000.0, "official_reason": "off-ok", "target_nextloc": 3000.0, "target_nexttime": 36660000, "hud_dist": "500.0 m", "hud_time_left": "11:00"}}
+    ]},
+    {"id": "SUP-T", "file": "supply", "source": "observed:E1-T3-r2 (terminal without t: official none, kept across F5)", "list": "L5", "family": "R-OFF-02", "steps": [
+      {"loc": 4000.0, "term": 1, "machine": {"nextloc": 4000.0, "nexttime": 36960000, "tgt": 4}, "official": {"state": "T"},
+       "expect": {"owner": "BVE", "official_state": "NONE_TERMINAL", "official_index": -1, "official_reason": "off-none-terminal", "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}}
+    ]},
+    {"id": "SUP-N", "file": "supply", "source": "synthetic", "list": "EMPTY", "family": "R-OFF-02", "steps": [
+      {"loc": 100.0, "machine": {"nextloc": -1.0, "nexttime": -1, "tgt": -1}, "official": {"state": "N"},
+       "expect": {"owner": "BVE", "official_state": "NONE_EMPTY", "official_index": -1, "official_reason": "off-none-empty", "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}}
+    ]},
+    {"id": "SUP-U", "file": "supply", "source": "synthetic", "list": "L5", "family": "R-OFF-02", "steps": [
+      {"loc": 500.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "U"},
+       "expect": {"owner": "BVE", "official_state": "UNAVAILABLE", "official_index": -1, "official_reason": "off-unavailable", "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}}
+    ]},
+    {"id": "SUP-F", "file": "supply", "source": "synthetic", "list": "L5", "family": "R-OFF-02", "steps": [
+      {"loc": 500.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "F"},
+       "expect": {"owner": "BVE", "official_state": "READ_FAILED", "official_index": -1, "official_reason": "off-read-failed", "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}}
+    ]},
+    {"id": "SUP-ABSENT", "file": "supply", "source": "synthetic", "list": "L5", "family": "R-OFF-03", "steps": [
+      {"loc": 2500.0, "machine": {"nextloc": 2000.0, "nexttime": 36360000, "tgt": 2}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "target_nextloc": 3000.0, "target_nexttime": 36660000, "hud_dist": "500.0 m", "hud_time_left": "11:00"}},
+      {"loc": 2600.0, "machine": {"nextloc": 2000.0, "nexttime": 36360000, "tgt": 2},
+       "expect": {"owner": "BVE", "official_state": "ABSENT", "official_index": -1, "official_reason": "off-missing", "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}}
+    ]},
+    {"id": "SUP-F-AFTER-K", "file": "supply", "source": "synthetic (E11-F3: a failed read is not a replay of the last K)", "list": "L5", "family": "R-STATE-4", "steps": [
+      {"loc": 2500.0, "machine": {"nextloc": 3000.0, "nexttime": 36660000, "tgt": 3}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "target_nextloc": 3000.0, "target_nexttime": 36660000, "hud_dist": "500.0 m", "hud_time_left": "11:00"}},
+      {"loc": 2510.0, "machine": {"nextloc": 3000.0, "nexttime": 36660000, "tgt": 3}, "official": {"state": "F"},
+       "expect": {"owner": "BVE", "official_state": "READ_FAILED", "state_not": "KNOWN", "official_index": -1, "official_reason": "off-read-failed", "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}}
+    ]},
+    {"id": "SUP-U-AFTER-K", "file": "supply", "source": "synthetic (E-11: U may keep the last K under conditions the Owner has not fixed yet (N undecided): the contract is N-agnostic - the state is UNAVAILABLE, and the HUD is EITHER none OR the display of the last K target, never half of each)", "list": "L5", "family": "R-STATE-3", "steps": [
+      {"loc": 2500.0, "machine": {"nextloc": 3000.0, "nexttime": 36660000, "tgt": 3}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "target_nextloc": 3000.0, "target_nexttime": 36660000, "hud_dist": "500.0 m", "hud_time_left": "11:00"}},
+      {"loc": 2510.0, "machine": {"nextloc": 3000.0, "nexttime": 36660000, "tgt": 3}, "official": {"state": "U"},
+       "expect": {"owner": "BVE", "official_state": "UNAVAILABLE", "state_not": "KNOWN", "official_index": -1, "official_reason": "off-unavailable", "target_nextloc": -1, "target_nexttime": -1,
+                  "alt_target_nextloc": 3000.0, "alt_target_nexttime": 36660000, "hud_dist_either": ["--- m", "490.0 m"], "hud_time_left_either": ["--:--", "11:00"]}}
+    ]},
+    {"id": "SUP-RANGE", "file": "supply", "source": "synthetic", "list": "L5", "family": "R-OFF-05", "steps": [
+      {"loc": 500.0, "official": {"state": "K", "index": -1, "loc": 2000.0, "allow_out_of_range": true}, "expect": {"official_state": "INVALID", "official_index": -1, "official_reason": "off-range"}},
+      {"loc": 500.0, "official": {"state": "K", "index": 5, "loc": 4000.0, "allow_out_of_range": true}, "expect": {"official_state": "INVALID", "official_index": -1, "official_reason": "off-range"}},
+      {"loc": 500.0, "official": {"state": "K", "index": 12, "loc": 2000.0, "allow_out_of_range": true}, "expect": {"official_state": "INVALID", "official_index": -1, "official_reason": "off-range"}},
+      {"loc": 500.0, "official": {"state": "T", "index": 0}, "expect": {"official_state": "INVALID", "official_index": -1, "official_reason": "off-range"}},
+      {"loc": 500.0, "official": {"state": "U", "index": 1}, "expect": {"official_state": "INVALID", "official_index": -1, "official_reason": "off-range"}},
+      {"loc": 500.0, "official": {"state": "F", "index": 3}, "expect": {"official_state": "INVALID", "official_index": -1, "official_reason": "off-range"}},
+      {"loc": 500.0, "official": {"state": "N", "index": 2}, "expect": {"official_state": "INVALID", "official_index": -1, "official_reason": "off-range"}}
+    ]},
+    {"id": "SUP-LOC", "file": "supply", "source": "synthetic (tolerance 0.01 m between the listed location and the wire loc)", "list": "L5", "family": "R-OFF-06", "steps": [
+      {"loc": 500.0, "official": {"state": "K", "index": 2, "loc": 2000.0}, "expect": {"official_state": "KNOWN", "official_index": 2, "official_reason": "off-ok"}},
+      {"loc": 500.0, "official": {"state": "K", "index": 2, "loc": 2000.009}, "expect": {"official_state": "KNOWN", "official_index": 2, "official_reason": "off-ok"}},
+      {"loc": 500.0, "official": {"state": "K", "index": 2, "loc": 2000.011}, "expect": {"official_state": "INVALID", "official_index": -1, "official_reason": "off-loc"}},
+      {"loc": 500.0, "official": {"state": "K", "index": 2, "loc": 2000.5}, "expect": {"official_state": "INVALID", "official_index": -1, "official_reason": "off-loc"}},
+      {"loc": 500.0, "official": {"state": "K", "index": 2, "loc": 1500.0}, "expect": {"official_state": "INVALID", "official_index": -1, "official_reason": "off-loc"}}
+    ]},
+    {"id": "SUP-LISTMM-HASH", "file": "supply", "source": "synthetic (grace 3000 ms like STIDX)", "list": "L5", "family": "R-OFF-07", "steps": [
+      {"loc": 500.0, "official": {"state": "K", "index": 2, "hash_override": "DEADBEEF"}, "expect": {"official_state": "NOT_INITIALIZED", "official_index": -1, "official_reason": "off-not-ready"}},
+      {"loc": 500.0, "advance_ms": 3100, "official": {"state": "K", "index": 2, "hash_override": "DEADBEEF"}, "expect": {"official_state": "INVALID", "official_index": -1, "official_reason": "off-list-mismatch"}}
+    ]},
+    {"id": "SUP-LISTMM-COUNT", "file": "supply", "source": "synthetic", "list": "L5", "family": "R-OFF-07", "steps": [
+      {"loc": 500.0, "official": {"state": "K", "index": 2, "count_override": 6}, "expect": {"official_state": "NOT_INITIALIZED", "official_index": -1, "official_reason": "off-not-ready"}},
+      {"loc": 500.0, "advance_ms": 3100, "official": {"state": "K", "index": 2, "count_override": 6}, "expect": {"official_state": "INVALID", "official_index": -1, "official_reason": "off-list-mismatch"}}
+    ]},
+    {"id": "SUP-MALFORMED", "file": "supply", "source": "synthetic (wire-level raw tokens on purpose)", "list": "L5", "family": "R-OFF-08", "steps": [
+      {"loc": 500.0, "official": {"raw": "OFFTGT:1:K:2:%COUNT%:%HASH%:2000:5"}, "expect": {"official_state": "INVALID", "official_index": -1, "official_reason": "off-malformed"}},
+      {"loc": 500.0, "official": {"raw": "OFFTGT:1:K:x:%COUNT%:%HASH%:2000:5:5"}, "expect": {"official_state": "INVALID", "official_index": -1, "official_reason": "off-malformed"}},
+      {"loc": 500.0, "official": {"raw": "OFFTGT:1:Z:-1:%COUNT%:%HASH%:-1:-1:-1"}, "expect": {"official_state": "INVALID", "official_index": -1, "official_reason": "off-malformed"}},
+      {"loc": 500.0, "official": {"raw": "OFFTGT:1:K:2:%COUNT%:%HASH%:2000:5:5:9"}, "expect": {"official_state": "INVALID", "official_index": -1, "official_reason": "off-malformed"}},
+      {"loc": 500.0, "official": {"raw": "OFFTGT:"}, "expect": {"official_state": "INVALID", "official_index": -1, "official_reason": "off-malformed"}},
+      {"loc": 500.0, "official": {"raw": "OFFTGT:1:K:2:%COUNT%:%HASH%:abc:5:5"}, "expect": {"official_state": "INVALID", "official_index": -1, "official_reason": "off-malformed"}},
+      {"loc": 500.0, "official": {"raw": "OFFTGT:1:NONE:-1:%COUNT%:%HASH%:-1:-1:-1"}, "expect": {"official_state": "INVALID", "official_index": -1, "official_reason": "off-malformed"}}
+    ]},
+    {"id": "SUP-VERSION", "file": "supply", "source": "synthetic", "list": "L5", "family": "R-OFF-08", "steps": [
+      {"loc": 500.0, "official": {"state": "K", "index": 2, "version_override": 2}, "expect": {"official_state": "INVALID", "official_index": -1, "official_reason": "off-version"}},
+      {"loc": 500.0, "official": {"state": "K", "index": 2, "version_override": 0}, "expect": {"official_state": "INVALID", "official_index": -1, "official_reason": "off-version"}}
+    ]},
+    {"id": "SUP-GEN", "file": "supply", "source": "synthetic", "list": "L5", "strict": true, "family": "R-OFF-04", "steps": [
+      {"generation": 1, "sid": 7, "loc": 2500.0, "machine": {"nextloc": 3000.0, "nexttime": 36660000, "tgt": 3}, "official": {"state": "K", "index": 3}, "expect": {"official_state": "KNOWN", "official_index": 3}},
+      {"generation": 2, "sid": 8, "list": "L5", "loc": 100.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1},
+       "expect": {"owner": "BVE", "official_state_in": ["ABSENT", "NOT_INITIALIZED"], "state_not": "KNOWN", "official_index": -1, "official_index_not": 3, "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}}
+    ]},
+    {"id": "SUP-REACQ", "file": "supply", "source": "synthetic", "list": "L5", "strict": true, "family": "R-GEN-1", "steps": [
+      {"generation": 1, "sid": 7, "loc": 2500.0, "machine": {"nextloc": 3000.0, "nexttime": 36660000, "tgt": 3}, "official": {"state": "K", "index": 3}, "expect": {"official_state": "KNOWN", "official_index": 3}},
+      {"generation": 2, "sid": 8, "list": "L5", "loc": 100.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 2, "official_location": 2000.0, "target_nextloc": 2000.0, "target_nexttime": 36360000, "hud_dist": "1900.0 m", "hud_time_left": "06:00"}}
+    ]},
+    {"id": "SUP-N6", "file": "supply", "source": "observed:E1-N6 (a notification while the scenario is being reloaded waits for the first accepted line of the new epoch)", "list": "L5", "strict": true, "family": "R-GEN-2", "steps": [
+      {"generation": 1, "sid": 7, "loc": 2500.0, "machine": {"nextloc": 3000.0, "nexttime": 36660000, "tgt": 3}, "official": {"state": "K", "index": 3}, "expect": {"official_state": "KNOWN", "official_index": 3}},
+      {"sid": 8, "loc": 100.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 1}, "expect": {"held": true, "official_state": "KNOWN", "official_index": 3}},
+      {"generation": 2, "no_line": true, "expect": {"official_state": "KNOWN", "official_index": 1}}
+    ]},
+    {"id": "SUP-INIT-MACHINE-A", "file": "supply", "source": "synthetic (E-13: before the first valid official value the machine value of station 0 must not become the HUD target)", "list": "L4", "family": "R-INIT-4", "steps": [
+      {"loc": 0.0, "machine": {"nextloc": 0.0, "nexttime": 35940000, "tgt": 0},
+       "expect": {"owner": "BVE", "official_state_in": ["ABSENT", "NOT_INITIALIZED"], "official_index": -1, "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}}
+    ]},
+    {"id": "SUP-STIDX-GUARD", "file": "supply", "source": "synthetic (OD-R1W-02: STIDX tgt stays the machine target whatever the official part says)", "list": "L4", "family": "R-OFF-09", "steps": [
+      {"loc": 500.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 2}, "expect": {"tgt_idx": 1}},
+      {"loc": 510.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "expect": {"tgt_idx": 1}}
+    ]},
+    {"id": "SUP-SEM", "file": "ownership", "source": "synthetic (same input vector -> same official state in every mode)", "list": "L5", "family": "R-SEM-01", "steps": [
+      {"loc": 500.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 2}, "expect": {"official_state": "KNOWN", "official_index": 2, "official_location": 2000.0}},
+      {"loc": 500.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "T"}, "expect": {"official_state": "NONE_TERMINAL", "official_index": -1}},
+      {"loc": 500.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "U"}, "expect": {"official_state": "UNAVAILABLE", "official_index": -1}},
+      {"loc": 500.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "F"}, "expect": {"official_state": "READ_FAILED", "official_index": -1}}
+    ]},
+
+    {"id": "OWN-01", "file": "ownership", "source": "synthetic", "list": "L4", "family": "R-OWN-01", "steps": [
+      {"loc": 500.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "own": {"mode": false, "finished": false}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 2, "target_nextloc": 2000.0, "target_nexttime": 36360000, "hud_dist": "1500.0 m", "hud_time_left": "06:00"}}
+    ]},
+    {"id": "OWN-02", "file": "ownership", "source": "synthetic", "list": "L4", "family": "R-OWN-02", "steps": [
+      {"loc": 500.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "own": {"mode": true, "finished": false}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "TS", "hud_dist": "500.0 m", "hud_time_left": "01:00"}}
+    ]},
+    {"id": "OWN-03", "file": "ownership", "source": "synthetic", "list": "L4", "family": "R-OWN-03", "steps": [
+      {"loc": 500.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "own": {"mode": true, "finished": false}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "TS", "hud_dist": "500.0 m", "hud_time_left": "01:00"}},
+      {"loc": 500.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "own": {"mode": true, "finished": true}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "target_nextloc": 3000.0, "target_nexttime": 36660000, "hud_dist": "2500.0 m", "hud_time_left": "11:00"}}
+    ]},
+    {"id": "OWN-04", "file": "ownership", "source": "synthetic", "list": "L4", "family": "R-OWN-04", "steps": [
+      {"loc": 500.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "own": {"mode": false, "finished": false}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 2, "target_nextloc": 2000.0, "target_nexttime": 36360000, "hud_dist": "1500.0 m", "hud_time_left": "06:00"}},
+      {"loc": 500.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "own": {"mode": true, "finished": false}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "TS", "hud_dist": "500.0 m", "hud_time_left": "01:00"}}
+    ]},
+    {"id": "OWN-05", "file": "ownership", "source": "synthetic", "list": "L4", "family": "R-OWN-05", "steps": [
+      {"loc": 500.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "own": {"mode": true, "finished": false, "jumping": true, "retry": true}, "official": {"state": "K", "index": 0},
+       "expect": {"owner": "TS", "hud_dist": "500.0 m", "hud_time_left": "01:00"}}
+    ]},
+    {"id": "OWN-06", "file": "ownership", "source": "observed:F5 ends the scoring (SCENARIO_ID change) and the host target is re-acquired", "list": "L4", "strict": true, "family": "R-OWN-06", "steps": [
+      {"generation": 1, "sid": 7, "loc": 500.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "own": {"mode": true, "finished": false}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "TS", "hud_dist": "500.0 m", "hud_time_left": "01:00"}},
+      {"generation": 2, "sid": 8, "list": "L4", "loc": 500.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 2},
+       "expect": {"mode_after": false, "owner": "BVE", "official_state": "KNOWN", "official_index": 2, "target_nextloc": 2000.0, "target_nexttime": 36360000, "hud_dist": "1500.0 m", "hud_time_left": "06:00"}}
+    ]},
+    {"id": "OWN-07", "file": "ownership", "source": "synthetic", "list": "L4", "family": "R-OWN-07", "steps": [
+      {"loc": 500.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "own": {"mode": true, "finished": false}, "set_attrs": {"save_data": [{"station_name": "A", "score": 0}, {"station_name": "B", "score": 0}]},
+       "official": {"state": "K", "index": 2}, "expect": {"owner": "TS", "hud_dist": "500.0 m", "hud_time_left": "01:00", "save_data_len": 2}},
+      {"loc": 500.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "own": {"mode": true, "finished": true}, "official": {"state": "K", "index": 3},
+       "expect": {"save_data_len": 2}}
+    ]},
+    {"id": "OP-01", "file": "ownership", "source": "synthetic (operational stop B passed normally, scoring off)", "list": "L4", "family": "R-OP-01", "steps": [
+      {"loc": 1000.0, "speed": 0.0, "door": 0, "doordir": 0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "own": {"mode": false, "finished": false}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 2, "target_nextloc": 2000.0, "target_nexttime": 36360000, "hud_dist": "1000.0 m", "hud_time_left": "06:00"}}
+    ]},
+    {"id": "OP-02", "file": "ownership", "source": "synthetic (operational stop B passed through, scoring off)", "list": "L4", "family": "R-OP-02", "steps": [
+      {"loc": 1005.0, "speed": 40.0, "door": 0, "doordir": 0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "own": {"mode": false, "finished": false}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 2, "target_nextloc": 2000.0, "target_nexttime": 36360000, "hud_dist": "995.0 m", "hud_time_left": "06:00"}}
+    ]},
+    {"id": "OP-03", "file": "ownership", "source": "synthetic (B2/B3 NORMAL hold: speed == 0.0)", "list": "L4", "family": "R-OP-03", "steps": [
+      {"loc": 1000.0, "speed": 0.0, "door": 0, "doordir": 0, "machine": {"nextloc": 1000.0, "nexttime": 36120000, "tgt": 1}, "own": {"mode": true, "finished": false}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "TS", "hud_dist": "0.00 m", "hud_time_left": "02:00"}}
+    ]},
+    {"id": "OP-04", "file": "ownership", "source": "synthetic (MISSED hold)", "list": "L4", "family": "R-OP-04", "steps": [
+      {"loc": 1005.0, "speed": 40.0, "door": 0, "doordir": 0, "machine": {"nextloc": 1000.0, "nexttime": 36120000, "tgt": 1}, "own": {"mode": true, "finished": false}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "TS", "hud_dist": "-5.0 m", "hud_time_left": "02:00"}}
+    ]},
+    {"id": "NT-01", "file": "ownership", "source": "synthetic (running: the arrival time)", "list": "L4", "family": "R-NT-01", "steps": [
+      {"loc": 500.0, "speed": 20.0, "door": 0, "machine": {"nextloc": -1.0, "nexttime": -1, "tgt": -1}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 2, "target_nextloc": 2000.0, "target_nexttime": 36360000, "hud_dist": "1500.0 m", "hud_time_left": "06:00"}}
+    ]},
+    {"id": "NT-02", "file": "ownership", "source": "synthetic (normal stop, doors open: the departure time)", "list": "L4", "family": "R-NT-02", "steps": [
+      {"loc": 2000.0, "speed": 0.0, "door": 1, "doordir": 1, "time_ms": 36380000, "machine": {"nextloc": -1.0, "nexttime": -1, "tgt": -1}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 2, "target_nextloc": 2000.0, "target_nexttime": 36420000, "hud_dist": "0.00 m", "hud_time_left": "00:40"}}
+    ]},
+    {"id": "NT-03", "file": "ownership", "source": "synthetic (pass station: the arrival time)", "list": "L5P", "family": "R-NT-03", "steps": [
+      {"loc": 1500.0, "speed": 60.0, "door": 0, "is_pass": 1, "machine": {"nextloc": -1.0, "nexttime": -1, "tgt": -1}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 2, "target_nextloc": 2000.0, "target_nexttime": 36360000, "hud_dist": "500.0 m", "hud_time_left": "06:00"}},
+      {"loc": 2000.0, "speed": 60.0, "door": 0, "is_pass": 1, "time_ms": 36359000, "machine": {"nextloc": -1.0, "nexttime": -1, "tgt": -1}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 2, "target_nextloc": 2000.0, "target_nexttime": 36360000, "hud_dist": "0.00 m", "hud_time_left": "00:01"}}
+    ]},
+    {"id": "NT-04", "file": "ownership", "source": "synthetic (terminal: the difference at the first door-open Tick is frozen)", "list": "L4", "family": "R-NT-04", "steps": [
+      {"loc": 2900.0, "speed": 20.0, "door": 0, "term": 1, "time_ms": 36600000, "machine": {"nextloc": -1.0, "nexttime": -1, "tgt": -1}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "target_nextloc": 3000.0, "target_nexttime": 36660000, "hud_dist": "100.0 m", "hud_time_left": "01:00"}},
+      {"loc": 3000.0, "speed": 0.0, "door": 1, "term": 1, "time_ms": 36620000, "machine": {"nextloc": -1.0, "nexttime": -1, "tgt": -1}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "target_nextloc": 3000.0, "target_nexttime": 36660000, "hud_dist": "0.00 m", "hud_time_left": "00:40"}},
+      {"loc": 3000.0, "speed": 0.0, "door": 1, "term": 1, "time_ms": 36680000, "machine": {"nextloc": -1.0, "nexttime": -1, "tgt": -1}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "target_nextloc": 3000.0, "target_nexttime": 36720000, "hud_dist": "0.00 m", "hud_time_left": "00:40"}}
+    ]},
+    {"id": "NT-ZERO", "file": "ownership", "source": "synthetic (NEXTTIME == 0 is none: the existing '> 0' contract)", "list": "L4Z", "family": "R-NT-NONE", "steps": [
+      {"loc": 500.0, "speed": 20.0, "door": 0, "machine": {"nextloc": -1.0, "nexttime": -1, "tgt": -1}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 2, "target_nextloc": 2000.0, "target_nexttime": 0, "hud_dist": "1500.0 m", "hud_time_left": "--:--"}}
+    ]},
+    {"id": "NT-POS", "file": "ownership", "source": "synthetic (a position-only move keeps the latch; nothing is anticipated)", "list": "L4", "family": "R-NT-POS", "steps": [
+      {"loc": 3000.0, "speed": 0.0, "door": 1, "term": 1, "time_ms": 36620000, "machine": {"nextloc": -1.0, "nexttime": -1, "tgt": -1}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "target_nextloc": 3000.0, "target_nexttime": 36660000, "hud_dist": "0.00 m", "hud_time_left": "00:40"}},
+      {"loc": 2500.0, "jump": 1, "speed": 0.0, "door": 1, "term": 1, "time_ms": 36621000, "machine": {"nextloc": -1.0, "nexttime": -1, "tgt": -1}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "target_nextloc": 3000.0, "target_nexttime": 36661000, "hud_dist": "500.0 m", "hud_time_left": "00:40"}}
+    ]},
+    {"id": "NT-04-GEN", "file": "ownership", "source": "synthetic (SI-DIAG-F1 option B: only the Python derivation is re-initialised by a generation change)", "list": "L4", "strict": true, "family": "R-NT-04-GEN", "steps": [
+      {"generation": 1, "sid": 7, "loc": 3000.0, "speed": 0.0, "door": 1, "term": 1, "time_ms": 36620000, "machine": {"nextloc": -1.0, "nexttime": -1, "tgt": -1}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "target_nextloc": 3000.0, "target_nexttime": 36660000, "hud_dist": "0.00 m", "hud_time_left": "00:40"}},
+      {"generation": 2, "sid": 8, "list": "L4", "loc": 2900.0, "speed": 20.0, "door": 0, "term": 1, "time_ms": 36600000, "machine": {"nextloc": -1.0, "nexttime": -1, "tgt": -1}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "target_nextloc": 3000.0, "target_nexttime": 36660000, "hud_dist": "100.0 m", "hud_time_left": "01:00"}},
+      {"loc": 3000.0, "speed": 0.0, "door": 1, "term": 1, "time_ms": 36630000, "machine": {"nextloc": -1.0, "nexttime": -1, "tgt": -1}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "target_nextloc": 3000.0, "target_nexttime": 36660000, "hud_dist": "0.00 m", "hud_time_left": "00:30"}}
+    ]},
+    {"id": "SEM-02", "file": "ownership", "source": "synthetic (a position-only change moves nothing until the host target moves)", "list": "L4", "family": "R-SEM-02", "steps": [
+      {"loc": 900.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 1},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 1, "target_nextloc": 1000.0, "target_nexttime": 36060000, "hud_dist": "100.0 m", "hud_time_left": "01:00"}},
+      {"loc": 2100.0, "jump": 1, "machine": {"nextloc": 2000.0, "nexttime": 36360000, "tgt": 2}, "official": {"state": "K", "index": 1},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 1, "target_nextloc": 1000.0, "target_nexttime": 36060000, "hud_dist": "-1100.0 m", "hud_time_left": "01:00"}}
+    ]},
+    {"id": "TERM-1", "file": "ownership", "source": "observed:E1-T3-r2 (terminal without t: the official target vanishes with the all-doors-closed Tick; TS does not keep it alive)", "list": "L4", "family": "R-TERM-1", "steps": [
+      {"loc": 3000.0, "speed": 0.0, "door": 0, "term": 1, "time_ms": 36620000, "machine": {"nextloc": 3000.0, "nexttime": 36640000, "tgt": 3}, "official": {"state": "T"},
+       "expect": {"owner": "BVE", "official_state": "NONE_TERMINAL", "official_index": -1, "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}}
+    ]},
+    {"id": "TERM-2", "file": "ownership", "source": "synthetic (terminal with t: the official K stays while the doors are open)", "list": "L4", "family": "R-TERM-2", "steps": [
+      {"loc": 3000.0, "speed": 0.0, "door": 1, "term": 1, "time_ms": 36620000, "machine": {"nextloc": 3000.0, "nexttime": 36660000, "tgt": 3}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "target_nextloc": 3000.0, "target_nexttime": 36660000, "hud_dist": "0.00 m", "hud_time_left": "00:40"}}
+    ]},
+    {"id": "HUD-NONE-1", "file": "ownership", "source": "observed:E1-T3-r2/E2-T3/E3-T3 (terminal none, kept across F5); frozen difference +00:38 is the machine value", "list": "L4", "strict": true, "family": "R-HUD-NONE-1", "steps": [
+      {"generation": 1, "sid": 7, "loc": 3000.0, "speed": 0.0, "door": 0, "term": 1, "time_ms": 36600000, "machine": {"nextloc": 3000.0, "nexttime": 36638000, "tgt": 3}, "official": {"state": "T"},
+       "expect": {"owner": "BVE", "official_state": "NONE_TERMINAL", "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}},
+      {"generation": 2, "sid": 8, "list": "L4", "loc": 3000.0, "speed": 0.0, "door": 0, "term": 1, "time_ms": 36601000, "machine": {"nextloc": 3000.0, "nexttime": 36638000, "tgt": 3}, "official": {"state": "T"},
+       "expect": {"owner": "BVE", "official_state": "NONE_TERMINAL", "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}}
+    ]},
+    {"id": "HUD-NONE-2", "file": "ownership", "source": "synthetic (the old scoring target's NEXTTIME, interpolated arrival included, is not used once the scoring is finished)", "list": "L4", "family": "R-HUD-NONE-2", "steps": [
+      {"loc": 3000.0, "speed": 0.0, "door": 0, "term": 1, "time_ms": 36600000, "machine": {"nextloc": 3000.0, "nexttime": 36660000, "tgt": 3}, "own": {"mode": true, "finished": false}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "TS", "hud_dist": "0.00 m", "hud_time_left": "01:00"}},
+      {"loc": 3000.0, "speed": 0.0, "door": 0, "term": 1, "time_ms": 36601000, "machine": {"nextloc": 3000.0, "nexttime": 36660000, "tgt": 3}, "own": {"mode": true, "finished": true},
+       "expect": {"owner": "BVE", "official_state": "ABSENT", "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}}
+    ]},
+    {"id": "HUD-NONE-3", "file": "ownership", "source": "observed:E1-T3-r2 (HEAD shows -00:57 after F5: the old terminal's time against a later clock)", "list": "L4", "strict": true, "family": "R-HUD-NONE-3", "steps": [
+      {"generation": 1, "sid": 7, "loc": 3000.0, "speed": 0.0, "door": 0, "term": 1, "time_ms": 36600000, "machine": {"nextloc": 3000.0, "nexttime": 36660000, "tgt": 3}, "official": {"state": "T"},
+       "expect": {"owner": "BVE", "official_state": "NONE_TERMINAL", "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}},
+      {"generation": 2, "sid": 8, "list": "L4", "loc": 3000.0, "speed": 0.0, "door": 0, "term": 1, "time_ms": 36717000, "machine": {"nextloc": 3000.0, "nexttime": 36660000, "tgt": 3},
+       "expect": {"owner": "BVE", "official_state_in": ["ABSENT", "NOT_INITIALIZED"], "official_index": -1, "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}}
+    ]},
+    {"id": "HUD-NONE-4", "file": "ownership", "source": "synthetic (none -> known by a Jump: the new official time returns, MM:SS and H:MM:SS)", "list": "L4", "family": "R-HUD-NONE-4", "steps": [
+      {"loc": 3000.0, "speed": 0.0, "door": 0, "term": 1, "time_ms": 36600000, "machine": {"nextloc": 3000.0, "nexttime": 36660000, "tgt": 3}, "official": {"state": "T"},
+       "expect": {"owner": "BVE", "official_state": "NONE_TERMINAL", "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}},
+      {"loc": 900.0, "jump": 1, "speed": 0.0, "door": 0, "term": 0, "time_ms": 36000000, "machine": {"nextloc": -1.0, "nexttime": -1, "tgt": -1}, "official": {"state": "K", "index": 1},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 1, "target_nextloc": 1000.0, "target_nexttime": 36060000, "hud_dist": "100.0 m", "hud_time_left": "01:00"}},
+      {"loc": 2500.0, "jump": 2, "speed": 0.0, "door": 0, "term": 0, "time_ms": 32940000, "machine": {"nextloc": -1.0, "nexttime": -1, "tgt": -1}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "target_nextloc": 3000.0, "target_nexttime": 36660000, "hud_dist": "500.0 m", "hud_time_left": "1:02:00"}}
+    ]},
+    {"id": "HUD-NONE-5", "file": "ownership", "source": "synthetic (part missing / list scope mismatch / location mismatch: fail-closed, the cause is told apart)", "list": "L4", "family": "R-HUD-NONE-5", "steps": [
+      {"loc": 990.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1},
+       "expect": {"owner": "BVE", "official_state": "ABSENT", "official_reason": "off-missing", "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}},
+      {"loc": 990.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 2, "hash_override": "DEADBEEF"},
+       "expect": {"owner": "BVE", "official_state": "NOT_INITIALIZED", "official_reason": "off-not-ready", "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}},
+      {"loc": 990.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 2, "loc": 1990.0},
+       "expect": {"owner": "BVE", "official_state": "INVALID", "official_reason": "off-loc", "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}}
+    ]},
+    {"id": "FB-01", "file": "ownership", "source": "synthetic (no distance / nearest-station / 50 m / 100 m / machine fallback when the official target is not valid)", "list": "L4", "family": "R-FB-01", "steps": [
+      {"loc": 990.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1},
+       "expect": {"owner": "BVE", "official_state": "ABSENT", "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}},
+      {"loc": 950.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 5, "loc": 2000.0, "allow_out_of_range": true},
+       "expect": {"owner": "BVE", "official_state": "INVALID", "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}},
+      {"loc": 900.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "T"},
+       "expect": {"owner": "BVE", "official_state": "NONE_TERMINAL", "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}},
+      {"loc": 995.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "U"},
+       "expect": {"owner": "BVE", "official_state": "UNAVAILABLE", "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}},
+      {"loc": 1000.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "F"},
+       "expect": {"owner": "BVE", "official_state": "READ_FAILED", "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}}
+    ]},
+    {"id": "LK-GEN", "file": "ownership", "source": "synthetic (last-known: a held value never crosses a generation; E-11 U permits a hold only inside one scope)", "list": "L5", "strict": true, "family": "R-HUD-NONE-6", "steps": [
+      {"generation": 1, "sid": 7, "loc": 2500.0, "machine": {"nextloc": 3000.0, "nexttime": 36660000, "tgt": 3}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "target_nextloc": 3000.0, "target_nexttime": 36660000, "hud_dist": "500.0 m", "hud_time_left": "11:00"}},
+      {"generation": 2, "sid": 8, "list": "L5", "loc": 2510.0, "machine": {"nextloc": 3000.0, "nexttime": 36660000, "tgt": 3}, "official": {"state": "U"},
+       "expect": {"owner": "BVE", "official_state": "UNAVAILABLE", "state_not": "KNOWN", "official_index": -1, "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}}
+    ]},
+    {"id": "LK-T", "file": "ownership", "source": "synthetic (last-known: terminal none is a decision of the host, not a gap; nothing is held for it)", "list": "L5", "family": "R-HUD-NONE-6", "steps": [
+      {"loc": 2500.0, "machine": {"nextloc": 3000.0, "nexttime": 36660000, "tgt": 3}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "target_nextloc": 3000.0, "target_nexttime": 36660000, "hud_dist": "500.0 m", "hud_time_left": "11:00"}},
+      {"loc": 2510.0, "machine": {"nextloc": 3000.0, "nexttime": 36660000, "tgt": 3}, "official": {"state": "T"},
+       "expect": {"owner": "BVE", "official_state": "NONE_TERMINAL", "state_not": "KNOWN", "official_index": -1, "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}}
+    ]},
+    {"id": "NOCOMP-E1D", "file": "ownership", "source": "observed:E1-D (BVE6 Current, stop station F5, location 570.00 -> 570.04, official index 3 -> 3); the geometry of the list is synthetic", "list": "ELIST", "strict": true, "family": "R-NOCOMP-2", "steps": [
+      {"generation": 1, "sid": 7, "loc": 570.0, "speed": 0.0, "door": 0, "machine": {"nextloc": 570.0, "nexttime": 36000000, "tgt": 3}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "target_nextloc": 570.0, "target_nexttime": 36000000, "hud_dist": "0.00 m", "hud_time_left": "00:00"}},
+      {"generation": 2, "sid": 8, "list": "ELIST", "loc": 570.04, "speed": 0.0, "door": 0, "machine": {"nextloc": 570.0, "nexttime": 36000000, "tgt": 3}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "target_nextloc": 570.0, "target_nexttime": 36000000, "hud_dist": "-0.04 m", "hud_time_left": "00:00"}}
+    ]},
+    {"id": "NOCOMP-E2D", "file": "ownership", "source": "observed:E2-D retest (BVE5 Current, stop station F5, location 570.00 -> 570.00, official index 3 -> 2); the geometry of the list is synthetic", "list": "ELIST", "strict": true, "family": "R-NOCOMP-2", "steps": [
+      {"generation": 1, "sid": 7, "loc": 570.0, "speed": 0.0, "door": 0, "machine": {"nextloc": 570.0, "nexttime": 36000000, "tgt": 3}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "target_nextloc": 570.0, "target_nexttime": 36000000, "hud_dist": "0.00 m", "hud_time_left": "00:00"}},
+      {"generation": 2, "sid": 8, "list": "ELIST", "loc": 570.0, "speed": 0.0, "door": 0, "machine": {"nextloc": 570.0, "nexttime": 36000000, "tgt": 3}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 2, "target_nextloc": 480.0, "target_nexttime": 35900000, "hud_dist": "-90.0 m", "hud_time_left": "-01:40"}}
+    ]},
+
+    {"id": "A0-1A", "file": "reinit", "source": "synthetic (A0: an official Jump to a normal stop station, k -> k; the machine value is stale)", "list": "L4", "family": "R-REINIT-A0-1", "steps": [
+      {"loc": 900.0, "time_ms": 36000000, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 1},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 1, "target_nextloc": 1000.0, "target_nexttime": 36060000, "hud_dist": "100.0 m", "hud_time_left": "01:00"}},
+      {"loc": 1995.0, "jump": 1, "time_ms": 36300000, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 2, "target_nextloc": 2000.0, "target_nexttime": 36360000, "hud_dist": "5.0 m", "hud_time_left": "01:00"}}
+    ]},
+    {"id": "A0-1B", "file": "reinit", "source": "synthetic (A0: an official Jump to a pass station, k -> k+1)", "list": "L5P", "family": "R-REINIT-A0-1", "steps": [
+      {"loc": 900.0, "time_ms": 36000000, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 1},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 1, "target_nextloc": 1000.0, "target_nexttime": 36060000, "hud_dist": "100.0 m", "hud_time_left": "01:00"}},
+      {"loc": 1995.0, "jump": 1, "time_ms": 36300000, "machine": {"nextloc": 2000.0, "nexttime": 36360000, "tgt": 2}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "target_nextloc": 3000.0, "target_nexttime": 36660000, "hud_dist": "1005.0 m", "hud_time_left": "06:00"}}
+    ]},
+    {"id": "A0-2", "file": "reinit", "source": "observed:RA0-16 (Test02c stand position: HUD distance 0.0); synthetic geometry", "list": "L4", "family": "R-REINIT-A0-2", "steps": [
+      {"loc": 2000.0, "jump": 1, "time_ms": 36300000, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 2, "target_nextloc": 2000.0, "target_nexttime": 36360000, "hud_dist": "0.00 m", "hud_time_left": "01:00"}}
+    ]},
+    {"id": "A0-3", "file": "reinit", "source": "observed:RA0-17 (one index: the target, its location and its time follow from the same index)", "list": "L4", "family": "R-REINIT-A0-3", "steps": [
+      {"loc": 2000.0, "jump": 1, "time_ms": 36300000, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 2, "official_location": 2000.0, "target_nextloc": 2000.0, "target_nexttime": 36360000, "hud_dist": "0.00 m", "hud_time_left": "01:00"}}
+    ]},
+    {"id": "F5-D0", "file": "reinit", "source": "synthetic distance d=0.0 (D-7: no d=0 exception)", "list": "L4", "strict": true, "family": "R-REINIT-F5-DIST", "steps": [
+      {"generation": 1, "sid": 7, "loc": 100.0, "time_ms": 36000000, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 1},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 1, "target_nextloc": 1000.0, "target_nexttime": 36060000, "hud_dist": "900.0 m", "hud_time_left": "01:00"}},
+      {"generation": 2, "sid": 8, "list": "L4", "loc": 2000.0, "time_ms": 36300000, "machine": {"nextloc": 2000.0, "nexttime": 36360000, "tgt": 2}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 2, "official_location": 2000.0, "target_nextloc": 2000.0, "target_nexttime": 36360000, "hud_dist": "0.00 m", "hud_time_left": "01:00"}}
+    ]},
+    {"id": "F5-1", "file": "reinit", "source": "synthetic distance d=9.5 m before station C (machine value equals the official one)", "list": "L4", "strict": true, "family": "R-REINIT-F5-1", "steps": [
+      {"generation": 1, "sid": 7, "loc": 100.0, "time_ms": 36000000, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 1},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 1, "target_nextloc": 1000.0, "target_nexttime": 36060000, "hud_dist": "900.0 m", "hud_time_left": "01:00"}},
+      {"generation": 2, "sid": 8, "list": "L4", "loc": 1990.5, "time_ms": 36300000, "machine": {"nextloc": 2000.0, "nexttime": 36360000, "tgt": 2}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 2, "official_location": 2000.0, "target_nextloc": 2000.0, "target_nexttime": 36360000, "hud_dist": "9.5 m", "hud_time_left": "01:00"}}
+    ]},
+    {"id": "F5-2", "file": "reinit", "source": "synthetic distance d=44.9 m (machine value equals the official one)", "list": "L4", "strict": true, "family": "R-REINIT-F5-2", "steps": [
+      {"generation": 1, "sid": 7, "loc": 100.0, "time_ms": 36000000, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 1},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 1, "target_nextloc": 1000.0, "target_nexttime": 36060000, "hud_dist": "900.0 m", "hud_time_left": "01:00"}},
+      {"generation": 2, "sid": 8, "list": "L4", "loc": 1955.1, "time_ms": 36300000, "machine": {"nextloc": 2000.0, "nexttime": 36360000, "tgt": 2}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 2, "official_location": 2000.0, "target_nextloc": 2000.0, "target_nexttime": 36360000, "hud_dist": "44.9 m", "hud_time_left": "01:00"}}
+    ]},
+    {"id": "F5-3", "file": "reinit", "source": "synthetic distance d=49.99 m (machine value equals the official one)", "list": "L4", "strict": true, "family": "R-REINIT-F5-3", "steps": [
+      {"generation": 1, "sid": 7, "loc": 100.0, "time_ms": 36000000, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 1},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 1, "target_nextloc": 1000.0, "target_nexttime": 36060000, "hud_dist": "900.0 m", "hud_time_left": "01:00"}},
+      {"generation": 2, "sid": 8, "list": "L4", "loc": 1950.01, "time_ms": 36300000, "machine": {"nextloc": 2000.0, "nexttime": 36360000, "tgt": 2}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 2, "official_location": 2000.0, "target_nextloc": 2000.0, "target_nexttime": 36360000, "hud_dist": "50.0 m", "hud_time_left": "01:00"}}
+    ]},
+    {"id": "F5-4", "file": "reinit", "source": "synthetic distance d=50.0 m exactly; the machine value is deliberately the PREVIOUS station (what a window boundary could give)", "list": "L4", "strict": true, "family": "R-REINIT-F5-4", "steps": [
+      {"generation": 1, "sid": 7, "loc": 100.0, "time_ms": 36000000, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 1},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 1, "target_nextloc": 1000.0, "target_nexttime": 36060000, "hud_dist": "900.0 m", "hud_time_left": "01:00"}},
+      {"generation": 2, "sid": 8, "list": "L4", "loc": 1950.0, "time_ms": 36300000, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 2, "official_location": 2000.0, "target_nextloc": 2000.0, "target_nexttime": 36360000, "hud_dist": "50.0 m", "hud_time_left": "01:00"}}
+    ]},
+    {"id": "F5-5", "file": "reinit", "source": "synthetic distance d=50.1 m; the machine value is deliberately the NEXT station", "list": "L4", "strict": true, "family": "R-REINIT-F5-5", "steps": [
+      {"generation": 1, "sid": 7, "loc": 100.0, "time_ms": 36000000, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 1},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 1, "target_nextloc": 1000.0, "target_nexttime": 36060000, "hud_dist": "900.0 m", "hud_time_left": "01:00"}},
+      {"generation": 2, "sid": 8, "list": "L4", "loc": 1949.9, "time_ms": 36300000, "machine": {"nextloc": 3000.0, "nexttime": 36660000, "tgt": 3}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 2, "official_location": 2000.0, "target_nextloc": 2000.0, "target_nexttime": 36360000, "hud_dist": "50.1 m", "hud_time_left": "01:00"}}
+    ]},
+    {"id": "F5-START", "file": "reinit", "source": "observed:E1-A2b U011 / E2-L / E3-L (Test01 start station, d=0.00, raw=0, official 0 -> 1); geometry synthetic", "list": "L4", "strict": true, "family": "R-REINIT-F5-START", "steps": [
+      {"generation": 1, "sid": 7, "loc": 0.0, "time_ms": 36000000, "machine": {"nextloc": 0.0, "nexttime": 35940000, "tgt": 0}, "official": {"state": "K", "index": 0},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 0, "target_nextloc": 0.0, "target_nexttime": 35940000, "hud_dist": "0.00 m", "hud_time_left": "-01:00"}},
+      {"generation": 2, "sid": 8, "list": "L4", "loc": 0.0, "time_ms": 36000000, "machine": {"nextloc": 0.0, "nexttime": 35940000, "tgt": 0}, "official": {"state": "K", "index": 1},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 1, "official_location": 1000.0, "target_nextloc": 1000.0, "target_nexttime": 36060000, "hud_dist": "1000.0 m", "hud_time_left": "01:00"}}
+    ]},
+    {"id": "F5-9", "file": "reinit", "source": "synthetic (the previous generation's official target is not carried over)", "list": "L4", "strict": true, "family": "R-REINIT-F5-9", "steps": [
+      {"generation": 1, "sid": 7, "loc": 2900.0, "time_ms": 36600000, "machine": {"nextloc": 3000.0, "nexttime": 36660000, "tgt": 3}, "official": {"state": "K", "index": 3},
+       "expect": {"owner": "BVE", "official_state": "KNOWN", "official_index": 3, "target_nextloc": 3000.0, "target_nexttime": 36660000, "hud_dist": "100.0 m", "hud_time_left": "01:00"}},
+      {"generation": 2, "sid": 8, "list": "L4", "loc": 100.0, "time_ms": 36000000, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1},
+       "expect": {"owner": "BVE", "official_state_in": ["ABSENT", "NOT_INITIALIZED"], "official_index": -1, "official_index_not": 3, "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}}
+    ]},
+    {"id": "F5-11", "file": "reinit", "source": "synthetic (the hold before F5 is not restored after F5)", "list": "L4", "strict": true, "family": "R-REINIT-F5-11", "steps": [
+      {"generation": 1, "sid": 7, "loc": 500.0, "time_ms": 36000000, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "own": {"mode": true, "finished": false}, "official": {"state": "K", "index": 2},
+       "expect": {"owner": "TS", "hud_dist": "500.0 m", "hud_time_left": "01:00"}},
+      {"generation": 2, "sid": 8, "list": "L4", "loc": 500.0, "time_ms": 36000000, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1}, "official": {"state": "K", "index": 2},
+       "expect": {"mode_after": false, "owner": "BVE", "official_state": "KNOWN", "official_index": 2, "target_nextloc": 2000.0, "target_nexttime": 36360000, "hud_dist": "1500.0 m", "hud_time_left": "06:00"}}
+    ]},
+    {"id": "STATE-CNT", "file": "reinit", "source": "synthetic (E-13 beta: a requestless re-initialisation leaves the machine target UNSET: NEXTLOC -1, NEXTTIME -1, STIDX tgt -1)", "list": "L4", "family": "R-REINIT-STATE-CNT", "steps": [
+      {"loc": 500.0, "machine": {"nextloc": 1000.0, "nexttime": 36060000, "tgt": 1, "arr": 0, "seq": 1}},
+      {"list": "L5", "loc": 500.0, "machine": {"nextloc": -1.0, "nexttime": -1, "tgt": -1, "arr": 0, "seq": 1},
+       "expect": {"owner": "BVE", "tgt_idx": -1, "identity_usable": true, "target_nextloc": -1, "target_nexttime": -1, "hud_dist": "--- m", "hud_time_left": "--:--"}}
+    ]}
+  ]
+}
