@@ -93,7 +93,7 @@
     {"set": "python", "path": "telemetry_receiver_directory.py", "blob_sha256": "FC91A669753ADB33D48EB30C634377558509E53AB8A5FC4CF9131FBF141A89E1", "blob_size": 5469, "blob_eol": "lf"},
     {"set": "python", "path": "utils.py", "blob_sha256": "133C3E30F9F16D499267CDCF2C880D380B4BE772B8497D70D1F0A535C1A77001", "blob_size": 8508, "blob_eol": "lf"},
     {"set": "current", "path": "TsScoringPlugin/TsScoringPlugin/AtsLoggerPlugin.cs", "blob_sha256": "53396449EBDD0FB1025F0E9B6507F957653C0CBAFC5F6009A9FAA309AEDBA229", "blob_size": 384702, "blob_eol": "lf"},
-    {"set": "current", "path": "TsScoringPlugin/TsScoringPlugin/Class1.cs", "blob_sha256": "81A1A279D44084A0921D6B21F1E9691DA3682349E359BD2527C0ED7258524E73", "blob_size": 92027, "blob_eol": "lf"},
+    {"set": "current", "path": "TsScoringPlugin/TsScoringPlugin/Class1.cs", "blob_sha256": "9130AB56E5576451D57C38CBBF40B6B95450FE0B0BE426755AF779F45DB4A6B4", "blob_size": 94815, "blob_eol": "lf"},
     {"set": "current", "path": "TsScoringPlugin/TsScoringPlugin/CurrentDataPlane.cs", "blob_sha256": "69E4C447357B9988363F14F87ED36A0BCC24934077821F8BD9BFD2DED81EDAEF", "blob_size": 30270, "blob_eol": "lf"},
     {"set": "current", "path": "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs", "blob_sha256": "E0D5992E5B4D3EE088BCCC5B06F9A48465A59401899EC72018E1A042FCD6F68D", "blob_size": 20784, "blob_eol": "lf"},
     {"set": "current", "path": "TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs", "blob_sha256": "8C6C66B9456AE89FB5D30464D69DE5E7AB70771F613D904C001396A5C42196D9", "blob_size": 20697, "blob_eol": "lf"},
@@ -123,5 +123,5 @@
     {"set": "shared", "path": "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryContract.cs", "blob_sha256": "ABDBBF4C5BA1567AABC600B28283C87F30BCB4019D82E2A1574B9C847E63B694", "blob_size": 8953, "blob_eol": "lf"},
     {"set": "shared", "path": "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs", "blob_sha256": "9D6C47493457FD840E8CA5186C8E16181F0B5CF85C10721087C9098DD6644680", "blob_size": 6615, "blob_eol": "lf"}
   ],
-  "fingerprint": "A7BB3BFC94714DE21E2511BF9FE2BC349C86402D5117996C63A23811CBAACE89"
+  "fingerprint": "01ABEFB16F5D782C108872F718633140D9685FB5DDB44B253357F4C5200F548F"
 }

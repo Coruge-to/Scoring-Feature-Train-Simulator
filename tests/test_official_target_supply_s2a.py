@@ -37,16 +37,16 @@ S2A_GREEN_ROWS = {
     "ownership": ("R-SEM-01", "R-TERM-2"),
     "reinit": ("R-REINIT-F5-1", "R-REINIT-F5-2", "R-REINIT-F5-3"),
 }
-# SI-R2.2-S2b (intended update, OD-S2B-2) turns more rows to GUARD, stage by stage: the C# senders write the part. C3a (the shared reader and wire helper, the Legacy sender) turns R-CS-SRC-02;
+# SI-R2.2-S2b (intended update, OD-S2B-2) turns more rows to GUARD, stage by stage: the C# senders write the part. C3a (the shared reader and wire helper, the Legacy sender) turned R-CS-SRC-02;
 # C3b (the Current sender) turns R-CS-SRC-01 / 04 / 08. This ledger is the staged-green boundary of the commit it stands in; the meaning contract (decode / evaluate / supply) is not touched.
 S2B_GREEN_ROWS = {
-    "supply": ("R-CS-SRC-02",),
+    "supply": ("R-CS-SRC-01", "R-CS-SRC-02", "R-CS-SRC-04", "R-CS-SRC-08"),
 }
-EXPECTED_AFTER_S2A = {"RED-VALID": 49, "GUARD": 42}                      # S2a: 50 / 41; S2b C3a: 49 / 42
+EXPECTED_AFTER_S2A = {"RED-VALID": 46, "GUARD": 45}                      # S2a: 50 / 41; S2b C3a: 49 / 42; S2b C3b (final): 46 / 45
 # the 50 rows that stay RED after S2a fail only for reasons that belong to a later stage: the HUD (SI-R2.3: HUD-DIST / HUD-TIMELEFT / NOT-EQUIVALENT-TO-CSHARP), the C# supply
 # (S2b: the named NOT-IMPLEMENTED words) and the distance search (SI-R2.4: CURRENT- / LEGACY- / DISTANCE-SEARCH-REMAINS). A supply, state, index, location or reason word is a defect of S2a.
-REMAINING_RED_WORD = re.compile(r"^(HUD-DIST:|HUD-TIMELEFT:|NOT-EQUIVALENT-TO-CSHARP|CURRENT-|LEGACY-|DISTANCE-SEARCH-REMAINS|"
-                                r"NOT-IMPLEMENTED:(current-calls-helper|helper-in-shared|legacy-calls-helper|helper-absent|no-official-part-in-current))")
+# (after S2b C3b the C# supply words are gone: a row that still fails with NOT-IMPLEMENTED:* is a defect of S2b, no longer a remainder)
+REMAINING_RED_WORD = re.compile(r"^(HUD-DIST:|HUD-TIMELEFT:|NOT-EQUIVALENT-TO-CSHARP|CURRENT-|LEGACY-|DISTANCE-SEARCH-REMAINS)")
 
 
 def read_source(rel):

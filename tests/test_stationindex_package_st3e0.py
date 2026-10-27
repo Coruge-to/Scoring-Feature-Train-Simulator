@@ -109,7 +109,8 @@ BASE_BLOBS = {
     "TsScoringPlugin/TsScoringPlugin/AtsLoggerPlugin.cs": "22209df3e50762dd17c68c9bb788af6f8faf98b7",
     # Time Fix B2 changed Class1.cs on purpose (the operational stop leaves the target at once when the vehicle leaves, tests\test_timefix_b2_operational_stop_contract.py / Handshake\Tests\Test-TimeFixB2.ps1): the blob moved from b703adb0... (Time Fix A)
     # Time Fix B3 changed Class1.cs on purpose (BVE supplies exactly 0.0 while the train stands: speed == 0.0 is stopped, speed != 0.0 is moving; the 0.1 km/h band is gone, tests\test_timefix_b3_zero_speed_contract.py / Handshake\Tests\Test-TimeFixB3.ps1): the blob moved from 04a12011... (Time Fix B2)
-    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "4aa4aac50dddf1b7a3de7cf3fa73b9588c5c172f",
+    # SI-R2.2-S2b (C3b) changed Class1.cs on purpose (the OFFTGT part after STIDX in its own try / catch and the read only CreateOfficialTargetHost; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 4aa4aac5... (the commit before S2b)
+    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "e3f55d1509ed083b29f7243d5cbe90602f2ed1e0",
     "TsScoringPlugin/TsScoringPlugin/CurrentDataPlane.cs": "71b0ebaa6f52871ceb2a59456a2b527041241c46",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs": "3e0d3bffbb74e4a2ecc6d10d378a8b6e2788ae6f",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs": "8a54d6a14100e0021ca248d28369c335f965fafe",

@@ -887,10 +887,13 @@ class D_Boundary(unittest.TestCase):
         self.assertEqual(len(re.findall(r'",STIDX:1:"', self.c1)), 1)                                # the Current line writes version 1, the helper writes the other five fields
 
     def test_current_writes_the_part_once_after_the_unchanged_line_and_before_it_is_stored(self):
+        # SI-R2.2-S2b C3b (an intended change): the STIDX statement is unchanged and is still the first statement of its block; the OFFTGT part follows it IN THE SAME block (tests\test_official_target_wire_s2b.py::D_CurrentSource),
+        # so the block now holds two appends (STIDX, OFFTGT) and the second one is made in a try / catch of its own
+        official = 'string officialValue; try { officialValue = TSScoringPlugin.Telemetry.OfficialTargetWire.Value(TSScoringPlugin.Telemetry.OfficialTargetReader.Read(CreateOfficialTargetHost()), stidxListId); } catch { officialValue = TSScoringPlugin.Telemetry.OfficialTargetWire.Placeholder("F"); } data += "," + TSScoringPlugin.Telemetry.OfficialTargetWire.Key + ":" + officialValue;'
         m = re.search(r'string data = \$"[^"]*"; (if \(isInitialized && stidxListReady && stidxListCount == stationList\.Count\) \{ data \+= ",STIDX:1:" \+ '
-                      r'TSScoringPlugin\.Telemetry\.StationIndexWire\.Fields\(stidxTarget, stidxArrivalIndex, stidxArrivalSeq, stidxListCount, stidxListId\); \}) lastUdpData = data;', self.c1)
-        self.assertIsNotNone(m, "the STIDX statement is not directly between 'string data = ...;' and 'lastUdpData = data;'")
-        self.assertEqual(self.c1.count("data +="), 1)
+                      r'TSScoringPlugin\.Telemetry\.StationIndexWire\.Fields\(stidxTarget, stidxArrivalIndex, stidxArrivalSeq, stidxListCount, stidxListId\); ' + re.escape(official) + r' \}) lastUdpData = data;', self.c1)
+        self.assertIsNotNone(m, "the STIDX statement is not directly between 'string data = ...;' and 'lastUdpData = data;' (the OFFTGT statements follow it in the same block)")
+        self.assertEqual(self.c1.count("data +="), 2)
         self.assertNotIn("STIDX", re.search(r'string data = \$"([^"]*)";', self.c1).group(1))      # the interpolated line itself is exactly what it was
 
     def test_current_new_fields_are_read_by_the_stidx_statements_only(self):
@@ -902,7 +905,8 @@ class D_Boundary(unittest.TestCase):
         # Phase ST-3b (an intended change, not a drift): the Current sender now READS the identity of its station list to judge a jump command - BuildJumpView (id, count, ready) and the
         # completion (id, ready): stidxListId 4 -> 6, stidxListCount 5 -> 6, stidxListReady 4 -> 6. The STIDX statements themselves are unchanged; ST-1A's arrival / target / door reads are untouched.
         # Phase U10 (an intended change, not a drift): RejectStationList empties the published identity of a list that was rejected (id, count, ready: 6 -> 7 each); it publishes nothing and the STIDX statements are unchanged.
-        self.assertEqual(counts, {"stidxArrivalIndex": 4, "stidxArrivalSeq": 4, "stidxListId": 7, "stidxListCount": 7, "stidxListReady": 7, "stidxTarget": 3, "stidxDoorOpenedBefore": 2})
+        # SI-R2.2-S2b C3b (an intended change, not a drift): the OFFTGT statement READS stidxListId once more (the identity it is written for): 7 -> 8; nothing else of the list identity is read or written by it.
+        self.assertEqual(counts, {"stidxArrivalIndex": 4, "stidxArrivalSeq": 4, "stidxListId": 8, "stidxListCount": 7, "stidxListReady": 7, "stidxTarget": 3, "stidxDoorOpenedBefore": 2})
 
     def test_current_state_machine_statements_are_untouched(self):
         c1 = self.c1

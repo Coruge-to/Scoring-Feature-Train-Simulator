@@ -5,6 +5,7 @@ The contract of the receiving side is S2a (official_target_contract.py, unchange
   A  the golden table (tests/official_target_wire_golden.json): the exact part for a reading, the canonical numbers, and the Python round trip of every part
   B  the shared source (StationListIdentity.cs): the reader core and the wire helper are plain, stateless, host independent and read only
   C  the Legacy sender (LegacyTelemetrySession.cs / LegacyTelemetryExtension.cs): the port, the key, the exception separation, the read only adapter
+  D  the Current sender (Class1.cs): the part after STIDX in a try / catch of its own, the read only host adapter, nothing kept between two Ticks
 
 The C# is also executed: Handshake/Tests/Test-OfficialTargetWireS2B.ps1 compiles these sources in memory and runs the same golden table, the reader core and the Legacy sender
 (it needs Windows PowerShell 5.1; it is a gate of its own, like the other Test-*.ps1). What an offline run can not reach - the host reads of the Current sender (Class1.cs) -
@@ -325,6 +326,72 @@ class C_LegacySource(unittest.TestCase):
         body = block(self.extension, r"OfficialTargetReading\s+ILegacyOfficialTargetApi\.ReadOfficialTarget\(\)")
         self.assertIn("Scenario scenario = current;", body)
         self.assertNotRegex(body, r"hacker\.")
+
+
+# ==============================================================================================================================================
+# D - the Current sender (Class1.cs): what can not run offline is held as source shape (the host reads themselves are judged by the scratch compile-check now and by SI-R2.5 / SI-R2.6 live)
+# ==============================================================================================================================================
+STIDX_APPEND = 'data+=",STIDX:1:"+TSScoringPlugin.Telemetry.StationIndexWire.Fields(stidxTarget,stidxArrivalIndex,stidxArrivalSeq,stidxListCount,stidxListId);'
+OFFICIAL_APPEND = ('stringofficialValue;try{officialValue=TSScoringPlugin.Telemetry.OfficialTargetWire.Value(TSScoringPlugin.Telemetry.OfficialTargetReader.Read(CreateOfficialTargetHost()),stidxListId);}'
+                   'catch{officialValue=TSScoringPlugin.Telemetry.OfficialTargetWire.Placeholder("F");}data+=","+TSScoringPlugin.Telemetry.OfficialTargetWire.Key+":"+officialValue;')
+
+
+class D_CurrentSource(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = code(CLASS1)
+        cls.flat = re.sub(r"\s+", "", cls.text)
+        cls.host = block(cls.text, r"private\s+TSScoringPlugin\.Telemetry\.OfficialTargetHost\s+CreateOfficialTargetHost\(\)")
+
+    def test_the_official_part_follows_the_unchanged_stidx_part_in_the_same_if_block_and_before_the_line_is_stored(self):
+        want = STIDX_APPEND + OFFICIAL_APPEND + "}lastUdpData=data;}catch{}"
+        self.assertEqual(self.flat.count(want), 1)
+        self.assertEqual(self.flat.count(STIDX_APPEND), 1)                                           # the STIDX statement is exactly the one of ST-1A
+        self.assertEqual(len(re.findall(r"\bdata\s*\+=", self.text)), 2)                              # STIDX and OFFTGT: the only two appends
+
+    def test_the_official_part_is_made_in_a_try_of_its_own_so_it_can_never_reach_the_previous_line_replay(self):
+        # the outer catch keeps lastUdpData (the line of the PREVIOUS Tick) and sends it again: a failing OFFTGT read must end in its own catch with the F form
+        i = self.flat.index("stringofficialValue;try{")
+        j = self.flat.index("}catch{officialValue=", i)
+        k = self.flat.index("lastUdpData=data;", j)
+        self.assertLess(i, j)
+        self.assertLess(j, k)
+        self.assertNotIn("throw", self.flat[i:k])
+        self.assertEqual(len(re.findall(r"\blastUdpData\s*=\s*data\s*;", self.text)), 1)
+        self.assertEqual(self.flat[i:k].count("lastUdpData"), 0)
+        self.assertNotRegex(self.flat[i:k], r"officialValue=lastUdpData|lastOfficial|previousOfficial")
+
+    def test_nothing_of_the_official_target_is_stored_between_two_ticks(self):
+        self.assertEqual(len(re.findall(r"\bOfficialTargetReading\b", self.text)), 0)                 # no field, no local: the reading never leaves the helper call
+        self.assertEqual(len(re.findall(r"\bOfficialTargetReader\b", self.text)), 1)
+        self.assertEqual(len(re.findall(r"\bOfficialTargetWire\b", self.text)), 3)
+        self.assertEqual(len(re.findall(r"\bCreateOfficialTargetHost\b", self.text)), 2)              # the declaration and the one call
+        self.assertEqual(len(re.findall(r"\bstring\s+officialValue\b", self.text)), 1)
+
+    def test_the_host_adapter_only_reads(self):
+        body = self.host
+        self.assertIsNone(WRITE_WORDS.search(body))
+        self.assertIsNone(FORBIDDEN_WORDS.search(body))
+        targets = set(re.findall(r"(?<![\w.])([A-Za-z_][\w.]*)\s*=(?![=>])", body))
+        self.assertEqual(targets, {"host", "host.GetStations", "host.GetCursor", "host.GetCount", "host.ReadStation", "scenario", "vehicle", "conductor", "item", "station", "read",
+                                   "read.Location", "read.MarginMin", "read.MarginMax"})
+        for want in ("BveHacker.Scenario;", "scenario.Vehicle;", "vehicle.Conductor;", "return conductor.Stations;", "((BveTypes.ClassWrappers.MapObjectList)list).CurrentIndex;",
+                     "((BveTypes.ClassWrappers.MapObjectList)list).Count;", "((BveTypes.ClassWrappers.MapObjectList)list)[index]", "station.Location", "station.MarginMin", "station.MarginMax"):
+            self.assertIn(want, body)
+        self.assertEqual(len(re.findall(r"\bCurrentIndex\b", body)), 1)
+        self.assertEqual(len(re.findall(r"\bCurrentIndex\b", self.text)), 1)                          # the product reads the cursor in this one place only
+        self.assertNotRegex(body, r"dynamic|GetType\(\)|typeof|Reflection")
+
+    def test_no_machine_value_no_door_no_distance_in_the_official_region(self):
+        window = self.flat[self.flat.index("stringofficialValue;"):self.flat.index("lastUdpData=data;")]
+        self.assertIsNone(re.search(r"areDoorsClosed|currentDoorDir|nextStationLoc|nextStationTime|targetStationIndex|stationList|speed|location|TerminalDeparture", window))
+        self.assertEqual(sorted(set(re.findall(r"\b[a-z]\w*\b", self.text[self.text.index("string officialValue;"):self.text.index("lastUdpData = data;")]))),
+                         sorted({"string", "officialValue", "try", "catch", "data", "stidxListId"}))
+
+    def test_the_terminal_sentinel_of_the_machine_target_is_still_there_and_is_not_part_of_the_official_read(self):
+        self.assertEqual(len(re.findall(r"TerminalDepartureTime", self.text)), 9)                     # the three sites of the machine target (NEXTTIME), as at 855f8b4
+        self.assertNotIn("TerminalDepartureTime", self.host)
+        self.assertNotIn("TerminalDepartureTime", self.flat[self.flat.index("stringofficialValue;try{"):self.flat.index("lastUdpData=data;")])
 
 
 if __name__ == "__main__":

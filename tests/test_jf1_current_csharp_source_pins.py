@@ -59,7 +59,11 @@ CURRENT_CSPROJ = os.path.join(PLUGIN, "TsScoringPlugin", "TsScoringPlugin.csproj
 # file stays in force; Handshake\Tests\Test-TimeFixB2.ps1 holds the new rule.
 # Time Fix B3 (pin moved from A3ABF20A...): the changed lines were re-audited - the stop test and the leaving test of the operational stop in the station part of the Tick are now the exact zero-speed contract
 # (isStopped = speed == 0.0; leaving = speed != 0.0, either sign); no other statement changed. Every shape pin of this file stays in force; Handshake\Tests\Test-TimeFixB3.ps1 holds the new rule.
-CLASS1_AUDITED_NORMALISED_SHA256 = "81A1A279D44084A0921D6B21F1E9691DA3682349E359BD2527C0ED7258524E73"
+# SI-R2.2-S2b C3b (pin moved from 81A1A279...): the changed lines were re-audited - EXACTLY TWO insertions, 35 added lines and none removed or changed (git diff -U0): (1) the private method CreateOfficialTargetHost()
+# (read-only accessors of Scenario.Vehicle.Conductor.Stations: CurrentIndex, Count, the station; public getters, no write), placed before firstTickNoted; (2) the OFFTGT part after the unchanged STIDX statement,
+# in the same if block, made in a try / catch of its own so that it can never reach the outer catch (previous-line replay). Every other statement, the state machine, F1, the STIDX append, RejectStationList,
+# the jump part and the three terminal-sentinel sites are untouched; every shape pin of this file stays in force; tests\test_official_target_wire_s2b.py::D_CurrentSource holds the new shape.
+CLASS1_AUDITED_NORMALISED_SHA256 = "9130AB56E5576451D57C38CBBF40B6B95450FE0B0BE426755AF779F45DB4A6B4"
 # Phase U10 (the stop range of the station list builder): the value moved from 4D8FF9CB... after the changed lines were re-audited (ReadStationRange, RejectStationList, the latch stationRangeRejected and its gate; the 5.0 / 5.0
 # fallback of an unreadable range is gone). Every shape pin of this file still passes unchanged; tests\\test_stationindex_station_range_u10.py holds the contract of the new shape.
 # Phase ST-3b (the Current jump wiring): the value moved from 009BA364... after the changed lines were re-audited (the jump transaction, the one-shot StationIndex re-initialisation, the canonical numbers; every shape pin of this

@@ -422,6 +422,35 @@ namespace TsScoringPlugin
             try { if (diagnostics != null) diagnostics.Write("event=current-station-list-rejected scn=" + scenarioId + " idx=" + stationIndex + " stage=" + stage + " ex=" + exceptionType + " built=" + built + " verdict=rejected retry=scenario-change action=hold"); } catch { }
         }
 
+        /// <summary>Phase SI-R2.2-S2b: the READ-ONLY accessors of the host's official target (Scenario.Vehicle.Conductor.Stations: CurrentIndex, Count, the station). Public getters only; there is no write, no hook, no reflection.</summary>
+        private TSScoringPlugin.Telemetry.OfficialTargetHost CreateOfficialTargetHost()
+        {
+            TSScoringPlugin.Telemetry.OfficialTargetHost host = new TSScoringPlugin.Telemetry.OfficialTargetHost();
+            host.GetStations = delegate
+            {
+                BveTypes.ClassWrappers.Scenario scenario = BveHacker.Scenario;
+                if (scenario == null) return null;
+                BveTypes.ClassWrappers.Vehicle vehicle = scenario.Vehicle;
+                if (vehicle == null) return null;
+                BveTypes.ClassWrappers.Conductor conductor = vehicle.Conductor;
+                if (conductor == null) return null;
+                return conductor.Stations;
+            };
+            host.GetCursor = delegate (object list) { return ((BveTypes.ClassWrappers.MapObjectList)list).CurrentIndex; };
+            host.GetCount = delegate (object list) { return ((BveTypes.ClassWrappers.MapObjectList)list).Count; };
+            host.ReadStation = delegate (object list, int index)
+            {
+                BveTypes.ClassWrappers.MapObjectBase item = ((BveTypes.ClassWrappers.MapObjectList)list)[index];
+                BveTypes.ClassWrappers.Station station = item as BveTypes.ClassWrappers.Station ?? BveTypes.ClassWrappers.Station.FromSource((object)item.Src);
+                TSScoringPlugin.Telemetry.OfficialTargetStation read = new TSScoringPlugin.Telemetry.OfficialTargetStation();
+                read.Location = station.Location;
+                read.MarginMin = station.MarginMin;
+                read.MarginMax = station.MarginMax;
+                return read;
+            };
+            return host;
+        }
+
         private bool firstTickNoted;
 
         public override void Tick(TimeSpan elapsed)
@@ -1537,6 +1566,12 @@ namespace TsScoringPlugin
                     if (isInitialized && stidxListReady && stidxListCount == stationList.Count)
                     {
                         data += ",STIDX:1:" + TSScoringPlugin.Telemetry.StationIndexWire.Fields(stidxTarget, stidxArrivalIndex, stidxArrivalSeq, stidxListCount, stidxListId);
+                        // Phase SI-R2.2-S2b: the OFFTGT part (the host's official next-station target), appended after STIDX under the same condition. It is made inside its OWN try / catch: a failure writes the F form
+                        // of this part and can never reach the outer catch, which keeps the previous Tick's line (lastUdpData) and sends it again. Host values only; nothing of an earlier Tick is kept.
+                        string officialValue;
+                        try { officialValue = TSScoringPlugin.Telemetry.OfficialTargetWire.Value(TSScoringPlugin.Telemetry.OfficialTargetReader.Read(CreateOfficialTargetHost()), stidxListId); }
+                        catch { officialValue = TSScoringPlugin.Telemetry.OfficialTargetWire.Placeholder("F"); }
+                        data += "," + TSScoringPlugin.Telemetry.OfficialTargetWire.Key + ":" + officialValue;
                     }
                     lastUdpData = data;
                 }
