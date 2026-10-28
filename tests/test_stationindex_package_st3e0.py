@@ -44,7 +44,8 @@ SET_RANK = {"python": 0, "current": 1, "legacy": 2, "shared": 3}
 
 REQUIRED_PYTHON = ("main.py", "scoring_logic.py", "managed_input.py", "station_identity.py", "jump_wire.py", "jump_transaction.py")
 # SI-R2.2-S2a added official_target_contract.py (the receiver of the OFFTGT part, imported by main.py): the closure is the 22 modules of 0b8e511 plus this one (plus package_contract)
-PYTHON_23 = ("config", "current_jump_client", "dataplane_contract", "hud_ui", "jump_transaction", "jump_wire", "main", "managed_app_directory", "managed_hud", "managed_input",
+# SI-R2.3 (C4b) added hud_target_contract.py (the display target of the HUD, imported by main.py): the closure is those 23 modules plus this one (plus package_contract)
+PYTHON_24 = ("config", "current_jump_client", "dataplane_contract", "hud_target_contract", "hud_ui", "jump_transaction", "jump_wire", "main", "managed_app_directory", "managed_hud", "managed_input",
              "managed_mode", "managed_state", "menu_ui", "official_target_contract", "pause_recovery", "scoring_logic", "station_identity", "station_index_contract", "telemetry_contract",
              "telemetry_dataplane_receiver", "telemetry_gate", "telemetry_receiver_directory", "utils")
 CAPABILITIES = ("jump-request-v2", "jump-completion-v2", "current-selected-idx", "legacy-selected-idx", "python-completion-settlement", "stationindex-transaction",
@@ -55,7 +56,8 @@ BASE_BLOBS = {
     "config.py": "9572d1b70bfd13459665f07b6c0c30205f9aec8e",
     "current_jump_client.py": "bfcee44c0a0f79a76a8a6e950c738084523f1cf9",
     "dataplane_contract.py": "56da8579207ae7f6d866f17ce4aafe6d0553c23f",
-    "hud_ui.py": "a581b87c32ea876bf22f7825a6f65516f676f52b",
+    # SI-R2.3 (C4b) changed hud_ui.py on purpose (the distance row, the time-left row and the timing label read the display target of the main.py sync - hud_target_* - and no longer the machine target; tests/test_hud_target_wiring_r23.py): the blob moved from a581b87c... (0b8e511)
+    "hud_ui.py": "15ebccbbd2aed44fe36047998551aa5b548b307e",
     "jump_transaction.py": "69ac19a6befca5a7a8810cbd544a48115cfd6c81",
     "jump_wire.py": "00579f8031221333f2f6e471d7e30ab3f8b1a365",
     "managed_app_directory.py": "77bf8671ef364b05fb6a6524858ce2ffc2930060",
@@ -120,7 +122,8 @@ BASE_BLOBS = {
 # moved from f2031b37... (Time Fix B2; main.py had been unchanged since 0b8e511 apart from the contract import)
 # UI-ALT-F4 changed main.py on purpose (Overlay.closeEvent / set_input_ownership / has_input_ownership / bring_to_foreground / post_close_to_bve, the "in front" of the managed step follows the Overlay, the wiring of the user close handler and the stop probe, the shutdown disarms the handler; tests/test_overlay_user_close_altf4.py / tests/test_managed_hud_input_ownership.py): the blob (without its contract import) moved from af943ef0... (Time Fix B3)
 # SI-R2.2-S2a changed main.py on purpose (the OFFTGT intake: the import of the receiver module, the six published values and their private judgement state, the capture of the part outside the key loop and the judgement at three moments; tests/test_official_target_supply_s2a.py): the blob (without its contract import) moved from bd8c31c9... (UI-ALT-F4)
-BASE_MAIN = "5da4fb7f6b429699b24bb552d36d4da37b077ce4"
+# SI-R2.3 (C4b) changed main.py on purpose (the display target: the import of hud_target_contract, the read-only hud_target_* views, the display state _hud_target / _hud_freeze, the sync after every judged line and before the HUD is drawn; tests/test_hud_target_wiring_r23.py): the blob (without its contract import) moved from 5da4fb7f... (SI-R2.2-S2a)
+BASE_MAIN = "86e6929a7ed2629a6cbefd20c951d51e10fb2683"
 BASE_PROJECTS = {CURRENT_PROJECT: "61092229f34e5e4ceb52a4fb6e52280824ec2578", LEGACY_PROJECT: "defbe148ff815741c6b627cadaf8d024f649f804"}
 CODEC_FILES = ("jump_wire.py", "station_index_contract.py", "dataplane_contract.py", "telemetry_contract.py", "station_identity.py",
                SHARED_DIR + "/JumpWire.cs", SHARED_DIR + "/StationListIdentity.cs", SHARED_DIR + "/DataPlaneProtocol.cs", SHARED_DIR + "/TelemetryDirectoryReader.cs",
@@ -373,19 +376,19 @@ class A_Tsjump2(unittest.TestCase):
 # ---- B: the source sets ----------------------------------------------------------------------------------------------------------------------------------------------------------
 
 class B_SourceSets(unittest.TestCase):
-    # (the code word PYTHON-RUNTIME-SET-NOT-23-MODULES keeps its name: it identifies E0-07 in the handoff records; the closure is now 24 modules = 22 + official_target_contract + package_contract)
-    @e0("E0-07", "RED", "PYTHON-RUNTIME-SET-NOT-23-MODULES", "the import closure of main.py is the 22 modules of 0b8e511 plus official_target_contract (SI-R2.2-S2a) plus package_contract: missing 0, duplicate 0, dynamic import 0, network.py outside")
+    # (the code word PYTHON-RUNTIME-SET-NOT-23-MODULES keeps its name: it identifies E0-07 in the handoff records; the closure is now 25 modules = 22 + official_target_contract + hud_target_contract + package_contract)
+    @e0("E0-07", "RED", "PYTHON-RUNTIME-SET-NOT-23-MODULES", "the import closure of main.py is the 22 modules of 0b8e511 plus official_target_contract (SI-R2.2-S2a) plus hud_target_contract (SI-R2.3) plus package_contract: missing 0, duplicate 0, dynamic import 0, network.py outside")
     def test_RED_E0_07_the_python_runtime_set(self):
         files = base_files()
         modules, dyn = ref_closure(files)
         without = [m for m in modules if m != "package_contract"]
-        self.assertEqual(without, sorted(PYTHON_23), "the 22 modules of the U10 Push Close plus official_target_contract of SI-R2.2-S2a (a moved closure is RED-INVALID, not a RED)")
+        self.assertEqual(without, sorted(PYTHON_24), "the 22 modules of the U10 Push Close plus official_target_contract of SI-R2.2-S2a plus hud_target_contract of SI-R2.3 (a moved closure is RED-INVALID, not a RED)")
         self.assertEqual(dyn, 0)
         self.assertNotIn("network", modules)
         for name in REQUIRED_PYTHON:
             self.assertIn(name[:-3], modules)
         contract("package_contract" in modules, "E0-07", "PYTHON-RUNTIME-SET-NOT-23-MODULES", "package_contract.py is not in the closure of main.py (%d modules)" % len(modules))
-        contract(len(modules) == 24, "E0-07", "PYTHON-RUNTIME-SET-NOT-23-MODULES", "%d modules" % len(modules))
+        contract(len(modules) == 25, "E0-07", "PYTHON-RUNTIME-SET-NOT-23-MODULES", "%d modules" % len(modules))
         main_lines = [l for l in read_text(os.path.join(ROOT, "main.py")).splitlines() if l.strip() == "import package_contract"]
         self.assertEqual(len(main_lines), 1, "main.py imports the contract once, at the top level")
 
@@ -452,7 +455,7 @@ class C_Manifest(unittest.TestCase):
         for e in m["files"]:
             self.assertEqual(list(e), ["set", "path", "blob_sha256", "blob_size", "blob_eol"])
 
-    @e0("E0-12", "RED", "MANIFEST-ENTRIES-NOT-THE-RUNTIME-SETS", "the entries are exactly the python closure (24), the Current files (7), the Legacy files (16) and the shared files (7): no test, no pycache, no temp")
+    @e0("E0-12", "RED", "MANIFEST-ENTRIES-NOT-THE-RUNTIME-SETS", "the entries are exactly the python closure (25), the Current files (7), the Legacy files (16) and the shared files (7): no test, no pycache, no temp")
     def test_RED_E0_12_the_entries_are_the_runtime_sets(self):
         data, m = load_manifest("E0-12", "MANIFEST-ENTRIES-NOT-THE-RUNTIME-SETS")
         files = base_files()
@@ -466,7 +469,7 @@ class C_Manifest(unittest.TestCase):
         got = {s: sorted(e["path"] for e in m["files"] if e["set"] == s) for s in want}
         for s in want:
             contract(got[s] == want[s], "E0-12", "MANIFEST-ENTRIES-NOT-THE-RUNTIME-SETS", "%s: %s" % (s, sorted(set(got[s]) ^ set(want[s]))))
-        self.assertEqual({s: len(v) for s, v in got.items()}, {"python": 24, "current": 7, "legacy": 16, "shared": 7})
+        self.assertEqual({s: len(v) for s, v in got.items()}, {"python": 25, "current": 7, "legacy": 16, "shared": 7})
         paths = [e["path"] for e in m["files"]]
         self.assertEqual(len(paths), len(set(paths)))
         self.assertEqual(len(paths), len({p.lower() for p in paths}), "no path collision")

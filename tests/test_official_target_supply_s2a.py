@@ -7,8 +7,10 @@ test_official_target_contract_s2a.py. These rows need PyQt6 (Gate B); an interpr
   B  the supply profile: every meaning vector of the supply file, its HUD expectations removed (the HUD is SI-R2.3), reads back as the state it names
   C  ABSENT compatibility: a line without the part is today's behaviour; the part changes no other plain attribute
   D  boundaries: generation (reset / epoch), scenario (the grace restarts), process (a new Overlay is NOT_INITIALIZED), the three evaluation moments
-  E  the staged-green ledger: the 13 rows of the three RED runners that become GUARD in S2a, and only those
+  E  the staged-green ledger: the 13 rows of the three RED runners that become GUARD in S2a, and only those (SI-R2.3 C4b: the ledger of that commit, see R23_GREEN_ROWS)
   F  the naming rule of main.py (LJX-1) and the unread-by-HUD/scoring guard
+
+SI-R2.3 (C4b): the display layer (hud_target_contract, through hud_target_contract.offtgt_of in main.py) now reads the six values; the HUD (hud_ui.py) and the scoring still do not (class F).
 """
 import importlib.util
 import json
@@ -42,7 +44,16 @@ S2A_GREEN_ROWS = {
 S2B_GREEN_ROWS = {
     "supply": ("R-CS-SRC-01", "R-CS-SRC-02", "R-CS-SRC-04", "R-CS-SRC-08"),
 }
-EXPECTED_AFTER_S2A = {"RED-VALID": 46, "GUARD": 45}                      # S2a: 50 / 41; S2b C3a: 49 / 42; S2b C3b (final): 46 / 45
+# SI-R2.3 (C4b, intended update OD-3-08): the HUD follows the ownership rule, so the 43 rows whose only remaining reasons were HUD-DIST / HUD-TIMELEFT (the display of the official target, its
+# remaining time, its none states and the generation boundaries; R-NT-EQ with the equivalence to the C# NEXTTIME) turn GUARD. The three rows of SI-R2.4 stay RED (the C# distance search).
+R23_GREEN_ROWS = {
+    "ownership": ("R-FB-01", "R-HUD-NONE-1", "R-HUD-NONE-2", "R-HUD-NONE-3", "R-HUD-NONE-4", "R-HUD-NONE-5", "R-HUD-NONE-6", "R-NOCOMP-2", "R-NT-01", "R-NT-02", "R-NT-03", "R-NT-04",
+                  "R-NT-04-GEN", "R-NT-EQ", "R-NT-NONE", "R-NT-POS", "R-OP-01", "R-OP-02", "R-OWN-01", "R-OWN-03", "R-OWN-04", "R-OWN-06", "R-SEM-02", "R-TERM-1"),
+    "reinit": ("R-REINIT-A0-1", "R-REINIT-A0-2", "R-REINIT-A0-3", "R-REINIT-F5-11", "R-REINIT-F5-4", "R-REINIT-F5-5", "R-REINIT-F5-9", "R-REINIT-F5-DIST", "R-REINIT-F5-START"),
+    "supply": ("R-GEN-1", "R-INIT-4", "R-OFF-01", "R-OFF-02", "R-OFF-03", "R-OFF-04", "R-OFF-NONE", "R-STATE-1", "R-STATE-2", "R-STATE-4"),
+}
+SI_R24_RED_ROWS = {("reinit", "R-DIST-01"), ("reinit", "R-REINIT-A0-4"), ("reinit", "R-REINIT-UNSET")}
+EXPECTED_AFTER_S2A = {"RED-VALID": 3, "GUARD": 88}                      # S2a: 50 / 41; S2b C3a: 49 / 42; S2b C3b: 46 / 45; SI-R2.3 C4b (final): 3 / 88
 # the 50 rows that stay RED after S2a fail only for reasons that belong to a later stage: the HUD (SI-R2.3: HUD-DIST / HUD-TIMELEFT / NOT-EQUIVALENT-TO-CSHARP), the C# supply
 # (S2b: the named NOT-IMPLEMENTED words) and the distance search (SI-R2.4: CURRENT- / LEGACY- / DISTANCE-SEARCH-REMAINS). A supply, state, index, location or reason word is a defect of S2a.
 # (after S2b C3b the C# supply words are gone: a row that still fails with NOT-IMPLEMENTED:* is a defect of S2b, no longer a remainder)
@@ -158,7 +169,10 @@ class C_AbsentCompatibility(_QtCase):
         self.assertEqual(seen[0][0], "ABSENT")
         self.assertEqual(seen[1][0], "KNOWN")
         self.assertEqual(seen[0][1], seen[1][1])
-        self.assertEqual(hud[0], hud[1])
+        # SI-R2.3 (C4b, intended update OD-3-08): no scoring session, so BVE owns the target and the HUD follows the official target. The part is the ONLY difference of the two screens: without it
+        # (ABSENT) the HUD shows no target, with it the official station (index 2 of L5: 2000 m, 06:00 at TIME 10:00:00), whatever the machine target says. Every other plain attribute is still equal (above).
+        self.assertEqual((hud[0]["dist"], hud[0]["time_left"]), ("--- m", "--:--"))
+        self.assertEqual((hud[1]["dist"], hud[1]["time_left"]), ("900.0 m", "06:00"))
 
     def test_absent_publishes_the_sentinel_and_never_a_target(self):
         with F.Scene(self.vec, strict=False) as sc:
@@ -302,11 +316,13 @@ class E_StagedGreen(_QtCase):
                 verdicts[(runner, rid)] = (verdict, predicted, reason)
         self.assertEqual(len(verdicts), 91)
         moved = {key for key, (verdict, predicted, _r) in verdicts.items() if verdict != predicted}
-        expected = {(runner, rid) for runner, ids in S2A_GREEN_ROWS.items() for rid in ids} | {(runner, rid) for runner, ids in S2B_GREEN_ROWS.items() for rid in ids}
+        expected = ({(runner, rid) for runner, ids in S2A_GREEN_ROWS.items() for rid in ids} | {(runner, rid) for runner, ids in S2B_GREEN_ROWS.items() for rid in ids}
+                    | {(runner, rid) for runner, ids in R23_GREEN_ROWS.items() for rid in ids})
         self.assertEqual(sorted(moved), sorted(expected))
         for key in expected:
             self.assertEqual(verdicts[key][0], "GUARD", key)
             self.assertEqual(verdicts[key][1], "RED-VALID", key)
+        self.assertEqual({key for key, (verdict, _p, _r) in verdicts.items() if verdict == "RED-VALID"}, SI_R24_RED_ROWS)
         counts = {}
         for verdict, _p, _r in verdicts.values():
             counts[verdict] = counts.get(verdict, 0) + 1

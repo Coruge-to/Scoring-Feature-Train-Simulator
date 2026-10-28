@@ -41,6 +41,7 @@ import telemetry_dataplane_receiver
 import current_jump_client
 import telemetry_gate
 from official_target_contract import advance as offtgt_advance, capture as offtgt_capture, initial_state as offtgt_initial_state, timer_after_scenario as offtgt_timer_after_scenario
+import hud_target_contract
 import telemetry_receiver_directory
 import utils
 
@@ -49,6 +50,10 @@ KERNING_OFFSETS = {
     "°": 35,
     "）" : 28
 }
+
+def _hud_target_property(name):
+    """A read-only view of one field of the display target the HUD draws (Phase SI-R2.3). There is no setter: the display target is derived by Overlay._hud_target_sync and by nothing else."""
+    return property(lambda self: getattr(self.__dict__.get('_hud_target', hud_target_contract.NO_TARGET), name))
 
 class Overlay(QWidget):
     def __init__(self, udp_port=54321):
@@ -281,6 +286,10 @@ class Overlay(QWidget):
         self._offtgt_raw = None
         self._offtgt_since = None
         self._offtgt_scn = None
+
+        # Phase SI-R2.3: the display target the HUD draws (derived, see _hud_target_sync) and the display-only terminal freeze of its remaining time
+        self._hud_target = hud_target_contract.NO_TARGET
+        self._hud_freeze = None
 
         # Phase ST-2a: the identity the application publishes for the station list above (written only by _station_identity_apply / _station_identity_clear;
         # -1 / "" = the sender's station indexes can not be used as the identity of a station)
@@ -717,6 +726,40 @@ class Overlay(QWidget):
             result, self._offtgt_since = offtgt_initial_state(), None
         for name, value in result.items():
             setattr(self, name, value)
+        self._hud_target_sync()
+
+    # -- Phase SI-R2.3: the display target of the HUD. The scoring session owns the target while it runs (is_scoring_mode and not is_scoring_finished): the HUD then draws the machine target the C#
+    # state machine holds, exactly as before. Otherwise BVE owns it and the HUD draws the official target (a KNOWN one only; every other state is "no target" and nothing is kept or looked up).
+    # The sync runs after every judged line and again right before the HUD is drawn (the owner changes inside a Tick, not with a line). It is READ ONLY toward the machine target, the official
+    # state and the scoring state: its only writes are the display model _hud_target and the display-only terminal freeze _hud_freeze.
+    hud_target_owner = _hud_target_property('owner')
+    hud_target_source = _hud_target_property('source')
+    hud_target_next_loc = _hud_target_property('next_loc')
+    hud_target_next_time = _hud_target_property('next_time')
+    hud_target_is_pass = _hud_target_property('is_pass')
+    hud_target_margin_b = _hud_target_property('margin_b')
+    hud_target_margin_f = _hud_target_property('margin_f')
+    hud_target_timing = _hud_target_property('timing')
+    hud_target_reason = _hud_target_property('reason')
+
+    def _hud_target_sync(self):
+        try:
+            station_list = getattr(self, 'station_list', None) or []
+            scope = (getattr(self, 'current_scenario_id', None), getattr(station_list, 'list_id', None))
+            self._hud_target, self._hud_freeze = hud_target_contract.derive(
+                hud_target_contract.owner_is_scoring(self.is_scoring_mode, self.is_scoring_finished), self._hud_machine_target, hud_target_contract.offtgt_of(self), self._hud_timing_of_index,
+                station_list, self.bve_location, self.bve_time_ms, self.bve_door, scope, self.__dict__.get('_hud_freeze'))
+        except Exception:
+            self._hud_target, self._hud_freeze = hud_target_contract.none_target(hud_target_contract.OWNER_BVE, hud_target_contract.R_INTERNAL), None
+
+    def _hud_machine_target(self):
+        """The scoring target the C# state machine holds, as the HUD draws it. The 'timing station' label may blink under the condition draw_hud used before Phase SI-R2.3 (moved here unchanged)."""
+        timing = any(self.is_station_timing(sta_idx) for sta_idx in self.get_timing_target_stas()) and bool(getattr(self, 'active_next_sta_timing', self.bve_is_timing == 1))
+        return hud_target_contract.MachineTarget(self.bve_next_loc, self.bve_next_time, self.bve_is_pass, self.bve_margin_b, self.bve_margin_f, timing)
+
+    def _hud_timing_of_index(self, index):
+        """Whether that station of the chosen section is a timing station."""
+        return index in self.get_timing_target_stas() and bool(self.is_station_timing(index))
 
     def _station_identity_note(self, event, **fields):
         """One fixed-word diagnostic event of the identity (fixed words and numbers only): the managed application's log line. The normal mode installs no sink; there the
@@ -815,6 +858,8 @@ class Overlay(QWidget):
         self._station_identity_clear()
         self._offtgt_raw = None
         self._offtgt_since = None
+        self._hud_target = hud_target_contract.NO_TARGET            # Phase SI-R2.3: nothing of the previous scenario is displayed, and its terminal freeze ends
+        self._hud_freeze = None
 
     def apply_telemetry_text(self, latest_telemetry):
         """Applies one accepted telemetry datagram to the Overlay state (the part of read_udp_data that always was here; Phase L3 only moved it into
@@ -2828,6 +2873,7 @@ class Overlay(QWidget):
             draw_menu(self, painter, hud_logical_width)
         else:
             painter.scale(hud_scale, hud_scale)
+            self._hud_target_sync()
             draw_hud(self, painter, hud_logical_width)
 
 class _ManagedShutdownBridge(QObject):

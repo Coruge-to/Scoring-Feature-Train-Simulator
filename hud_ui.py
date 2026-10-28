@@ -274,9 +274,9 @@ def draw_hud(self, painter, logical_width):
     ui_y += ui_step
     
     if hud_item_visible(self, "time_left"):
-        if self.bve_next_time > 0:
+        if self.hud_target_next_time > 0:
             current_s = self.bve_time_ms // 1000
-            target_s = self.bve_next_time // 1000
+            target_s = self.hud_target_next_time // 1000
             diff_s = target_s - current_s
             abs_diff_s = abs(diff_s)
 
@@ -326,8 +326,8 @@ def draw_hud(self, painter, logical_width):
     ui_y += ui_step
 
     if hud_item_visible(self, "dist"):
-        if self.bve_next_loc >= 0:
-            d = self.bve_next_loc - self.bve_location
+        if self.hud_target_next_loc >= 0:
+            d = self.hud_target_next_loc - self.bve_location
             abs_d = abs(d) 
             if abs_d >= 99999.5: d_str = f"{abs_d/1000.0:.2f} km"
             elif abs_d >= 9999.95: d_str = f"{abs_d/1000.0:.3f} km"
@@ -335,26 +335,17 @@ def draw_hud(self, painter, logical_width):
             else: d_str = f"{abs_d:.2f} m"
             if d < -0.01: d_str = "-" + d_str
 
-            is_p = (self.bve_is_pass == 1)
+            is_p = (self.hud_target_is_pass == 1)
             d_color = COLOR_WHITE
             if not is_p:
-                if -self.bve_margin_f <= d <= self.bve_margin_b: d_color = COLOR_N 
-                elif d < -self.bve_margin_f: d_color = COLOR_B_EMG 
-            
-            has_timing_station = False
-            targets = self.get_timing_target_stas()
-            if targets:
-                for sta_idx in targets:
-                    if self.is_station_timing(sta_idx):
-                        has_timing_station = True
-                        break
+                if -self.hud_target_margin_f <= d <= self.hud_target_margin_b: d_color = COLOR_N
+                elif d < -self.hud_target_margin_f: d_color = COLOR_B_EMG
 
             # =================================================================
             # ★ 修正：BVEの生データ(bve_is_timing)を捨て、ユーザー設定(抽出済み)を使う！
+            # Phase SI-R2.3: 採時の判定(区間内に採時駅がある かつ 次駅が採時)は、表示ターゲットを決める main.py が行う
             # =================================================================
-            is_currently_timing = getattr(self, 'active_next_sta_timing', self.bve_is_timing == 1)
-
-            if has_timing_station and is_currently_timing:
+            if self.hud_target_timing:
                 # ★ 鶴さんの元の設定 (5.0) に完全復元しました！
                 show_timing = int((self.bve_time_ms / 1000.0) / 5.0) % 2 == 0
                 label_text = "採時" if show_timing else ("通過" if is_p else "停車")
