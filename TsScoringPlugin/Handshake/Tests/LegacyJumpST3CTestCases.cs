@@ -324,6 +324,20 @@ namespace TsScoringLegacyTelemetryTests
             x.Sender.Calls = 0;
         }
 
+        /// <summary>Phase SI-R2.4 C5a: the explicit seed of a rig. The target of the rig is station idx because the timeline is asked for it (RequestTarget, one shot, consumed by the selection of the next Tick), not because the vehicle stands near it.</summary>
+        public static void SeedTarget(S3Ctx s, LxRig x, int idx, double loc)
+        {
+            object tl = Pr.Get(x.Session, "timeline");
+            Pr.Call(tl, "RequestTarget", idx, loc);
+            Pr.Call(tl, "MarkDiscontinuity");
+            x.Tick(16);
+            s.Premise(Tgt(x) == idx, "the seeded station is the target of the rig", "" + Tgt(x));
+            ClearCalls(x);
+            x.Sender.Payloads.Clear();
+            x.Sender.Ids.Clear();
+            x.Sender.Calls = 0;
+        }
+
         // -- the scope the session holds now -----------------------------------------------------------------------------------------------------
         public static int ScenarioId(LxRig x) { return Convert.ToInt32(Pr.Get(x.Session, "ScenarioId")); }
         public static string ListId(LxRig x) { return (string)Pr.Get(Pr.Get(x.Session, "timeline"), "ListId"); }
@@ -641,6 +655,7 @@ namespace TsScoringLegacyTelemetryTests
             double[] st = new double[] { 0.5, 1000.5, 2000.25, 3000.125, 4000.0 };
             LxRig x = s.C.Own(S3.Rig(s, st));
             S3.Prime(s, x);
+            S3.SeedTarget(s, x, 1, st[1]);
             int t = S3.NextTime();
             byte[] rid = Cmd.Rid();
             RecView a = S3.SendV2(x, "STA", S3.V2Now(x, "STA", 4, st[4], t), rid);
@@ -688,11 +703,13 @@ namespace TsScoringLegacyTelemetryTests
             double[] st = new double[] { 100.5, 1000.5, 1959.5, 2000.0, 3000.0 };
             IList<LegacyStationRaw> raw = Raw(st);
             LegacyStationTimeline tl = new LegacyStationTimeline();
+            Pr.Call(tl, "RequestTarget", 1, st[1]);
             tl.Step(raw, st.Length, 500.0, 0.0, 36000000, true);
-            s.Premise(Target(tl) == 1, "without a request the first Tick chooses by position (station 1 at 1000.5 for a vehicle at 500)", "" + Target(tl));
+            s.Premise(Target(tl) == 1, "the seed (station 1 at 1000.5) is the target of the first Tick", "" + Target(tl));
+            Pr.Call(tl, "RequestTarget", 2, st[2]);
             tl.MarkDiscontinuity();
             tl.Step(raw, st.Length, 2000.0, 0.0, 36100000, true);
-            s.Premise(Target(tl) == 2, "a plain discontinuity chooses by position (index 2 at 1959.5 is within 50 m behind 2000.0)", "" + Target(tl));
+            s.Premise(Target(tl) == 2, "the seed (station 2 at 1959.5) is the target after a plain discontinuity", "" + Target(tl));
 
             Pr.Call(tl, "RequestTarget", 3, 2000.0);
             tl.MarkDiscontinuity();

@@ -169,7 +169,9 @@ public sealed class B2LegacyProbe
         r.ArrivalMs = arrMs; r.DepartureMs = depMs; r.DefaultMs = -1; r.StoppageMs = stopMs; r.MarginMin = marginMin; r.MarginMax = marginMax;
         raw.Add(r);
     }
-    public void Begin(int index) { Step(500.0, 50.0, 36000000, true); }
+    // Phase SI-R2.4 C5a: the explicit seed. The target is the given index because the timeline is asked for it (RequestTarget, one shot, consumed by the first selection); nothing reads the vehicle position to choose it.
+    public void Seed(int index) { t.RequestTarget(index, raw[index].Location); }
+    public void Begin(int index) { Seed(index); Step(500.0, 50.0, 36000000, true); }
     public void Step(double location, double speedKmh, int timeMs, bool doorsClosed)
     {
         last = t.Step(raw, raw.Count, location, speedKmh, timeMs, doorsClosed);
@@ -220,7 +222,7 @@ function NewProbe([string]$kind, [int]$bDoor = 0, [bool]$bPass = $false, [bool]$
     }
     if ($preset) {
         # the target is selected with the doors OPEN 10 m short of B (outside its range): the door flag is preset, no stop is made
-        if ($kind -eq 'Legacy') { $p.Step(990.0, 0.0, $T, $false) } else { $p.BeginPreset(1); $p.Step(990.0, 0.0, $T, $false) }
+        if ($kind -eq 'Legacy') { $p.Seed(1); $p.Step(990.0, 0.0, $T, $false) } else { $p.BeginPreset(1); $p.Step(990.0, 0.0, $T, $false) }
         return $p
     }
     $p.Begin(1)

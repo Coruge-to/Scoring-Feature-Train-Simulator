@@ -160,8 +160,27 @@ function Setup($h, $stationList, [double]$loc) {
 }
 # one scripted step: location, speed (m/s), doors closed, extra simulation-time jump (ms), an event word
 function Step([double]$l, [double]$sp, [bool]$d, [int]$j = 0, [string]$ev = '') { return @{ L = $l; S = $sp; D = $d; J = $j; E = $ev } }
-function Drive($h, $steps) {
+# Phase SI-R2.4 C5a: the explicit seed of a run of the sources of this phase. The re-initialisation of a step (the first Tick, a time jump, a scenario reload, a changed station count) carries NO StationIndex, so the
+# target is asked for: RequestTarget(index, location of that station) on the timeline of the session (one shot, consumed by the selection of the next Tick that builds the list). The audited DLL has no such call and
+# chooses by position itself: the seeds are the stations that DLL chose, and the differential D proves it (every datagram equals the audited DLL). Nothing reads the vehicle position to choose the seed.
+# The first Tick of an epoch (a new scenario instance) resets the timeline, so a seed for it can not be given before that Tick: the epoch is started by a Tick whose time can not be read (the session skips the
+# line, the epoch begins and the timeline is reset), then the seed is given and the real Tick follows. The reference run of the audited DLL makes the very same Ticks (it is not seeded), so both sides stay equal.
+function Seed-Target($h, [int]$index) {
+    $flags = [Reflection.BindingFlags]'NonPublic,Instance'
+    $session = $h.GetType().GetField('session', $flags).GetValue($h)
+    $timeline = $session.GetType().GetField('timeline', $flags).GetValue($session)
+    $stations = @($h.Api.Stations)
+    $null = $timeline.GetType().GetMethod('RequestTarget', $flags).Invoke($timeline, @([int]$index, [double]$stations[$index].Location))
+}
+function Start-Epoch($h) {
+    $h.Api.Fail.Add('TryTimeMs') | Out-Null
+    $h.Run(1, 16)
+    $h.Api.Fail.Remove('TryTimeMs') | Out-Null
+}
+function Drive($h, $steps, $seeds = $null, [bool]$seed = $true) {
+    $ordinal = -1
     foreach ($st in $steps) {
+        $ordinal++
         switch ($st.E) {
             'close-open' { $h.Closed(); $h.Opened($true) }
             'fail-doors' { $h.Api.Fail.Add('TryDoorsClosed') | Out-Null }
@@ -170,6 +189,10 @@ function Drive($h, $steps) {
         }
         $h.Api.Location = $st.L; $h.Api.SpeedMps = $st.S; $h.Api.DoorsClosed = $st.D
         if ($st.J -ne 0) { $h.Api.TimeMs += $st.J }
+        if (($null -ne $seeds) -and $seeds.ContainsKey($ordinal)) {
+            if (($ordinal -eq 0) -or ($st.E -eq 'close-open')) { Start-Epoch $h }
+            if ($seed) { Seed-Target $h ([int]$seeds[$ordinal]) }
+        }
         $h.Run(1, 16)
     }
 }
@@ -201,7 +224,7 @@ function Sent($h) { return @($h.Sink.Sent.ToArray()) }
 # ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 $h = NewHarness $newAsm
 Setup $h (Stations4 $newAsm) 0.0
-Drive $h (Walk @(0.0, 1000.0, 2000.0, 3000.0))
+Drive $h (Walk @(0.0, 1000.0, 2000.0, 3000.0)) @{ 0 = 0 }
 $sent = Sent $h
 $lines = @($sent | Where-Object { $_.StartsWith('SCENARIO_ID:') })
 $stalists = @($sent | Where-Object { $_.StartsWith('STALIST:') })
@@ -230,7 +253,7 @@ Check 'L13 NEXTLOC follows the index (tgt >= 0: the location of that station; tg
 # the target runs off the end of the list (the last station is no terminal)
 $h2 = NewHarness $newAsm
 Setup $h2 (StationsRunOff $newAsm) 0.0
-Drive $h2 (Walk @(700.0, 1400.0, 2100.0) + @(Step 2300.0 10.0 $true; Step 2400.0 10.0 $true; Step 2500.0 10.0 $true))
+Drive $h2 (Walk @(700.0, 1400.0, 2100.0) + @(Step 2300.0 10.0 $true; Step 2400.0 10.0 $true; Step 2500.0 10.0 $true)) @{ 0 = 1 }
 $l2 = @((Sent $h2) | Where-Object { $_.StartsWith('SCENARIO_ID:') })
 $t2 = @($l2 | ForEach-Object { [int]([regex]::Match($_, ',STIDX:1:(-?\d+):').Groups[1].Value) })
 $n2 = @($l2 | ForEach-Object { [double]([regex]::Match($_, ',NEXTLOC:(-?[0-9.E+\-]+)').Groups[1].Value) })
@@ -248,7 +271,7 @@ Check 'L16 an empty station list is announced as STIDX:1:-1:-1:0:0:00000000 and 
 # doors unreadable: neither group, so no STIDX (all or nothing)
 $h4 = NewHarness $newAsm
 Setup $h4 (Stations4 $newAsm) 0.0
-Drive $h4 @(Step 0.0 0.0 $true; Step 0.0 0.0 $true 0 'fail-doors'; Step 0.0 0.0 $true; Step 0.0 0.0 $true 0 'heal-doors'; Step 0.0 0.0 $true)
+Drive $h4 @(Step 0.0 0.0 $true; Step 0.0 0.0 $true 0 'fail-doors'; Step 0.0 0.0 $true; Step 0.0 0.0 $true 0 'heal-doors'; Step 0.0 0.0 $true) @{ 0 = 0 }
 $l4 = @((Sent $h4) | Where-Object { $_.StartsWith('SCENARIO_ID:') })
 Check 'L17 while the doors can not be read there is no station group and no STIDX; with the doors back both are there' (($l4.Count -eq 5) -and ($l4[0] -match 'STIDX:1:') -and ($l4[1] -notmatch 'STIDX') -and ($l4[1] -notmatch 'NEXTLOC') -and ($l4[2] -notmatch 'STIDX') -and ($l4[3] -match 'STIDX:1:') -and ($l4[4] -match 'STIDX:1:'))
 Check 'L18 AVAIL names the station group exactly when the part is there' (@($l4 | Where-Object { ($_ -match 'AVAIL:1:[^,]*\bstation\b') -ne ($_ -match 'STIDX') }).Count -eq 0)
@@ -256,10 +279,10 @@ Check 'L18 AVAIL names the station group exactly when the part is there' (@($l4 
 # a new scenario instance: the event numbers start again
 $h5 = NewHarness $newAsm
 Setup $h5 (Stations4 $newAsm) 0.0
-Drive $h5 (Walk @(0.0, 1000.0))
+Drive $h5 (Walk @(0.0, 1000.0)) @{ 0 = 0 }
 $before = @((Sent $h5) | Where-Object { $_.StartsWith('SCENARIO_ID:') })
 $seqBefore = [int]([regex]::Match($before[$before.Count - 1], ',STIDX:1:-?\d+:-?\d+:(\d+):').Groups[1].Value)
-Drive $h5 @(Step 0.0 0.0 $true 0 'close-open'; Step 0.0 0.0 $true; Step 0.0 0.0 $true)
+Drive $h5 @(Step 0.0 0.0 $true 0 'close-open'; Step 0.0 0.0 $true; Step 0.0 0.0 $true) @{ 0 = 0 }
 $after = @((Sent $h5) | Where-Object { $_.StartsWith('SCENARIO_ID:') })
 $last = $after[$after.Count - 1]
 Check 'L19 a scenario reload starts the event numbers again at 0 with arr -1 and the target at station 0' (($seqBefore -ge 2) -and ($last -match (',STIDX:1:0:-1:0:4:' + $expectedId + '(,|$)')))
@@ -338,17 +361,17 @@ public static class St1aResolver
 }
 
 $scenarios = @(
-    @{ Name = 'D1 four stations, a normal walk'; Make = { param($a) Stations4 $a }; Steps = { Walk @(0.0, 1000.0, 2000.0, 3000.0) } },
+    @{ Name = 'D1 four stations, a normal walk'; Make = { param($a) Stations4 $a }; Steps = { Walk @(0.0, 1000.0, 2000.0, 3000.0) }; Seeds = @{ 0 = 0 } },
     # Time Fix B2 (an INTENDED difference, not a drift): the operational stop S2 (1600 m) is left by the target as soon as the vehicle leaves it (|speed| > 0.1 km/h) - the audited DLL waits for the departure time + 300 ms.
     # B2Leave = (the NEXTLOC of the audited DLL, the NEXTLOC of the new sender) on the first datagram that differs; Handshake\Tests\Test-TimeFixB2.ps1 holds the rule itself.
-    @{ Name = 'D2 pass, operational stop, same-position pair, terminal'; Make = { param($a) Stations6 $a }; Steps = { Walk @(0.0, 800.0, 1600.0, 2400.0, 3200.0) }; B2Leave = @(1600.0, 2400.0) },
-    @{ Name = 'D3 the target runs off the end of the list'; Make = { param($a) StationsRunOff $a }; Steps = { (Walk @(700.0, 1400.0, 2100.0)) + @(Step 2300.0 10.0 $true; Step 2400.0 10.0 $true) } },
-    @{ Name = 'D4 time and position jumps in the middle of a run'; Make = { param($a) Stations4 $a }; Steps = { (Walk @(0.0, 1000.0)) + @(Step 2500.0 8.0 $true 90000; Step 2510.0 8.0 $true; Step 2000.0 0.0 $false 0; Step 2000.0 0.0 $true 0; Step 40.0 5.0 $true 400000) + (Walk @(2000.0, 3000.0)) } },
-    @{ Name = 'D5 a scenario reload and a growing list'; Make = { param($a) Stations4 $a }; Steps = { (Walk @(0.0)) + @(Step 10.0 0.0 $true 0 'close-open'; Step 10.0 0.0 $true) + (Walk @(1000.0)) + @(Step 1500.0 5.0 $true 0 'more-stations'; Step 1510.0 5.0 $true; Step 1520.0 5.0 $true) } },
-    @{ Name = 'D6 doors unreadable for a while'; Make = { param($a) Stations6 $a }; Steps = { (Walk @(0.0)) + @(Step 60.0 5.0 $true 0 'fail-doors'; Step 70.0 5.0 $false; Step 80.0 5.0 $true 0 'heal-doors'; Step 90.0 5.0 $true) + (Walk @(800.0, 1600.0)) }; B2Leave = @(1600.0, 2400.0) },
-    @{ Name = 'D7 random walk, seed 11'; Make = { param($a) Stations6 $a }; Steps = { RandomSteps 11 400 0.0 3300.0 } },
-    @{ Name = 'D8 random walk, seed 23'; Make = { param($a) Stations6 $a }; Steps = { RandomSteps 23 400 0.0 3300.0 } },
-    @{ Name = 'D9 random walk, seed 97, run-off list'; Make = { param($a) StationsRunOff $a }; Steps = { RandomSteps 97 400 650.0 2300.0 } }
+    @{ Name = 'D2 pass, operational stop, same-position pair, terminal'; Make = { param($a) Stations6 $a }; Steps = { Walk @(0.0, 800.0, 1600.0, 2400.0, 3200.0) }; Seeds = @{ 0 = 0 }; B2Leave = @(1600.0, 2400.0) },
+    @{ Name = 'D3 the target runs off the end of the list'; Make = { param($a) StationsRunOff $a }; Steps = { (Walk @(700.0, 1400.0, 2100.0)) + @(Step 2300.0 10.0 $true; Step 2400.0 10.0 $true) }; Seeds = @{ 0 = 1 } },
+    @{ Name = 'D4 time and position jumps in the middle of a run'; Make = { param($a) Stations4 $a }; Steps = { (Walk @(0.0, 1000.0)) + @(Step 2500.0 8.0 $true 90000; Step 2510.0 8.0 $true; Step 2000.0 0.0 $false 0; Step 2000.0 0.0 $true 0; Step 40.0 5.0 $true 400000) + (Walk @(2000.0, 3000.0)) }; Seeds = @{ 0 = 0; 18 = 3; 22 = 0 } },
+    @{ Name = 'D5 a scenario reload and a growing list'; Make = { param($a) Stations4 $a }; Steps = { (Walk @(0.0)) + @(Step 10.0 0.0 $true 0 'close-open'; Step 10.0 0.0 $true) + (Walk @(1000.0)) + @(Step 1500.0 5.0 $true 0 'more-stations'; Step 1510.0 5.0 $true; Step 1520.0 5.0 $true) }; Seeds = @{ 0 = 0; 9 = 0; 20 = 2 } },
+    @{ Name = 'D6 doors unreadable for a while'; Make = { param($a) Stations6 $a }; Steps = { (Walk @(0.0)) + @(Step 60.0 5.0 $true 0 'fail-doors'; Step 70.0 5.0 $false; Step 80.0 5.0 $true 0 'heal-doors'; Step 90.0 5.0 $true) + (Walk @(800.0, 1600.0)) }; Seeds = @{ 0 = 0 }; B2Leave = @(1600.0, 2400.0) },
+    @{ Name = 'D7 random walk, seed 11'; Make = { param($a) Stations6 $a }; Steps = { RandomSteps 11 400 0.0 3300.0 }; Seeds = @{ 0 = 0 } },
+    @{ Name = 'D8 random walk, seed 23'; Make = { param($a) Stations6 $a }; Steps = { RandomSteps 23 400 0.0 3300.0 }; Seeds = @{ 0 = 0 } },
+    @{ Name = 'D9 random walk, seed 97, run-off list'; Make = { param($a) StationsRunOff $a }; Steps = { RandomSteps 97 400 650.0 2300.0 }; Seeds = @{ 0 = 1 } }
 )
 
 $dumpLines = New-Object System.Collections.Generic.List[string]
@@ -358,7 +381,7 @@ if ($true) {
         $steps = & $stepsBlock
         $hn = NewHarness $newAsm
         Setup $hn (& $mk $newAsm) 0.0
-        Drive $hn $steps
+        Drive $hn $steps $sc.Seeds
         $newSent = Sent $hn
         $newLines = @($newSent | Where-Object { $_.StartsWith('SCENARIO_ID:') })
         Check ($sc.Name + ': the new sender wrote lines and a part in every station group') (($newLines.Count -gt 20) -and (@($newLines | Where-Object { ($_ -match ',NEXTLOC:') -and ($_ -notmatch ',STIDX:1:') }).Count -eq 0))
@@ -367,7 +390,7 @@ if ($true) {
         if ($refOk) {
             $ho = NewHarness $refAsm
             Setup $ho (& $mk $refAsm) 0.0
-            Drive $ho $steps
+            Drive $ho $steps $sc.Seeds $false
             $oldSent = Sent $ho
             $stripped = @($newSent | ForEach-Object { Strip $_ })
             $same = ($stripped.Count -eq $oldSent.Count)

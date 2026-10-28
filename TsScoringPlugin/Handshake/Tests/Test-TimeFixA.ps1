@@ -263,6 +263,8 @@ public sealed class TimeFixLegacyProbe
         r.ArrivalMs = arrMs; r.DepartureMs = depMs; r.DefaultMs = defMs; r.StoppageMs = stopMs; r.MarginMin = 5.0; r.MarginMax = 5.0;
         raw.Add(r);
     }
+    // Phase SI-R2.4 C5a: the explicit seed. The target is the given index because the timeline is asked for it (RequestTarget, one shot, consumed by the first selection); nothing reads the vehicle position to choose it.
+    public void Seed(int index) { t.RequestTarget(index, raw[index].Location); }
     public void Step(double location, double speedKmh, int timeMs, bool doorsClosed)
     {
         last = t.Step(raw, raw.Count, location, speedKmh, timeMs, doorsClosed);
@@ -291,6 +293,7 @@ function RunLegacy($stations, [double]$location = 500.0) {
         $p.Add($s.name, [double](1000 * $i), $s.term, $s.arr, $s.dep, $s.stop, $s.def)
         $i++
     }
+    if ($i -gt 1) { $p.Seed(1) }     # the explicit seed: the target is station 1 (the stations stand every 1000 m and the vehicle is at 500 m); a list of one station has no station 1
     $p.Step($location, 0.0, $T0, $true)
     return $p
 }

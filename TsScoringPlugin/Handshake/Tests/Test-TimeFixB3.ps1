@@ -173,7 +173,9 @@ public sealed class B3LegacyProbe
         r.ArrivalMs = arrMs; r.DepartureMs = depMs; r.DefaultMs = -1; r.StoppageMs = stopMs; r.MarginMin = marginMin; r.MarginMax = marginMax;
         raw.Add(r);
     }
-    public void Begin(int index) { Step(500.0, 50.0, 36000000, true); }
+    // Phase SI-R2.4 C5a: the explicit seed. The target is the given index because the timeline is asked for it (RequestTarget, one shot, consumed by the first selection); nothing reads the vehicle position to choose it.
+    public void Seed(int index) { t.RequestTarget(index, raw[index].Location); }
+    public void Begin(int index) { Seed(index); Step(500.0, 50.0, 36000000, true); }
     public void Step(double location, double speedKmh, int timeMs, bool doorsClosed)
     {
         last = t.Step(raw, raw.Count, location, speedKmh, timeMs, doorsClosed);
@@ -236,7 +238,7 @@ function NewProbe([string]$kind, [int]$bDoor = 0, [bool]$bPass = $false, [bool]$
     }
     if ($preset) {
         # the target is selected with the doors OPEN 10 m short of B (outside its range): the door flag is preset, no stop is made
-        if ($kind -eq 'Legacy') { $p.Step(990.0, 0.0, $T, $false) } else { $p.BeginPreset(1); $p.Step(990.0, 0.0, $T, $false) }
+        if ($kind -eq 'Legacy') { $p.Seed(1); $p.Step(990.0, 0.0, $T, $false) } else { $p.BeginPreset(1); $p.Step(990.0, 0.0, $T, $false) }
         return $p
     }
     $p.Begin(1)
@@ -449,6 +451,7 @@ try {
     $p.Add('B', 1000.0, $false, $false, 0, $ARR, $DEP, 15000, 5.0, 5.0)
     $p.Add('C', 1100.0, $false, $false, 1, ($DEP + 30000), ($DEP + 60000), 15000, 5.0, 5.0)
     $p.Add('D', 3000.0, $false, $true, 1, ($DEP + 400000), -1, 15000, 5.0, 5.0)
+    $p.Seed(1)     # the new scenario instance targets B because it is asked to (the seed), not because the vehicle stands at B
     $p.Step(1000.0, 5.0, ($T + 5000), $true)
     Check 'Legacy Z-T19 a new scenario instance forgets the stop of the old one: moving inside the range of B keeps the target B, arrseq restarts' (($p.Target -eq 1) -and ($p.ArrSeq -eq 0))
 } finally {
