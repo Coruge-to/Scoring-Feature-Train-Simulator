@@ -914,11 +914,11 @@ class D_Boundary(unittest.TestCase):
                        "if (!areDoorsClosed && Math.Abs(nextStationLoc - location) < 100.0) hasDoorOpenedAtTarget = true; if (hasDoorOpenedAtTarget && areDoorsClosed && !isTerminal) { targetStationIndex++;",
                        "if (targetSt.IsPass) { if (location > nextStationLoc && !isTerminal) { targetStationIndex++;",
                        "if (hasDoorOpenedAtTarget && timeMs >= depTime && !isTerminal) { if (opStopDelayStartMs < 0) opStopDelayStartMs = timeMs; else if (timeMs >= opStopDelayStartMs + 300) { targetStationIndex++;",
-                       "if (stationList[i].Location >= location - 50.0) { targetStationIndex = i;"):
+                       "private void SelectUnsetTarget() { targetStationIndex = stationList.Count; hasDoorOpenedAtTarget = false; }"):       # SI-R2.4 C5b: was the 50 m position search (re-anchored: the UNSET selection)
             self.assertIn(pinned, c1)
         writes = re.findall(r"targetStationIndex\s*(\+\+|=(?!=))", c1)
-        # Phase ST-3b (an intended change): ONE new write of the target, SelectTargetByRequestedIndex (the adopted StationIndex of an official jump); the declaration, the position search and the three
-        # advances are the ones of before (tests\test_stationindex_current_st3b.py pins that the new write is reached only with an index and the old one only without)
+        # Phase ST-3b (an intended change): ONE new write of the target, SelectTargetByRequestedIndex (the adopted StationIndex of an official jump); the declaration, the index-less selection (SI-R2.4 C5b: UNSET,
+        # was the position search; still ONE write) and the three advances are the ones of before (tests\test_stationindex_current_st3b.py pins that the new write is reached only with an index and the old one only without)
         # Time Fix B2 (an intended change): ONE more advance, the operational stop that is LEFT (the stop was made and the vehicle moves); the stop test and the departure-time hold above are the statements of before
         # Time Fix B3 (an intended change): "moving" is speed != 0.0 (either sign) and the stop test is speed == 0.0 (was |speed| > 0.1 / < 0.1 km/h)
         self.assertIn("bool isStopped = speed == 0.0;", c1)
@@ -950,11 +950,14 @@ class D_Boundary(unittest.TestCase):
         writes = re.findall(r"\btarget\s*(\+\+|=(?!=))", ltl)
         # Phase ST-3c (intended update; was three "="): the fourth "=" is SelectRequestedTarget (the target of an official v2 jump: the adopted index, no position involved); Reset, "no station in range"
         # and the position search are the three of before, and the three advances are untouched
+        # SI-R2.4 C5b (an intended change, three "=" now): the position search and its "no station in range" default are ONE statement now, target = list.Count (UNSET, SelectTarget); the writes are Reset, UNSET
+        # and SelectRequestedTarget - no write is left that reads a position
         # Time Fix B2 (an intended change): ONE more advance, the operational stop that is LEFT (the stop was made and the vehicle moves)
         # Time Fix B3 (an intended change): "moving" is speedKmh != 0.0 (either sign) and the stop test is speedKmh == 0.0 (was |speedKmh| > 0.1 / < 0.1)
         self.assertIn("bool isStopped = speedKmh == 0.0;", ltl)
         self.assertIn("if (hasDoorOpenedAtTarget && opStopMadeIndex == target && !isTerminal && speedKmh != 0.0) { target++;", ltl)
-        self.assertEqual(sorted(writes), sorted(["=", "=", "=", "=", "++", "++", "++", "++"]))
+        self.assertEqual(sorted(writes), sorted(["=", "=", "=", "++", "++", "++", "++"]))
+        self.assertIn("target = list.Count; hasDoorOpenedAtTarget = false; }", ltl)                   # SI-R2.4 C5b: SelectTarget ends in the UNSET statements (no loop before them)
 
     def test_the_senders_link_the_shared_file_and_the_probe_project_compiles_what_the_product_compiles(self):
         for path in (CURRENT_CSPROJ, LEGACY_CSPROJ, B1PROBE_CSPROJ):

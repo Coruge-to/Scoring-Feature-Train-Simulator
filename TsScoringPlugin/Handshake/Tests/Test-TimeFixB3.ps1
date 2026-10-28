@@ -461,15 +461,80 @@ try {
 # Z-T17 on Current: the (re)initialisation block clears the stop record before the target is declared initialised, and every path that forgets the target goes through it
 $reinit = Get-BlockText $source 'int requestedStationIndex = -1;'
 Check 'Current Z-T17 the re-initialisation block is found' ($null -ne $reinit)
-$posSelect = $source.IndexOf('else if (!requestedTargetRefused) SelectTargetByPosition(location, areDoorsClosed);', [StringComparison]::Ordinal)
+$posSelect = $source.IndexOf('else if (!requestedTargetRefused) SelectUnsetTarget();', [StringComparison]::Ordinal)       # SI-R2.4 C5b: was SelectTargetByPosition(location, areDoorsClosed); the index-less selection is UNSET
 $posClear = $source.IndexOf('opStopMadeIndex = -1;', $posSelect, [StringComparison]::Ordinal)
 $posInit = $source.IndexOf('isInitialized = true;', $posSelect, [StringComparison]::Ordinal)
 Check 'Current Z-T17 opStopMadeIndex is cleared after the target is (re)selected and before isInitialized becomes true' (($posSelect -gt 0) -and ($posClear -gt $posSelect) -and ($posInit -gt $posClear) -and (($posInit - $posSelect) -lt 400))
 $reinitFn = Get-BlockText $source 'private void ReinitializeTargetStateAfterJump()'
 Check 'Current Z-T17 a jump re-initialisation makes the next Tick rebuild (isInitialized = false) and drops the door flag' (($null -ne $reinitFn) -and $reinitFn.Contains('isInitialized = false;') -and $reinitFn.Contains('hasDoorOpenedAtTarget = false;'))
-$selectFns = (Get-BlockText $source 'private void SelectTargetByRequestedIndex') + (Get-BlockText $source 'private void SelectTargetByPosition')
+$selectFns = (Get-BlockText $source 'private void SelectTargetByRequestedIndex') + (Get-BlockText $source 'private void SelectUnsetTarget')       # SI-R2.4 C5b: was SelectTargetByPosition
 Check 'Current Z-T17 the Select* functions do not set the stop record (a selection is never a stop)' (-not $selectFns.Contains('opStopMadeIndex'))
 Check 'Current Z-T18 the stop record is written in exactly one place: the stop made inside the range' (([regex]::Matches($source, 'opStopMadeIndex = targetStationIndex;')).Count -eq 1)
+
+# SI-R2.4 C5b UNSET-C1..C3: the REAL text of the two selections of Class1.cs (the index-less one and the one of an official jump) is cut out and compiled in memory; Class1.cs as a whole depends on the host and can not run offline
+Write-Host '--- Current UNSET (the real text of SelectUnsetTarget and SelectTargetByRequestedIndex)'
+$unsetFn = Get-BlockText $source 'private void SelectUnsetTarget()'
+$requestedFn = Get-BlockText $source 'private void SelectTargetByRequestedIndex'
+Check 'UNSET-C0 both selections are found in Class1.cs' (($null -ne $unsetFn) -and ($null -ne $requestedFn))
+if (($null -ne $unsetFn) -and ($null -ne $requestedFn)) {
+    $unsetFixture = @'
+using System;
+using System.Collections.Generic;
+
+namespace B3Unset
+{
+//STATIONDATA//
+
+    public sealed class Probe
+    {
+        private List<StationData> stationList = new List<StationData>();
+        private int targetStationIndex = 0;
+        private bool hasDoorOpenedAtTarget = false;
+
+        public void Add(double loc) { StationData sd = new StationData(); sd.Location = loc; stationList.Add(sd); }
+        public void Preset(int index, bool door) { targetStationIndex = index; hasDoorOpenedAtTarget = door; }
+//UNSETFN//
+//REQUESTEDFN//
+        public void Unset() { SelectUnsetTarget(); }
+        public void Requested(int index, double location, bool closed) { SelectTargetByRequestedIndex(index, location, closed); }
+        public int Target { get { return targetStationIndex; } }
+        public int Count { get { return stationList.Count; } }
+        public bool Door { get { return hasDoorOpenedAtTarget; } }
+    }
+}
+'@
+    $unsetFixture = $unsetFixture.Replace('//STATIONDATA//', $stationDataClass).Replace('//UNSETFN//', $unsetFn).Replace('//REQUESTEDFN//', $requestedFn)
+    $unsetError = $null
+    try { Add-Type -TypeDefinition $unsetFixture -ReferencedAssemblies @('System.dll', 'System.Core.dll', 'Microsoft.CSharp.dll') -IgnoreWarnings } catch { $unsetError = $_.Exception.Message }
+    Check 'UNSET-C0 the cut-out selections compile in memory (C# 5)' ($null -eq $unsetError)
+    if ($null -eq $unsetError) {
+        # UNSET-C1: the candidates (0, 1, many stations in a list) and the earlier target / door state change nothing: the target is Count, the door state false
+        foreach ($n in @(0, 1, 4)) {
+            $u = New-Object B3Unset.Probe
+            for ($i = 0; $i -lt $n; $i++) { $u.Add(1000.0 * $i) }
+            $u.Preset(2, $true)
+            $u.Unset()
+            Check ('UNSET-C1 a re-initialisation without an index on a list of ' + $n + ' stations: the target is Count (' + $n + ') and the door state is false') (($u.Target -eq $n) -and (-not $u.Door) -and ($u.Count -eq $n))
+        }
+        # UNSET-C2: the earlier target is never kept (generation / scenario / time jump / count change all end in this one function)
+        $u = New-Object B3Unset.Probe
+        foreach ($loc in @(0.0, 1000.0, 1100.0, 3000.0)) { $u.Add($loc) }
+        $u.Preset(3, $true)
+        $u.Unset()
+        $first = $u.Target
+        $u.Unset()
+        Check 'UNSET-C2 an earlier target (3, doors open) is not kept: UNSET twice gives Count (4) both times' (($first -eq 4) -and ($u.Target -eq 4) -and (-not $u.Door))
+        # UNSET-C3: the station an official jump asked for is the target (the 50 m door state of THAT station), and an independent re-initialisation after it is UNSET again
+        $u = New-Object B3Unset.Probe
+        foreach ($loc in @(0.0, 1000.0, 1100.0, 3000.0)) { $u.Add($loc) }
+        $u.Requested(1, 1000.0, $false)
+        Check 'UNSET-C3 the requested index 1 is the target with the doors open at its station' (($u.Target -eq 1) -and $u.Door)
+        $u.Requested(1, 500.0, $true)
+        Check 'UNSET-C3 the requested index 1 with the doors closed: the target is 1, the door state false' (($u.Target -eq 1) -and (-not $u.Door))
+        $u.Unset()
+        Check 'UNSET-C3 an independent re-initialisation after the official jump is UNSET again (Count 4, door state false)' (($u.Target -eq 4) -and (-not $u.Door))
+    }
+}
 
 # the Legacy source: the same shape
 $legacySource = [IO.File]::ReadAllText((Join-Path $tele 'Legacy\src\LegacyStationTimeline.cs'), [Text.Encoding]::UTF8)

@@ -52,8 +52,13 @@ R23_GREEN_ROWS = {
     "reinit": ("R-REINIT-A0-1", "R-REINIT-A0-2", "R-REINIT-A0-3", "R-REINIT-F5-11", "R-REINIT-F5-4", "R-REINIT-F5-5", "R-REINIT-F5-9", "R-REINIT-F5-DIST", "R-REINIT-F5-START"),
     "supply": ("R-GEN-1", "R-INIT-4", "R-OFF-01", "R-OFF-02", "R-OFF-03", "R-OFF-04", "R-OFF-NONE", "R-STATE-1", "R-STATE-2", "R-STATE-4"),
 }
-SI_R24_RED_ROWS = {("reinit", "R-DIST-01"), ("reinit", "R-REINIT-A0-4"), ("reinit", "R-REINIT-UNSET")}
-EXPECTED_AFTER_S2A = {"RED-VALID": 3, "GUARD": 88}                      # S2a: 50 / 41; S2b C3a: 49 / 42; S2b C3b: 46 / 45; SI-R2.3 C4b (final): 3 / 88
+# SI-R2.4 C5b (intended update, OD-R24-1 / E-13 beta): the three rows of the C# distance search turn GUARD with the removal of both searches (Current SelectTargetByPosition, Legacy SelectTarget loop): a re-initialisation that
+# carries no StationIndex leaves the target UNSET. Nothing stays RED: the ledger pins 91 GUARD / 0 RED, by id.
+R24_GREEN_ROWS = {
+    "reinit": ("R-DIST-01", "R-REINIT-A0-4", "R-REINIT-UNSET"),
+}
+SI_R24_RED_ROWS = set()
+EXPECTED_AFTER_S2A = {"GUARD": 91}                      # S2a: 50 / 41; S2b C3a: 49 / 42; S2b C3b: 46 / 45; SI-R2.3 C4b: 3 / 88; SI-R2.4 C5b (final): 0 / 91
 # the 50 rows that stay RED after S2a fail only for reasons that belong to a later stage: the HUD (SI-R2.3: HUD-DIST / HUD-TIMELEFT / NOT-EQUIVALENT-TO-CSHARP), the C# supply
 # (S2b: the named NOT-IMPLEMENTED words) and the distance search (SI-R2.4: CURRENT- / LEGACY- / DISTANCE-SEARCH-REMAINS). A supply, state, index, location or reason word is a defect of S2a.
 # (after S2b C3b the C# supply words are gone: a row that still fails with NOT-IMPLEMENTED:* is a defect of S2b, no longer a remainder)
@@ -317,7 +322,7 @@ class E_StagedGreen(_QtCase):
         self.assertEqual(len(verdicts), 91)
         moved = {key for key, (verdict, predicted, _r) in verdicts.items() if verdict != predicted}
         expected = ({(runner, rid) for runner, ids in S2A_GREEN_ROWS.items() for rid in ids} | {(runner, rid) for runner, ids in S2B_GREEN_ROWS.items() for rid in ids}
-                    | {(runner, rid) for runner, ids in R23_GREEN_ROWS.items() for rid in ids})
+                    | {(runner, rid) for runner, ids in R23_GREEN_ROWS.items() for rid in ids} | {(runner, rid) for runner, ids in R24_GREEN_ROWS.items() for rid in ids})
         self.assertEqual(sorted(moved), sorted(expected))
         for key in expected:
             self.assertEqual(verdicts[key][0], "GUARD", key)

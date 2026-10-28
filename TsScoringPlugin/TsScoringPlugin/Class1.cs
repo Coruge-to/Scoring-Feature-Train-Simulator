@@ -377,19 +377,12 @@ namespace TsScoringPlugin
             hasDoorOpenedAtTarget = !areDoorsClosed && Math.Abs(stationList[requestedStationIndex].Location - location) < 50.0;
         }
 
-        /// <summary>The target of every re-initialisation that carries NO StationIndex (first Tick, scenario change, manual time jump, a changed station count): the first station that is not more
-        /// than 50 m behind the vehicle. Never reached on the path of an official jump.</summary>
-        private void SelectTargetByPosition(double location, bool areDoorsClosed)
+        /// <summary>The target of every re-initialisation that carries NO StationIndex (first Tick, scenario change, manual time jump, a changed station count): UNSET. No position is searched; the next
+        /// target is the ADOPTED StationIndex of an official jump (SelectTargetByRequestedIndex).</summary>
+        private void SelectUnsetTarget()
         {
-            for (int i = 0; i < stationList.Count; i++)
-            {
-                if (stationList[i].Location >= location - 50.0)
-                {
-                    targetStationIndex = i;
-                    hasDoorOpenedAtTarget = !areDoorsClosed && Math.Abs(stationList[i].Location - location) < 50.0;
-                    break;
-                }
-            }
+            targetStationIndex = stationList.Count;
+            hasDoorOpenedAtTarget = false;
         }
 
         /// <summary>Phase U10: the stop range of one host station, read ONCE and strictly. Returns null when both members were read and are finite (sd.MarginMin = |MarginMin|, sd.MarginMax = MarginMax, exactly as before);
@@ -1061,7 +1054,7 @@ namespace TsScoringPlugin
 
                         // Phase ST-3b: the re-initialisation that follows an official jump targets the ADOPTED StationIndex (one-shot, consumed here whatever the verdict); a list that can no longer
                         // carry it abandons the completion and leaves the target alone - it never falls back to the position search. Every re-initialisation that carries NO index
-                        // (first Tick, scenario change, manual time jump, a changed station count) keeps the position search.
+                        // (first Tick, scenario change, manual time jump, a changed station count) leaves the target UNSET (no position is searched).
                         int requestedStationIndex = -1;
                         bool requestedTargetRefused = false;
                         if (requestedTargetIndex >= 0)
@@ -1077,7 +1070,7 @@ namespace TsScoringPlugin
                             }
                         }
                         if (requestedStationIndex >= 0) SelectTargetByRequestedIndex(requestedStationIndex, location, areDoorsClosed);
-                        else if (!requestedTargetRefused) SelectTargetByPosition(location, areDoorsClosed);
+                        else if (!requestedTargetRefused) SelectUnsetTarget();
                         opStopMadeIndex = -1;
                         isInitialized = true;
                     }

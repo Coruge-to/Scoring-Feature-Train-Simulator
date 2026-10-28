@@ -145,14 +145,17 @@ class Fixture(object):
 
 C1, LOOP, STA, LOC = Fixture.load()
 LOOP_ANCHOR_OK = 'if (msg.StartsWith("JUMP_STA_TIME:"))' in LOOP
-POSITION_SEARCH = "if (stationList[i].Location >= location - 50.0)"
+# SI-R2.4 C5b: the 50 m position search is GONE; the re-initialisation that carries no index is the two statements of SelectUnsetTarget (N-27 is replaced by that UNSET contract, N-23 keeps its meaning as count == 0)
+POSITION_SEARCH = "location - 50.0"
+UNSET_SELECTION = "private void SelectUnsetTarget() { targetStationIndex = stationList.Count; hasDoorOpenedAtTarget = false; }"
 
 
 def precondition_sources():
     """Plain assertions on the audited anchors: a moved source is RED-INVALID, never a RED."""
     assert 'if (msg.StartsWith("JUMP_STA_TIME:"))' in C1, "the STA branch is not where it was"
     assert 'else if (msg.StartsWith("JUMP_LOC_TIME:"))' in C1, "the LOC branch is not where it was"
-    assert POSITION_SEARCH in C1, "the 50 m position search is not where it was"
+    assert UNSET_SELECTION in C1, "the UNSET selection is not where it was"
+    assert POSITION_SEARCH not in C1, "a 50 m position search is back in Class1.cs"
     assert "pendingJumpComplete" in C1 and "SendJumpComplete(" in C1
 
 
@@ -229,16 +232,18 @@ class B_Selection(unittest.TestCase):
     @red("N-23", "position-search-reachable-from-jump")
     def test_N23_the_50_m_search_is_not_reachable_from_the_jump_path(self):
         precondition_sources()
-        by_position = method_body(C1, r"private void SelectTargetByPosition\(double location, bool areDoorsClosed\) \{")
-        contract(by_position is not None and POSITION_SEARCH in by_position, "N-23", "position-search-reachable-from-jump", "the 50 m search does not live in its own function")
-        contract(C1.count("location - 50.0") == 1, "N-23", "position-search-reachable-from-jump", "the 50 m comparison exists more than once")
-        calls = re.findall(r"SelectTargetByPosition\(", C1)
-        contract(len(calls) == 2 and "else if (!requestedTargetRefused) SelectTargetByPosition(location, areDoorsClosed);" in C1, "N-23", "position-search-reachable-from-jump",
-                 "the position search is called from more than the single arm that carries no index")
+        # SI-R2.4 C5b: the meaning is kept as "no path reaches a position search": the search does not exist (count == 0), the index-less arm is the UNSET selection, which reads no position at all
+        by_unset = method_body(C1, r"private void SelectUnsetTarget\(\) \{")
+        contract(by_unset is not None and "for (" not in by_unset and "foreach" not in by_unset and "stationList[" not in by_unset and "location" not in by_unset, "N-23", "position-search-reachable-from-jump",
+                 "the index-less selection reads a position or a station")
+        contract(C1.count("location - 50.0") == 0 and "SelectTargetByPosition" not in C1, "N-23", "position-search-reachable-from-jump", "a 50 m comparison or the position search still exists")
+        calls = re.findall(r"SelectUnsetTarget\(", C1)
+        contract(len(calls) == 2 and "else if (!requestedTargetRefused) SelectUnsetTarget();" in C1, "N-23", "position-search-reachable-from-jump",
+                 "the UNSET selection is called from more than the single arm that carries no index")
         by_index = method_body(C1, r"private void SelectTargetByRequestedIndex\(int requestedStationIndex, double location, bool areDoorsClosed\) \{")
         contract(by_index is not None and "Location >=" not in by_index and "for (" not in by_index and "foreach" not in by_index and "break;" not in by_index,
                  "N-23", "position-search-reachable-from-jump", "the requested-index function contains a search")
-        contract("SelectTargetByPosition" not in LOOP and "location - 50.0" not in LOOP, "N-23", "position-search-reachable-from-jump", "the jump branches reach the position search")
+        contract("SelectTargetByPosition" not in LOOP and "SelectUnsetTarget" not in LOOP and "location - 50.0" not in LOOP, "N-23", "position-search-reachable-from-jump", "the jump branches reach a selection without the adopted index")
         resolve = cs_code(EXECUTION)
         contract("Math." not in method_body(resolve, r"internal static int ResolveRequestedTarget\(int requestedIndex, double expectedLocation, double\[\] locations, out string reason\) \{"),
                  "N-23", "position-search-reachable-from-jump", "the resolver of the requested target does arithmetic on a position")
@@ -256,10 +261,14 @@ class B_Selection(unittest.TestCase):
                  "loc-branch-does-not-reinitialise", "the pending jump does not carry the adopted index")
 
     @guard("N-27")
-    def test_N27_a_reinitialisation_without_an_index_keeps_the_position_search(self):
+    def test_N27_a_reinitialisation_without_an_index_leaves_the_target_unset(self):
+        """SI-R2.4 C5b (OD-R24-1, E-13 beta): REPLACES 'keeps the position search'. Every re-initialisation that carries NO index (below) writes Count - no station is chosen, whatever the candidates, and no earlier
+        target survives."""
         precondition_sources()
-        self.assertEqual(C1.count("location - 50.0"), 1)
-        self.assertIn("hasDoorOpenedAtTarget = !areDoorsClosed && Math.Abs(stationList[i].Location - location) < 50.0;", C1)                    # the door state of the found station (unchanged)
+        self.assertEqual(C1.count("location - 50.0"), 0)
+        self.assertIn(UNSET_SELECTION, C1)                                                                                                     # the one index-less selection: Count, door state false
+        self.assertEqual(len(re.findall(r"targetStationIndex = stationList\.Count;", C1)), 1)
+        self.assertIn("hasDoorOpenedAtTarget = !areDoorsClosed && Math.Abs(stationList[requestedStationIndex].Location - location) < 50.0;", C1)   # the door state of the ADOPTED station (unchanged)
         self.assertRegex(C1, r"if \(!BveHacker\.IsScenarioCreated\) \{[^}]*isInitialized = false;")                                              # no scenario
         self.assertRegex(C1, r"if \(!object\.Equals\(currentScenario, BveHacker\.Scenario\)\) \{.*?isInitialized = false;")                      # scenario change
         self.assertRegex(C1, r"if \(lastTimeMs != 0 && Math\.Abs\(jumpTimeErrorMs\) > 300\) \{ isInitialized = false;")                         # a manual time jump / a freeze
@@ -446,7 +455,7 @@ class G_Shape(unittest.TestCase):
         block = C1[i:C1.index("isInitialized = true;", i)]
         self.assertIn("requestedTargetIndex = -1; requestedTargetLocation = 0.0;", block)                             # consumed whatever the verdict
         self.assertIn("requestedTargetRefused = true; AbandonPendingJump(reinitReason, \"-\");", block)
-        self.assertIn("else if (!requestedTargetRefused) SelectTargetByPosition(location, areDoorsClosed);", block)
+        self.assertIn("else if (!requestedTargetRefused) SelectUnsetTarget();", block)                              # and only an index-less (not a refused) re-initialisation is UNSET
 
     def test_the_completion_is_never_a_stand_in(self):
         self.assertNotIn("completedLocation = -1.0", C1)
@@ -460,8 +469,11 @@ class G_Shape(unittest.TestCase):
     def test_the_station_and_location_jumps_use_the_same_helper_for_the_time_field(self):
         self.assertEqual(len(re.findall(r"FindJumpTimeField\(scenario, bindFlagsAll, out rawTimeMgr\)", C1)), 2)
 
-    def test_the_door_state_expression_is_the_one_of_before_in_both_selectors(self):
-        self.assertEqual(C1.count("hasDoorOpenedAtTarget = !areDoorsClosed && Math.Abs(stationList["), 2)
+    def test_the_door_state_expression_is_the_one_of_before_in_the_requested_selector_and_the_unset_selector_has_none(self):
+        # SI-R2.4 C5b: the search selector is gone (it was the second use of the expression); the UNSET selector sets the door state false
+        self.assertEqual(C1.count("hasDoorOpenedAtTarget = !areDoorsClosed && Math.Abs(stationList["), 1)
+        self.assertEqual(C1.count("hasDoorOpenedAtTarget = !areDoorsClosed && Math.Abs(stationList[requestedStationIndex].Location - location) < 50.0;"), 1)
+        self.assertIn(UNSET_SELECTION, C1)
 
 
 # ==============================================================================================================================================
@@ -515,6 +527,70 @@ class H_RefusalDiagnostic(unittest.TestCase):
         self.assertNotIn("TryParse", self.EXEC)
         self.assertNotIn("Convert.", self.EXEC)
         self.assertEqual(len(re.findall(r"RefusedLine\(", C1)), 1)                                                     # still one refusal formatter site, so one line per refused request
+
+
+# ==============================================================================================================================================
+SENTINEL_CURRENT_SHA256 = "EA760E47C560B6ACD1FDC6457F9DA4594B11B84BEA3074D955108CC316783301"      # the builder of one Current station up to the three RawDepTime / IsTerminal sentinel branches: as committed by SI-R2.3 (0e4622d)
+SENTINEL_LEGACY_SHA256 = "29D463C624C8550F6DE88F0D318614FE766C4D9359BC3092151F72C83C3CF952"       # the Legacy Build up to the terminal fix-up of the list: as committed by SI-R2.3 (0e4622d)
+
+
+def region_sha256(code, start, end):
+    """SHA-256 of the squashed, comment free code from `start` to the end of `end` (both must occur: a moved source is a failure, not a pass)."""
+    assert code.count(start) == 1, "the start of the region is not where it was: " + start
+    i = code.index(start)
+    j = code.index(end, i) + len(end)
+    return hashlib.sha256(code[i:j].encode("utf-8")).hexdigest().upper()
+
+
+class I_UnsetR24(unittest.TestCase):
+    """SI-R2.4 C5b (OD-R24-1..3, E-13 beta): the UNSET contract as GUARDs. A re-initialisation that carries no StationIndex leaves the target UNSET in BOTH senders (Current targetStationIndex = stationList.Count,
+    Legacy target = list.Count); no position, candidate count or earlier target decides it; the refusal path and the terminal-sentinel normalisation are the statements of before."""
+
+    LTL = cs_code(os.path.join(LEGACY_DIR, "src", "LegacyStationTimeline.cs"))
+
+    def test_UNSET_no_identity_distance_search_is_left_in_any_csharp_product_file(self):
+        hits = []
+        for root in (CURRENT_DIR, os.path.join(PLUGIN, "Handshake", "Telemetry")):
+            for dirpath, dirs, files in os.walk(root):
+                dirs[:] = [d for d in dirs if d not in ("obj", "bin", "out", "Tests", "packages")]
+                for name in sorted(files):
+                    if not name.endswith(".cs"):
+                        continue
+                    code = cs_code(os.path.join(dirpath, name))
+                    for pattern in (r"\bLocation >= location\b", r"location - 50\.0", r"SelectTargetByPosition"):
+                        if re.search(pattern, code):
+                            hits.append((name, pattern))
+        self.assertEqual(hits, [])
+
+    def test_UNSET_current_selection_is_two_statements_and_reads_no_position_no_candidate_no_old_target(self):
+        body = method_body(cs_code(CLASS1), r"private void SelectUnsetTarget\(\) \{")
+        self.assertEqual(body, "{ targetStationIndex = stationList.Count; hasDoorOpenedAtTarget = false; }")
+
+    def test_UNSET_legacy_selection_is_the_request_or_two_statements_and_has_no_loop(self):
+        body = method_body(self.LTL, r"private void SelectTarget\(double location, bool areDoorsClosed\) \{")
+        self.assertEqual(body, "{ if (requestedTargetActive) { SelectRequestedTarget(location, areDoorsClosed); return; } target = list.Count; hasDoorOpenedAtTarget = false; }")
+
+    def test_UNSET_the_refusal_path_is_the_statements_of_before(self):
+        # OD-R24-3: a list that can not carry the request is a REFUSAL (the target is left as it was and the reason is reported); it is never the same thing as "no request" and never UNSET
+        c1 = cs_code(CLASS1)
+        self.assertEqual(c1.count('if (requestedStationIndex < 0) { requestedTargetRefused = true; AbandonPendingJump(reinitReason, "-"); }'), 1)
+        self.assertEqual(c1.count("SelectUnsetTarget();"), 1)
+        self.assertIn("else if (!requestedTargetRefused) SelectUnsetTarget();", c1)
+        body = method_body(self.LTL, r"private void SelectRequestedTarget\(double location, bool areDoorsClosed\) \{")
+        self.assertEqual(body, "{ int index = requestedTargetIndex; double expected = requestedTargetLocation; requestedTargetActive = false; requestedTargetIndex = -1; requestedTargetLocation = 0.0; "
+                               "if (index < 0 || index >= list.Count) { requestRefusal = RefusalIndexRange; return; } if (list[index].Location != expected) { requestRefusal = RefusalLocationMismatch; return; } "
+                               "target = index; hasDoorOpenedAtTarget = !areDoorsClosed && Math.Abs(list[index].Location - location) < 50.0; }")
+
+    def test_UNSET_the_terminal_sentinel_normalisation_is_the_code_of_before(self):
+        # the removal of the distance search never touches the normalisation of a terminal sentinel (BVE5 / BVE6) in the station list builders; a sentinel is a fact of the LIST, UNSET one of the TARGET
+        cur = region_sha256(cs_code(CLASS1), "sd.IsTerminal = false; try {", "if (sd.DefaultTime <= -2000000000) sd.DefaultTime = -1;")
+        leg = region_sha256(self.LTL, "sd.IsTerminal = r.IsTerminal;", "list[list.Count - 1].IsTerminal = true; }")
+        self.assertEqual(cur, SENTINEL_CURRENT_SHA256)
+        self.assertEqual(leg, SENTINEL_LEGACY_SHA256)
+        c1 = cs_code(CLASS1)
+        self.assertEqual(len(re.findall(r"TerminalDepartureTimeBve5Ms", c1)), 3)
+        self.assertEqual(len(re.findall(r"TerminalDepartureTimeBve6Ms", c1)), 6)
+        self.assertEqual(len(re.findall(r"int\.MaxValue", self.LTL)), 2)
 
 
 if __name__ == "__main__":

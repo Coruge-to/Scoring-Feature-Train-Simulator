@@ -63,7 +63,10 @@ CURRENT_CSPROJ = os.path.join(PLUGIN, "TsScoringPlugin", "TsScoringPlugin.csproj
 # (read-only accessors of Scenario.Vehicle.Conductor.Stations: CurrentIndex, Count, the station; public getters, no write), placed before firstTickNoted; (2) the OFFTGT part after the unchanged STIDX statement,
 # in the same if block, made in a try / catch of its own so that it can never reach the outer catch (previous-line replay). Every other statement, the state machine, F1, the STIDX append, RejectStationList,
 # the jump part and the three terminal-sentinel sites are untouched; every shape pin of this file stays in force; tests\test_official_target_wire_s2b.py::D_CurrentSource holds the new shape.
-CLASS1_AUDITED_NORMALISED_SHA256 = "9130AB56E5576451D57C38CBBF40B6B95450FE0B0BE426755AF779F45DB4A6B4"
+# SI-R2.4 C5b (pin moved from 9130AB56...): the changed lines were re-audited (git diff -U0, 3 hunks of Class1.cs): the ONE function that searched the position (SelectTargetByPosition, the only place with "location - 50.0") became SelectUnsetTarget
+# (targetStationIndex = stationList.Count; hasDoorOpenedAtTarget = false;), its ONE call site, and the comment that named the search. A re-initialisation that carries NO StationIndex now leaves the target UNSET; the jump path (P1, the
+# adopted index), F1, the refusal path, the three terminal-sentinel sites, OFFTGT and the STIDX part are untouched. C02 ... C05 below are the UNSET contract of that shape; tests\test_stationindex_current_st3b.py holds it too.
+CLASS1_AUDITED_NORMALISED_SHA256 = "127F94292DD6FF35937E172B9D56723641040B8CF113FCCA7254990360A0E268"
 # Phase U10 (the stop range of the station list builder): the value moved from 4D8FF9CB... after the changed lines were re-audited (ReadStationRange, RejectStationList, the latch stationRangeRejected and its gate; the 5.0 / 5.0
 # fallback of an unreadable range is gone). Every shape pin of this file still passes unchanged; tests\\test_stationindex_station_range_u10.py holds the contract of the new shape.
 # Phase ST-3b (the Current jump wiring): the value moved from 009BA364... after the changed lines were re-audited (the jump transaction, the one-shot StationIndex re-initialisation, the canonical numbers; every shape pin of this
@@ -140,9 +143,8 @@ class Pins(unittest.TestCase):
         cls.sta_branch = cls.c1[i_sta:i_loc]
         cls.loc_branch = cls.c1[i_loc:i_end]
         cls.jump_loop = cls.c1[cls.c1.index("foreach (JumpInput jumpInput in CollectJumpCommands())"):i_end]
-        # Phase ST-3b: the position search lives in its own function, reached only by a re-initialisation that carries NO StationIndex
-        cls.init_loop = re.search(r"private void SelectTargetByPosition\(double location, bool areDoorsClosed\) \{ for \(int i = 0; i < stationList\.Count; i\+\+\) \{ if \(stationList\[i\]\.Location >= location - 50\.0\) \{ (.*?) \} \} \}",
-                                  cls.c1)
+        # SI-R2.4 C5b: the re-initialisation that carries NO StationIndex has its own function, and it chooses nothing: the target is UNSET (the position search is gone)
+        cls.init_loop = re.search(r"private void SelectUnsetTarget\(\) \{ (.*?) \}", cls.c1)
         cls.ex = code(EXECUTION)
 
     # -- the drift guard -------------------------------------------------------------------------------------------------------------------------
@@ -154,40 +156,46 @@ class Pins(unittest.TestCase):
 
     # -- C02 / C03 / C17 / X06 : the target station is chosen again by POSITION after a jump ---------------------------------------------------------
     def test_CURRENT_pins_found_the_initialisation_loop(self):
-        self.assertIsNotNone(self.init_loop, "the initialisation loop of the target station is not in the audited shape")
-        self.assertIn("targetStationIndex = i;", self.init_loop.group(1))
-        self.assertIn("break;", self.init_loop.group(1))
+        # SI-R2.4 C5b: there is no loop any more - the index-less re-initialisation is the two statements of SelectUnsetTarget (no search, no candidate, no position)
+        self.assertIsNotNone(self.init_loop, "the UNSET initialisation of the target station is not in the audited shape")
+        self.assertEqual(self.init_loop.group(1), "targetStationIndex = stationList.Count; hasDoorOpenedAtTarget = false;")
+        self.assertNotIn("for (", self.init_loop.group(1))
+        self.assertNotIn("break;", self.init_loop.group(1))
 
     @jf0("C02", "CURRENT")
     def test_CURRENT_C02_after_a_jump_the_target_is_the_requested_index_so_the_second_of_two_same_position_stations_is_the_target(self):
-        """Phase ST-3b (FLIPPED from DANGER C02, its TARGET_B twin is this test): the re-initialisation that follows an official jump takes the ADOPTED index; the first-in-range search is
-        the one of a re-initialisation without an index and is unchanged."""
+        """Phase ST-3b (FLIPPED from DANGER C02, its TARGET_B twin is this test): the re-initialisation that follows an official jump takes the ADOPTED index. SI-R2.4 C5b: the re-initialisation
+        without an index is UNSET - there is no first-in-range search to be told apart from it any more, and the requested index plays no part in it."""
         body = self.init_loop.group(1)
-        self.assertEqual(len(re.findall(r"targetStationIndex = i;", body)), 1)
-        self.assertRegex(body, r"targetStationIndex = i; hasDoorOpenedAtTarget = [^;]+; break;$")           # the index-less search: the first hit ends it (unchanged)
-        self.assertNotIn("requestedStationIndex", body)                                                      # and the requested index plays no part in IT
+        self.assertEqual(len(re.findall(r"targetStationIndex = ", body)), 1)                                 # the one write of the index-less re-initialisation: Count (UNSET)
+        self.assertNotIn("requestedStationIndex", body)                                                      # the requested index plays no part in IT
         self.assertRegex(self.c1, r"targetStationIndex = requestedStationIndex;")                           # the jump path: the requested index is the target
-        self.assertIn("if (requestedStationIndex >= 0) SelectTargetByRequestedIndex(requestedStationIndex, location, areDoorsClosed); else if (!requestedTargetRefused) SelectTargetByPosition(location, areDoorsClosed);", self.c1)
+        self.assertIn("if (requestedStationIndex >= 0) SelectTargetByRequestedIndex(requestedStationIndex, location, areDoorsClosed); else if (!requestedTargetRefused) SelectUnsetTarget();", self.c1)
 
     @jf0("C03", "CURRENT")
-    def test_CURRENT_C03_the_back_range_of_50_m_of_the_index_less_search_is_inclusive_and_the_jump_path_never_reaches_it(self):
-        """Phase ST-3b (FLIPPED from DANGER C03): the inclusive 50 m range is a fact of the search of a re-initialisation without an index only."""
-        self.assertIn("if (stationList[i].Location >= location - 50.0)", self.c1)
-        self.assertNotIn("stationList[i].Location > location - 50.0", self.c1)
-        self.assertEqual(self.c1.count("location - 50.0"), 1)
-        self.assertNotIn("location - 50.0", self.jump_loop)                                                  # the jump branches never name the search
+    def test_CURRENT_C03_no_re_initialisation_searches_a_position_and_the_jump_path_never_names_the_unset_selection(self):
+        """Phase ST-3b (FLIPPED from DANGER C03): the inclusive 50 m back range was a fact of the search of a re-initialisation without an index only. SI-R2.4 C5b: that search is gone from the
+        product - no station is chosen from the vehicle position by any path (the only 50 m rule left is the door state of an ADOPTED station and the 100 m door-open detection)."""
+        self.assertEqual(self.c1.count("location - 50.0"), 0)
+        self.assertNotIn("stationList[i].Location >= location", self.c1)
+        self.assertNotIn("SelectTargetByPosition", self.c1)
+        self.assertEqual(self.c1.count("SelectUnsetTarget"), 2)                                              # the definition and its one call
+        self.assertNotIn("SelectUnsetTarget", self.jump_loop)                                                # the jump branches never name the UNSET selection
         self.assertNotIn("SelectTargetByPosition", self.jump_loop)
 
     @jf0("C04", "CURRENT")
-    def test_CURRENT_C04_the_door_open_detection_uses_100_m_and_the_initial_state_uses_50_m(self):
+    def test_CURRENT_C04_the_door_open_detection_uses_100_m_and_the_requested_state_uses_50_m_and_the_unset_state_has_the_doors_closed(self):
         self.assertIn("if (!areDoorsClosed && Math.Abs(nextStationLoc - location) < 100.0) hasDoorOpenedAtTarget = true;", self.c1)
-        self.assertIn("hasDoorOpenedAtTarget = !areDoorsClosed && Math.Abs(stationList[i].Location - location) < 50.0;", self.init_loop.group(1))
+        self.assertIn("hasDoorOpenedAtTarget = !areDoorsClosed && Math.Abs(stationList[requestedStationIndex].Location - location) < 50.0;", self.c1)   # the ADOPTED station: the 50 m door state
+        self.assertIn("hasDoorOpenedAtTarget = false;", self.init_loop.group(1))                                                                               # UNSET: no station, no door state
 
     @jf0("C05", "CURRENT")
-    def test_CURRENT_C05_when_no_station_is_in_range_the_target_index_is_left_as_it_was(self):
-        """Current has no 'no next station' value: after the loop the code only sets isInitialized (the Legacy timeline sets target = Count)."""
-        self.assertNotRegex(self.c1, r"targetStationIndex = (stationList\.Count|-1)")
-        self.assertRegex(self.c1, r"private void SelectTargetByPosition\(double location, bool areDoorsClosed\) \{ for \(int i = 0; i < stationList\.Count; i\+\+\) \{ if \(stationList\[i\]\.Location >= location - 50\.0\) \{ targetStationIndex = i; [^}]*break; \} \} \}")
+    def test_CURRENT_C05_a_re_initialisation_without_an_index_sets_the_target_index_to_count_whatever_the_candidates(self):
+        """SI-R2.4 C5b (replaces: 'when no station is in range the target index is left as it was'): the index-less re-initialisation writes Count (UNSET) - with no candidate, one or many, and never keeps the earlier
+        value; the Legacy timeline writes the same (target = list.Count)."""
+        self.assertEqual(len(re.findall(r"targetStationIndex = stationList\.Count;", self.c1)), 1)
+        self.assertNotRegex(self.c1, r"targetStationIndex = -1")
+        self.assertRegex(self.c1, r"private void SelectUnsetTarget\(\) \{ targetStationIndex = stationList\.Count; hasDoorOpenedAtTarget = false; \}")
 
     @jf0("C17", "CURRENT")
     def test_CURRENT_C17_a_station_behind_the_requested_one_within_50_m_does_not_replace_it(self):

@@ -697,7 +697,7 @@ namespace TsScoringLegacyTelemetryTests
 
         private static int Target(LegacyStationTimeline tl) { return tl.TargetIndex; }
 
-        [S3("N-35", "RequestTarget is one-shot: consumed once, expires over a Tick, cleared by Reset; other discontinuities stay position based", Red = "RequestTarget")]
+        [S3("N-35", "RequestTarget is one-shot: consumed once, expires over a Tick, cleared by Reset; every other discontinuity is UNSET (SI-R2.4: no position decides it)", Red = "RequestTarget")]
         internal static void N35(S3Ctx s)
         {
             double[] st = new double[] { 100.5, 1000.5, 1959.5, 2000.0, 3000.0 };
@@ -714,10 +714,10 @@ namespace TsScoringLegacyTelemetryTests
             Pr.Call(tl, "RequestTarget", 3, 2000.0);
             tl.MarkDiscontinuity();
             tl.Step(raw, st.Length, 2000.0, 0.0, 36200000, true);
-            s.Contract("request-not-kept", Target(tl) == 3, "the requested index 3 is the target although the position search would give 2", "" + Target(tl));
+            s.Contract("request-not-kept", Target(tl) == 3, "the requested index 3 is the target (no position decides it)", "" + Target(tl));
             tl.MarkDiscontinuity();
             tl.Step(raw, st.Length, 2000.0, 0.0, 36300000, true);
-            s.Contract("request-not-consumed", Target(tl) == 2, "the request was consumed: the next discontinuity is position based again", "" + Target(tl));
+            s.Contract("request-not-consumed", Target(tl) == st.Length, "the request was consumed: the next discontinuity carries no index and leaves the target UNSET (Count), the requested index is not kept", "" + Target(tl));
 
             Pr.Call(tl, "RequestTarget", 3, 2000.0);
             object wasPending = Pr.Call(tl, "ExpireRequestedTarget");
@@ -725,14 +725,14 @@ namespace TsScoringLegacyTelemetryTests
             s.Contract("expiry-not-reported", wasPending is bool && (bool)wasPending && notApplied != null && (string)notApplied == "reinit-not-applied", "expiring a pending request says so and reports reinit-not-applied", wasPending + " / " + notApplied);
             tl.MarkDiscontinuity();
             tl.Step(raw, st.Length, 2000.0, 0.0, 36400000, true);
-            s.Contract("request-not-expired", Target(tl) == 2, "an expired request is gone (a request that crossed a Tick without a station build)", "" + Target(tl));
+            s.Contract("request-not-expired", Target(tl) == st.Length, "an expired request is gone (a request that crossed a Tick without a station build): the discontinuity leaves the target UNSET", "" + Target(tl));
             object nothing = Pr.Call(tl, "ExpireRequestedTarget");
             s.Contract("expiry-of-nothing", nothing is bool && !(bool)nothing, "expiring nothing says so", "" + nothing);
 
             Pr.Call(tl, "RequestTarget", 3, 2000.0);
             tl.Reset();
             tl.Step(raw, st.Length, 2000.0, 0.0, 36500000, true);
-            s.Contract("request-survives-reset", Target(tl) == 2, "Reset() clears the request", "" + Target(tl));
+            s.Contract("request-survives-reset", Target(tl) == st.Length, "Reset() clears the request: the first Tick of the new instance leaves the target UNSET", "" + Target(tl));
 
             Pr.Call(tl, "RequestTarget", 9, 2000.0);
             tl.MarkDiscontinuity();
@@ -753,23 +753,52 @@ namespace TsScoringLegacyTelemetryTests
             s.Contract("location-refusal-falls-back", Target(tl) == before, "and the target is left alone", "was " + before + " now " + Target(tl));
         }
 
-        [S3("N-63", "re-initialisations that carry no index stay position based (first Tick, scenario change, station count change, manual time jump)", Kind = "GUARD")]
+        [S3("N-63", "re-initialisations that carry no index are UNSET (first Tick, scenario change, station count change, manual time jump), whatever the candidates and the earlier target (SI-R2.4 E-13 beta)", Kind = "GUARD")]
         internal static void N63(S3Ctx s)
         {
             double[] st = new double[] { 100.5, 1000.5, 1959.5, 2000.0, 3000.0 };
             IList<LegacyStationRaw> raw = Raw(st);
             LegacyStationTimeline tl = new LegacyStationTimeline();
+            // UNSET-L1: candidates many (two stations within 50 m behind the vehicle), one, none: the first Tick of a timeline that was never asked for a station leaves the target UNSET (Count)
             tl.Step(raw, st.Length, 1990.0, 0.0, 36000000, true);
-            s.Contract("first-tick-not-position-based", Target(tl) == 2, "the first Tick chooses by position (1959.5 is within 50 m behind 1990.0)", "" + Target(tl));
+            s.Contract("first-tick-not-unset", Target(tl) == st.Length, "the first Tick leaves the target UNSET (Count) although 1959.5 and 2000.0 are in range of 1990.0", "" + Target(tl));
+            LegacyStationTimeline one = new LegacyStationTimeline();
+            one.Step(raw, st.Length, 3040.0, 0.0, 36000000, true);
+            s.Contract("one-candidate-not-unset", Target(one) == st.Length, "with exactly one station in range (3000.0 for a vehicle at 3040.0) the target is still UNSET", "" + Target(one));
+            LegacyStationTimeline none = new LegacyStationTimeline();
+            none.Step(raw, st.Length, 9000.0, 0.0, 36000000, true);
+            s.Contract("no-candidate-not-unset", Target(none) == st.Length, "with no station in range (a vehicle at 9000 m) the target is UNSET", "" + Target(none));
+            // UNSET-L2: an earlier target is never kept by a discontinuity that carries no index (the target was the requested station 1)
+            LegacyStationTimeline kept = new LegacyStationTimeline();
+            Pr.Call(kept, "RequestTarget", 1, st[1]);
+            kept.Step(raw, st.Length, 500.0, 0.0, 36000000, true);
+            s.Premise(Target(kept) == 1, "the seed (station 1) is the target before the discontinuity", "" + Target(kept));
+            kept.MarkDiscontinuity();
+            kept.Step(raw, st.Length, 500.0, 0.0, 36100000, true);
+            s.Contract("earlier-target-kept", Target(kept) == st.Length, "a manual time jump leaves the target UNSET: the earlier target (1) is not kept", "" + Target(kept));
             tl.MarkDiscontinuity();
             tl.Step(raw, st.Length, 2500.0, 0.0, 36100000, true);
-            s.Contract("discontinuity-not-position-based", Target(tl) == 4, "a manual time jump chooses by position (first station at or after 2450)", "" + Target(tl));
+            s.Contract("discontinuity-not-unset", Target(tl) == st.Length, "a manual time jump leaves the target UNSET (the first station at or after 2450 is not chosen)", "" + Target(tl));
             tl.Reset();
             tl.Step(raw, st.Length, 50.0, 0.0, 36200000, true);
-            s.Contract("scenario-change-not-position-based", Target(tl) == 0, "after Reset (a scenario change) the choice is by position again", "" + Target(tl));
+            s.Contract("scenario-change-not-unset", Target(tl) == st.Length, "after Reset (a scenario change) the target is UNSET", "" + Target(tl));
             double[] six = new double[] { 100.5, 1000.5, 1959.5, 2000.0, 3000.0, 4000.0 };
             tl.Step(Raw(six), six.Length, 3500.0, 0.0, 36300000, true);
-            s.Contract("count-change-not-position-based", Target(tl) == 5, "a changed station count rebuilds and chooses by position", "" + Target(tl));
+            s.Contract("count-change-not-unset", Target(tl) == six.Length, "a changed station count rebuilds and leaves the target UNSET (the new Count)", "" + Target(tl));
+            // UNSET-L3: a station asked for by an official jump (P1) is the target, and an independent discontinuity after it is UNSET again (designed: nothing keeps it)
+            LegacyStationTimeline p1 = new LegacyStationTimeline();
+            p1.Step(raw, st.Length, 100.0, 0.0, 36000000, true);
+            p1.MarkDiscontinuity();
+            Pr.Call(p1, "RequestTarget", 3, st[3]);
+            p1.Step(raw, st.Length, 2000.0, 0.0, 36100000, true);
+            s.Premise(Target(p1) == 3, "the requested index is the target after the official jump", "" + Target(p1));
+            p1.MarkDiscontinuity();
+            p1.Step(raw, st.Length, 2000.0, 0.0, 36200000, true);
+            s.Contract("p1-then-discontinuity-not-unset", Target(p1) == st.Length, "an independent discontinuity after the official jump is UNSET again", "" + Target(p1));
+            // UNSET is not a door state: no station, no door-open flag (the NEXTLOC of an UNSET target is -1)
+            LegacyStationTimeline doors = new LegacyStationTimeline();
+            StationValues v = doors.Step(raw, st.Length, 1990.0, 0.0, 36000000, false);
+            s.Contract("unset-has-a-next-station", v.NextLoc == -1.0 && Target(doors) == st.Length, "an UNSET target shows no next station (NEXTLOC -1) even with the doors open near a station", "" + v.NextLoc);
         }
 
         // =====================================================================================================================================
@@ -1417,6 +1446,7 @@ namespace TsScoringLegacyTelemetryTests
             double[] st = new double[] { 0.5, 1000.5, 2000.0, 2000.0, 3000.0 };
             LxRig x = s.C.Own(S3.Rig(s, st));
             S3.Prime(s, x);
+            S3.SeedTarget(s, x, 1, st[1]);                     // SI-R2.4: the rig targets station 1 by a seed, so that a target that is KEPT can be told from UNSET below
             x.Api.Fail.Add("TryDoorsClosed");                  // the station part of the next Tick is skipped (the doors can not be read)
             byte[] rid = Cmd.Rid();
             RecView rv = S3.SendV2(x, "STA", S3.V2Now(x, "STA", 3, st[3], S3.NextTime()), rid);
@@ -1426,11 +1456,11 @@ namespace TsScoringLegacyTelemetryTests
             s.Contract(S3.NoV2, r != null && r.State == Ls.Abandoned && r.Reason == "reinit-not-applied", "the target was not set as requested: the command ends Abandoned(reinit-not-applied)", r == null ? "null" : r.Short);
             s.Contract(S3.NoV2, x.Sender.Calls == 0, "and no completion was announced", "" + x.Sender.Calls);
             x.Api.Fail.Remove("TryDoorsClosed");
-            // a later discontinuity that carries no index must choose by position: the request is not waiting for it
+            // a later discontinuity that carries no index leaves the target UNSET (STIDX -1): the request is not waiting for it, and the earlier target (1) is not kept
             x.Host.TimeMs += 5000;
             x.Api.TimeMs = x.Host.TimeMs;
             x.Tick(16);
-            s.Contract(S3.NoV2, S3.Tgt(x) == 2, "the next discontinuity chooses by position (index 2 at 2000.0), not the stale request (index 3)", "" + S3.Tgt(x));
+            s.Contract(S3.NoV2, S3.Tgt(x) == -1, "the next discontinuity leaves the target UNSET (-1): neither the stale request (index 3) nor the earlier target (index 1) is applied", "" + S3.Tgt(x));
         }
 
         [S3("N-72", "a v2 jump is refused BEFORE the vehicle moves when the host does not agree with the list on the location of the station", Red = S3.NoV2)]

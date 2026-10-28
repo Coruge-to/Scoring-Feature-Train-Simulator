@@ -90,7 +90,8 @@ FROZEN = {
     # Time Fix A changed LegacyStationTimeline.cs on purpose (the departure reader and the arrival fill-in, tests\test_timefix_a_terminal_arrival.py): the blob moved from 1bae94a1... (ST-3c)
     # Time Fix B2 changed LegacyStationTimeline.cs on purpose (the same branch, tests\test_timefix_b2_operational_stop_contract.py / Handshake\Tests\Test-TimeFixB2.ps1): the blob moved from 4bb9c312... (Time Fix A)
     # Time Fix B3 changed LegacyStationTimeline.cs on purpose (the same two comparisons, tests\test_timefix_b3_zero_speed_contract.py / Handshake\Tests\Test-TimeFixB3.ps1): the blob moved from 4554795a... (Time Fix B2)
-    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs": "d33ecdba3a4517cf3261731d532775a1a4b42b0e",
+    # SI-R2.4 (C5b) changed LegacyStationTimeline.cs on purpose (SelectTarget: the loop of the position search is gone, a re-initialisation that carries no StationIndex leaves target = list.Count; Handshake\Tests\LegacyJumpST3CTestCases.cs N-35 / N-63 / Handshake\Tests\Test-TimeFixB3.ps1): the blob moved from d33ecdba... (Time Fix B3)
+    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs": "83db89f99a32cd8f2df52c585000d79c7bdccbd0",
     # SI-R2.2-S2b (C3a) changed LegacyTelemetryExtension.cs on purpose (the read only adapter ILegacyOfficialTargetApi.ReadOfficialTarget and the E-9 rule text of the header; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 12a0f84a... (the commit before S2b)
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "ad89eb30b5b4f16fb36bef4824adbd734565bd7b",
     # SI-R2.2-S2b (C3a) changed LegacyTelemetrySession.cs on purpose (the ILegacyOfficialTargetApi port, the official field, the ten-argument constructor and the OFFTGT key after STIDX; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 5dd33902... (the commit before S2b)
@@ -108,7 +109,8 @@ FROZEN = {
     # Time Fix B2 changed Class1.cs on purpose (the operational stop leaves the target at once when the vehicle leaves, tests\test_timefix_b2_operational_stop_contract.py / Handshake\Tests\Test-TimeFixB2.ps1): the blob moved from b703adb0... (Time Fix A)
     # Time Fix B3 changed Class1.cs on purpose (BVE supplies exactly 0.0 while the train stands: speed == 0.0 is stopped, speed != 0.0 is moving; the 0.1 km/h band is gone, tests\test_timefix_b3_zero_speed_contract.py / Handshake\Tests\Test-TimeFixB3.ps1): the blob moved from 04a12011... (Time Fix B2)
     # SI-R2.2-S2b (C3b) changed Class1.cs on purpose (the OFFTGT part after STIDX in its own try / catch and the read only CreateOfficialTargetHost; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 4aa4aac5... (the commit before S2b)
-    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "e3f55d1509ed083b29f7243d5cbe90602f2ed1e0",
+    # SI-R2.4 (C5b) changed Class1.cs on purpose (a re-initialisation that carries no StationIndex leaves the target UNSET: SelectTargetByPosition became SelectUnsetTarget and its one call site, no position is searched; tests/test_stationindex_current_st3b.py / tests/test_jf1_current_csharp_source_pins.py / Handshake\Tests\Test-TimeFixB3.ps1): the blob moved from e3f55d15... (SI-R2.2-S2b C3b)
+    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "afc404e7898248dc2e3680ba4dca19cd89730ad6",
     "TsScoringPlugin/TsScoringPlugin/CurrentDataPlane.cs": "71b0ebaa6f52871ceb2a59456a2b527041241c46",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs": "3e0d3bffbb74e4a2ecc6d10d378a8b6e2788ae6f",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs": "8a54d6a14100e0021ca248d28369c335f965fafe",

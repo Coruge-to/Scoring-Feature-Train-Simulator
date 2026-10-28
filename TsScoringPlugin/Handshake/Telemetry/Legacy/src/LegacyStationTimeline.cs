@@ -74,7 +74,7 @@ namespace TSScoringPlugin.Telemetry
 
         // Phase ST-3c: the ONE-SHOT requested target of an official (v2) jump. The executor adopted a StationIndex; the re-initialisation that follows the jump targets exactly that station and
         // never searches by position. It is consumed by the first selection (whatever the verdict), expires at the end of the Tick that carried it, and is cleared by Reset(). A
-        // discontinuity without a request (the first Tick, a manual time jump, a changed station count, a new scenario) keeps the 50 m search below.
+        // discontinuity without a request (the first Tick, a manual time jump, a changed station count, a new scenario) leaves the target UNSET (SelectTarget below: no position is searched).
         internal const string RefusalIndexRange = "reinit-index-range";
         internal const string RefusalLocationMismatch = "reinit-location-mismatch";
         internal const string RefusalNotApplied = "reinit-not-applied";             // the Tick that carried the request never reached a selection (the station part was skipped): the target was NOT set as requested
@@ -419,23 +419,14 @@ namespace TSScoringPlugin.Telemetry
                 return;
             }
 
-            target = list.Count;     // no station at or after the vehicle (within 50 m behind it): there is no next station
+            target = list.Count;     // UNSET: a re-initialisation that carries no StationIndex chooses no station (no position is searched)
             hasDoorOpenedAtTarget = false;
-            for (int i = 0; i < list.Count; i++)
-            {
-                if (list[i].Location >= location - 50.0)
-                {
-                    target = i;
-                    hasDoorOpenedAtTarget = !areDoorsClosed && Math.Abs(list[i].Location - location) < 50.0;
-                    break;
-                }
-            }
         }
 
         /// <summary>
         /// Phase ST-3c: the ONE selection that follows an official jump: the adopted index, or a refusal with a reason. It consumes the request whatever the verdict, never looks at the
         /// vehicle position to choose a station and never falls back to the search: a list (re-read after the jump) that can no longer carry the index or its location leaves the target as it
-        /// was and reports why (TakeRequestRefusal). The door state of the chosen station is the one the position search gives its station.
+        /// was and reports why (TakeRequestRefusal). The door state of the chosen station is the open-doors-within-50-m rule of the vehicle at that station.
         /// </summary>
         private void SelectRequestedTarget(double location, bool areDoorsClosed)
         {

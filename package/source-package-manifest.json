@@ -94,7 +94,7 @@
     {"set": "python", "path": "telemetry_receiver_directory.py", "blob_sha256": "FC91A669753ADB33D48EB30C634377558509E53AB8A5FC4CF9131FBF141A89E1", "blob_size": 5469, "blob_eol": "lf"},
     {"set": "python", "path": "utils.py", "blob_sha256": "133C3E30F9F16D499267CDCF2C880D380B4BE772B8497D70D1F0A535C1A77001", "blob_size": 8508, "blob_eol": "lf"},
     {"set": "current", "path": "TsScoringPlugin/TsScoringPlugin/AtsLoggerPlugin.cs", "blob_sha256": "53396449EBDD0FB1025F0E9B6507F957653C0CBAFC5F6009A9FAA309AEDBA229", "blob_size": 384702, "blob_eol": "lf"},
-    {"set": "current", "path": "TsScoringPlugin/TsScoringPlugin/Class1.cs", "blob_sha256": "9130AB56E5576451D57C38CBBF40B6B95450FE0B0BE426755AF779F45DB4A6B4", "blob_size": 94815, "blob_eol": "lf"},
+    {"set": "current", "path": "TsScoringPlugin/TsScoringPlugin/Class1.cs", "blob_sha256": "127F94292DD6FF35937E172B9D56723641040B8CF113FCCA7254990360A0E268", "blob_size": 94509, "blob_eol": "lf"},
     {"set": "current", "path": "TsScoringPlugin/TsScoringPlugin/CurrentDataPlane.cs", "blob_sha256": "69E4C447357B9988363F14F87ED36A0BCC24934077821F8BD9BFD2DED81EDAEF", "blob_size": 30270, "blob_eol": "lf"},
     {"set": "current", "path": "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs", "blob_sha256": "E0D5992E5B4D3EE088BCCC5B06F9A48465A59401899EC72018E1A042FCD6F68D", "blob_size": 20784, "blob_eol": "lf"},
     {"set": "current", "path": "TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs", "blob_sha256": "8C6C66B9456AE89FB5D30464D69DE5E7AB70771F613D904C001396A5C42196D9", "blob_size": 20697, "blob_eol": "lf"},
@@ -113,7 +113,7 @@
     {"set": "legacy", "path": "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpEndpoint.cs", "blob_sha256": "5C2016BF3D278F5EDB146BE90AF020D00784D13F6ED0A4D2DC81F3724FF79F3E", "blob_size": 13052, "blob_eol": "lf"},
     {"set": "legacy", "path": "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpExecutor.cs", "blob_sha256": "DA3257E3E4CBFDAC2D03028E626101E7C348F9F9EB0CBA1E97DF4832C8A19486", "blob_size": 46377, "blob_eol": "lf"},
     {"set": "legacy", "path": "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyScoringProbe.cs", "blob_sha256": "071D64BE02C5C9CAA7D08956E31103B32BB291C4FA8D070F4C756DA8BD3766A8", "blob_size": 42538, "blob_eol": "lf"},
-    {"set": "legacy", "path": "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs", "blob_sha256": "5A0DE8056D0E6E246B58DD1711D403C344EADDC6FA051DA5A91BAC30232EC973", "blob_size": 28824, "blob_eol": "lf"},
+    {"set": "legacy", "path": "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs", "blob_sha256": "948087E7F7A6581E72B2C15A79F1C91B6F29FC4CD706D5E2A712A7933A5E8C29", "blob_size": 28561, "blob_eol": "lf"},
     {"set": "legacy", "path": "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs", "blob_sha256": "6E757C0A06D126EE42EB781A68D958D817CF01A7E28955880F67FE46746D16AF", "blob_size": 54054, "blob_eol": "lf"},
     {"set": "legacy", "path": "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetrySession.cs", "blob_sha256": "66B42540EB8D87C27EE2E239677163EE574149E1C8FBA1AF11A95F1BEA42ED87", "blob_size": 54483, "blob_eol": "lf"},
     {"set": "shared", "path": "TsScoringPlugin/Handshake/Telemetry/Shared/DataPlaneProtocol.cs", "blob_sha256": "0F6DE268B785462BD2E32F7161F1BDA69FBFEC4515752A834FBE4DFD242AE13B", "blob_size": 10812, "blob_eol": "lf"},
@@ -124,5 +124,5 @@
     {"set": "shared", "path": "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryContract.cs", "blob_sha256": "ABDBBF4C5BA1567AABC600B28283C87F30BCB4019D82E2A1574B9C847E63B694", "blob_size": 8953, "blob_eol": "lf"},
     {"set": "shared", "path": "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs", "blob_sha256": "9D6C47493457FD840E8CA5186C8E16181F0B5CF85C10721087C9098DD6644680", "blob_size": 6615, "blob_eol": "lf"}
   ],
-  "fingerprint": "4CAABDF798780679B46189F7C5DDA82E61B757A8C9C1EAF83C281C46A83A63AD"
+  "fingerprint": "8DF4EDE0EA7EA1D147F01D17DE690D25259AC1E74A1C2E1AD6BB51B4264F6579"
 }

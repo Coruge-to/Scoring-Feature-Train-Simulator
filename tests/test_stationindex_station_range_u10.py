@@ -183,7 +183,8 @@ class C_TheRejectedListIsNeverPublished(unittest.TestCase):
         start = C1.index(gate)
         end = C1.index("double signalLimit = 1000.0;", start)
         part = C1[start:end]
-        for inside in ("stationList.Clear();", "lastStaListPacket = \"STALIST:\"", "stidxListReady = true;", "isInitialized = true;", "SelectTargetByPosition(location, areDoorsClosed);",
+        # SI-R2.4 C5b: "SelectUnsetTarget();" replaces SelectTargetByPosition(location, areDoorsClosed); (the index-less re-initialisation is UNSET now)
+        for inside in ("stationList.Clear();", "lastStaListPacket = \"STALIST:\"", "stidxListReady = true;", "isInitialized = true;", "SelectUnsetTarget();",
                        "if (!initialStaListSent ||", "var targetSt = stationList[targetStationIndex];"):
             contract(inside in part, "N-U10-05", "LATCH-DOES-NOT-GATE-THE-STATION-PART", "outside the gated part or missing: " + inside)
         # the gate is a statement of its own: the try and its catch are the ones of before (a rejection that throws out of the builder is swallowed there, after it was diagnosed)
@@ -243,11 +244,11 @@ class D_Guards(unittest.TestCase):
         self.assertEqual(len(re.findall(r"\bnew (?:System\.Timers\.)?Timer\(", C1)), 1)
         self.assertEqual(len(re.findall(r"ThreadPool|BackgroundWorker|Parallel\.", C1)), 0)
 
-    @u10("G-U10-05", "GUARD", note="the position search, the 100 m door test and the 50 m search stay where ST-2c / ST-3b left them (U10 does not touch the target)")
+    @u10("G-U10-05", "GUARD", note="the index-less selection, the 100 m door test and the requested selection stay where ST-3b / SI-R2.4 left them (U10 does not touch the target); SI-R2.4 C5b: the 50 m position search is gone (count 0), the index-less selection is UNSET")
     def test_GUARD_the_target_state_machine_is_untouched(self):
-        self.assertEqual(C1.count("location - 50.0"), 1)
+        self.assertEqual(C1.count("location - 50.0"), 0)
         self.assertIn("if (!areDoorsClosed && Math.Abs(nextStationLoc - location) < 100.0) hasDoorOpenedAtTarget = true;", C1)
-        self.assertIn("if (requestedStationIndex >= 0) SelectTargetByRequestedIndex(requestedStationIndex, location, areDoorsClosed); else if (!requestedTargetRefused) SelectTargetByPosition(location, areDoorsClosed);", C1)
+        self.assertIn("if (requestedStationIndex >= 0) SelectTargetByRequestedIndex(requestedStationIndex, location, areDoorsClosed); else if (!requestedTargetRefused) SelectUnsetTarget();", C1)
 
 
 if __name__ == "__main__":
