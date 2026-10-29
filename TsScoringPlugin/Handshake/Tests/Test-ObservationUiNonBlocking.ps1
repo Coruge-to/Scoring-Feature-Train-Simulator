@@ -568,6 +568,14 @@ foreach ($t in $targets) {
         $m.Dispose()
         Row ('P-handle-lifetime-' + $t.Name) 'RED' $ok ($detail -join ' ')
     } else { Row ('P-handle-lifetime-' + $t.Name) 'RED' $false 'TryAcquireNoWait helper does not exist' }
+    # P-handle-refcount: the SafeHandle reference taken for each call is given back (AddRef/Release symmetric): after many calls and a Dispose the handle is really closed
+    if ($acquire) {
+        $pidCounter++; $nameR = 'Local\TSScoringPlugin.stage0.r.' + $pidCounter
+        $mR = [Threading.Mutex]::new($false, $nameR); $hR = $mR.SafeWaitHandle
+        for ($k = 0; $k -lt 200; $k++) { $r = $acquire.Invoke($null, @($mR)).ToString(); if ($r -eq 'Acquired' -or $r -eq 'Abandoned') { $mR.ReleaseMutex() } }
+        $mR.Dispose()
+        Row ('P-handle-refcount-' + $t.Name) 'RED' ($hR.IsClosed) ("handle closed after 200 TryAcquireNoWait calls and Dispose: $($hR.IsClosed)")
+    } else { Row ('P-handle-refcount-' + $t.Name) 'RED' $false 'TryAcquireNoWait helper does not exist' }
     # P-pinvoke-inventory: exactly one P/Invoke declaration in the log type, and it is WaitForSingleObject (Bridge assembly: the only one in the whole DLL)
     $names = @(PInvokeNamesOf $t.Type)
     $asmWide = -1

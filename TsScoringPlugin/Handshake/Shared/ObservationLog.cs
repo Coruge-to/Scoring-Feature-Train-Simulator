@@ -2,8 +2,10 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using Microsoft.Win32.SafeHandles;
 
 // ============================================================================
 // PHASE C1 OBSERVATION BUILD - shared diagnostic log (compiled into BOTH DLLs; no shared assembly).
@@ -19,15 +21,37 @@ using System.Threading;
 //
 // Privacy: only counters, flags, ids, timings and exception TYPE names are logged. Never a message text, path, scenario / vehicle /
 // machine / user name. Failure policy: nothing in this class can throw into BVE; a failed write only increments a drop counter.
+//
+// SI-R5.3 R53-04A (UI thread contract): a blocking wait on an STA (UI) thread lets the CLR dispatch window messages, which re-entered BVE's paint code
+// inside the scenario-opened handler. Therefore an STA caller NEVER waits here: it tries the in-process lock with Monitor.TryEnter(sync, 0) and the
+// cross-DLL mutex with one non-pumping Win32 WaitForSingleObject(handle, 0). If either is busy the line is not written; it is counted in
+// "dropped" and shown by the next successful write as droppedBefore=N (the existing mechanism). Mutex.WaitOne(0) is NOT usable on STA (it dispatches
+// messages on contention). Every other thread keeps the old behaviour: it waits up to LockWaitMs. Known diagnostic limit: a last drop that is not followed
+// by a successful write is not visible in the log.
 // ============================================================================
 namespace TSScoringPlugin.Handshake
 {
+    /// <summary>Result of the one non-waiting attempt to own the cross-DLL log mutex.</summary>
+    internal enum NoWaitResult
+    {
+        Acquired,
+        Abandoned,   // the previous owner died: the mutex is OURS now
+        Busy,
+        Failed,
+    }
+
     internal static class ObservationLog
     {
         internal const string FileName = "TSScoring-Phase-C1-Observation.log";
         internal const string FolderName = "Downloads";
         internal const long DefaultMaxBytes = 4L * 1024 * 1024;
         internal const int LockWaitMs = 30;
+
+        // Win32 wait results (the only P/Invoke of this log: one declaration, compiled identically into the Current Bridge, the Legacy Bridge and the Caller)
+        private const uint WaitObject0 = 0x00000000;
+        private const uint WaitAbandoned = 0x00000080;
+        private const uint WaitTimeout = 0x00000102;
+        private const uint WaitFailed = 0xFFFFFFFF;
 
 #if CALLER_DLL
         internal const string Source = "Caller";
@@ -49,6 +73,48 @@ namespace TSScoringPlugin.Handshake
         private static EventWaitHandle runMarker;
         private static long dropped;
         private static bool capped;
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+
+        /// <summary>WAIT_OBJECT_0 -> Acquired, WAIT_ABANDONED -> Abandoned (owned), WAIT_TIMEOUT -> Busy, WAIT_FAILED and anything else -> Failed.</summary>
+        internal static NoWaitResult ClassifyWaitResult(uint result)
+        {
+            switch (result)
+            {
+                case WaitObject0: return NoWaitResult.Acquired;
+                case WaitAbandoned: return NoWaitResult.Abandoned;
+                case WaitTimeout: return NoWaitResult.Busy;
+                default: return NoWaitResult.Failed; // WaitFailed (0xFFFFFFFF) and every unknown value
+            }
+        }
+
+        /// <summary>
+        /// Tries to own the mutex WITHOUT waiting and without letting the CLR pump messages. The handle is kept alive by a SafeHandle reference for the
+        /// duration of the call (a disposed mutex gives Failed, never an exception). The caller releases the mutex only after Acquired / Abandoned.
+        /// </summary>
+        internal static NoWaitResult TryAcquireNoWait(Mutex mutex)
+        {
+            SafeWaitHandle handle = null;
+            bool added = false;
+            try
+            {
+                handle = mutex.SafeWaitHandle;
+                handle.DangerousAddRef(ref added);
+                return ClassifyWaitResult(WaitForSingleObject(handle.DangerousGetHandle(), 0));
+            }
+            catch
+            {
+                return NoWaitResult.Failed;
+            }
+            finally
+            {
+                if (added)
+                {
+                    handle.DangerousRelease();
+                }
+            }
+        }
 
         internal static string Version
         {
@@ -84,7 +150,7 @@ namespace TSScoringPlugin.Handshake
             {
                 ready = false;
                 capped = false;
-                dropped = 0;
+                Interlocked.Exchange(ref dropped, 0);
                 path = null;
                 pid = 0;
                 try { if (fileLock != null) { fileLock.Dispose(); } } catch { }
@@ -101,9 +167,35 @@ namespace TSScoringPlugin.Handshake
             {
                 long qpc = Stopwatch.GetTimestamp();
                 DateTime now = DateTime.Now;
+                if (Thread.CurrentThread.GetApartmentState() == ApartmentState.STA)
+                {
+                    // UI thread: never wait (a wait would let the CLR dispatch window messages into BVE's code)
+                    bool entered = false;
+                    try
+                    {
+                        entered = Monitor.TryEnter(sync, 0);
+                        if (!entered)
+                        {
+                            Interlocked.Increment(ref dropped);
+                            return;
+                        }
+
+                        WriteLocked(now, qpc, track, evt, detail, true);
+                    }
+                    finally
+                    {
+                        if (entered)
+                        {
+                            Monitor.Exit(sync);
+                        }
+                    }
+
+                    return;
+                }
+
                 lock (sync)
                 {
-                    WriteLocked(now, qpc, track, evt, detail);
+                    WriteLocked(now, qpc, track, evt, detail, false);
                 }
             }
             catch
@@ -112,7 +204,7 @@ namespace TSScoringPlugin.Handshake
             }
         }
 
-        private static void WriteLocked(DateTime now, long qpc, string track, string evt, string detail)
+        private static void WriteLocked(DateTime now, long qpc, string track, string evt, string detail, bool ui)
         {
             if (!ready)
             {
@@ -142,19 +234,32 @@ namespace TSScoringPlugin.Handshake
             {
                 if (fileLock != null)
                 {
-                    try
+                    if (ui)
                     {
-                        locked = fileLock.WaitOne(LockWaitMs);
+                        NoWaitResult acquired = TryAcquireNoWait(fileLock);
+                        locked = acquired == NoWaitResult.Acquired || acquired == NoWaitResult.Abandoned;
+                        if (!locked)
+                        {
+                            Interlocked.Increment(ref dropped); // busy or failed: do not wait, do not write
+                            return;
+                        }
                     }
-                    catch (AbandonedMutexException)
+                    else
                     {
-                        locked = true; // the other DLL's thread died while holding it: we own it now
-                    }
+                        try
+                        {
+                            locked = fileLock.WaitOne(LockWaitMs);
+                        }
+                        catch (AbandonedMutexException)
+                        {
+                            locked = true; // the other DLL's thread died while holding it: we own it now
+                        }
 
-                    if (!locked)
-                    {
-                        dropped++;
-                        return;
+                        if (!locked)
+                        {
+                            Interlocked.Increment(ref dropped);
+                            return;
+                        }
                     }
                 }
 
@@ -188,9 +293,10 @@ namespace TSScoringPlugin.Handshake
                         sb.Append(' ').Append(detail);
                     }
 
-                    if (dropped > 0)
+                    long droppedNow = Interlocked.Read(ref dropped);
+                    if (droppedNow > 0)
                     {
-                        pendingDropped = dropped;
+                        pendingDropped = droppedNow;
                         sb.Append(" droppedBefore=").Append(pendingDropped);
                     }
 
@@ -199,22 +305,22 @@ namespace TSScoringPlugin.Handshake
 
                 if (AppendText(sb.ToString()))
                 {
-                    dropped -= pendingDropped;
+                    Interlocked.Add(ref dropped, -pendingDropped);
                 }
                 else
                 {
-                    dropped++;
+                    Interlocked.Increment(ref dropped);
                 }
             }
             catch
             {
-                dropped++;
+                Interlocked.Increment(ref dropped);
             }
             finally
             {
                 if (locked && fileLock != null)
                 {
-                    try { fileLock.ReleaseMutex(); } catch { }
+                    try { fileLock.ReleaseMutex(); } catch { } // only after Acquired / Abandoned / WaitOne success
                 }
             }
         }
