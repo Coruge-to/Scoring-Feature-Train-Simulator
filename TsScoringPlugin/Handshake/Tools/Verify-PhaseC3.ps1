@@ -91,8 +91,10 @@ function Inspect([string]$dll, [string[]]$mustBeAbsent) {
     return [pscustomobject]@{ Present = $present; Version = $v; Asm = $asm }
 }
 
+# SI-R5.3 (PIN): OLD token 'Microsoft.Win32' (meant: registry / system hooks). NEW tokens 'Microsoft.Win32.Registry' and 'Microsoft.Win32.SystemEvents'. Reason: the shared observation log now uses a SafeHandle
+# (namespace Microsoft.Win32.SafeHandles) for its limited non-pumping mutex helper; the registry itself is still banned by the 'Registry' token. Every other Microsoft.Win32.* use stays forbidden in the source check below.
 # File I/O (FileStream, Mutex) is NOT in these lists on purpose: since Phase C1 it exists, but only in Shared\ObservationLog.cs (checked at source level below).
-$common = 'AtsLogger', 'AtsEx', 'Python', 'python', 'UdpClient', 'Sockets', 'System.Net', 'TcpClient', 'HttpClient', 'WebClient', 'Registry', 'Microsoft.Win32', 'StreamWriter', 'StreamReader', 'WriteAllText', 'AppendAllText', 'ReadAllText', 'Preferences', 'InputPlugins', 'SetWindowsHookEx', 'keyboard', 'BveDllInventory', 'RuntimeProfile', 'SHA256', 'HashAlgorithm', 'FindWindow', 'SetWindowLong', 'NamedPipe', 'Global\', 'ProcessStartInfo', 'ShellExecute', 'CreateProcess', 'Launcher', 'main.py'
+$common = 'AtsLogger', 'AtsEx', 'Python', 'python', 'UdpClient', 'Sockets', 'System.Net', 'TcpClient', 'HttpClient', 'WebClient', 'Registry', 'Microsoft.Win32.Registry', 'Microsoft.Win32.SystemEvents', 'StreamWriter', 'StreamReader', 'WriteAllText', 'AppendAllText', 'ReadAllText', 'Preferences', 'InputPlugins', 'SetWindowsHookEx', 'keyboard', 'BveDllInventory', 'RuntimeProfile', 'SHA256', 'HashAlgorithm', 'FindWindow', 'SetWindowLong', 'NamedPipe', 'Global\', 'ProcessStartInfo', 'ShellExecute', 'CreateProcess', 'Launcher', 'main.py'
 # Phase E3: the Caller now starts the application, so these five are allowed in the Caller DLL only (the Bridge list keeps them; the source checks below name the two Caller files that may use them)
 $e3CallerAllowed = 'Python', 'python', 'ProcessStartInfo', 'Launcher', 'main.py', 'ShellExecute' # ShellExecute = the member name UseShellExecute, which the code sets to false
 $callerAbsent = @($common | Where-Object { $_ -notin $e3CallerAllowed }) + @('BveEx.', 'BveEX.', 'BveTypes', 'PluginHost')
@@ -127,6 +129,10 @@ function PInvokeNames($asm) {
 $cPinvoke = PInvokeNames $ci.Asm
 $bPinvoke = PInvokeNames $bi.Asm
 Check 'Caller P/Invoke is user32 MessageBoxW only; Bridge has none' ((($cPinvoke -join ',') -eq 'MessageBoxW') -and ($bPinvoke.Count -eq 0))
+# SI-R5.3 (PIN) - OLD contract (the line above, already drifted for the Caller since the F11 observer): the Bridge has no P/Invoke. NEW contract (the two checks below): the shared observation log may declare ONE limited
+# kernel32 WaitForSingleObject helper (timeout 0, SafeHandle lifetime) in each of the three DLLs; every other DllImport stays forbidden (see also the static test test_red_p_pinvoke_helper_contract).
+Check 'SI-R5.3 limited P/Invoke helper: the Current Bridge DLL has exactly one P/Invoke, kernel32 WaitForSingleObject (Shared\ObservationLog.cs); every other DllImport stays forbidden' (($bPinvoke -join ',') -eq 'WaitForSingleObject')
+Check 'SI-R5.3 limited P/Invoke helper: the Caller DLL declares WaitForSingleObject once (the same shared helper) in addition to its own existing P/Invokes' (@($cPinvoke | Where-Object { $_ -eq 'WaitForSingleObject' }).Count -eq 1)
 
 Write-Host '==== source checks (comment lines are skipped) ===='
 # Phase L1: this script verifies the CURRENT BveEX product only. The AtsEX legacy adapter (Bridge\Legacy\) has its own verification (Tools\Verify-PhaseL1.ps1).
@@ -144,7 +150,7 @@ function OnlyIn([string]$pattern, [string[]]$allowedRelative) {
     $bad = @($hits | Where-Object { $rel = ($_ -split ':')[0]; $rel -notin $allowedRelative })
     return [pscustomobject]@{ Hits = $hits; Bad = $bad }
 }
-foreach ($p in 'UdpClient', 'TcpClient', 'Socket', 'Registry', 'Microsoft\.Win32', 'SetWindowsHookEx', 'Thread\.Sleep', 'System\.Timers', 'NamedPipe', 'Global\\\\') {
+foreach ($p in 'UdpClient', 'TcpClient', 'Socket', 'Registry', 'Microsoft\.Win32(?!\.SafeHandles)', 'SetWindowsHookEx', 'Thread\.Sleep', 'System\.Timers', 'NamedPipe', 'Global\\\\') {
     $h = SrcHits $p
     Check ("source: '$p' absent from all sources") ($h.Count -eq 0)
 }
@@ -210,13 +216,18 @@ $cnt = OnlyIn '\bmain\.py\b|python' $e3Files
 Check 'Python is neither started nor named in any source line outside the two Phase E3 Caller files' ($cnt.Bad.Count -eq 0)
 
 Write-Host '==== Phase C3 ScenarioReady checks ===='
-# the C1 observation contract: the observer and the log writer are byte-identical to Phase C1
+# SI-R5.3 (PIN) - OLD contract: the observer and the log writer are byte-identical to Phase C1.
+#                 NEW contract: they are pinned to the SI-R5.3 fix blobs below (A prime: STA non-blocking Write + ONE limited kernel32 WaitForSingleObject helper;
+#                 C prime: log lines are built as immutable payloads inside the gate and delivered after it). The C1 observation contract (Track A/B lines, candidates A-F,
+#                 TICK_GAP, log file name and format) is no longer a byte identity; it is guarded by tests\test_observation_ui_contract_static.py (external log contract tokens,
+#                 event vocabulary, no new event name or key) and Tests\Test-ObservationUiNonBlocking.ps1. Pins = LF-normalised SHA-256 of the committed blobs (generated, not typed).
+$si53Pins = @{ 'Bridge\src\ScenarioObserver.cs' = 'A0232B030E03B802180AF82FB7187F6B93A597B247D8C22E2D8E8B80B5168C00'; 'Shared\ObservationLog.cs' = 'FF967810D0F4367DE5D2A1CB82FD35715F1163225D88A85022ABED64C8151765' }
 foreach ($rel in 'Bridge\src\ScenarioObserver.cs', 'Shared\ObservationLog.cs') {
     $c1Text = GitText 'Bridge\src\ScenarioObserver.cs' $rel
     $h1 = if ($c1Text) { Sha $c1Text } else { 'PHASE-C1-COMMIT-NOT-FOUND' }
     $h3 = Sha (WorkText $rel)
-    "$rel sha256 (LF-normalised) now / Phase C1 commit: $h3 / $h1"
-    Check "$rel is identical to the Phase C1 commit (observation contract: Track A/B lines, candidates A-F, TICK_GAP, log file name and format)" ($h1 -eq $h3)
+    "$rel sha256 (LF-normalised) now / Phase C1 commit / SI-R5.3 pin: $h3 / $h1 / $($si53Pins[$rel])"
+    Check "$rel is pinned to the SI-R5.3 fix blob (commit 3ca6ddb; the Phase C1 byte identity is replaced, see the comment above)" ($si53Pins[$rel] -eq $h3)
 }
 $sr = SrcHits 'ScenarioReady'
 $srAllowed = 'Bridge\src\ScenarioObserver.cs', 'Bridge\src\ScenarioReadyTracker.cs', 'Bridge\src\ScenarioReadyPublisher.cs', 'Bridge\src\TsScoringBridgePrototype.cs', 'Bridge\src\AssemblyInfo.cs', 'Caller\src\AssemblyInfo.cs', 'Caller\src\HandshakeSession.cs', 'Caller\src\DrivingActivityState.cs', 'Shared\HandshakeProtocol.cs'

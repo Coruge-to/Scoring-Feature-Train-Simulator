@@ -222,7 +222,9 @@ function TokenHits([string]$dll, [string[]]$tokens) {
     foreach ($tok in $tokens) { $c = ([regex]::Matches($ascii, [regex]::Escape($tok))).Count + ([regex]::Matches($utf16, [regex]::Escape($tok))).Count + ([regex]::Matches($utf16b, [regex]::Escape($tok))).Count; if ($c -gt 0) { $present += $tok } }
     return $present
 }
-$bridgeBad = 'Python', 'UdpClient', 'TcpClient', 'Sockets', 'Registry', 'Microsoft.Win32', 'SetWindowsHookEx', 'MessageBox', 'DllImport', 'ProcessStartInfo', 'SendInput', 'keybd_event', 'PostMessage', 'GetAsyncKeyState', 'NamedPipe', 'Global\', 'AtsLoggerPlugin', 'main.py', 'System.Reflection.Emit', 'Activator', 'GetTypes'
+# SI-R5.3 (PIN): OLD token 'Microsoft.Win32' -> NEW 'Microsoft.Win32.Registry' + 'Microsoft.Win32.SystemEvents' (the shared log uses the SafeHandle namespace Microsoft.Win32.SafeHandles; the registry is still banned by 'Registry'). The P/Invoke ban itself is unchanged here:
+# the one limited WaitForSingleObject helper has no DllImport token in the metadata and is pinned by Verify-PhaseC3 / Verify-PhaseL1.
+$bridgeBad = 'Python', 'UdpClient', 'TcpClient', 'Sockets', 'Registry', 'Microsoft.Win32.Registry', 'Microsoft.Win32.SystemEvents', 'SetWindowsHookEx', 'MessageBox', 'DllImport', 'ProcessStartInfo', 'SendInput', 'keybd_event', 'PostMessage', 'GetAsyncKeyState', 'NamedPipe', 'Global\', 'AtsLoggerPlugin', 'main.py', 'System.Reflection.Emit', 'Activator', 'GetTypes'
 Check 'neither Bridge DLL contains a process, socket, UDP, registry, hook, key, P/Invoke, reflection or Python token' ((@(TokenHits $curDll $bridgeBad).Count -eq 0) -and (@(TokenHits $legDll $bridgeBad).Count -eq 0))
 Check 'the Caller DLL contains no key-sending API (SendInput / keybd_event / PostMessage / SendMessage / GetAsyncKeyState / SetForegroundWindow)' (@(TokenHits $callerDll @('SendInput', 'keybd_event', 'PostMessage', 'SendMessage', 'GetAsyncKeyState', 'SetForegroundWindow', 'mouse_event')).Count -eq 0)
 Check 'both Bridge DLLs carry the control plane type (HandshakeControlPlane) with the same member list' (& {

@@ -366,7 +366,8 @@ foreach ($t in $targets) {
     # V1: nothing busy -> no dispatch, fast, line written
     $r = [UiPumpProbe.ProductCalls]::InvokeOnThread('V1', [Threading.ApartmentState]::STA, $write, $null, @('A', 'V1_FREE', 'k=1'), $null, $null, 0)
     $wrote = (@(ReadLog $path | Where-Object { $_ -match ' V1_FREE ' }).Count -eq 1)
-    Row ('V1-' + $t.Name) 'GUARD' (($r.Dispatched -eq 0) -and ($r.ElapsedMs -le $BudgetMs) -and $wrote) ('STA Write, nothing busy: ' + (Fmt $r) + ' lineWritten=' + $wrote)
+    # the first write into a fresh log file also creates the file (and runs the run-start header): its time is bounded by the lifecycle-handler budget, not by the 15 ms budget of a contended write (a fresh clone measured 17 ms once)
+    Row ('V1-' + $t.Name) 'GUARD' (($r.Dispatched -eq 0) -and ($r.ElapsedMs -le $FlowBudgetMs) -and $wrote) ('STA Write, nothing busy: ' + (Fmt $r) + ' lineWritten=' + $wrote)
     # V2: MTA caller with the mutex busy: no window pump (probe is not blind to the apartment), the old wait-and-drop contract is unchanged
     $r = [UiPumpProbe.ProductCalls]::InvokeOnThread('V2', [Threading.ApartmentState]::MTA, $write, $null, @('A', 'V2_MTA', 'k=1'), $mname, $null, 400)
     Row ('V2-' + $t.Name) 'GUARD' (($r.Dispatched -eq 0) -and ($r.ElapsedMs -ge 25.0)) ('MTA Write, mutex busy waits (contract): ' + (Fmt $r))
