@@ -585,36 +585,31 @@ class E_Static(unittest.TestCase):
                 if isinstance(n, ast.Compare) and isinstance(n.left, ast.Call) and getattr(n.left.func, "id", "") == "abs" and isinstance(n.ops[0], ast.Lt) \
                         and isinstance(n.comparators[0], ast.Constant) and n.comparators[0].value == 1.0 and "location" in ast.unparse(n.left):
                     sites[fn.name] = sites.get(fn.name, 0) + 1
-        self.assertEqual(sites, {"evaluate_departure": 1})        # Phase SI-R5.2-B: P01, P04, P05 are gone; only P02 (Stage C) is left
+        self.assertEqual(sites, {})        # Phase SI-R5.2-C: P02 is gone too (SI-R5.2-B: P01, P04, P05; SI-R5.2-A: P03) - no 1 m lookup is left
 
-    def test_the_global_close_guard_counts_the_one_old_lookup_of_stage_c(self):
+    def test_the_global_close_guard_finds_no_old_lookup_after_stage_c(self):
         import red_si_r5_global_close_guard as G
         found = G.scan_python(self.text, "scoring_logic.py")
-        self.assertEqual(sorted(k for k, _ in found), ["F1", "F5"])        # Phase SI-R5.2-B: 4 -> 1 (P02 only)
-        owners = set()
-        for _, line in found:
-            for fn in (n for n in self.tree.body if isinstance(n, ast.FunctionDef)):
-                if fn.lineno <= line <= fn.end_lineno:
-                    owners.add(fn.name)
-        self.assertEqual(owners, {"evaluate_departure"})
+        self.assertEqual(found, [])        # Phase SI-R5.2-C: 1 -> 0 (P02)
         self.assertEqual(G.ALLOW_PY, {})
         for name in ("station_identity.py", "main.py", "managed_input.py"):
             self.assertEqual(G.scan_python(read_src(name), name), [], name)
 
-    def test_the_characterization_pins_stage_a_and_b_are_done(self):
+    def test_the_characterization_pins_stage_a_b_and_c_are_done(self):
         import test_si_r5_characterization as T
-        self.assertEqual(T.STAGE_DONE, {"A", "B"})
-        self.assertEqual(sorted(s for s, st in T.STAGE_OF_SITE.items() if st in T.STAGE_DONE), ["P03", "P04", "P05"])
-        self.assertEqual(sorted(s for s, st in T.STAGE_OF_SITE.items() if st not in T.STAGE_DONE), ["P02"])
+        self.assertEqual(T.STAGE_DONE, {"A", "B", "C"})        # Phase SI-R5.2-C: P02 is done
+        self.assertEqual(sorted(s for s, st in T.STAGE_OF_SITE.items() if st in T.STAGE_DONE), ["P02", "P03", "P04", "P05"])
+        self.assertEqual(sorted(s for s, st in T.STAGE_OF_SITE.items() if st not in T.STAGE_DONE), [])
 
     def test_scoring_logic_gained_no_function_and_no_new_state(self):
         # the glue lives in station_identity; the stage touches update_physics_and_scoring only
         self.assertIsNone(re.search(r"_missing_tracker|MissingTracker|stidx-missing|def \w*missing\w*|def note_identity", self.text), "a tracker / event / helper definition in scoring_logic.py")
-        self.assertIsNone(re.search(r"self\.(bve_tgt_idx|bve_arr_idx|bve_arr_seq|prev_tgt_idx)\s*=[^=]", self.text))
+        self.assertIsNone(re.search(r"self\.(bve_tgt_idx|bve_arr_idx|bve_arr_seq)\s*=[^=]", self.text))
+        self.assertEqual(len(re.findall(r"self\.prev_tgt_idx\s*=[^=]", self.text)), 1)        # Phase SI-R5.2-C: the one mirror beside prev_next_loc
 
-    def test_main_and_managed_input_gained_nothing(self):
+    def test_main_and_managed_input_gained_nothing_but_the_prev_tgt_idx_state(self):
         for name in ("main.py", "managed_input.py"):
-            self.assertNotRegex(read_src(name), r"_missing_tracker|MissingTracker|note_missing|stidx-missing|prev_tgt_idx", name)
+            self.assertNotRegex(read_src(name), r"_missing_tracker|MissingTracker|note_missing|stidx-missing", name)        # Phase SI-R5.2-C: prev_tgt_idx (-1) is the one addition
 
 
 if __name__ == "__main__":

@@ -833,9 +833,10 @@ class G_Static(unittest.TestCase):
         t = self.cr_text()
         self.assertIsNone(re.search(r"enumerate\(.*station_list|for\s+\w+\s*,\s*\w+\s+in\s+enumerate|\[.location.\]\s*-", t))
 
-    @case("GUARD", "S33 (33) scoring_logic.py never assigns the target / arrival index (no target chosen by a distance)", group="STATIC")
+    @case("GUARD", "S33 (33) scoring_logic.py never assigns the target / arrival index (no target chosen by a distance); the one mirror prev_tgt_idx = bve_tgt_idx (SI-R5.2-C) is the only copy", group="STATIC")
     def test_S33_no_target_assignment(self):
-        self.assertIsNone(re.search(r"self\.(bve_tgt_idx|bve_arr_idx|bve_arr_seq|prev_tgt_idx)\s*=[^=]", self.sl))
+        self.assertIsNone(re.search(r"self\.(bve_tgt_idx|bve_arr_idx|bve_arr_seq)\s*=[^=]", self.sl))
+        self.assertEqual(re.findall(r"self\.prev_tgt_idx\s*=\s*([^\n#]+?)\s*(?:#|\n)", self.sl), ["self.bve_tgt_idx"])
 
     @case("GUARD", "S34 (34) scoring_logic.py never assigns NEXTLOC (prev_next_loc keeps its two existing copies of bve_next_loc)", group="STATIC")
     def test_S34_no_nextloc_assignment(self):
@@ -843,10 +844,10 @@ class G_Static(unittest.TestCase):
         copies = re.findall(r"self\.prev_next_loc\s*=\s*([^\n]+)", self.sl)
         self.assertEqual(sorted(copies), ["self.bve_next_loc", "self.bve_next_loc"])
 
-    @case("GUARD", "S35 (35) the 1 m reverse lookups stay at the one remaining SI-R5 site (none is added; SI-R5.2-A removed P03, SI-R5.2-B removed P01, P04, P05)", group="STATIC")
+    @case("GUARD", "S35 (35) no 1 m reverse lookup is left (none is added; SI-R5.2-A removed P03, SI-R5.2-B removed P01, P04, P05, SI-R5.2-C removed P02)", group="STATIC")
     def test_S35_no_new_one_metre_lookup(self):
         n = len(re.findall(r"abs\(st\[\"location\"\]\s*-\s*[\w\.]+\)\s*<\s*1\.0", self.sl))
-        self.assertLessEqual(n, 1, "found %d" % n)
+        self.assertLessEqual(n, 0, "found %d" % n)
 
     @case("GUARD", "S36 (36) no 50 m window (the G01 old expectation, the A0 files) in the product or in this fixture", group="STATIC")
     def test_S36_no_50m_window(self):

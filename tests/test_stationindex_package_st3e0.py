@@ -67,7 +67,7 @@ BASE_BLOBS = {
     # Time Fix B2 changed managed_input.py (one more name in GENERATION_DROP) and scoring_logic.py (the operational stop is latched at its stop and completed by that record, tests/test_timefix_b2_operational_stop_contract.py): the blobs moved from 293b4a21... / 5be7a006... (Time Fix B)
     # UI-Q1-B changed managed_input.py on purpose (the Qt translation of the locale is installed for the result save dialog, the file filters are named in Japanese, tests/test_ui_q1b_result_dialog_localization.py): the blob moved from 7933e16d... (Time Fix B2)
     # Close-range departure reset added the two generation defaults (close_range_departure_reset_pending, prev_actual_stop_loc) to managed_input.py on purpose (tests/test_close_range_contract.py): the blob moved from 6b0bda0b... (UI-Q1-B)
-    "managed_input.py": "e1b792884110fc761debac455ce79908c47bb5c3",
+    "managed_input.py": "3ca69888a9ae4d6a9facf669ec163f2547e0fc2d",       # SI-R5.2-C: the generation default prev_tgt_idx and its clear in discard_scoring_session (was e1b79288... after the close-range departure reset)
     "managed_mode.py": "60413e37938808b1f15c52c3b81db9353fd7a84a",
     "managed_state.py": "d8b75db1e870f3f01f825961ec37e7471244d2bc",
     "menu_ui.py": "412e722fb533e1627fa9c4a348e242144c6866df",
@@ -75,7 +75,7 @@ BASE_BLOBS = {
     # Time Fix B3 changed scoring_logic.py on purpose (the speed limit guidance gate is speed != 0.0; the operational stop is neither formed nor completed on the telemetry of an outstanding official jump and leaves no record at the scoring finish, tests/test_timefix_b3_zero_speed_contract.py): the blob moved from db5145a0... (Time Fix B2)
     # Close-range departure reset changed scoring_logic.py on purpose (the previous actual stop position and the pending state, the departure reset of the early-stop and basic-braking state, the waiting gate, tests/test_close_range_contract.py): the blob moved from e8d1a3d0... (Time Fix B3)
     # SI-R5.2-A changed scoring_logic.py on purpose (P03, the HUD next station / rule section, takes the scoring target index bve_tgt_idx instead of the 1 m lookup at NEXTLOC; tests/test_si_r5_2a_stage_a.py / tests/red_si_r5_station_identity.py): the blob moved from 449e0c94... (Close-range departure reset)
-    "scoring_logic.py": "9c6837954a574cadb3cfb223865d64f54e09f8ca",       # SI-R5.2-B: P01, P04, P05 take bve_tgt_idx, the distance lookups are gone (was c4981e27... after SI-R5.2-A)
+    "scoring_logic.py": "88f61d75c8fce211b11336dc1d74026624f96e66",       # SI-R5.2-C: P02 takes prev_tgt_idx, the last distance lookup is gone (was 9c683795... after SI-R5.2-B: P01, P04, P05 take bve_tgt_idx; c4981e27... after SI-R5.2-A)
     # SI-R5.2-A changed station_identity.py on purpose (the pure missing-index classifier, the run tracker and the managed diagnostic glue; tests/test_si_r5_2a_stage_a.py): the blob moved from 93ce7abc... (ST-3b)
     "station_identity.py": "2c971098059a6b8948cd842ed84af8ece9a054b9",
     "station_index_contract.py": "73c9ec9a75ca6dca450637f47d15d0ebdbdda423",
@@ -130,7 +130,8 @@ BASE_BLOBS = {
 # SI-R2.2-S2a changed main.py on purpose (the OFFTGT intake: the import of the receiver module, the six published values and their private judgement state, the capture of the part outside the key loop and the judgement at three moments; tests/test_official_target_supply_s2a.py): the blob (without its contract import) moved from bd8c31c9... (UI-ALT-F4)
 # SI-R2.3 (C4b) changed main.py on purpose (the display target: the import of hud_target_contract, the read-only hud_target_* views, the display state _hud_target / _hud_freeze, the sync after every judged line and before the HUD is drawn; tests/test_hud_target_wiring_r23.py): the blob (without its contract import) moved from 5da4fb7f... (SI-R2.2-S2a)
 # Close-range departure reset changed main.py on purpose (the two construction defaults close_range_departure_reset_pending / prev_actual_stop_loc; tests/test_close_range_contract.py): the blob (without its contract import) moved from 86e6929a... (SI-R2.3 C4b)
-BASE_MAIN = "2a0b103b9f2be1722a1d18ea4842b61c9673521b"
+# SI-R5.2-C changed main.py on purpose (the construction default prev_tgt_idx = -1 beside prev_next_loc; tests/red_si_r5_station_identity.py): the blob (without its contract import) moved from 2a0b103b... (Close-range departure reset)
+BASE_MAIN = "07043c5155b7ec577a02a1eae1b2418813d9ab56"
 BASE_PROJECTS = {CURRENT_PROJECT: "61092229f34e5e4ceb52a4fb6e52280824ec2578", LEGACY_PROJECT: "defbe148ff815741c6b627cadaf8d024f649f804"}
 CODEC_FILES = ("jump_wire.py", "station_index_contract.py", "dataplane_contract.py", "telemetry_contract.py", "station_identity.py",
                SHARED_DIR + "/JumpWire.cs", SHARED_DIR + "/StationListIdentity.cs", SHARED_DIR + "/DataPlaneProtocol.cs", SHARED_DIR + "/TelemetryDirectoryReader.cs",

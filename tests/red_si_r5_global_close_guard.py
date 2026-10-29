@@ -247,7 +247,7 @@ class B_TheProduct(unittest.TestCase):
     def test_G_no_site_outside_the_five(self):
         found = self.findings()
         self.assertTrue(all(f[0] == "scoring_logic.py" for f in found), found)
-        self.assertLessEqual(len([f for f in found if f[1] == "F5"]), 1, found)         # Phase SI-R5.2-A: P03 is gone (5 -> 4); SI-R5.2-B: P01, P04, P05 are gone (4 -> 1); SI-R5.2-C 0
+        self.assertLessEqual(len([f for f in found if f[1] == "F5"]), 0, found)         # Phase SI-R5.2-A: P03 is gone (5 -> 4); SI-R5.2-B: P01, P04, P05 are gone (4 -> 1); SI-R5.2-C: P02 is gone (1 -> 0)
 
     @case("GUARD", "GLOBAL CLOSE (C#): the only station-position judgements are the four door-flag lines, and no C# product code selects a station by position", "PRODUCT")
     def test_G_cs_product_allow_list_is_exact(self):

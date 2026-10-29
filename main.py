@@ -357,6 +357,7 @@ class Overlay(QWidget):
         self.is_first_udp = True
         self.is_first_station = True
         self.prev_next_loc = -1.0
+        self.prev_tgt_idx = -1
         self.prev_door = 0
         self.prev_doordir = 1
         self.prev_is_pass = 0

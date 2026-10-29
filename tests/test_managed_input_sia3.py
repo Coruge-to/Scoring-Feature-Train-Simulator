@@ -1751,9 +1751,17 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
             'self.has_scored_stop_this_station = True',
             'if abs(st["location"] - arrival_target_loc) < 1.0:',
         )
+        # Phase SI-R5.2-C (on purpose): P02 (evaluate_departure) takes the departure station from prev_tgt_idx, verified against prev_next_loc within 0.01 m, instead of the 1 m lookup at prev_next_loc. These are
+        # the 3 distinct lines (stripped) that the diff shows as removed and that no earlier group holds (the loop, the 1.0 comparison and the break are in the groups above), taken from the diff; no score, no
+        # rule value and no constant is among them (the time of the left station is scored exactly as before when the departure station is verified).
+        si_r5_2c_departure_prev_target_index = (
+            'p_idx = -1',
+            'if p_loc >= 0:',
+            'p_idx = i',
+        )
         self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport) + st2a_checkpoint_identity + st2b_retry_by_saved_index
                                    + st3d_request_by_the_one_builder + st2c_first_station_distance + timefix_b_departure_margins + timefix_b3_zero_speed_and_jump_boundary
-                                   + close_range_shared_basic_braking_init + si_r5_2a_p03_target_index + si_r5_2b_arrival_target_index], removed)
+                                   + close_range_shared_basic_braking_init + si_r5_2a_p03_target_index + si_r5_2b_arrival_target_index + si_r5_2c_departure_prev_target_index], removed)
 
     def test_the_scoring_function_bodies_are_ast_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":scoring_logic.py")

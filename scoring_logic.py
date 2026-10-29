@@ -1095,12 +1095,15 @@ def evaluate_departure(self, current_time):
     allow_score = not getattr(self, 'jump_lock', False) or getattr(self, 'is_official_retry', False)
 
     p_loc = getattr(self, 'prev_next_loc', -1.0)
-    p_idx = -1
-    if p_loc >= 0:
-        for i, st in enumerate(getattr(self, 'station_list', [])):
-            if abs(st["location"] - p_loc) < 1.0:
-                p_idx = i
-                break
+    # Phase SI-R5.2-C: 出発した駅 = target切替前に保持したprev_tgt_idx。位置から駅を探さない。範囲内で、その駅の位置がprev_next_locと0.01 m以内で一致する場合だけ使う(検証のみ)。
+    # 欠落・不一致は別の駅へ置き換えず(tgt-1・最近傍・index 0・古いindexを使わない)、この出発の時分採点を行わない
+    departed_stations = getattr(self, 'station_list', [])
+    prev_idx = getattr(self, 'prev_tgt_idx', -1)
+    prev_idx_in_list = station_identity.index_in_list(prev_idx, len(departed_stations))
+    prev_idx_verified = prev_idx_in_list and abs(departed_stations[prev_idx]["location"] - p_loc) <= 0.01
+    p_idx = prev_idx if prev_idx_verified else -1
+    if prev_idx_verified:
+        station_identity.note_present(self, "P02", current_time)
 
     # 駅を特定できない場合、または採時対象外の場合は時分採点を行わない
     is_timing_active = False
@@ -1110,6 +1113,10 @@ def evaluate_departure(self, current_time):
     # Time Fix B3: 公式ジャンプの完了待ちの間に起きた運転停車の発車(targetの切替)は、ジャンプが置き換える前の世界の出来事なので運転時分を採点しない
     is_stale_operational_stop = getattr(self, 'prev_doordir', 1) == 0 and getattr(self, 'is_official_jumping', False)
     if not getattr(self, 'ignore_next_pass_score', False) and allow_score and not getattr(self, 'is_first_station', False):
+        if p_idx < 0:
+            # Phase SI-R5.2-C: 時分採点の機会があるのに出発駅が確定しない(欠落／位置不一致)。この出発の時分採点は行わず、別の駅へ置き換えない
+            station_identity.note_missing(self, "P02", current_time, getattr(self, 'bve_tgt_idx', -1), "suppress_departure_timing_evaluation",
+                                          prev_index=prev_idx, position_mismatch=prev_idx_in_list)
         if getattr(self, 'prev_is_pass', 0) == 1 and is_timing_active:
             if not getattr(self, 'has_scored_time_this_station', False):
                 apply_time_score(self, getattr(self, 'prev_diff_s', 0), current_time)
@@ -1766,6 +1773,7 @@ def update_physics_and_scoring(self, current_time, dt):
             station_identity.note_missing(self, "P05", current_time, arrival_target_idx, "suppress_open_door_arrival_evaluation")
 
     self.prev_next_loc = self.bve_next_loc
+    self.prev_tgt_idx = self.bve_tgt_idx            # Phase SI-R5.2-C: the target the NEXTLOC above belongs to, kept for evaluate_departure (the one and only write)
     self.prev_door = getattr(self, 'bve_door', 0)
     self.prev_doordir = getattr(self, 'bve_doordir', 1)
     self.prev_is_pass = self.bve_is_pass

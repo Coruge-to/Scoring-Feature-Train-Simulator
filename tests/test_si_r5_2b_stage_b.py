@@ -497,24 +497,25 @@ class E_Static(unittest.TestCase):
 
     def test_scoring_logic_gained_no_function_and_no_new_state(self):
         self.assertIsNone(re.search(r"_missing_tracker|MissingTracker|stidx-missing|def \w*missing\w*|def note_identity", self.text))
-        self.assertIsNone(re.search(r"self\.(bve_tgt_idx|bve_arr_idx|bve_arr_seq|prev_tgt_idx)\s*=[^=]", self.text))
-        self.assertIsNone(re.search(r"held_target_idx|hold_reason|prev_tgt_idx|retry_door|door_retry|pending_arrival", self.text))
+        self.assertIsNone(re.search(r"self\.(bve_tgt_idx|bve_arr_idx|bve_arr_seq)\s*=[^=]", self.text))
+        self.assertEqual(len(re.findall(r"self\.prev_tgt_idx\s*=[^=]", self.text)), 1)        # Phase SI-R5.2-C: the one mirror beside prev_next_loc
+        self.assertIsNone(re.search(r"held_target_idx|hold_reason|retry_door|door_retry|pending_arrival", self.text))
 
     def test_station_identity_main_and_managed_input_are_not_part_of_this_stage(self):
         blob = read_src("station_identity.py").encode("utf-8")
         self.assertEqual(hashlib.sha1(b"blob %d\0" % len(blob) + blob).hexdigest(), "2c971098059a6b8948cd842ed84af8ece9a054b9")      # the classifier of SI-R5.2-A, as it was committed
         for name in ("main.py", "managed_input.py"):
-            self.assertNotRegex(read_src(name), r"_missing_tracker|MissingTracker|note_missing|stidx-missing|prev_tgt_idx", name)
+            self.assertNotRegex(read_src(name), r"_missing_tracker|MissingTracker|note_missing|stidx-missing", name)        # Phase SI-R5.2-C: prev_tgt_idx (-1) is the one state added to main / managed_input
 
-    def test_p02_is_untouched_and_p03_keeps_its_stage_a_form(self):
+    def test_p02_no_longer_looks_up_by_distance_and_p03_keeps_its_stage_a_form(self):
         departure = ast.get_source_segment(self.text, function_node(self.tree, "evaluate_departure"))
-        self.assertEqual(len(re.findall(r"abs\(st\[.location.\]\s*-\s*p_loc\)\s*<\s*1\.0", departure)), 1)
+        self.assertEqual(len(re.findall(r"abs\(st\[.location.\]\s*-\s*p_loc\)\s*<\s*1\.0", departure)), 0)        # Phase SI-R5.2-C: P02 reads prev_tgt_idx
         self.assertRegex(self.update, r'note_missing\(self, "P03", current_time, target_idx, "hud_placeholder\+keep_existing_rule_section"\)')
 
-    def test_the_global_close_guard_has_the_one_lookup_of_stage_c(self):
+    def test_the_global_close_guard_has_no_lookup_left_after_stage_c(self):
         import red_si_r5_global_close_guard as G
         found = G.scan_python(self.text, "scoring_logic.py")
-        self.assertEqual(sorted(k for k, _ in found), ["F1", "F5"])
+        self.assertEqual(found, [])        # Phase SI-R5.2-C: 1 -> 0
         self.assertEqual(G.ALLOW_PY, {})
 
 

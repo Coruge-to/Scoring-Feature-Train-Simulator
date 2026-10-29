@@ -29,7 +29,7 @@ try:
 except Exception:  # pragma: no cover
     HAS_QT = False
 
-STAGE_DONE = {'A', 'B'}     # 'A' P03 | 'B' P01+P04+P05 | 'C' P02  -- edited by the implementation Stages of SI-R5.2 (A: SI-R5.2-A P03, B: SI-R5.2-B P01+P04+P05 are pinned to their NEW answers)
+STAGE_DONE = {'A', 'B', 'C'}     # 'A' P03 | 'B' P01+P04+P05 | 'C' P02  -- edited by the implementation Stages of SI-R5.2 (A: SI-R5.2-A P03, B: SI-R5.2-B P01+P04+P05, C: SI-R5.2-C P02 are pinned to their NEW answers)
 
 SITE_KEYS = {
     "P03": ("next_name", "next_timing", "rule"),

@@ -291,7 +291,8 @@ class Pins(ShortCase):
         # Phase ST-2a (inverted: create_save_data was one of the six): the checkpoint takes its station from the verified StationIndex; the other five are ST-4's
         # Phase SI-R5.2-A (re-pinned: P03, the HUD next station / rule section, takes bve_tgt_idx): four remain, 2 in update_physics_and_scoring (SI-R5.2-B / C)
         # Phase SI-R5.2-B (re-pinned: P01, P04, P05 take bve_tgt_idx): one remains, evaluate_departure (P02, SI-R5.2-C)
-        self.assertEqual(sites, {"evaluate_departure": 1})
+        # Phase SI-R5.2-C (re-pinned: P02 takes prev_tgt_idx, verified against prev_next_loc within 0.01 m): none remains
+        self.assertEqual(sites, {})
 
     @st0("T20", "KNOWN-DEFECT-BEHAVIOR", items=(19,), note="C-ID-5 (Phase ST-2b: inverted - it was: execute_retry picks the retry station by a '< 100.0' search from the check point position, lowest index, and falls back to station 0): the retry station is the saved StationIndex")
     def test_PIN_ITEM19_execute_retry_takes_the_saved_index_and_has_no_100_m_search_and_no_station_0_fallback(self):

@@ -1223,7 +1223,7 @@ class G_TheCheckpointByKindOfStop(ContractMixin, CH.Base):
         """The checkpoint is taken at the door opening; the time score of the stop is settled later, when the door has closed and the next station is shown. Both are normal."""
         o = self.o
         o.bve_door_close_time_ms = 4630
-        self.bind(1, 2)
+        self.bind(1, 1)                                                                    # Phase SI-R5.2-C: the target names B, the station at NEXTLOC (prev_tgt_idx = B departs at the switch below)
         stations = [st("A", 0.0), st("B", 1000.0, raw_dep=CH.T0 + 65000), st("C", 2000.0), st("D", 3000.0, terminal=True)]
         self.scene(d=0.0, doordir=1, is_pass=0, stations=stations)
         self.tick()
@@ -1234,7 +1234,8 @@ class G_TheCheckpointByKindOfStop(ContractMixin, CH.Base):
         self.assertEqual([p["text"] for p in o.popups if p["category"] == "運転時分"], [])
         self.assertEqual(saved["score"], 500)                                              # ... and the checkpoint holds the score of the moment it was taken
         o.bve_door = 0
-        o.bve_next_loc = 2000.0                                                             # the door has closed: the sender shows the next station
+        o.bve_next_loc = 2000.0                                                             # the door has closed: the sender shows the next station ...
+        o.bve_tgt_idx = 2                                                                   # ... and its target (C)
         self.tick()
         self.assertEqual(len([p for p in o.popups if p["category"] == "運転時分"]), 1)      # the time score of the stop is settled NOW
         self.assertGreater(o.score, 500)
@@ -2184,7 +2185,7 @@ class Z_Meta(unittest.TestCase):
         create = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "create_save_data"][0]
         ones = [n.value for n in ast.walk(create) if isinstance(n, ast.Constant) and isinstance(n.value, float) and n.value == 1.0]
         self.assertEqual(ones, [])                                                      # the 1 m reverse lookup of the Save is gone ...
-        self.assertEqual(len(re.findall(r"abs\(st\[\"location\"\] - [A-Za-z_.]+\) < 1\.0", logic)), 1)                 # ... the others are ST-4's (arrival, departure, two lookups of the arrival); Phase SI-R5.2-A re-pinned 5 -> 4 (the guidance, P03, takes bve_tgt_idx); Phase SI-R5.2-B re-pinned 4 -> 1 (P01, P04, P05 take bve_tgt_idx; only the departure, P02, is left)
+        self.assertEqual(len(re.findall(r"abs\(st\[\"location\"\] - [A-Za-z_.]+\) < 1\.0", logic)), 0)               # ... the others are ST-4's (arrival, departure, two lookups of the arrival); Phase SI-R5.2-A re-pinned 5 -> 4 (the guidance, P03, takes bve_tgt_idx); Phase SI-R5.2-B re-pinned 4 -> 1 (P01, P04, P05 take bve_tgt_idx; only the departure, P02, is left); Phase SI-R5.2-C re-pinned 1 -> 0 (P02 takes prev_tgt_idx)
         for forbidden in ("StationList", "bve_arr_idx", "bve_tgt_idx"):                 # (Phase ST-2b: the retry reads station_identity and bve_list_id, the verified scope; it never reads the sender's indexes)
             self.assertNotIn(forbidden, ast.get_source_segment(logic, retry))
 
