@@ -205,16 +205,18 @@ class A_NormalStop(Base):
         self.open_doors()
         self.assertEqual((o.has_scored_stop_this_station, self.arrivals()), (False, 0))
 
-    @st0("T13", "KNOWN-DEFECT-BEHAVIOR", items=(7, 18), note="the arrival needs a station within 1.0 m of NEXTLOC: the identity of the arrival is decided by a position search")
-    def test_CHAR_T13_the_arrival_station_is_found_by_a_1_0_m_search_from_NEXTLOC(self):
-        for next_loc, found in ((1000.9, True), (1001.0, False), (999.1, True), (999.0, False)):
-            with self.subTest(next_loc=next_loc):
-                self.rig.close()
-                self.setUp()
-                o = self.scene(d=0.0, next_loc=next_loc)
-                self.tick()
-                self.open_doors()
-                self.assertEqual(o.has_scored_stop_this_station, found)
+    @st0("T13", "KNOWN-DEFECT-BEHAVIOR", items=(7, 18), note="Phase SI-R5.2-B (inverted: it was a 1.0 m search from NEXTLOC): the arrival needs the target index the sender names (bve_tgt_idx); the position of NEXTLOC no longer decides the station")
+    def test_CHAR_T13_the_arrival_station_is_the_sender_target_index_not_a_1_0_m_search_from_NEXTLOC(self):
+        for next_loc in (1000.9, 1001.0, 999.1, 999.0):
+            for tgt, found in ((1, True), (-1, False)):
+                with self.subTest(next_loc=next_loc, tgt=tgt):
+                    self.rig.close()
+                    self.setUp()
+                    o = self.scene(d=0.0, next_loc=next_loc)
+                    o.bve_tgt_idx = tgt
+                    self.tick()
+                    self.open_doors()
+                    self.assertEqual(o.has_scored_stop_this_station, found)
                 # Phase ST-2a (inverted for the checkpoint only; the 1.0 m search that decides the arrival SCORE is unchanged until ST-4): the checkpoint is created
                 # for the station the sender names, and only when NEXTLOC is that station's position within 0.01 m - none of these four is
                 self.assertEqual(self.arrivals(), 0)

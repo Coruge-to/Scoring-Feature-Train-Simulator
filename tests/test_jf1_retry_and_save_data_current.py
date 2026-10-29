@@ -932,6 +932,7 @@ class S_SaveData(Base):
         o.save_data = [cp(0.0, T0)]
         o.prev_next_loc = o.bve_next_loc = 1000.0
         o.bve_location = 1000.0
+        o.bve_tgt_idx = 1                                   # Phase SI-R5.2-B: the end station is the one the sender names as the target (no 1 m search from the position)
         self.S.evaluate_arrival(o, 50.0)
         self.assertTrue(o.is_scoring_finished)
         self.assertEqual(len(o.save_data), 1)

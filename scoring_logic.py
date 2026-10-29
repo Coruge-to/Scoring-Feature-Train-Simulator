@@ -932,12 +932,16 @@ def evaluate_arrival(self, current_time, arrival_target_loc=None):
         # 通常停車駅の開扉時は、BVE公式が示している現在の駅を使用する
         p_loc = arrival_target_loc
 
-    for i, st in enumerate(getattr(self, 'station_list', [])):
-        if abs(st["location"] - p_loc) < 1.0:
-            curr_sta_idx = i
-            break
+    # Phase SI-R5.2-B: 到着駅はC#状態機械が保持する採点ターゲット(bve_tgt_idx)そのもの。位置から駅を探さない。欠落時は終了駅判定を行わず(prev_termだけでも採点を終えない)、代わりの駅を作らない。
+    target_idx = getattr(self, 'bve_tgt_idx', -1)
+    identity_ok = station_identity.index_in_list(target_idx, len(getattr(self, 'station_list', [])))
+    if identity_ok:
+        curr_sta_idx = target_idx
+        station_identity.note_present(self, "P01", current_time)
+    else:
+        station_identity.note_missing(self, "P01", current_time, target_idx, "suppress_terminal_evaluation")
 
-    is_end_sta_match = (curr_sta_idx != -1 and curr_sta_idx == getattr(self, 'setting_end_idx', -1)) or (getattr(self, 'prev_term', 0) == 1)
+    is_end_sta_match = identity_ok and ((curr_sta_idx != -1 and curr_sta_idx == getattr(self, 'setting_end_idx', -1)) or (getattr(self, 'prev_term', 0) == 1))
     is_scoring_end_station = is_end_sta_match and not getattr(self, 'jump_lock', False) and getattr(self, 'is_scoring_mode', False)
 
     is_zero_stop = False
@@ -1631,24 +1635,31 @@ def update_physics_and_scoring(self, current_time, dt):
 
     self.prev_stop_detection_speed = self.bve_speed
 
+    # Phase SI-R5.2-B: 到着系(運転停車の到着前時分採点・通常停車の開扉到着)の駅はC#状態機械が保持する採点ターゲット(bve_tgt_idx)そのもの。位置から駅を探さない。
+    arrival_target_idx = getattr(self, 'bve_tgt_idx', -1)
+    arrival_identity_ok = station_identity.index_in_list(arrival_target_idx, len(getattr(self, 'station_list', [])))
+    if arrival_identity_ok:
+        station_identity.note_present(self, "P04", current_time)
+        station_identity.note_present(self, "P05", current_time)
+
     # Time Fix B3: 公式ジャンプの完了待ちの間のテレメトリは、ジャンプが置き換える前の世界(旧位置・旧時刻)を表す。運転停車の停止成立・latchは作らない(着地後の最初の停止から作り直す)
     if is_operational_stop and getattr(self, 'is_approaching', False) and self.bve_speed == 0.0 and not getattr(self, 'has_scored_stop_this_station', False) and not getattr(self, 'is_official_jumping', False) and not getattr(self, 'close_range_departure_reset_pending', False):
         # 作者定義の停止位置許容範囲内（-margin_f～margin_b）で停車した場合にのみ到着処理を行う
         dist_to_stop = self.bve_next_loc - self.bve_location
         if (-self.bve_margin_f <= dist_to_stop <= self.bve_margin_b):
+            arrival_deferred = False
             if not getattr(self, 'jump_lock', False) and not getattr(self, 'is_first_station', False):
+                # Phase SI-R5.2-B 明示ゲート: 駅が確定しない間は時分採点・checkpoint作成・採点終了・latch・採点済み記録のいずれも行わない(レベル型: identityが戻れば次Tickで評価する)
+                arrival_deferred = not arrival_identity_ok
+                if arrival_deferred:
+                    station_identity.note_missing(self, "P04", current_time, arrival_target_idx, "suppress_timing_checkpoint_and_completion")
 
                 # 1. 先に時分採点を行う
-                curr_sta_idx = -1
-                p_loc = getattr(self, 'prev_next_loc', getattr(self, 'bve_next_loc', -1.0))
-                for i, st in enumerate(getattr(self, 'station_list', [])):
-                    if abs(st["location"] - p_loc) < 1.0:
-                        curr_sta_idx = i
-                        break
+                curr_sta_idx = arrival_target_idx if arrival_identity_ok else -1
                 is_scoring_end_station_op = (curr_sta_idx == getattr(self, 'setting_end_idx', -1)) or (getattr(self, 'prev_term', 0) == 1)
                 is_timing_active_op = self.is_station_timing(curr_sta_idx) if curr_sta_idx >= 0 else False
 
-                if is_scoring_end_station_op and is_timing_active_op and not getattr(self, 'has_scored_time_this_station', False):
+                if not arrival_deferred and is_scoring_end_station_op and is_timing_active_op and not getattr(self, 'has_scored_time_this_station', False):
                     # 終了駅では駅データの着時刻を優先して運転時分を算出する
                     arr_target_s = self.bve_next_time // 1000
                     if curr_sta_idx >= 0 and getattr(self, 'station_list', [])[curr_sta_idx].get("raw_arr", -1) >= 0:
@@ -1660,25 +1671,23 @@ def update_physics_and_scoring(self, current_time, dt):
                     self.has_scored_time_this_station = True
 
                 # 2. そのあとに到着判定（ここで終了フラグ is_scoring_finished が立つ）
-                evaluate_arrival(self, current_time)
+                if not arrival_deferred:
+                    evaluate_arrival(self, current_time)
 
             # Time Fix B3: 採点終了駅の運転停車は、この到着で採点が終了する(発車は評価しない)ので、停止成立の記録は残さない
-            if not getattr(self, 'is_scoring_finished', False):
+            if not arrival_deferred and not getattr(self, 'is_scoring_finished', False):
                 # 運転停車の到着が成立した時点で、到着した駅の停止位置許容幅を保持する（発車時のtgt切替後に次駅の許容幅を使わないため）
                 self.operational_stop_margins = (self.bve_margin_f, self.bve_margin_b)
                 # Time Fix B2: 停止成立時刻と予定発車時刻も保持する(発車時は許容範囲を再判定せず、この記録で運転時分を確定する)
                 latch_index, latch_scheduled_ms = operational_stop_station(self)
                 self.operational_stop_latch = (latch_index, self.bve_time_ms, latch_scheduled_ms)
-            self.has_scored_stop_this_station = True
+            if not arrival_deferred:
+                self.has_scored_stop_this_station = True
 
     # 通常停車駅の開扉時は、BVE公式が現在示している駅を対象にする
-    curr_sta_idx = -1
+    # Phase SI-R5.2-B: 駅はbve_tgt_idx。欠落時は開扉エッジの到着評価を行わず(エッジ型・再試行状態なし)、代わりの駅を作らない。
+    curr_sta_idx = arrival_target_idx if arrival_identity_ok else -1
     arrival_target_loc = getattr(self, 'bve_next_loc', -1.0)
-
-    for i, st in enumerate(getattr(self, 'station_list', [])):
-        if abs(st["location"] - arrival_target_loc) < 1.0:
-            curr_sta_idx = i
-            break
 
     is_scoring_end_station = (
         curr_sta_idx == getattr(self, 'setting_end_idx', -1)
@@ -1749,6 +1758,12 @@ def update_physics_and_scoring(self, current_time, dt):
                 arrival_target_loc
             )
             self.has_scored_stop_this_station = True
+        elif (
+            not arrival_identity_ok
+            and is_within_arrival_target_margin
+        ):
+            # Phase SI-R5.2-B: 開扉エッジで駅が確定しない。到着評価の機会を失うので、短時間でも診断する(再試行はしない)
+            station_identity.note_missing(self, "P05", current_time, arrival_target_idx, "suppress_open_door_arrival_evaluation")
 
     self.prev_next_loc = self.bve_next_loc
     self.prev_door = getattr(self, 'bve_door', 0)

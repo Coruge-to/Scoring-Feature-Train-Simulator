@@ -238,6 +238,7 @@ class A_ScoringState(Base):
         o.prev_next_loc = 1000.0
         o.bve_next_loc = 1000.0
         o.bve_location = 1000.0
+        o.bve_tgt_idx = 1                                   # Phase SI-R5.2-B: the end station is the one the sender names as the target (no 1 m search from the position)
         S.evaluate_arrival(o, 50.0, 1000.0)
         self.assertTrue(o.is_scoring_finished)
         self.assertTrue(o.is_scoring_mode)

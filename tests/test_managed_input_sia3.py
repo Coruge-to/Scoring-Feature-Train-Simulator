@@ -1741,9 +1741,19 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
             'self.active_rule_init_apply = active_p_rule.get("apply", "ON①")',
             'self.active_rule_init_release = active_p_rule.get("release", "ON①")',
         )
+        # Phase SI-R5.2-B (on purpose): P01 (evaluate_arrival), P04 (the operational-stop pre-arrival timing) and P05 (the normal-stop door-open arrival) take the scoring target index bve_tgt_idx instead of the
+        # 1 m lookups; the end-station judgement of P01 needs the identity, the timing / evaluation / recorded stop of P04 run under the explicit missing-identity gate (a condition more, a deeper indent). These are the
+        # 5 distinct lines (stripped) that the diff shows as removed, taken from the diff; no score, no rule value and no constant is among them (everything is evaluated exactly as before when the identity is present).
+        si_r5_2b_arrival_target_index = (
+            "is_end_sta_match = (curr_sta_idx != -1 and curr_sta_idx == getattr(self, 'setting_end_idx', -1)) or (getattr(self, 'prev_term', 0) == 1)",
+            "if is_scoring_end_station_op and is_timing_active_op and not getattr(self, 'has_scored_time_this_station', False):",
+            'evaluate_arrival(self, current_time)',
+            'self.has_scored_stop_this_station = True',
+            'if abs(st["location"] - arrival_target_loc) < 1.0:',
+        )
         self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport) + st2a_checkpoint_identity + st2b_retry_by_saved_index
                                    + st3d_request_by_the_one_builder + st2c_first_station_distance + timefix_b_departure_margins + timefix_b3_zero_speed_and_jump_boundary
-                                   + close_range_shared_basic_braking_init + si_r5_2a_p03_target_index], removed)
+                                   + close_range_shared_basic_braking_init + si_r5_2a_p03_target_index + si_r5_2b_arrival_target_index], removed)
 
     def test_the_scoring_function_bodies_are_ast_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":scoring_logic.py")

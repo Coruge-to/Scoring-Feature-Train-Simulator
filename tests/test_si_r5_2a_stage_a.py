@@ -578,34 +578,34 @@ class E_Static(unittest.TestCase):
         self.assertIn("station_identity.index_in_list", src)
         self.assertNotRegex(src, r"official_(state|index|location|reason|margin)")
 
-    def test_the_remaining_one_metre_lookups_are_exactly_the_four_of_stage_b_and_c(self):
+    def test_the_remaining_one_metre_lookup_is_exactly_the_one_of_stage_c(self):
         sites = {}
         for fn in (n for n in self.tree.body if isinstance(n, ast.FunctionDef)):
             for n in ast.walk(fn):
                 if isinstance(n, ast.Compare) and isinstance(n.left, ast.Call) and getattr(n.left.func, "id", "") == "abs" and isinstance(n.ops[0], ast.Lt) \
                         and isinstance(n.comparators[0], ast.Constant) and n.comparators[0].value == 1.0 and "location" in ast.unparse(n.left):
                     sites[fn.name] = sites.get(fn.name, 0) + 1
-        self.assertEqual(sites, {"evaluate_arrival": 1, "evaluate_departure": 1, "update_physics_and_scoring": 2})
+        self.assertEqual(sites, {"evaluate_departure": 1})        # Phase SI-R5.2-B: P01, P04, P05 are gone; only P02 (Stage C) is left
 
-    def test_the_global_close_guard_counts_four_old_lines_all_of_stage_b_and_c(self):
+    def test_the_global_close_guard_counts_the_one_old_lookup_of_stage_c(self):
         import red_si_r5_global_close_guard as G
         found = G.scan_python(self.text, "scoring_logic.py")
-        self.assertEqual(sorted(k for k, _ in found), ["F1"] * 4 + ["F5"] * 4)
+        self.assertEqual(sorted(k for k, _ in found), ["F1", "F5"])        # Phase SI-R5.2-B: 4 -> 1 (P02 only)
         owners = set()
         for _, line in found:
             for fn in (n for n in self.tree.body if isinstance(n, ast.FunctionDef)):
                 if fn.lineno <= line <= fn.end_lineno:
                     owners.add(fn.name)
-        self.assertEqual(owners, {"evaluate_arrival", "evaluate_departure", "update_physics_and_scoring"})
+        self.assertEqual(owners, {"evaluate_departure"})
         self.assertEqual(G.ALLOW_PY, {})
         for name in ("station_identity.py", "main.py", "managed_input.py"):
             self.assertEqual(G.scan_python(read_src(name), name), [], name)
 
-    def test_the_characterization_pins_only_stage_a_is_done(self):
+    def test_the_characterization_pins_stage_a_and_b_are_done(self):
         import test_si_r5_characterization as T
-        self.assertEqual(T.STAGE_DONE, {"A"})
-        self.assertEqual(sorted(s for s, st in T.STAGE_OF_SITE.items() if st in T.STAGE_DONE), ["P03"])
-        self.assertEqual(sorted(s for s, st in T.STAGE_OF_SITE.items() if st not in T.STAGE_DONE), ["P02", "P04", "P05"])
+        self.assertEqual(T.STAGE_DONE, {"A", "B"})
+        self.assertEqual(sorted(s for s, st in T.STAGE_OF_SITE.items() if st in T.STAGE_DONE), ["P03", "P04", "P05"])
+        self.assertEqual(sorted(s for s, st in T.STAGE_OF_SITE.items() if st not in T.STAGE_DONE), ["P02"])
 
     def test_scoring_logic_gained_no_function_and_no_new_state(self):
         # the glue lives in station_identity; the stage touches update_physics_and_scoring only

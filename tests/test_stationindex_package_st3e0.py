@@ -75,7 +75,7 @@ BASE_BLOBS = {
     # Time Fix B3 changed scoring_logic.py on purpose (the speed limit guidance gate is speed != 0.0; the operational stop is neither formed nor completed on the telemetry of an outstanding official jump and leaves no record at the scoring finish, tests/test_timefix_b3_zero_speed_contract.py): the blob moved from db5145a0... (Time Fix B2)
     # Close-range departure reset changed scoring_logic.py on purpose (the previous actual stop position and the pending state, the departure reset of the early-stop and basic-braking state, the waiting gate, tests/test_close_range_contract.py): the blob moved from e8d1a3d0... (Time Fix B3)
     # SI-R5.2-A changed scoring_logic.py on purpose (P03, the HUD next station / rule section, takes the scoring target index bve_tgt_idx instead of the 1 m lookup at NEXTLOC; tests/test_si_r5_2a_stage_a.py / tests/red_si_r5_station_identity.py): the blob moved from 449e0c94... (Close-range departure reset)
-    "scoring_logic.py": "c4981e27d3ab813a4abad558a82ff7bbe90098dd",
+    "scoring_logic.py": "9c6837954a574cadb3cfb223865d64f54e09f8ca",       # SI-R5.2-B: P01, P04, P05 take bve_tgt_idx, the distance lookups are gone (was c4981e27... after SI-R5.2-A)
     # SI-R5.2-A changed station_identity.py on purpose (the pure missing-index classifier, the run tracker and the managed diagnostic glue; tests/test_si_r5_2a_stage_a.py): the blob moved from 93ce7abc... (ST-3b)
     "station_identity.py": "2c971098059a6b8948cd842ed84af8ece9a054b9",
     "station_index_contract.py": "73c9ec9a75ca6dca450637f47d15d0ebdbdda423",

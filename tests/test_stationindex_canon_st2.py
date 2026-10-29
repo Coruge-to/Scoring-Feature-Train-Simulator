@@ -878,11 +878,11 @@ class C_TheCheckpoints(ContractMixin, F1.Base):
     def test_the_end_station_arrival_still_creates_no_checkpoint(self):
         o = self.o
         o.station_list = abcd()
-        R.bind_identity(o)
         o.is_scoring_mode, o.is_first_station, o.setting_end_idx = True, True, 1
         o.save_data = [F1.cp(0.0, T0)]
         o.prev_next_loc = o.bve_next_loc = 1000.0
         o.bve_location = 1000.0
+        R.bind_identity(o)                                  # Phase SI-R5.2-B: bound AFTER the position is set - the sender names B as the target (the end station is not found by a 1 m search)
         self.S.evaluate_arrival(o, 50.0)
         self.assertTrue(o.is_scoring_finished)
         self.assertEqual(len(o.save_data), 1)
@@ -1186,7 +1186,7 @@ class G_TheCheckpointByKindOfStop(ContractMixin, CH.Base):
 
     def test_the_end_station_of_the_scoring_is_not_a_checkpoint(self):
         o = self.o
-        self.bind(1, 2)
+        self.bind(1, 1)                                     # Phase SI-R5.2-B: the target names B, the station at NEXTLOC (the end station is not found by a 1 m search)
         self.scene(d=0.0, doordir=0, is_pass=0, end_idx=1)
         self.tick()
         self.assertTrue(o.is_scoring_finished)
@@ -2184,7 +2184,7 @@ class Z_Meta(unittest.TestCase):
         create = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "create_save_data"][0]
         ones = [n.value for n in ast.walk(create) if isinstance(n, ast.Constant) and isinstance(n.value, float) and n.value == 1.0]
         self.assertEqual(ones, [])                                                      # the 1 m reverse lookup of the Save is gone ...
-        self.assertEqual(len(re.findall(r"abs\(st\[\"location\"\] - [A-Za-z_.]+\) < 1\.0", logic)), 4)                 # ... the others are ST-4's (arrival, departure, two lookups of the arrival); Phase SI-R5.2-A re-pinned 5 -> 4 (the guidance, P03, takes bve_tgt_idx)
+        self.assertEqual(len(re.findall(r"abs\(st\[\"location\"\] - [A-Za-z_.]+\) < 1\.0", logic)), 1)                 # ... the others are ST-4's (arrival, departure, two lookups of the arrival); Phase SI-R5.2-A re-pinned 5 -> 4 (the guidance, P03, takes bve_tgt_idx); Phase SI-R5.2-B re-pinned 4 -> 1 (P01, P04, P05 take bve_tgt_idx; only the departure, P02, is left)
         for forbidden in ("StationList", "bve_arr_idx", "bve_tgt_idx"):                 # (Phase ST-2b: the retry reads station_identity and bve_list_id, the verified scope; it never reads the sender's indexes)
             self.assertNotIn(forbidden, ast.get_source_segment(logic, retry))
 
