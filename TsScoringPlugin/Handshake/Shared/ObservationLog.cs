@@ -163,10 +163,14 @@ namespace TSScoringPlugin.Handshake
         /// <summary>Writes one observation line. NEVER throws.</summary>
         internal static void Write(string track, string evt, string detail)
         {
+            WriteStamped(track, evt, detail, DateTime.Now, Stopwatch.GetTimestamp());
+        }
+
+        /// <summary>Same as Write, with the time stamp taken earlier: the immutable payload a component built inside its own gate (SI-R5.3 C prime).</summary>
+        internal static void WriteStamped(string track, string evt, string detail, DateTime now, long qpc)
+        {
             try
             {
-                long qpc = Stopwatch.GetTimestamp();
-                DateTime now = DateTime.Now;
                 if (Thread.CurrentThread.GetApartmentState() == ApartmentState.STA)
                 {
                     // UI thread: never wait (a wait would let the CLR dispatch window messages into BVE's code)

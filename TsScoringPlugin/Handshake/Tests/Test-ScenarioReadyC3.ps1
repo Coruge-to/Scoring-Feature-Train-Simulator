@@ -140,8 +140,8 @@ function NewTracker([int]$p) {
     $script:W = $w
     $log = [Action[string, string, string]] { param($t, $e, $d) $script:W.Lines.Add("$t|$e|$d"); if ($script:W.Probe) { & $script:W.Probe $e } }
     $rd = ({ $script:W.Reads++; if ($script:W.ReadThrows) { throw (New-Object System.IO.IOException 'boom') }; $script:W.Snap }) -as $funcSnap
-    $up = [Func[bool]] { [bool]$script:W.Up }
-    $nw = [Func[long]] { [long]$script:W.Now }
+    $up = [Func[bool]] { if ($script:W.OnUp) { & $script:W.OnUp }; [bool]$script:W.Up }
+    $nw = [Func[long]] { if ($script:W.OnNow) { & $script:W.OnNow }; [long]$script:W.Now }
     $pub = $pubType.GetConstructors($NPI)[0].Invoke(@($p))
     $trk = $trkType.GetConstructors($NPI)[0].Invoke(@($log, $rd, $up, $pub, $nw))
     $w.Trk = $trk
@@ -379,20 +379,28 @@ try {
     # =================================================================================================================
     Write-Host '--- C: clear conditions'
     $w = NewTracker $P
-    $w.Probe = { param($e) if ($e -eq 'SR_CLEARED') { $script:W.AtCleared = (Outside $script:W.Pid) }; if ($e -eq 'SR_OPENED') { $script:W.AtOpened = (Outside $script:W.Pid) } }
+    # C prime fixture: sampling points that do not depend on a log line being written inside the gate
+    $w.NowSamples = New-Object 'System.Collections.Generic.List[object]'; $w.UpSamples = New-Object 'System.Collections.Generic.List[object]'; $w.LogSamples = @{}
+    $w.OnNow = { $script:W.NowSamples.Add((Outside $script:W.Pid)) }
+    $w.OnUp = { $script:W.UpSamples.Add((Outside $script:W.Pid)) }
+    $w.Probe = { param($e) $script:W.LogSamples[$e] = (Outside $script:W.Pid) }
     Ready1 $w
     TClosed $w
     Check 'C1 ScenarioClosed: ScenarioReady false, Event reset, block level 0 with the generation kept (1)' ((-not (Lvl $w)) -and (OutsideIs $P 1 0) -and ((Gen $w) -eq 1) -and ((WLines $w 'SR_CLEARED')[0] -match 'reason=closed'))
     TTick $w 100
     Check 'C2 Ticks after Closed (BVE keeps ticking at the title screen) do not re-establish the closed generation' ((-not (Lvl $w)) -and ((WCount $w 'SR_ESTABLISHED') -eq 1))
+    $w.LogSamples = @{}
     TOpen $w; TCreated $w; TTick $w
     Check 'C3 next ScenarioOpened/Created/Tick: generation 2 established' ((Lvl $w) -and ((Gen $w) -eq 2) -and (OutsideIs $P 2 1))
+    $se = $w.LogSamples['SR_ESTABLISHED']
+    Check 'C5b ScenarioReady (generation 2, level 1, Event set) is already published when the SR_ESTABLISHED line is delivered (the product state does not wait for the diagnostic log)' (($null -ne $se) -and ($se.Gen -eq 2) -and ($se.Ready -eq 1) -and $se.EventSet)
     # Opened without Closed (Closed missed): reset FIRST, then the number moves
-    $w.AtCleared = $null; $w.AtOpened = $null
+    $w.NowSamples.Clear(); $w.UpSamples.Clear(); $w.LogSamples = @{}
     TOpen $w
     $lc = (WLines $w 'SR_CLEARED'); $lo = (WLines $w 'SR_OPENED')
     Check 'C4 ScenarioOpened while ready (Closed missed): safe reset FIRST (SR_CLEARED reason=opened-reset logged for generation 2 before SR_OPENED for generation 3)' (($lc[$lc.Count - 1] -match 'ScenarioGeneration=2 reason=opened-reset') -and ($lo[$lo.Count - 1] -match 'ScenarioGeneration=3 previous=2 levelClearedFirst=yes') -and (WOrder $w @('SR_CLEARED', 'SR_OPENED')))
-    Check 'C5 at the moment of the reset the outside already shows level 0 for the OLD generation (2); at SR_OPENED it still shows the old generation with level 0; only afterwards the new generation 3 (level 0) appears' ((($w.AtCleared.Gen -eq 2) -and ($w.AtCleared.Ready -eq 0) -and (-not $w.AtCleared.EventSet)) -and (($w.AtOpened.Gen -eq 2) -and ($w.AtOpened.Ready -eq 0)) -and (OutsideIs $P 3 0))
+    $n0 = $w.NowSamples[0]; $u0 = $w.UpSamples[0]; $lcs = $w.LogSamples['SR_CLEARED']; $los = $w.LogSamples['SR_OPENED']
+    Check 'C5 (reload while ready, observed on the published state): inside the gate the clear is already published and the new number is not (generation 2, level 0, Event reset - at the clock read and at the handshake read); at the delivery of SR_CLEARED and of SR_OPENED the new generation 3 (level 0) is already published' ((($w.NowSamples.Count -ge 1) -and ($n0.Gen -eq 2) -and ($n0.Ready -eq 0) -and (-not $n0.EventSet)) -and (($w.UpSamples.Count -ge 1) -and ($u0.Gen -eq 2) -and ($u0.Ready -eq 0)) -and (($null -ne $lcs) -and ($lcs.Gen -eq 3) -and ($lcs.Ready -eq 0)) -and (($null -ne $los) -and ($los.Gen -eq 3) -and ($los.Ready -eq 0)) -and (OutsideIs $P 3 0))
     Check 'C6 after Opened and before Created / E the generation is not ready' (-not (Lvl $w))
     TDispose $w
     Check 'C7 Bridge Dispose: ScenarioReady cleared, Event and block gone, later calls ignored' (OutsideNone $P)

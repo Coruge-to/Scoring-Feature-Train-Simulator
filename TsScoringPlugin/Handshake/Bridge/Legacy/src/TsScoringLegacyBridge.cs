@@ -230,6 +230,11 @@ namespace TSScoringPlugin.Handshake
             return Math.Round(HandshakeProtocol.QpcToMs(Stopwatch.GetTimestamp() - loadQpc), 1);
         }
 
+        private void ObsStamped(string track, string evt, string detail, DateTime now, long qpc)
+        {
+            ObservationLog.WriteStamped(track, evt, "inst=" + instNo + (string.IsNullOrEmpty(detail) ? string.Empty : " " + detail), now, qpc);
+        }
+
         private void Obs(string track, string evt, string detail)
         {
             ObservationLog.Write(track, evt, "inst=" + instNo + (string.IsNullOrEmpty(detail) ? string.Empty : " " + detail));
@@ -238,7 +243,7 @@ namespace TSScoringPlugin.Handshake
         /// <summary>Creates the scenario observer. Internal so the offline tests can attach fake readers.</summary>
         internal void BeginObservation(Func<int> readIsCreated, Func<string> probeBveInfo)
         {
-            observer = new ScenarioObserver(Obs, readIsCreated, probeBveInfo, ReadyFlag, delegate { return Environment.TickCount; });
+            observer = new ScenarioObserver(Obs, readIsCreated, probeBveInfo, ReadyFlag, delegate { return Environment.TickCount; }); observer.StampedLog = ObsStamped;
         }
 
         private string ReadyFlag()
@@ -301,7 +306,7 @@ namespace TSScoringPlugin.Handshake
             }
 
             IScenarioReadyPublisher publisher = publisherOverride ?? new ScenarioReadyPublisher(pid);
-            tracker = new ScenarioReadyTracker(Obs, readSnapshot, HandshakeUp, publisher, null, ControlReadyEpoch);
+            tracker = new ScenarioReadyTracker(Obs, readSnapshot, HandshakeUp, publisher, null, ControlReadyEpoch); tracker.StampedLog = ObsStamped;
         }
 
         private void SubscribeObservers()

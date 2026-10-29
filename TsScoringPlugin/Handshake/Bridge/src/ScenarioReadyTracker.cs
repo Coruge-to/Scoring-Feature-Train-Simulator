@@ -777,14 +777,95 @@ namespace TSScoringPlugin.Handshake
                 publishFailLogged = false;
             }
 
-            try { log("A", evt, detail); }
-            catch { }
+            Enqueue("A", evt, detail);
         }
 
-        private static void Safe(Action action)
+                // ---- C prime: log lines are built INSIDE the gate as immutable payloads (text + time stamp) and delivered AFTER the gate is released ----
+        internal Action<string, string, string, DateTime, long> StampedLog;
+
+        private sealed class PendingLine
         {
-            try { action(); }
-            catch { }
+            public string Track;
+            public string Evt;
+            public string Detail;
+            public DateTime Now;
+            public long Qpc;
+        }
+
+        private sealed class Collector
+        {
+            public System.Collections.Generic.List<PendingLine> Lines;
+        }
+
+        [ThreadStatic] private static Collector currentCollector;
+
+        private void Enqueue(string track, string evt, string detail)
+        {
+            Collector c = currentCollector;
+            if (c == null)
+            {
+                Deliver(track, evt, detail, DateTime.Now, System.Diagnostics.Stopwatch.GetTimestamp());
+                return;
+            }
+
+            if (c.Lines == null)
+            {
+                c.Lines = new System.Collections.Generic.List<PendingLine>(4);
+            }
+
+            PendingLine p = new PendingLine();
+            p.Track = track;
+            p.Evt = evt;
+            p.Detail = detail;
+            p.Now = DateTime.Now;
+            p.Qpc = System.Diagnostics.Stopwatch.GetTimestamp();
+            c.Lines.Add(p);
+        }
+
+        private void Deliver(string track, string evt, string detail, DateTime now, long qpc)
+        {
+            try
+            {
+                Action<string, string, string, DateTime, long> stamped = StampedLog;
+                if (stamped != null)
+                {
+                    stamped(track, evt, detail, now, qpc);
+                }
+                else
+                {
+                    log(track, evt, detail);
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private void Safe(Action action)
+        {
+            Collector previous = currentCollector;
+            Collector mine = new Collector();
+            currentCollector = mine;
+            try
+            {
+                action();
+            }
+            catch
+            {
+            }
+            finally
+            {
+                currentCollector = previous;
+                // the component gate was taken and released inside action(): every line is delivered outside the gate, in emit order, with the time stamp taken when it was emitted
+                if (mine.Lines != null)
+                {
+                    for (int i = 0; i < mine.Lines.Count; i++)
+                    {
+                        PendingLine p = mine.Lines[i];
+                        Deliver(p.Track, p.Evt, p.Detail, p.Now, p.Qpc);
+                    }
+                }
+            }
         }
     }
 }
