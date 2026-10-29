@@ -403,14 +403,14 @@ namespace TSScoringPlugin.Handshake
         {
             bool reload = false;
             try { reload = e.IsReload; } catch { }
-            try { if (observer != null) { observer.OnScenarioOpened(reload); } } catch { }
             try { if (tracker != null) { tracker.OnScenarioOpened(); } } catch { }
+            try { if (observer != null) { observer.OnScenarioOpened(reload); } } catch { }
         }
 
         private void OnHackerScenarioClosed(EventArgs e)
         {
-            try { if (observer != null) { observer.OnScenarioClosed(); } } catch { }
             try { if (tracker != null) { tracker.OnScenarioClosed(); } } catch { }
+            try { if (observer != null) { observer.OnScenarioClosed(); } } catch { }
         }
 
         private void OnHackerPreviewScenarioCreated(ScenarioCreatedEventArgs e)
@@ -420,8 +420,8 @@ namespace TSScoringPlugin.Handshake
 
         private void OnHackerScenarioCreated(ScenarioCreatedEventArgs e)
         {
-            try { if (observer != null) { observer.OnScenarioCreated(); } } catch { }
             try { if (tracker != null) { tracker.OnScenarioCreated(); } } catch { }
+            try { if (observer != null) { observer.OnScenarioCreated(); } } catch { }
         }
 
         private void OnHackerPreviewTick(object sender, EventArgs e)
