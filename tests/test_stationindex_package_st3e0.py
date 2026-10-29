@@ -66,13 +66,15 @@ BASE_BLOBS = {
     # Time Fix B changed managed_input.py (one name added to GENERATION_DROP) and scoring_logic.py (the operational stop keeps its arrival range, tests/test_timefix_b_operational_stop_margin.py) on purpose: the blobs moved from 73aff45b... / 140d8471... (0b8e511); the package manifest is regenerated for them
     # Time Fix B2 changed managed_input.py (one more name in GENERATION_DROP) and scoring_logic.py (the operational stop is latched at its stop and completed by that record, tests/test_timefix_b2_operational_stop_contract.py): the blobs moved from 293b4a21... / 5be7a006... (Time Fix B)
     # UI-Q1-B changed managed_input.py on purpose (the Qt translation of the locale is installed for the result save dialog, the file filters are named in Japanese, tests/test_ui_q1b_result_dialog_localization.py): the blob moved from 7933e16d... (Time Fix B2)
-    "managed_input.py": "6b0bda0bb5e95e22d14d58efa868a14ff004904d",
+    # Close-range departure reset added the two generation defaults (close_range_departure_reset_pending, prev_actual_stop_loc) to managed_input.py on purpose (tests/test_close_range_contract.py): the blob moved from 6b0bda0b... (UI-Q1-B)
+    "managed_input.py": "e1b792884110fc761debac455ce79908c47bb5c3",
     "managed_mode.py": "60413e37938808b1f15c52c3b81db9353fd7a84a",
     "managed_state.py": "d8b75db1e870f3f01f825961ec37e7471244d2bc",
     "menu_ui.py": "412e722fb533e1627fa9c4a348e242144c6866df",
     "pause_recovery.py": "6c01fd0ebe2ca6fae3c501129381046b5e645a95",
     # Time Fix B3 changed scoring_logic.py on purpose (the speed limit guidance gate is speed != 0.0; the operational stop is neither formed nor completed on the telemetry of an outstanding official jump and leaves no record at the scoring finish, tests/test_timefix_b3_zero_speed_contract.py): the blob moved from db5145a0... (Time Fix B2)
-    "scoring_logic.py": "e8d1a3d0879933f182bbc829a82d8748b6f697b6",
+    # Close-range departure reset changed scoring_logic.py on purpose (the previous actual stop position and the pending state, the departure reset of the early-stop and basic-braking state, the waiting gate, tests/test_close_range_contract.py): the blob moved from e8d1a3d0... (Time Fix B3)
+    "scoring_logic.py": "449e0c941385c70b63e6996a71d651e27f5543a2",
     "station_identity.py": "93ce7abce5a7050896c00ba6eddd3290e7b192d2",
     "station_index_contract.py": "73c9ec9a75ca6dca450637f47d15d0ebdbdda423",
     # SI-R2.2-S2a changed telemetry_contract.py on purpose (OFFTGT is a token of the station group; telemetry_state_defaults() carries the six published values of the OFFTGT part, tests/test_official_target_supply_s2a.py): the blob moved from 6eab0e7e... (0b8e511)
@@ -125,7 +127,8 @@ BASE_BLOBS = {
 # UI-ALT-F4 changed main.py on purpose (Overlay.closeEvent / set_input_ownership / has_input_ownership / bring_to_foreground / post_close_to_bve, the "in front" of the managed step follows the Overlay, the wiring of the user close handler and the stop probe, the shutdown disarms the handler; tests/test_overlay_user_close_altf4.py / tests/test_managed_hud_input_ownership.py): the blob (without its contract import) moved from af943ef0... (Time Fix B3)
 # SI-R2.2-S2a changed main.py on purpose (the OFFTGT intake: the import of the receiver module, the six published values and their private judgement state, the capture of the part outside the key loop and the judgement at three moments; tests/test_official_target_supply_s2a.py): the blob (without its contract import) moved from bd8c31c9... (UI-ALT-F4)
 # SI-R2.3 (C4b) changed main.py on purpose (the display target: the import of hud_target_contract, the read-only hud_target_* views, the display state _hud_target / _hud_freeze, the sync after every judged line and before the HUD is drawn; tests/test_hud_target_wiring_r23.py): the blob (without its contract import) moved from 5da4fb7f... (SI-R2.2-S2a)
-BASE_MAIN = "86e6929a7ed2629a6cbefd20c951d51e10fb2683"
+# Close-range departure reset changed main.py on purpose (the two construction defaults close_range_departure_reset_pending / prev_actual_stop_loc; tests/test_close_range_contract.py): the blob (without its contract import) moved from 86e6929a... (SI-R2.3 C4b)
+BASE_MAIN = "2a0b103b9f2be1722a1d18ea4842b61c9673521b"
 BASE_PROJECTS = {CURRENT_PROJECT: "61092229f34e5e4ceb52a4fb6e52280824ec2578", LEGACY_PROJECT: "defbe148ff815741c6b627cadaf8d024f649f804"}
 CODEC_FILES = ("jump_wire.py", "station_index_contract.py", "dataplane_contract.py", "telemetry_contract.py", "station_identity.py",
                SHARED_DIR + "/JumpWire.cs", SHARED_DIR + "/StationListIdentity.cs", SHARED_DIR + "/DataPlaneProtocol.cs", SHARED_DIR + "/TelemetryDirectoryReader.cs",

@@ -369,6 +369,8 @@ class Overlay(QWidget):
         self.has_scored_time_this_station = False
         self.has_scored_stop_this_station = False
         self.has_departed = False
+        self.close_range_departure_reset_pending = False     # the directly adjacent next stop is close; the first POSITIVE movement is awaited
+        self.prev_actual_stop_loc = -1.0                      # the actual stop position of the previous stop (-1.0 = none)
 
         self.map_head_limit = 1000.0
         self.map_tail_limit = 1000.0

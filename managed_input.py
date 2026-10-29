@@ -76,7 +76,7 @@ def generation_defaults():
         "prev_term": 0,
         # the evaluation of the current station
         "is_first_udp": True, "is_first_station": True, "is_approaching": False, "is_stopped_out_of_range": False, "has_scored_time_this_station": False,
-        "has_scored_stop_this_station": False, "has_departed": False, "is_stopping_zone": False, "max_stop_g": 0.0, "last_stop_g": 0.0,
+        "has_scored_stop_this_station": False, "has_departed": False, "close_range_departure_reset_pending": False, "prev_actual_stop_loc": -1.0, "is_stopping_zone": False, "max_stop_g": 0.0, "last_stop_g": 0.0,
         "stop_notch_state": "IDLE",
         # the speed limit guidance (blink / candidates of the previous scenario)
         "disp_limit": 1000.0, "limit_color": COLOR_WHITE, "effective_limit": 1000.0, "current_base_limit": 1000.0, "limit_changed_loc": -1.0,

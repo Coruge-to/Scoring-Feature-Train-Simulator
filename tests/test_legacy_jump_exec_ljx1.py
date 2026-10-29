@@ -189,7 +189,10 @@ TIMEFIX_B3_EVALUATE_DEPARTURE_PIN = ("slice", "E2F27FF844D94A4D24756620B2F137950
 # Time Fix B3 (an INTENDED change of the same kind): the arrival of an operational stop (update_physics_and_scoring) is not formed while an official jump is outstanding - the telemetry then describes the world the jump
 # is about to replace (old position, old clock), so it must not become the stop of the retried attempt (tests/test_timefix_b3_zero_speed_contract.py Z-T16b / Z-T18 / Z-T19). ONE more statement names `is_official_jumping`
 # (24 -> 25 jump records). The new digest is pinned on its own (it was 4843D2F5...); every other SLICE region is still compared with the blob of the formal LJX-1 commit (identical).
-TIMEFIX_B3_UPDATE_PHYSICS_PIN = ("slice", "5EBC117E7527A6BA6ED3F3440878F7344867FF7964BA36459024E5C9D36A38FE", 25)
+# Close-range departure reset (a scoring region, not a change of the jump contract): the target switch evaluates the close pair only when no official jump is outstanding (ONE more statement names
+# `is_official_jumping`, 25 -> 26 jump records; the new functions of the close-range reset name no jump word), and the operational-arrival condition (which already names it) gains the pending gate.
+# The new digest is pinned on its own (it was 5EBC117E...).
+TIMEFIX_B3_UPDATE_PHYSICS_PIN = ("slice", "76263B7C83BB397626D63F1678A78EC0A52A482CA1D63631CA7C8F2D7B615D79", 26)
 
 STATIONS = [0.0, 1000.0, 2000.0, 3000.0]
 SCORING_TOKENS = ["time", "speed", "loc", "station", "door", "handle", "brake_type", "brake_cab", "prates"]

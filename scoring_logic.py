@@ -75,6 +75,8 @@ def reset_station_evaluation_state(self):
     self.operational_stop_latch = None                    # 運転停車の停止成立記録(駅index, 停止成立時刻, 予定発車時刻)は駅単位の状態
     self.bb_first_valid_stop_detected = False
     self.bb_moved_after_first_valid_stop = False
+    self.close_range_departure_reset_pending = False
+    self.prev_actual_stop_loc = -1.0
 
 
 def reset_score_accumulation(self):
@@ -870,6 +872,49 @@ def create_save_data(self, arrival_loc=None):
         self.save_data.append(checkpoint)
         self._save_skip_key = None
 
+def close_range_fix_previous_stop(self, arrival_loc):
+    """The actual stop position of the stop that was just established, kept for the NEXT target switch. -1.0 when the identity of the arrival is not verified."""
+    snapshot = station_identity.arrival_snapshot(
+        getattr(self, 'current_scenario_id', -1), getattr(self, 'bve_list_id', ""), getattr(self, 'station_list', None),
+        getattr(self, 'bve_arr_idx', -1), arrival_loc)
+    self.prev_actual_stop_loc = self.bve_location if snapshot.valid else -1.0
+
+
+def init_basic_braking_state(self, current_time):
+    """The new-section state of the basic braking: counts at zero, the start is the handle of this moment (the zone entry and the close-range departure reset share it)."""
+    self.bb_state = "IDLE"
+    self.bb_apply_count = 0
+    self.bb_release_count = 0
+    self.bb_evaluated = False
+    self.bb_current_notch = self.bve_brk_notch
+    self.bb_prev_stable_notch = self.bve_brk_notch
+    self.bb_notch_change_time = current_time
+    self.bb_is_stable = True
+
+
+def close_range_pair_is_close(self, stop_distance):
+    """Evaluated ONCE at the target switch: stop -> stop only (neither target is a pass station), with a fixed actual stop position of the previous stop.
+    near edge = NEXTLOC + margin1 = bve_next_loc - bve_margin_b (bve_margin_b is abs(margin1)); margin2 (bve_margin_f) is not used. stop_distance is given by the caller."""
+    if not getattr(self, 'is_scoring_mode', False):
+        return False
+    if getattr(self, 'prev_is_pass', 0) != 0 or self.bve_is_pass != 0:
+        return False
+    anchor = getattr(self, 'prev_actual_stop_loc', -1.0)
+    if anchor < 0.0 or self.bve_next_loc < 0.0:
+        return False
+    return self.bve_next_loc - self.bve_margin_b - anchor <= stop_distance
+
+
+def update_close_range_departure_reset(self, current_time):
+    """The first POSITIVE movement after a close stop -> stop switch: the station evaluation state (early stop) and the basic braking state are reset in the same tick, once."""
+    if not getattr(self, 'close_range_departure_reset_pending', False):
+        return
+    if self.bve_speed > 0.0:
+        reset_station_evaluation_state(self)
+        init_basic_braking_state(self, current_time)
+        self.prev_stop_detection_speed = self.bve_speed      # the crossing of zero on THIS tick is the start of the movement, not a stop
+
+
 def evaluate_arrival(self, current_time, arrival_target_loc=None):
     if getattr(self, 'is_scoring_finished', False):
         return
@@ -992,6 +1037,7 @@ def evaluate_arrival(self, current_time, arrival_target_loc=None):
     else:
         if not getattr(self, 'jump_lock', False):
             create_save_data(self, p_loc)
+            close_range_fix_previous_stop(self, p_loc)
 
 def operational_stop_station(self):
     """Time Fix B2: (station index, scheduled departure ms) of the operational stop that is arrived at. The index is the sender's arrival index VERIFIED against the adopted station list and the position the
@@ -1456,19 +1502,14 @@ def update_physics_and_scoring(self, current_time, dt):
         self.roll_penalty_count = 0
         self.roll_was_moving = False
 
+    update_close_range_departure_reset(self, current_time)
+
     if getattr(self, 'bb_is_in_zone', False) and self.bve_speed < 0:
         self.bb_state = "FAILED"
 
-    if in_station_zone and not self.bb_is_in_zone:
-        self.bb_state = "IDLE"
-        self.bb_apply_count = 0
-        self.bb_release_count = 0
+    if in_station_zone and not getattr(self, 'close_range_departure_reset_pending', False) and not self.bb_is_in_zone:
+        init_basic_braking_state(self, current_time)
         self.bb_is_in_zone = True
-        self.bb_evaluated = False
-        self.bb_current_notch = self.bve_brk_notch
-        self.bb_prev_stable_notch = self.bve_brk_notch
-        self.bb_notch_change_time = current_time
-        self.bb_is_stable = True
 
     elif not in_station_zone and self.bb_is_in_zone:
         self.bb_is_in_zone = False
@@ -1525,6 +1566,9 @@ def update_physics_and_scoring(self, current_time, dt):
         if is_forward_transition:
             evaluate_departure(self, current_time)
 
+        close_range_stop_distance = getattr(self, 'setting_stop_distance', -1) if getattr(self, 'setting_stop_distance', -1) != -1 else (self.bve_train_length + STATION_MARGIN)
+        close_pair = is_forward_transition and not getattr(self, 'is_official_jumping', False) and close_range_pair_is_close(self, close_range_stop_distance)
+
         self.ignore_next_pass_score = False
         self.is_first_station = False
 
@@ -1533,6 +1577,8 @@ def update_physics_and_scoring(self, current_time, dt):
 
         self.bb_evaluated = False
         self.bb_is_in_zone = False
+        self.close_range_departure_reset_pending = close_pair
+        update_close_range_departure_reset(self, current_time)       # a positive speed on the switch tick (operational stop) is the departure itself
 
     if not getattr(self, 'is_approaching', False) and self.bve_next_loc >= 0:
         actual_margin = getattr(self, 'setting_stop_distance', -1) if getattr(self, 'setting_stop_distance', -1) != -1 else (self.bve_train_length + STATION_MARGIN)
@@ -1559,6 +1605,7 @@ def update_physics_and_scoring(self, current_time, dt):
     if (
         getattr(self, 'is_approaching', False)
         and stop_detected
+        and not getattr(self, 'close_range_departure_reset_pending', False)
         and not getattr(
             self,
             'has_scored_stop_this_station',
@@ -1577,7 +1624,7 @@ def update_physics_and_scoring(self, current_time, dt):
     self.prev_stop_detection_speed = self.bve_speed
 
     # Time Fix B3: 公式ジャンプの完了待ちの間のテレメトリは、ジャンプが置き換える前の世界(旧位置・旧時刻)を表す。運転停車の停止成立・latchは作らない(着地後の最初の停止から作り直す)
-    if is_operational_stop and getattr(self, 'is_approaching', False) and self.bve_speed == 0.0 and not getattr(self, 'has_scored_stop_this_station', False) and not getattr(self, 'is_official_jumping', False):
+    if is_operational_stop and getattr(self, 'is_approaching', False) and self.bve_speed == 0.0 and not getattr(self, 'has_scored_stop_this_station', False) and not getattr(self, 'is_official_jumping', False) and not getattr(self, 'close_range_departure_reset_pending', False):
         # 作者定義の停止位置許容範囲内（-margin_f～margin_b）で停車した場合にのみ到着処理を行う
         dist_to_stop = self.bve_next_loc - self.bve_location
         if (-self.bve_margin_f <= dist_to_stop <= self.bve_margin_b):

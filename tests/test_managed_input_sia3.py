@@ -1715,8 +1715,22 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
             "if is_operational_stop and getattr(self, 'is_approaching', False) and self.bve_speed == 0.0 and not getattr(self, 'has_scored_stop_this_station', False):",
             "elif getattr(self, 'prev_is_pass', 0) == 0 and is_timing_active:",
         )
+        # Close-range departure reset (on purpose): the zone-entry initialisation of the basic braking (the condition line, which gained the pending gate, and the 8 assignments) moved into the shared
+        # init_basic_braking_state; the zone entry and the departure reset call it. These are the 10 distinct lines (stripped) that the diff shows as removed; no score, no rule and no constant is among them.
+        close_range_shared_basic_braking_init = (
+            'if in_station_zone and not self.bb_is_in_zone:',
+            'self.bb_state = "IDLE"',
+            'self.bb_apply_count = 0',
+            'self.bb_release_count = 0',
+            'self.bb_evaluated = False',
+            'self.bb_current_notch = self.bve_brk_notch',
+            'self.bb_prev_stable_notch = self.bve_brk_notch',
+            'self.bb_notch_change_time = current_time',
+            'self.bb_is_stable = True',
+        )
         self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport) + st2a_checkpoint_identity + st2b_retry_by_saved_index
-                                   + st3d_request_by_the_one_builder + st2c_first_station_distance + timefix_b_departure_margins + timefix_b3_zero_speed_and_jump_boundary], removed)
+                                   + st3d_request_by_the_one_builder + st2c_first_station_distance + timefix_b_departure_margins + timefix_b3_zero_speed_and_jump_boundary
+                                   + close_range_shared_basic_braking_init], removed)
 
     def test_the_scoring_function_bodies_are_ast_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":scoring_logic.py")
@@ -1730,7 +1744,9 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
         a, b = functions(old.replace("\r\n", "\n")), functions(new)
         # Phase ST-2a (on purpose): note_save_skipped records a refused checkpoint (a diagnostic line, no score); Time Fix B2 (on purpose): operational_stop_station and resolve_operational_stop_completion are the two
         # pure helpers of the operational stop latch (the verified station + scheduled time of the stop; the cause and the error of its completion: no score, no rule, no constant)
-        self.assertEqual(set(a) | {"note_save_skipped", "operational_stop_station", "resolve_operational_stop_completion"}, set(b))
+        # Close-range departure reset (on purpose): the shared basic-braking initialisation, the anchor of the previous actual stop, the one pair evaluation and the departure reset are new functions (no score, no rule, no constant)
+        self.assertEqual(set(a) | {"note_save_skipped", "operational_stop_station", "resolve_operational_stop_completion",
+                                   "init_basic_braking_state", "close_range_fix_previous_stop", "close_range_pair_is_close", "update_close_range_departure_reset"}, set(b))
         changed = sorted(n for n in a if a[n] != b[n])
         # only the diagnostic writer got the switch and (PID-D6) execute_retry's one transport line; no score, no rule, no constant
         # Phase ST-2a (on purpose): create_save_data takes the station of the checkpoint from the verified arrival index, evaluate_arrival names the judged position in its one call of it,

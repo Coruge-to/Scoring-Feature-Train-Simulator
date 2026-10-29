@@ -152,8 +152,9 @@ class B_WhatTheSpeedLimitScoreAndTheGuidanceNeed(unittest.TestCase):
         users = {q for q, f in functions(tree("scoring_logic.py")).items() if "bve_train_length" in attrs_of(f)}
         self.assertEqual(users, {"evaluate_arrival", "update_physics_and_scoring"})      # the stop range (arrival) and the speed-limit guidance
         text = read("scoring_logic.py")
-        self.assertEqual(text.count("self.bve_train_length + STATION_MARGIN"), 3)
-        self.assertEqual(text.count("getattr(self, 'setting_stop_distance', -1) if getattr(self, 'setting_stop_distance', -1) != -1"), 3)
+        # 3 -> 4: the close-range pair evaluation takes the stop distance from its CALLER (update_physics_and_scoring, the target switch) - the function that evaluates it reads neither bve_train_length nor the setting
+        self.assertEqual(text.count("self.bve_train_length + STATION_MARGIN"), 4)
+        self.assertEqual(text.count("getattr(self, 'setting_stop_distance', -1) if getattr(self, 'setting_stop_distance', -1) != -1"), 4)
         main = read("main.py")
         self.assertIn("self.setting_stop_distance = round(int(self.bve_train_length) * 1.1)", main)
         self.assertIn("self.bve_train_length = max(float(part.split(':')[1]), 20.0)", main)
