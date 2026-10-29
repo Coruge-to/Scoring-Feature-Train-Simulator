@@ -7,6 +7,14 @@
 # This script is ASCII-only on purpose.
 param([string]$Root = (Split-Path $PSScriptRoot -Parent))
 
+# SI-R5.3 (A1F): this fixture checks the COMPLETE-WRITE contract of the observation log (every line is written, in order, the 30 ms wait of a worker thread).
+# That is the contract of non-STA threads. An STA thread deliberately drops a line when another thread holds the log (ObservationLog, SI-R5.3 A prime), which
+# made the order / completeness assertions below race against the Caller and control threads. The test therefore always runs on an MTA thread.
+if ([Threading.Thread]::CurrentThread.GetApartmentState() -ne [Threading.ApartmentState]::MTA) {
+    & powershell.exe -NoProfile -MTA -ExecutionPolicy Bypass -File $PSCommandPath -Root $Root
+    exit $LASTEXITCODE
+}
+
 Add-Type -TypeDefinition @'
 public class NoticeRecorder
 {
