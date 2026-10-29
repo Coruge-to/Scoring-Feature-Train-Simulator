@@ -70,7 +70,8 @@ UNTOUCHED = {
     # SI-R2.2-S2b (C3a) changed LegacyTelemetryExtension.cs on purpose (the read only adapter ILegacyOfficialTargetApi.ReadOfficialTarget and the E-9 rule text of the header; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 12a0f84a... (the commit before S2b)
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "ad89eb30b5b4f16fb36bef4824adbd734565bd7b",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpCommandQueue.cs": "c9517db9074f45ef447991cd52280ef512047070",
-    "station_identity.py": "93ce7abce5a7050896c00ba6eddd3290e7b192d2",
+    # SI-R5.2-A added the pure missing-index classifier, the run tracker and the managed diagnostic glue to station_identity.py on purpose (no wire, no codec, no Legacy product change; tests/test_si_r5_2a_stage_a.py): the blob moved from 93ce7abc... (ST-3b)
+    "station_identity.py": "2c971098059a6b8948cd842ed84af8ece9a054b9",
     "jump_wire.py": "00579f8031221333f2f6e471d7e30ab3f8b1a365",
     "current_jump_client.py": "bfcee44c0a0f79a76a8a6e950c738084523f1cf9",
     "dataplane_contract.py": "56da8579207ae7f6d866f17ce4aafe6d0553c23f",

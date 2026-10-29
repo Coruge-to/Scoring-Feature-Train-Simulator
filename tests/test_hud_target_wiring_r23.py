@@ -29,7 +29,7 @@ HAS_QT = importlib.util.find_spec("PyQt6") is not None
 
 # the git blob ids (LF text) of the sources SI-R2.3 must not change: the scoring (B2 / B3 contract), the input / generation classification, the official supply and the telemetry names
 PINNED_BLOBS = {
-    "scoring_logic.py": "449e0c941385c70b63e6996a71d651e27f5543a2",       # close-range departure reset (was e8d1a3d0...)
+    "scoring_logic.py": "c4981e27d3ab813a4abad558a82ff7bbe90098dd",       # SI-R5.2-A: P03 takes bve_tgt_idx, the distance lookup is gone (was 449e0c94...; close-range departure reset before it: e8d1a3d0...)
     "managed_input.py": "e1b792884110fc761debac455ce79908c47bb5c3",       # + the two generation defaults of the close-range reset (was 6b0bda0b...)
     "official_target_contract.py": "9c0a68979113626724ccfa48e9c9d8cd117b3bae",
     "telemetry_contract.py": "0cc2ef6a9e412e189ab34c84f435c59bdca061e4",

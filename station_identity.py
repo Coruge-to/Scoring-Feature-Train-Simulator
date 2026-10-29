@@ -451,3 +451,272 @@ def retry_event(result, position, history_before, history_after, count_before, c
         return "retry-rejected", fields
     except Exception:
         return "retry-rejected", {"why": INTERNAL_ERROR}
+
+
+# ==============================================================================================================================================================
+# Phase SI-R5.2-A - the CLASSIFICATION of a station index that is MISSING where the scoring needs one (the replacement of the 1 m reverse lookups; site P03 first).
+# A missing identity is never replaced: nothing in this section creates an index, falls back to another index, scans a station list, searches by a position, reads
+# official_index, or changes a target, a NEXTLOC, a scoring state or a jump state. The functions CLASSIFY what the caller observed and report it; the caller skips the
+# identity-dependent step of that tick on its own, in the managed and in the normal mode alike. The jump words below are only the NAMES of existing flags that are READ.
+# ==============================================================================================================================================================
+SITE_P01 = "P01"                 # evaluate_arrival
+SITE_P02 = "P02"                 # evaluate_departure (the only site that can be a position_mismatch)
+SITE_P03 = "P03"                 # HUD next station / rule section
+SITE_P04 = "P04"                 # operational-stop pre-arrival timing
+SITE_P05 = "P05"                 # normal-stop door-open arrival
+SITES = (SITE_P01, SITE_P02, SITE_P03, SITE_P04, SITE_P05)
+SCORING_OPPORTUNITY_SITES = (SITE_P04, SITE_P05)         # a lost identity here loses a scoring opportunity: never expected while a scoring session runs
+
+CLS_EXPECTED_UNAVAILABLE = "expected_unavailable"        # generation start / an authorized re-initialization (Retry, the official jump of the start), before the first valid index
+CLS_CONTRACTUAL_NONE = "contractual_none"                # the target does not exist by contract (no scenario, session off with a usable identity, a formal terminal)
+CLS_UNEXPECTED_MISSING = "unexpected_missing"            # everything else: a PRODUCT FAIL candidate
+CLS_POSITION_MISMATCH = "position_mismatch"              # P02 only: the previous index is valid but its station is not at the previous NEXTLOC
+MISSING_CLASSES = (CLS_EXPECTED_UNAVAILABLE, CLS_CONTRACTUAL_NONE, CLS_UNEXPECTED_MISSING, CLS_POSITION_MISMATCH)
+
+# The thresholds of an expected window (the real time first; the tick count when the tick period is not fixed): the earlier one of the two decides.
+SOFT_WARNING_MS = 1000.0
+SOFT_WARNING_TICKS = 60
+HARD_ANOMALY_MS = 2000.0
+HARD_ANOMALY_TICKS = 120
+
+EVENT_MISSING_INDEX = "stidx-missing-index"
+EVENT_MISSING_END = "stidx-missing-end"
+ACTION_SKIP = "skip"
+RECOVERY_ESTABLISHED = "established"                     # a valid index was established again
+RECOVERY_NEXTLOC_NONE = "nextloc_none"                   # the run ended because the contract says there is no target (NEXTLOC < 0)
+
+
+class MissingClassification(NamedTuple):
+    cls: str
+    soft_warning: bool
+    hard_anomaly: bool
+
+
+def index_in_list(index, count):
+    """True when `index` is an integer inside 0..count-1. A bound check ONLY: the list is not read and nothing is chosen."""
+    return _is_int(index) and _is_int(count) and 0 <= index < count
+
+
+def _positive(value):
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0 else 0.0
+
+
+def classify_missing(site, scenario_loaded, scoring_active, scoring_finished, identity_usable, window_open, established, position_mismatch=False, elapsed_ms=0.0, missing_ticks=0):
+    """The class of one missing station index (pure).
+
+    scenario_loaded    a scenario and a station list are loaded
+    scoring_active     the scoring session is on (is_scoring_mode)
+    scoring_finished   the scoring ended formally
+    identity_usable    the sender's indexes may be used at all (the decision of the sync)
+    window_open        a generation start / an authorized re-initialization is under way (reinit_window_open)
+    established        a valid index was established again inside the current window (never goes back to False inside the same window)
+    position_mismatch  P02 only: the previous index is valid but its station is not at the previous NEXTLOC
+    elapsed_ms, missing_ticks   how long the same site has been missing (the run)
+
+    The order: no scenario / a formal end / a session that is off with a usable identity -> contractual_none; P02 position mismatch in a running session ->
+    position_mismatch; a site that would lose a scoring opportunity -> unexpected_missing; an open window that has not re-established an index and has not reached the
+    hard limit -> expected_unavailable; everything else -> unexpected_missing. The soft / hard flags are reported for every class (they only change the class at the hard limit)."""
+    elapsed, ticks = _positive(elapsed_ms), (missing_ticks if _is_int(missing_ticks) and missing_ticks > 0 else 0)
+    soft = elapsed >= SOFT_WARNING_MS or ticks >= SOFT_WARNING_TICKS
+    hard = elapsed >= HARD_ANOMALY_MS or ticks >= HARD_ANOMALY_TICKS
+    if not scenario_loaded or scoring_finished:
+        return MissingClassification(CLS_CONTRACTUAL_NONE, soft, hard)
+    if not scoring_active and identity_usable:
+        return MissingClassification(CLS_CONTRACTUAL_NONE, soft, hard)
+    if scoring_active and position_mismatch and site == SITE_P02:
+        return MissingClassification(CLS_POSITION_MISMATCH, soft, hard)
+    if scoring_active and site in SCORING_OPPORTUNITY_SITES:
+        return MissingClassification(CLS_UNEXPECTED_MISSING, soft, hard)
+    if window_open and not established and not hard:
+        return MissingClassification(CLS_EXPECTED_UNAVAILABLE, soft, hard)
+    return MissingClassification(CLS_UNEXPECTED_MISSING, soft, hard)
+
+
+def reinit_window_open(state, identity_usable):
+    """True while a generation start or an authorized re-initialization is under way: an official jump (Retry, the start) is requested, the managed generation waits for
+    its jump baseline, or the scoring session is off and the sender's indexes are not usable (a scenario load / F5). READS the flags of `state`; writes nothing."""
+    if getattr(state, "is_official_jumping", False) or getattr(state, "jump_baseline_pending", False):
+        return True
+    return not getattr(state, "is_scoring_mode", False) and not identity_usable
+
+
+def missing_why(site, decision, index, count, position_mismatch=False):
+    """The fixed reason word of a missing index: the sync's own reason when the sender's indexes are unusable, the target snapshot's reason when they are usable but the
+    target is not, otherwise what the index itself says (negative / outside the list). Never a station name, never a replacement."""
+    if position_mismatch:
+        return LOCATION_MISMATCH
+    if decision is not None and not decision.usable:
+        return decision.reason
+    if decision is not None and site != SITE_P02 and decision.tgt.reason != OK:
+        return decision.tgt.reason
+    if not _is_int(index) or index < 0:
+        return INDEX_NEGATIVE
+    return INDEX_OUT_OF_RANGE if _is_int(count) and index >= count else NOT_READY
+
+
+class MissingFacts(NamedTuple):
+    """What one site observed at the tick of a missing index (numbers, flags and fixed words; no station name)."""
+    site: str
+    scenario_loaded: bool
+    scoring_active: bool
+    scoring_finished: bool
+    identity_usable: bool
+    window_open: bool
+    position_mismatch: bool
+    why: str
+    index: int
+    prev_index: int
+    t: int
+    scn: int
+    list_id: str
+    nextloc: object
+    prev_nextloc: object
+
+
+def missing_facts(state, site, index, prev_index=NO_INDEX, position_mismatch=False):
+    """The facts of one missing index, READ from the application state (nothing is written and nothing is looked up)."""
+    station_list = getattr(state, "station_list", None)
+    count = len(station_list) if station_list is not None else 0
+    decision = getattr(state, "_station_identity", None)
+    usable = bool(decision is not None and decision.usable)
+    scenario = getattr(state, "current_scenario_id", -1)
+    t = getattr(state, "bve_time_ms", -1)
+    return MissingFacts(
+        site, count > 0 and _is_int(scenario) and scenario >= 0, bool(getattr(state, "is_scoring_mode", False)), bool(getattr(state, "is_scoring_finished", False)), usable,
+        reinit_window_open(state, usable), bool(position_mismatch), missing_why(site, decision, index, count, position_mismatch), index, prev_index,
+        int(t) if isinstance(t, (int, float)) and not isinstance(t, bool) and math.isfinite(t) else -1, scenario if _is_int(scenario) else -1,
+        getattr(station_list, "list_id", "") if station_list is not None else "", getattr(state, "bve_next_loc", None), getattr(state, "prev_next_loc", None))
+
+
+class MissingTracker(object):
+    """The diagnostic memory of the missing indexes: ONE record per site (the run of ticks the site was missing, and the window gate). It reads no scoring, HUD or history
+    state and writes none; it only returns the events (name, fields) that the caller hands to the diagnostic sink. Pure: the clock is the argument `now_s`.
+
+    A run is one continuous absence of a site. Its first tick reports `stidx-missing-index`; a change of (class, reason, indexes, the soft flag of an expected window)
+    inside the run reports it again (the class turns unexpected at the hard limit); the tick on which the site finds a valid index again reports one `stidx-missing-end`.
+    The window gate: an authorized window (reinit_window_open) is EXPECTED until the first valid index after a miss inside it; it never turns expected again inside
+    the same window. A scenario change drops a run silently (the clock and the indexes of the old generation say nothing about the new one)."""
+
+    def __init__(self):
+        self._sites = {}
+
+    def _slot(self, site, scn):
+        slot = self._sites.get(site)
+        if slot is None or slot["scn"] != scn:
+            slot = self._sites[site] = {"scn": scn, "win": False, "armed": False, "missed": False, "run": None}
+        return slot
+
+    @staticmethod
+    def _window(slot, window_open):
+        if window_open and not slot["win"]:
+            slot["armed"], slot["missed"] = True, False          # a window opens: expected until the first valid index after a miss
+        elif not window_open:
+            slot["armed"] = False
+        slot["win"] = bool(window_open)
+
+    @staticmethod
+    def _elapsed_ms(run, now_s):
+        return max(0.0, (now_s - run["t0"]) * 1000.0) if isinstance(now_s, (int, float)) and isinstance(run["t0"], (int, float)) else 0.0
+
+    def missing(self, facts, now_s, effect=""):
+        """The site is missing its index on this tick: [(event, fields)] (empty when the run goes on unchanged)."""
+        slot = self._slot(facts.site, facts.scn)
+        self._window(slot, facts.window_open)
+        slot["missed"] = True
+        run = slot["run"]
+        if run is None:
+            run = slot["run"] = {"t0": now_s, "ticks": 0, "key": None, "cls": CLS_UNEXPECTED_MISSING, "soft": False, "hard": False}
+        run["ticks"] += 1
+        elapsed = self._elapsed_ms(run, now_s)
+        c = classify_missing(facts.site, facts.scenario_loaded, facts.scoring_active, facts.scoring_finished, facts.identity_usable, facts.window_open,
+                             not slot["armed"], facts.position_mismatch, elapsed, run["ticks"])
+        run["cls"], run["soft"], run["hard"] = c.cls, c.soft_warning, c.hard_anomaly
+        key = (c.cls, facts.why, facts.index, facts.prev_index, c.soft_warning if c.cls == CLS_EXPECTED_UNAVAILABLE else False)
+        if key == run["key"]:
+            return []
+        run["key"] = key
+        fields = {"a": facts.site, "site": facts.site, "cls": c.cls, "why": facts.why, "t": facts.t, "scn": facts.scn, "list": _list_text(facts.list_id),
+                  "scoring": 1 if facts.scoring_active else 0, "session": "finished" if facts.scoring_finished else ("active" if facts.scoring_active else "off"),
+                  "tgt": facts.index, "prev_tgt": facts.prev_index, "nextloc": _location_text(facts.nextloc), "prev_nextloc": _location_text(facts.prev_nextloc),
+                  "avail": 1 if facts.identity_usable else 0, "action": ACTION_SKIP, "soft": 1 if c.soft_warning else 0, "hard": 1 if c.hard_anomaly else 0}
+        if effect:
+            fields["effect"] = effect
+        return [(EVENT_MISSING_INDEX, fields)]
+
+    def present(self, site, scn, window_open, now_s, t=-1):
+        """The site has a valid index on this tick: the window gate learns it, and an open run ends ([(event, fields)] or [])."""
+        slot = self._slot(site, scn)
+        self._window(slot, window_open)
+        if slot["armed"] and slot["missed"]:
+            slot["armed"] = False                                # the first valid index after a miss inside the window: established, never expected again in it
+        return self._end(slot, site, now_s, t, RECOVERY_ESTABLISHED)
+
+    def release(self, site, scn, now_s, t=-1):
+        """The contract says there is no target on this tick (NEXTLOC < 0): an open run ends without having been recovered."""
+        slot = self._slot(site, scn)
+        return self._end(slot, site, now_s, t, RECOVERY_NEXTLOC_NONE)
+
+    def _end(self, slot, site, now_s, t, recovery):
+        run = slot["run"]
+        if run is None:
+            return []
+        slot["run"] = None
+        fields = {"a": site, "site": site, "cls": run["cls"], "ticks": run["ticks"], "elapsed_ms": int(self._elapsed_ms(run, now_s)), "soft": 1 if run["soft"] else 0,
+                  "hard": 1 if run["hard"] else 0, "recovery": recovery, "t": t}
+        return [(EVENT_MISSING_END, fields)]
+
+
+def _emit_missing_events(state, events):
+    """Hand the events of the tracker to the diagnostic sink of the application (managed mode only: the normal mode installs no sink)."""
+    note = getattr(state, "_station_identity_note", None)
+    if note is None:
+        return
+    for event, fields in events:
+        note(event, **fields)
+
+
+def note_missing(state, site, now_s, index, effect="", prev_index=NO_INDEX, position_mismatch=False):
+    """`site` could not get the station index it needs and SKIPPED its identity-dependent step on this tick (the caller does that, the same in the managed and in the normal
+    mode). Never replaced by a position, an older index, station 0 or the official target. Diagnostic only and managed only: the normal mode installs no sink and keeps
+    nothing. The only thing written is the tracker the application state carries for this purpose (`_missing_tracker`). Never raises."""
+    if getattr(state, "input_event_sink", None) is None:
+        return
+    try:
+        tracker = getattr(state, "_missing_tracker", None)
+        if tracker is None:
+            tracker = state._missing_tracker = MissingTracker()
+        _emit_missing_events(state, tracker.missing(missing_facts(state, site, index, prev_index, position_mismatch), now_s, effect))
+    except Exception:
+        pass
+
+
+def note_present(state, site, now_s):
+    """`site` has its station index on this tick: an open missing run ends (managed only; never raises)."""
+    if getattr(state, "input_event_sink", None) is None:
+        return
+    tracker = getattr(state, "_missing_tracker", None)
+    if tracker is None:
+        return
+    try:
+        decision = getattr(state, "_station_identity", None)
+        window = reinit_window_open(state, bool(decision is not None and decision.usable))
+        _emit_missing_events(state, tracker.present(site, getattr(state, "current_scenario_id", -1), window, now_s, getattr(state, "bve_time_ms", -1)))
+    except Exception:
+        pass
+
+
+def note_not_required(state, site, now_s):
+    """The contract says there is no target on this tick (NEXTLOC < 0): an open missing run of `site` ends without a recovery (managed only; never raises)."""
+    if getattr(state, "input_event_sink", None) is None:
+        return
+    tracker = getattr(state, "_missing_tracker", None)
+    if tracker is None:
+        return
+    try:
+        _emit_missing_events(state, tracker.release(site, getattr(state, "current_scenario_id", -1), now_s, getattr(state, "bve_time_ms", -1)))
+    except Exception:
+        pass
+
+
+def _list_text(list_id):
+    return "".join(ch for ch in str(list_id) if ch.isalnum())[:8] or "none"

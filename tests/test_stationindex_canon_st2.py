@@ -2184,7 +2184,7 @@ class Z_Meta(unittest.TestCase):
         create = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "create_save_data"][0]
         ones = [n.value for n in ast.walk(create) if isinstance(n, ast.Constant) and isinstance(n.value, float) and n.value == 1.0]
         self.assertEqual(ones, [])                                                      # the 1 m reverse lookup of the Save is gone ...
-        self.assertEqual(len(re.findall(r"abs\(st\[\"location\"\] - [A-Za-z_.]+\) < 1\.0", logic)), 5)                 # ... the five others are ST-4's (arrival, departure, guidance, two lookups of the arrival)
+        self.assertEqual(len(re.findall(r"abs\(st\[\"location\"\] - [A-Za-z_.]+\) < 1\.0", logic)), 4)                 # ... the others are ST-4's (arrival, departure, two lookups of the arrival); Phase SI-R5.2-A re-pinned 5 -> 4 (the guidance, P03, takes bve_tgt_idx)
         for forbidden in ("StationList", "bve_arr_idx", "bve_tgt_idx"):                 # (Phase ST-2b: the retry reads station_identity and bve_list_id, the verified scope; it never reads the sender's indexes)
             self.assertNotIn(forbidden, ast.get_source_segment(logic, retry))
 

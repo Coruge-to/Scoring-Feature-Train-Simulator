@@ -1728,9 +1728,22 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
             'self.bb_notch_change_time = current_time',
             'self.bb_is_stable = True',
         )
+        # Phase SI-R5.2-A (on purpose): P03, the HUD next station / rule section, takes the scoring target index bve_tgt_idx instead of the 1 m lookup at NEXTLOC; the 4 lines of the lookup left and the 4 rule
+        # section assignments moved under the missing-identity guard (a deeper indent). These are the 8 distinct lines (stripped) that the diff shows as removed, taken from the diff; no score, no rule value and no
+        # constant is among them (the rule section is selected exactly as before when the identity is present).
+        si_r5_2a_p03_target_index = (
+            'for i, st in enumerate(self.station_list):',
+            'if abs(st["location"] - self.bve_next_loc) < 1.0:',
+            'next_idx = i',
+            'break',
+            'self.active_rule_basic_apply = active_b_rule.get("apply", "階段")',
+            'self.active_rule_basic_release = active_b_rule.get("release", "階段")',
+            'self.active_rule_init_apply = active_p_rule.get("apply", "ON①")',
+            'self.active_rule_init_release = active_p_rule.get("release", "ON①")',
+        )
         self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport) + st2a_checkpoint_identity + st2b_retry_by_saved_index
                                    + st3d_request_by_the_one_builder + st2c_first_station_distance + timefix_b_departure_margins + timefix_b3_zero_speed_and_jump_boundary
-                                   + close_range_shared_basic_braking_init], removed)
+                                   + close_range_shared_basic_braking_init + si_r5_2a_p03_target_index], removed)
 
     def test_the_scoring_function_bodies_are_ast_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":scoring_logic.py")

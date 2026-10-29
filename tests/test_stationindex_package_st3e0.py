@@ -74,8 +74,10 @@ BASE_BLOBS = {
     "pause_recovery.py": "6c01fd0ebe2ca6fae3c501129381046b5e645a95",
     # Time Fix B3 changed scoring_logic.py on purpose (the speed limit guidance gate is speed != 0.0; the operational stop is neither formed nor completed on the telemetry of an outstanding official jump and leaves no record at the scoring finish, tests/test_timefix_b3_zero_speed_contract.py): the blob moved from db5145a0... (Time Fix B2)
     # Close-range departure reset changed scoring_logic.py on purpose (the previous actual stop position and the pending state, the departure reset of the early-stop and basic-braking state, the waiting gate, tests/test_close_range_contract.py): the blob moved from e8d1a3d0... (Time Fix B3)
-    "scoring_logic.py": "449e0c941385c70b63e6996a71d651e27f5543a2",
-    "station_identity.py": "93ce7abce5a7050896c00ba6eddd3290e7b192d2",
+    # SI-R5.2-A changed scoring_logic.py on purpose (P03, the HUD next station / rule section, takes the scoring target index bve_tgt_idx instead of the 1 m lookup at NEXTLOC; tests/test_si_r5_2a_stage_a.py / tests/red_si_r5_station_identity.py): the blob moved from 449e0c94... (Close-range departure reset)
+    "scoring_logic.py": "c4981e27d3ab813a4abad558a82ff7bbe90098dd",
+    # SI-R5.2-A changed station_identity.py on purpose (the pure missing-index classifier, the run tracker and the managed diagnostic glue; tests/test_si_r5_2a_stage_a.py): the blob moved from 93ce7abc... (ST-3b)
+    "station_identity.py": "2c971098059a6b8948cd842ed84af8ece9a054b9",
     "station_index_contract.py": "73c9ec9a75ca6dca450637f47d15d0ebdbdda423",
     # SI-R2.2-S2a changed telemetry_contract.py on purpose (OFFTGT is a token of the station group; telemetry_state_defaults() carries the six published values of the OFFTGT part, tests/test_official_target_supply_s2a.py): the blob moved from 6eab0e7e... (0b8e511)
     "telemetry_contract.py": "0cc2ef6a9e412e189ab34c84f435c59bdca061e4",

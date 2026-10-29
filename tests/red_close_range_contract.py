@@ -843,10 +843,10 @@ class G_Static(unittest.TestCase):
         copies = re.findall(r"self\.prev_next_loc\s*=\s*([^\n]+)", self.sl)
         self.assertEqual(sorted(copies), ["self.bve_next_loc", "self.bve_next_loc"])
 
-    @case("GUARD", "S35 (35) the 1 m reverse lookups stay at the five existing SI-R5 sites (none is added)", group="STATIC")
+    @case("GUARD", "S35 (35) the 1 m reverse lookups stay at the four remaining SI-R5 sites (none is added; SI-R5.2-A removed P03)", group="STATIC")
     def test_S35_no_new_one_metre_lookup(self):
         n = len(re.findall(r"abs\(st\[\"location\"\]\s*-\s*[\w\.]+\)\s*<\s*1\.0", self.sl))
-        self.assertLessEqual(n, 5, "found %d" % n)
+        self.assertLessEqual(n, 4, "found %d" % n)
 
     @case("GUARD", "S36 (36) no 50 m window (the G01 old expectation, the A0 files) in the product or in this fixture", group="STATIC")
     def test_S36_no_50m_window(self):

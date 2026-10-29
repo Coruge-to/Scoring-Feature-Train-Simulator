@@ -1256,12 +1256,19 @@ def update_physics_and_scoring(self, current_time, dt):
     if getattr(self, 'is_scoring_mode', False) and getattr(self, 'station_list', []):
 
         # 1. 先に「次駅ターゲット」を特定する（ドアが閉まると切り替わる）
+        # Phase SI-R5.2-A: 駅はC#状態機械が保持する採点ターゲット(bve_tgt_idx)そのもの。NEXTLOCの位置から駅を探さない。欠落時は代わりの駅を作らず、HUDは「---」、規則区間は据え置く。
         next_idx = -1
+        identity_missing = False
         if self.bve_next_loc >= 0:
-            for i, st in enumerate(self.station_list):
-                if abs(st["location"] - self.bve_next_loc) < 1.0:
-                    next_idx = i
-                    break
+            target_idx = getattr(self, 'bve_tgt_idx', -1)
+            if station_identity.index_in_list(target_idx, len(self.station_list)):
+                next_idx = target_idx
+                station_identity.note_present(self, "P03", current_time)
+            else:
+                identity_missing = True
+                station_identity.note_missing(self, "P03", current_time, target_idx, "hud_placeholder+keep_existing_rule_section")
+        else:
+            station_identity.note_not_required(self, "P03", current_time)
 
         if next_idx >= 0:
             self.active_next_sta_name = self.station_list[next_idx].get("name", "不明な駅")
@@ -1293,10 +1300,11 @@ def update_physics_and_scoring(self, current_time, dt):
                 active_p_rule = p_rules[i] if i < len(p_rules) else p_rules[-1]
                 break
 
-        self.active_rule_basic_apply = active_b_rule.get("apply", "階段")
-        self.active_rule_basic_release = active_b_rule.get("release", "階段")
-        self.active_rule_init_apply = active_p_rule.get("apply", "ON①")
-        self.active_rule_init_release = active_p_rule.get("release", "ON①")
+        if not identity_missing:      # 駅identityの欠落tickは規則区間を推定して切り替えず、直前の値を保つ
+            self.active_rule_basic_apply = active_b_rule.get("apply", "階段")
+            self.active_rule_basic_release = active_b_rule.get("release", "階段")
+            self.active_rule_init_apply = active_p_rule.get("apply", "ON①")
+            self.active_rule_init_release = active_p_rule.get("release", "ON①")
 
         # 3. 機能ON/OFFの文字列化（HUD表示用）
         f_list = []
