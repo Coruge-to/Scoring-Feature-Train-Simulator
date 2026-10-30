@@ -214,6 +214,7 @@ namespace TSScoringPlugin.Telemetry
     internal sealed class LegacyJumpExecResult
     {
         internal bool Ok;
+        internal bool Moved;                       // Phase LC-4 (C-LJ-2): the first host call returned, i.e. the vehicle was moved, whatever happened afterwards
         internal string Step = "check";
         internal string Reason;
         internal long ElapsedMs;
@@ -342,6 +343,7 @@ namespace TSScoringPlugin.Telemetry
                 Fail(r, "api-exception", "initialize");
                 return;
             }
+            r.Moved = true;
             r.Step = "set-time";
             try
             {
@@ -385,7 +387,7 @@ namespace TSScoringPlugin.Telemetry
         private LegacyJumpClaim unreportedClaim;           // executed, but the plane could not take the report yet
         private LegacyJumpExecResult unreportedResult;
         private int linesBefore;
-        private bool executedThisRound;
+        private bool payloadDue;                          // Phase LC-4 (C-LJ-1): the executed command still owes its completion payload; bound to the COMMAND, not to the Tick that executed it
 
         internal LegacyJumpTickRunner(LegacyJumpControlPlane plane, LegacyJumpExecutor executor, ILegacyJumpHost host, ILegacyJumpSessionPort session, ILegacyJumpCompleteSender sender)
         {
@@ -445,7 +447,6 @@ namespace TSScoringPlugin.Telemetry
         /// <summary>Before the session: claim, execute, read back (all on the host Tick thread).</summary>
         internal void TickPre()
         {
-            executedThisRound = false;
             try
             {
                 if (!plane.ExecutionActive) return;
@@ -457,15 +458,19 @@ namespace TSScoringPlugin.Telemetry
                 LegacyJumpExecResult res = executor.Execute(t, plane.EpochProbe);
                 t.ReadBackTimeMs = res.ReadBackTimeMs;
                 t.ReadBackLocation = res.ReadBackLocation;
-                executedThisRound = true;
-                if (res.Ok) pending = t;
+                if (res.Ok) { pending = t; payloadDue = true; }
                 if (plane.ReportExecution(t, res) == 0)
                 {
                     unreportedClaim = t;
                     unreportedResult = res;
                 }
                 if (res.Ok) NoteJump(t);
-                else NoteEnd(t, "failed-" + (res.Reason ?? "failed"));
+                else
+                {
+                    // C-LJ-2: a host that was moved and then failed is a discontinuity of the station state like any other; the note carries NO station (the target stays unset, nothing is adopted or searched)
+                    if (res.Moved) session.NoteOfficialJump();
+                    NoteEnd(t, "failed-" + (res.Reason ?? "failed"));
+                }
             }
             catch (Exception)
             {
@@ -485,9 +490,10 @@ namespace TSScoringPlugin.Telemetry
                 }
                 if (pending == null) return;
                 if (!plane.ExecutionActive) return;
-                if (executedThisRound)
+                if (payloadDue)
                 {
-                    // the row of THIS Tick must have been sent and must have carried the counter that the completion carries
+                    payloadDue = false;                               // made once: a busy gate at the reports of the execution Tick only delays it
+                    // a row must have been sent since the execution Tick and the last row must carry the counter that the completion carries (with a free gate that is the row of the execution Tick itself)
                     int count = session.LastLineJumpCount;
                     if (session.LinesSent <= linesBefore) { End(pending, "completion-line-missing"); return; }
                     if (count < 0) { End(pending, "completion-jump-not-announced"); return; }

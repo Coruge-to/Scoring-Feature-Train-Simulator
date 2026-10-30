@@ -26,6 +26,14 @@ $plan = [ordered]@{
     'LC-J03' = @('RED', 'a moved host leaves the official jump note pending')
     'LC-J04' = @('GUARD', '')
     'LC-J05' = @('GUARD', '')
+    'LC-J06' = @('RED', 'C-LJ-1 contract: Completed with exactly one completion')
+    'LC-J07' = @('RED', 'after the release the command completes with exactly one completion')
+    'LC-J08' = @('RED', 'C-LJ-1 contract (v2): Completed with exactly one completion')
+    'LC-J09' = @('RED', 'the command ended Abandoned(completion-scenario-changed)')
+    'LC-J10' = @('GUARD', '')
+    'LC-J02v2' = @('RED', 'a moved host leaves the official jump note pending')
+    'LC-J03v2' = @('RED', 'a moved host leaves the official jump note pending')
+    'LC-J05v2' = @('GUARD', '')
 }
 
 Add-Type -TypeDefinition @"
