@@ -645,6 +645,10 @@ def execute_retry(self, index, is_bve_advancing):
     managed = getattr(self, 'dataplane_strict', False) or getattr(self, 'jump_client', None) is not None
     if managed and getattr(self, 'jump_client', None) is None:
         return result._replace(accepted=False, reason=station_identity.JUMP_UNAVAILABLE)
+    # Phase LC-4b: a sender that does not announce the jump group can not execute a request: refused here, nothing is sent (no 10 s wait for the abort). The Overlay answers; no answer means available.
+    jump_group_available = getattr(self, 'jump_group_available', None)
+    if managed and jump_group_available is not None and not jump_group_available():
+        return result._replace(accepted=False, reason=station_identity.JUMP_UNAVAILABLE)
 
     # Phase ST-3d: the request is built (and refused if the wire can not carry it) BEFORE anything is changed, by the one builder of the Jump wire v2
     cp = history[index]

@@ -612,6 +612,10 @@ class Overlay(QWidget):
     def _send_jump_datagram(self, data, port):
         return self.udp_socket.writeDatagram(data, QHostAddress.SpecialAddress.LocalHost, port)
 
+    def jump_group_available(self):
+        """Phase LC-4b: False when the latest accepted AVAIL names no jump group (the sender's jump plane is closed or its breaker is open). No AVAIL at all means every group is available."""
+        return self.telemetry_gate.availability.has("jump")
+
     def send_jump_command(self, command):
         """The official jump command (the v2 text of jump_transaction.build_jump_request) to the sender plugin. Managed caller mode: Envelope v1 + RequestId to the jump endpoint
         that the plugin publishes (current_jump_client); there is NO plain fixed-port fallback, so a refused send leaves the official jump unreleased and is
@@ -1085,7 +1089,7 @@ class Overlay(QWidget):
                 except Exception: continue
 
             # managed mode: the sender's JUMP counter is a sender-lifetime counter; the first accepted line of a generation is the reference
-            if getattr(self, 'jump_baseline_pending', False):
+            if getattr(self, 'jump_baseline_pending', False) and any(part.startswith("JUMP:") for part in parts):      # Phase LC-4b: a line without the JUMP key is not a reference
                 self.last_jump_count = self.bve_jump_count
                 self.jump_baseline_pending = False
 

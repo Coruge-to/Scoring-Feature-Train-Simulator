@@ -475,6 +475,9 @@ class ManagedHudController(object):
 
     def _tick_active(self):
         overlay, api = self._overlay, self._api
+        poll = getattr(overlay, '_poll_jump_client', None)           # Phase LC-4b: an outstanding jump request times out although the sender is silent (the poll is not only datagram driven)
+        if poll is not None:
+            poll()
         if self._telemetry is not None and not self._telemetry.ready:
             # Session ON and Driving ON are not enough: nothing is shown (and no placeholder HUD) until real telemetry of this generation arrived
             self._hide("telemetry-wait")

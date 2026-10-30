@@ -430,7 +430,7 @@ class C_RetryJump(ManagedBase):
         self.assertFalse(res.accepted, "accepted after the finish: reason=%r" % (res.reason,))
         self.assertEqual(res.reason, "scoring-finished")
 
-    @lc("LC-A14", "RED", reason="a Retry is sent while the jump is unavailable", note="C-LJ-3(i): AVAIL without the jump group (breaker open): the Retry is refused JUMP_UNAVAILABLE and nothing is sent")
+    @lc("LC-A14", "GUARD", note="(fixed by LC-4b) C-LJ-3(i): AVAIL without the jump group (breaker open): the Retry is refused JUMP_UNAVAILABLE and nothing is sent")
     def test_A14_no_retry_while_the_jump_is_unavailable(self):
         t = self.at_b()
         before = len(self.commands())
@@ -443,7 +443,7 @@ class C_RetryJump(ManagedBase):
         self.assertFalse(res.accepted)
         self.assertEqual(res.reason, "jump-unavailable")
 
-    @lc("LC-A15", "RED", reason="no abort without a datagram", note="C-LJ-3(ii): an outstanding jump with no datagram for 10.5 s is aborted (the poll is not only datagram driven)")
+    @lc("LC-A15", "GUARD", note="(fixed by LC-4b) C-LJ-3(ii): an outstanding jump with no datagram for 10.5 s is aborted (the poll is not only datagram driven)")
     def test_A15_silent_sender_aborts_after_the_timeout(self):
         self.start("legacy")
         self.assertTrue(self.o.is_official_jumping)
@@ -451,7 +451,7 @@ class C_RetryJump(ManagedBase):
             self.r.tick(1, 3.5)
         self.assertFalse(self.o.is_official_jumping, "no abort without a datagram (jumping=%r scoring=%r)" % (self.o.is_official_jumping, self.o.is_scoring_mode))
 
-    @lc("LC-A16", "RED", reason="baseline", note="C-LJ-5: a first accepted line WITHOUT the JUMP key, then a line with JUMP:3 - the counter is adopted as the baseline, no jump lock, no abort")
+    @lc("LC-A16", "GUARD", note="(fixed by LC-4b) C-LJ-5: a first accepted line WITHOUT the JUMP key, then a line with JUMP:3 - the counter is adopted as the baseline, no jump lock, no abort")
     def test_A16_jump_baseline_is_the_first_line_that_has_the_key(self):
         r, o, MR = self.r, self.o, self.MR
         no_jump = [a for a in F.LEGACY_AVAIL if a != "jump"]
