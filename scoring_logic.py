@@ -627,6 +627,10 @@ def execute_retry(self, index, is_bve_advancing):
     The station is the StationIndex stored in that checkpoint, verified against the scope of the application (station_identity.check_retry_checkpoint); it is never
     searched by a position. A checkpoint that does not verify is REFUSED: nothing is changed, nothing is sent (the caller counts nothing and shows nothing). An accepted
     retry sends the jump request, keeps the choice as self.retry_pending and does NOT cut the history (ST-3 cuts it when the jump completed as requested)."""
+    # Phase LC-4: after the formal scoring-finish nothing is retried. Refused before anything is read or changed (no request, no pending, no count, no score, no history, no screen).
+    # The reason is a word of this function on purpose: the ST-2 words (station_identity.RETRY_REASONS) stay as they are.
+    if getattr(self, 'is_scoring_finished', False):
+        return station_identity.RetryResult(False, 'scoring-finished', None, station_identity.NO_INDEX)
     history = getattr(self, 'save_data', None)
     station_list = getattr(self, 'station_list', None)
     try:

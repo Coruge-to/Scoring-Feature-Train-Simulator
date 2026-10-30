@@ -421,7 +421,7 @@ class C_RetryJump(ManagedBase):
         t = self.leg("legacy", t, 100.0, 1000.0, 1000.0, 1, 1, 1)
         return t
 
-    @lc("LC-A13", "RED", reason="accepted after the finish", note="C-SIDX-4: after scoring-finish a Retry is refused (scoring-finished)")
+    @lc("LC-A13", "GUARD", note="(fixed by LC-4) C-SIDX-4: after scoring-finish a Retry is refused (scoring-finished)")
     def test_A13_no_retry_after_the_finish(self):
         self.o.setting_end_idx = 2
         mid, final, cmd = self.run_trajectory("legacy")
