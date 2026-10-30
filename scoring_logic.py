@@ -1338,7 +1338,13 @@ def update_physics_and_scoring(self, current_time, dt):
     update_result_display(self, current_time)
 
     decel_g = -self.bve_calc_g
-    self.g_history.append((current_time, decel_g, self.bve_brk_notch, self.bve_brk_max))
+    # BVE時刻が止まっている間（一時停止、F1メニュー）も採点ステップは回り続ける。
+    # 同じ時刻の標本は最新の1件だけを残し、履歴の肥大と0.5秒平均の偏りを防ぐ
+    g_entry = (current_time, decel_g, self.bve_brk_notch, self.bve_brk_max)
+    if self.g_history and self.g_history[-1][0] == current_time:
+        self.g_history[-1] = g_entry
+    else:
+        self.g_history.append(g_entry)
     cutoff_time = current_time - 10.0
     self.g_history = [h for h in self.g_history if h[0] > cutoff_time]
 

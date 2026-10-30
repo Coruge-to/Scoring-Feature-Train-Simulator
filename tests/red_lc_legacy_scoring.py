@@ -370,7 +370,7 @@ class B_SliceA(Base):
         self.step(speed=0.0, official=True)
         self.assertEqual(self.jerk_popups(), [], "evaluated while the jump is pending: %r" % (self.jerk_popups(),))
 
-    @lc("LC-A11", "RED", reason="history grows while the time is frozen", note="C-LOOP-2: the step does not add to the history when the BVE time did not advance")
+    @lc("LC-A11", "GUARD", note="(fixed by LC-3B) C-LOOP-2: the step does not add to the history when the BVE time did not advance")
     def test_A11_frozen_time_does_not_grow_the_history(self):
         self.scoring_scene()
         self.o.bve_speed = 5.0
@@ -378,7 +378,7 @@ class B_SliceA(Base):
             self.S.update_physics_and_scoring(self.o, 200.0, 0.0)
         self.assertEqual(len(self.o.g_history), 1, "history grows while the time is frozen: %d" % len(self.o.g_history))
 
-    @lc("LC-A11B", "RED", reason="duplicates dominate the stop value", note="C-LOOP-2: 600 duplicates of a frozen value do not dominate the 0.5 s mean of the stop-jerk")
+    @lc("LC-A11B", "GUARD", note="(fixed by LC-3B) C-LOOP-2: 600 duplicates of a frozen value do not dominate the 0.5 s mean of the stop-jerk")
     def test_A11B_duplicates_do_not_dominate_the_stop_value(self):
         self.scoring_scene()
         self.accelerate(3, g=0.0)
@@ -391,7 +391,7 @@ class B_SliceA(Base):
         self.step(dt=0.1, speed=0.0, calc_g=-0.01)
         self.assertLess(abs(self.o.last_stop_g), 0.1, "duplicates dominate the stop value: %r" % (self.o.last_stop_g,))
 
-    @lc("LC-A11C", "RED", reason="history keeps", note="C-LOOP-2: with the time frozen the NEWEST value replaces the entry of that time (the older entries are untouched)")
+    @lc("LC-A11C", "GUARD", note="(fixed by LC-3B) C-LOOP-2: with the time frozen the NEWEST value replaces the entry of that time (the older entries are untouched)")
     def test_A11C_frozen_time_replaces_the_newest_entry_only(self):
         self.scoring_scene()
         self.step(dt=0.1, speed=5.0, calc_g=0.01)
