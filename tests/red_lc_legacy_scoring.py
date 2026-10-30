@@ -310,7 +310,7 @@ class A_Slice(ManagedBase):
 # B. Slice A (Jump boundary stop-jerk) and the history (C-LOOP-2)
 # ===================================================================================================================================================
 class B_SliceA(Base):
-    @lc("LC-A09", "RED", reason="false stop-jerk penalty", note="Slice A: an accelerating train, a Jump whose first sample has speed 0.0 and no CALCG (Legacy): no stop-jerk penalty")
+    @lc("LC-A09", "GUARD", note="Slice A (fixed by LC-3A): an accelerating train, a Jump whose first sample has speed 0.0 and no CALCG (Legacy): no stop-jerk penalty")
     def test_A09_no_false_penalty_on_the_jump_landing(self):
         self.scoring_scene()
         self.accelerate()
@@ -325,7 +325,7 @@ class B_SliceA(Base):
         self.step(speed=0.0, calc_g=0.0, jump=1, official=True)
         self.assertEqual(self.jerk_popups(), [])
 
-    @lc("LC-A09C", "RED", reason="stop-jerk state survives the boundary", note="the formal boundary (reset_transient_scoring_state) clears the judged state of the stop-jerk (is_stopping_zone, last_stop_g, stop_notch_state)")
+    @lc("LC-A09C", "GUARD", note="(fixed by LC-3A) the formal boundary (reset_transient_scoring_state) clears the judged state of the stop-jerk (is_stopping_zone, last_stop_g, stop_notch_state)")
     def test_A09C_boundary_clears_the_stop_jerk_state(self):
         self.scoring_scene()
         o = self.o
@@ -363,7 +363,7 @@ class B_SliceA(Base):
             self.step(speed=0.0, calc_g=-0.12)
         self.assertEqual(self.jerk_popups(), ["停車時衝動 -200", "停車時衝動 -200"])
 
-    @lc("LC-A10", "RED", reason="evaluated while the jump is pending", note="LJ-PEN-B: the stop-jerk is not evaluated while the official jump is pending (is_official_jumping) with no BVE jump counter movement yet")
+    @lc("LC-A10", "GUARD", note="(fixed by LC-3A) LJ-PEN-B: the stop-jerk is not evaluated while the official jump is pending (is_official_jumping) with no BVE jump counter movement yet")
     def test_A10_no_evaluation_while_the_jump_is_pending(self):
         self.scoring_scene()
         self.accelerate()

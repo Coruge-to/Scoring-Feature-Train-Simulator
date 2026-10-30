@@ -23,6 +23,12 @@ def reset_transient_scoring_state(self):
     """
     self.g_history.clear()
 
+    # 停車時衝動判定
+    # 境界の前の「走行中だった」記録と停止時の加速度は、境界の後へ持ち越さない
+    self.is_stopping_zone = False
+    self.last_stop_g = 0.0
+    self.stop_notch_state = "IDLE"
+
     # 不正ジャンプなどの警告は、後続の時刻巻き戻りリセットでも保持する
     self.popups = [
         popup
@@ -351,6 +357,10 @@ def update_manual_emergency_brake_state(self, dt):
 
 
 def update_stop_jerk_penalty(self, current_time, decel_g):
+    # 公式ジャンプの完了待ちの間の車両状態は、ジャンプが置き換える前の世界を表す。停止として判定しない
+    if getattr(self, 'is_official_jumping', False):
+        return
+
     if self.bve_speed == 0.0:
         if self.is_stopping_zone:
             self.stop_notch_state = get_notch_state(self, self.bve_brk_notch)
