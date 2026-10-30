@@ -92,7 +92,9 @@ JUMP_UNITS = {
                   "Overlay._emit_jump_settled", "Overlay._finish_jump_transaction", "Overlay._jump_transaction_finish",
                   "Overlay._abort_unreleased_official_jump", "Overlay._send_jump_datagram", "Overlay._log_rejected_completion",
                   "Overlay._settle_jump_complete", "Overlay._scoring_start_plan", "Overlay.send_jump_command",
-                  "_managed_jump_log"],
+                  "_managed_jump_log",
+                  # Legacy scoring LC-4b (A14, an INTENDED change of the jump contract): the Overlay answers whether the Jump group is available (the retry is refused while it is not, the HUD tick polls it)
+                  "Overlay.jump_group_available"],
         "sliced": [regions.MODULE, "Overlay.__init__", "Overlay.read_udp_data", "Overlay.apply_telemetry_text", "Overlay.handle_menu_enter",
                    "Overlay._detect_and_release_fast_forward", "Overlay._advance_scoring_clock_and_score", "run_managed"],
         # contract 13.2 step 7 (the jump client is closed, its outstanding request cancelled) before 15.2 step 3 (the data plane receiver stops)
@@ -106,7 +108,8 @@ JUMP_UNITS = {
     # scoring_logic.py is compared with its blob in the formal LJX-1 commit, not with a digest of today
     "scoring_logic.py": {
         "whole": ["begin_official_jump", "execute_retry"],
-        "sliced": ["evaluate_arrival", "evaluate_departure", "update_physics_and_scoring", "update_basic_braking_first_stop", "update_speed_limit_penalty"],
+        # Legacy scoring LC-3A (an INTENDED change of the stop jerk judgement): update_stop_jerk_penalty does not judge a sample while an official jump is outstanding (it names `is_official_jumping`), so it is a declared region
+        "sliced": ["evaluate_arrival", "evaluate_departure", "update_physics_and_scoring", "update_basic_braking_first_stop", "update_speed_limit_penalty", "update_stop_jerk_penalty"],
         "order": [],
     },
 }
@@ -131,6 +134,8 @@ REGION_PINS = {
         "Overlay._scoring_start_plan": ("whole", "1CAC50AE7FBF10311002294F0A9EE83929BA82770561AA79AA230E7DE777E74C", 1),
         "Overlay.send_jump_command": ("whole", "64A500353BD0B85B9E834D1F229191288688FAC19AFFC56C79C013F16526191C", 1),
         "_managed_jump_log": ("whole", "79C052E4112C613AE67EEE787BA19E15A2164441D18BA383057CE08F47133689", 1),
+        # Legacy scoring LC-4b (A14, a NEW declared region): the Jump group availability of the Overlay (tests/test_lc4b_python_jump_state.py)
+        "Overlay.jump_group_available": ("whole", "B5BDCEF607F1E6E5D7047993FFBD821311999DE954691582E0252359D6B6FCD6", 1),
         # Phase ST-3d (was 24D36E4E..., 3 records): + import jump_transaction, import jump_wire
         "<module>": ("slice", "EDC95B2B14DA2329CBCB0F76C6C34119AB82D46AB8AD4D4C18679B39719BB8BD", 5),
         # Phase ST-3d (was AF89937B..., 10 records): + self.jump_expectation = None
@@ -138,7 +143,8 @@ REGION_PINS = {
         # Phase ST-3d (was 741D5BA4...): the JUMP_COMPLETE branch hands the body to _note_jump_complete; the settlement call is guarded (an exception releases the open jump)
         "Overlay.read_udp_data": ("slice", "D227ABC32AAD5F93FF1011ADC97BB444EBE7C1501D8D21F8282C1C78A9825B1C", 5),
         # Phase ST-3d (was 8DF01409..., 5 records): a scenario change closes the open transaction and releases is_official_jumping
-        "Overlay.apply_telemetry_text": ("slice", "064FF5BEC97451E8241DC9AC170C08E7A7E08F9F281C7CE702440DBE03508EA0", 7),
+        # Legacy scoring LC-4b (A16, was 064FF5BE...): the condition of the baseline block looks at the JUMP key of the line (a JUMP-only line is not a baseline), the 7 jump records stay (tests/test_lc4b_python_jump_state.py)
+        "Overlay.apply_telemetry_text": ("slice", "F63313F69BEE4F1B1A0E719917F6F0B7BB83714036E4265DE60125AFFFE209C9", 7),
         # Phase ST-3d (was 84E656C2..., 8 records): the start request comes from _scoring_start_plan (refused before anything changes) and the start opens its transaction
         "Overlay.handle_menu_enter": ("slice", "5943298E8353AA2DEED72DEAC4BD898BADCAF87D828F8A1313DDB6DAA7559022", 3),
         "Overlay._detect_and_release_fast_forward": ("slice", "6E15C0D15405AC3D2025E2EBD501EF36EC8D1D916D56CDA25E9E1D5E7B9092E7", 1),
@@ -169,7 +175,17 @@ ST2B_EXECUTE_RETRY_PIN = ("whole", "9226392088B12DEF33099036F18948D627FDEA0F6F03
 # Phase ST-3d (an INTENDED change of the jump contract): execute_retry builds its request BEFORE it changes anything, by the one builder of the Jump wire v2 (jump_transaction.build_jump_request),
 # refuses a request the wire can not carry, and opens the transaction after the send. Its new canonical AST is pinned here; begin_official_jump, the other WHOLE region and every SLICE region are
 # still compared with the blob of the formal LJX-1 commit (they are identical).
-ST3D_EXECUTE_RETRY_PIN = ("whole", "E5DB2D56A0FC1A4894DD4FBDA7D7CFF63BEB4EB78E74D30FE70A860325890105", 1)
+ST3D_EXECUTE_RETRY_PIN = ("whole", "E5DB2D56A0FC1A4894DD4FBDA7D7CFF63BEB4EB78E74D30FE70A860325890105", 1)          # (history: the value of ST-3d)
+
+# Legacy scoring LC-4 / LC-4b (an INTENDED change of the jump contract): execute_retry refuses once the scoring has finished (LC-4, 'scoring-finished') and while the Jump group is unavailable (LC-4b, A14); both refusals
+# come BEFORE the request is built, so no request is made and none is sent (4 + 4 added lines, no deleted line). Its new canonical AST is pinned here (it was E5DB2D56...); begin_official_jump, the other WHOLE region and
+# every SLICE region are still compared with the blob of the formal LJX-1 commit (identical), except the pinned ones.
+LC4B_EXECUTE_RETRY_PIN = ("whole", "9CEEFF77BE70F07889ECD1D30EA0889C155BB3CA1F97C0CE611DEC86CA523894", 1)
+
+# Legacy scoring LC-3A (an INTENDED change of the stop jerk judgement, not of the jump contract): update_stop_jerk_penalty returns without judging while `is_official_jumping` is set (a sample taken while the world is about to be
+# replaced is not a stop). At the LJX-1 commit the function names no jump word (an EMPTY slice, 0 records: the SHA-256 of the empty text); now it names `is_official_jumping` once (1 record) and is declared.
+EMPTY_SLICE_PIN = ("slice", "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855", 0)
+LC3A_UPDATE_STOP_JERK_PIN = ("slice", "D43FFB9C0D190C9E0574CD41C08754A1AFCA7C3EC830742C4B14CFFAD9FA8387", 1)
 
 # Time Fix B (an INTENDED change of a scoring region, not of the jump contract): the departure range check of evaluate_departure names `is_official_retry` in its condition, and that one condition
 # now reads the local margin_f / margin_b (the range kept at the arrival of an operational stop; the telemetry margin of the new target for every other stop) instead of self.bve_margin_f / _b.
@@ -270,8 +286,10 @@ class A2_TheLegacyJumpContractRegionsOfThePythonSide(unittest.TestCase):
         now, now_undeclared = regions.region_digests(read_source("scoring_logic.py"), spec["whole"], spec["sliced"])
         self.assertEqual(then_undeclared, [])
         self.assertTrue(all(value is not None for value in then.values()), then)
-        self.assertEqual(now.pop("execute_retry"), ST3D_EXECUTE_RETRY_PIN)           # Phase ST-2b / ST-3d: the intended changes, pinned on their own (the ST-2b value stays above as history)
+        self.assertEqual(now.pop("execute_retry"), LC4B_EXECUTE_RETRY_PIN)           # Phase ST-2b / ST-3d / LC-4 / LC-4b: the intended changes, pinned on their own (the ST-2b and ST-3d values stay above as history)
         then.pop("execute_retry")
+        self.assertEqual(then.pop("update_stop_jerk_penalty"), EMPTY_SLICE_PIN)      # Legacy scoring LC-3A: at LJX-1 the function names no jump word ...
+        self.assertEqual(now.pop("update_stop_jerk_penalty"), LC3A_UPDATE_STOP_JERK_PIN)   # ... now it names `is_official_jumping` once: the intended change, pinned on its own
         self.assertEqual(now.pop("evaluate_departure"), TIMEFIX_B3_EVALUATE_DEPARTURE_PIN)     # Time Fix B / B2 / B3: the intended changes, pinned on their own (the Time Fix B and B2 values stay above as history)
         then.pop("evaluate_departure")
         self.assertEqual(now.pop("update_physics_and_scoring"), TIMEFIX_B3_UPDATE_PHYSICS_PIN)   # Time Fix B3: the intended change, pinned on its own

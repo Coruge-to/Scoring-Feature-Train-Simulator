@@ -29,7 +29,8 @@ HAS_QT = importlib.util.find_spec("PyQt6") is not None
 
 # the git blob ids (LF text) of the sources SI-R2.3 must not change: the scoring (B2 / B3 contract), the input / generation classification, the official supply and the telemetry names
 PINNED_BLOBS = {
-    "scoring_logic.py": "88f61d75c8fce211b11336dc1d74026624f96e66",       # SI-R5.2-C: P02 takes prev_tgt_idx too (was 9c683795... after SI-R5.2-B). Earlier: P01, P04, P05 take bve_tgt_idx too (was c4981e27... after SI-R5.2-A: P03 takes bve_tgt_idx, the distance lookup is gone; before that 449e0c94...; close-range departure reset before it: e8d1a3d0...)
+    # Legacy scoring LC-3A / LC-3B / LC-4 / LC-4b (c12339a, 5aad2f1, 0957634, cbebfd3) changed scoring_logic.py on purpose (the stop jerk state at a Jump boundary, the same-time history replace, the Retry refusal after the finish and while the Jump group is unavailable; none of it touches the display target): the blob moved from 88f61d75... (SI-R5.2-C)
+    "scoring_logic.py": "78e53ad3f6c346f9cab1800bbb30599584773814",       # was 88f61d75... after SI-R5.2-C: P02 takes prev_tgt_idx too (was 9c683795... after SI-R5.2-B). Earlier: P01, P04, P05 take bve_tgt_idx too (was c4981e27... after SI-R5.2-A: P03 takes bve_tgt_idx, the distance lookup is gone; before that 449e0c94...; close-range departure reset before it: e8d1a3d0...)
     "managed_input.py": "3ca69888a9ae4d6a9facf669ec163f2547e0fc2d",       # + the generation default prev_tgt_idx of SI-R5.2-C (was e1b79288... : the two generation defaults of the close-range reset, was 6b0bda0b...)
     "official_target_contract.py": "9c0a68979113626724ccfa48e9c9d8cd117b3bae",
     "telemetry_contract.py": "0cc2ef6a9e412e189ab34c84f435c59bdca061e4",

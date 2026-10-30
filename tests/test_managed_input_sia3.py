@@ -1759,9 +1759,15 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
             'if p_loc >= 0:',
             'p_idx = i',
         )
+        # Legacy scoring LC-3B (on purpose, 5aad2f1): a repeated clock time replaces the last g_history entry instead of appending another one, so the one append moved into the else branch of a condition (a deeper
+        # indent). This is the 1 distinct line (stripped) that the diff shows as removed because it moved; no score, no rule and no constant is among it (tests/test_lc3b_clock_freeze.py pins the behaviour).
+        lc3b_same_time_history_replace = (
+            'self.g_history.append((current_time, decel_g, self.bve_brk_notch, self.bve_brk_max))',
+        )
         self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport) + st2a_checkpoint_identity + st2b_retry_by_saved_index
                                    + st3d_request_by_the_one_builder + st2c_first_station_distance + timefix_b_departure_margins + timefix_b3_zero_speed_and_jump_boundary
-                                   + close_range_shared_basic_braking_init + si_r5_2a_p03_target_index + si_r5_2b_arrival_target_index + si_r5_2c_departure_prev_target_index], removed)
+                                   + close_range_shared_basic_braking_init + si_r5_2a_p03_target_index + si_r5_2b_arrival_target_index + si_r5_2c_departure_prev_target_index
+                                   + lc3b_same_time_history_replace], removed)
 
     def test_the_scoring_function_bodies_are_ast_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":scoring_logic.py")
@@ -1785,7 +1791,11 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
         # Phase ST-2c (on purpose): update_physics_and_scoring lost the 100 m test of the first UDP line (test_stationindex_first_station_st2c.py pins what is left); no score, no rule, no constant
         # Time Fix B (on purpose): evaluate_departure takes the departure range of an operational stop from the range kept at its arrival (update_physics_and_scoring keeps it at the arrival,
         # reset_station_evaluation_state clears it); the points, the rules and the constants are not among them (tests/test_timefix_b_operational_stop_margin.py pins the behaviour)
-        self.assertEqual(changed, ["create_save_data", "evaluate_arrival", "evaluate_departure", "execute_retry", "reset_station_evaluation_state", "update_physics_and_scoring", "write_limit_debug_log"])
+        # Legacy scoring LC-3A (on purpose): reset_transient_scoring_state clears the stop jerk state at a Jump boundary and update_stop_jerk_penalty does not judge a sample while a Jump is outstanding;
+        # LC-3B: update_physics_and_scoring replaces the last g_history entry when the clock time repeats; LC-4 / LC-4b: execute_retry refuses after the scoring finished and while the Jump group is unavailable;
+        # the points, the rules and the constants are not among them (tests/test_lc3a_stop_jerk_boundary.py / test_lc3b_clock_freeze.py / test_lc4_retry_after_finish.py / test_lc4b_python_jump_state.py pin the behaviour)
+        self.assertEqual(changed, ["create_save_data", "evaluate_arrival", "evaluate_departure", "execute_retry", "reset_station_evaluation_state", "reset_transient_scoring_state", "update_physics_and_scoring",
+                                   "update_stop_jerk_penalty", "write_limit_debug_log"])
 
     def test_the_config_constants_are_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":config.py")

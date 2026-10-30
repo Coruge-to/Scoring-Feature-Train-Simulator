@@ -85,7 +85,8 @@ FROZEN = {
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpCommandQueue.cs": "c9517db9074f45ef447991cd52280ef512047070",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpControlPlane.cs": "04d3104d1005fca4a8fe4a9c3da835bd79d61309",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpEndpoint.cs": "eb3a0233d799e8abbeea47e7d01b46034ee68584",
-    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpExecutor.cs": "b95754144e06ae9eb85b98bf04ea3731eab98600",
+    # Legacy scoring LC-4 (89b234a) changed LegacyJumpExecutor.cs on purpose (C-LJ-1: the completion payload is bound to the claimed request; C-LJ-2: a failure after the jump moved carries a note without an adopted station; Handshake\Tests\LegacyJumpLcTestCases.cs / Test-LegacyJumpLC1b.ps1): the blob moved from b9575414... (ST-3c)
+    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpExecutor.cs": "40caa2f24ea1c2ddf21af65112babdce6ba9b768",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyScoringProbe.cs": "1f0be23bc1c911e4bf83933a22016613834c2f48",
     # Time Fix A changed LegacyStationTimeline.cs on purpose (the departure reader and the arrival fill-in, tests\test_timefix_a_terminal_arrival.py): the blob moved from 1bae94a1... (ST-3c)
     # Time Fix B2 changed LegacyStationTimeline.cs on purpose (the same branch, tests\test_timefix_b2_operational_stop_contract.py / Handshake\Tests\Test-TimeFixB2.ps1): the blob moved from 4bb9c312... (Time Fix A)

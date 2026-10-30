@@ -1731,7 +1731,11 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
                 # by that record; the two new functions are pure helpers (the verified station + scheduled time of the stop, and the cause / error of the completion); the points, the rules and the constants are not among them
                 # Close-range departure reset (on purpose): the previous actual stop position and the pending state (reset_station_evaluation_state clears them, evaluate_arrival fixes the position of a verified stop),
                 # the waiting gate and the departure reset in update_physics_and_scoring; four new functions (the shared basic-braking initialisation, the anchor, the one pair evaluation, the reset); no score, no constant
-                ("scoring_logic.py", old_scoring, {"write_limit_debug_log", "execute_retry", "create_save_data", "evaluate_arrival", "update_physics_and_scoring", "evaluate_departure", "reset_station_evaluation_state"},
+                # Legacy scoring LC-3A (on purpose): reset_transient_scoring_state clears the stop jerk state at a Jump boundary and update_stop_jerk_penalty does not judge a sample while a Jump is outstanding;
+                # LC-3B: update_physics_and_scoring replaces the last g_history entry when the clock time repeats; LC-4 / LC-4b: execute_retry refuses after the scoring finished and while the Jump group is unavailable;
+                # no score, no rule, no constant (E3 -> now: scoring_logic.py +350 -119 by git numstat, the numbers of Test-HudLinkE4.ps1 S10b)
+                ("scoring_logic.py", old_scoring, {"write_limit_debug_log", "execute_retry", "create_save_data", "evaluate_arrival", "update_physics_and_scoring", "evaluate_departure", "reset_station_evaluation_state",
+                                                   "reset_transient_scoring_state", "update_stop_jerk_penalty"},
                  {"note_save_skipped", "operational_stop_station", "resolve_operational_stop_completion", "Import(names=[alias(name='station_identity')])",
                   "Import(names=[alias(name='jump_transaction')])", "Import(names=[alias(name='jump_wire')])",         # Phase ST-3d (on purpose): execute_retry builds its request with jump_transaction / jump_wire (the Jump wire v2)
                   "close_range_fix_previous_stop", "init_basic_braking_state", "close_range_pair_is_close", "update_close_range_departure_reset"}),
