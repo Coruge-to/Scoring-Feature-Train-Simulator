@@ -62,7 +62,8 @@ BASE_BLOBS = {
     "jump_wire.py": "00579f8031221333f2f6e471d7e30ab3f8b1a365",
     "managed_app_directory.py": "77bf8671ef364b05fb6a6524858ce2ffc2930060",
     # UI-ALT-F4 changed managed_hud.py on purpose (the Overlay's input ownership for the operation screens, the one close request to BVE for a close the user asked for, the shown flag re-aligned with the real Overlay, tests/test_managed_hud_input_ownership.py / tests/test_overlay_user_close_altf4.py / tests/test_managed_hud_shown_reconcile.py): the blob moved from 38a2e4b9... (0b8e511); the package manifest is regenerated for it
-    "managed_hud.py": "b8f0430481039dca62c4ad5233e4c151f3e84407",
+    # Legacy scoring LC-4b (A15) changed managed_hud.py on purpose (+3 lines: the HUD tick polls the Jump availability of the Overlay, tests/test_lc4b_python_jump_state.py; the P18 lines of the pin ledger): the blob moved from b8f04304... (UI-ALT-F4)
+    "managed_hud.py": "9d5d604d2b02cd153745d28b87f2d25056e66552",
     # Time Fix B changed managed_input.py (one name added to GENERATION_DROP) and scoring_logic.py (the operational stop keeps its arrival range, tests/test_timefix_b_operational_stop_margin.py) on purpose: the blobs moved from 73aff45b... / 140d8471... (0b8e511); the package manifest is regenerated for them
     # Time Fix B2 changed managed_input.py (one more name in GENERATION_DROP) and scoring_logic.py (the operational stop is latched at its stop and completed by that record, tests/test_timefix_b2_operational_stop_contract.py): the blobs moved from 293b4a21... / 5be7a006... (Time Fix B)
     # UI-Q1-B changed managed_input.py on purpose (the Qt translation of the locale is installed for the result save dialog, the file filters are named in Japanese, tests/test_ui_q1b_result_dialog_localization.py): the blob moved from 7933e16d... (Time Fix B2)
@@ -75,7 +76,9 @@ BASE_BLOBS = {
     # Time Fix B3 changed scoring_logic.py on purpose (the speed limit guidance gate is speed != 0.0; the operational stop is neither formed nor completed on the telemetry of an outstanding official jump and leaves no record at the scoring finish, tests/test_timefix_b3_zero_speed_contract.py): the blob moved from db5145a0... (Time Fix B2)
     # Close-range departure reset changed scoring_logic.py on purpose (the previous actual stop position and the pending state, the departure reset of the early-stop and basic-braking state, the waiting gate, tests/test_close_range_contract.py): the blob moved from e8d1a3d0... (Time Fix B3)
     # SI-R5.2-A changed scoring_logic.py on purpose (P03, the HUD next station / rule section, takes the scoring target index bve_tgt_idx instead of the 1 m lookup at NEXTLOC; tests/test_si_r5_2a_stage_a.py / tests/red_si_r5_station_identity.py): the blob moved from 449e0c94... (Close-range departure reset)
-    "scoring_logic.py": "88f61d75c8fce211b11336dc1d74026624f96e66",       # SI-R5.2-C: P02 takes prev_tgt_idx, the last distance lookup is gone (was 9c683795... after SI-R5.2-B: P01, P04, P05 take bve_tgt_idx; c4981e27... after SI-R5.2-A)
+    # Legacy scoring LC-3A (c12339a, the stop jerk state is reset at a Jump boundary and not judged while a Jump is outstanding), LC-3B (5aad2f1, a repeated clock time replaces the last g_history entry), LC-4 (0957634, execute_retry refuses after the scoring finished)
+    # and LC-4b (cbebfd3, A14: execute_retry refuses while the Jump group is unavailable) changed scoring_logic.py on purpose (tests/test_lc3a_stop_jerk_boundary.py / tests/test_lc3b_clock_freeze.py / tests/test_lc4_retry_after_finish.py / tests/test_lc4b_python_jump_state.py): the blob moved from 88f61d75... (SI-R5.2-C)
+    "scoring_logic.py": "78e53ad3f6c346f9cab1800bbb30599584773814",       # was 88f61d75... after SI-R5.2-C: P02 takes prev_tgt_idx, the last distance lookup is gone (9c683795... after SI-R5.2-B: P01, P04, P05 take bve_tgt_idx; c4981e27... after SI-R5.2-A)
     # SI-R5.2-A changed station_identity.py on purpose (the pure missing-index classifier, the run tracker and the managed diagnostic glue; tests/test_si_r5_2a_stage_a.py): the blob moved from 93ce7abc... (ST-3b)
     "station_identity.py": "2c971098059a6b8948cd842ed84af8ece9a054b9",
     "station_index_contract.py": "73c9ec9a75ca6dca450637f47d15d0ebdbdda423",
@@ -95,7 +98,8 @@ BASE_BLOBS = {
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpCommandQueue.cs": "c9517db9074f45ef447991cd52280ef512047070",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpControlPlane.cs": "04d3104d1005fca4a8fe4a9c3da835bd79d61309",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpEndpoint.cs": "eb3a0233d799e8abbeea47e7d01b46034ee68584",
-    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpExecutor.cs": "b95754144e06ae9eb85b98bf04ea3731eab98600",
+    # Legacy scoring LC-4 (89b234a, C-LJ-1: the completion payload is bound to the claimed request; C-LJ-2: a failure after the jump moved carries a note without an adopted station) changed LegacyJumpExecutor.cs on purpose (Handshake\Tests\LegacyJumpLcTestCases.cs / Test-LegacyJumpLC1b.ps1): the blob moved from b9575414... (ST-3c)
+    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpExecutor.cs": "40caa2f24ea1c2ddf21af65112babdce6ba9b768",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyScoringProbe.cs": "1f0be23bc1c911e4bf83933a22016613834c2f48",
     # Time Fix A changed LegacyStationTimeline.cs and Class1.cs on purpose (the arrival fill-in, tests/test_timefix_a_terminal_arrival.py): the blobs moved from 1bae94a1... / a9b420a0... (0b8e511); the package manifest is regenerated for them
     # Time Fix B2 changed LegacyStationTimeline.cs on purpose (the same branch, tests\test_timefix_b2_operational_stop_contract.py / Handshake\Tests\Test-TimeFixB2.ps1): the blob moved from 4bb9c312... (Time Fix A)
@@ -131,7 +135,8 @@ BASE_BLOBS = {
 # SI-R2.3 (C4b) changed main.py on purpose (the display target: the import of hud_target_contract, the read-only hud_target_* views, the display state _hud_target / _hud_freeze, the sync after every judged line and before the HUD is drawn; tests/test_hud_target_wiring_r23.py): the blob (without its contract import) moved from 5da4fb7f... (SI-R2.2-S2a)
 # Close-range departure reset changed main.py on purpose (the two construction defaults close_range_departure_reset_pending / prev_actual_stop_loc; tests/test_close_range_contract.py): the blob (without its contract import) moved from 86e6929a... (SI-R2.3 C4b)
 # SI-R5.2-C changed main.py on purpose (the construction default prev_tgt_idx = -1 beside prev_next_loc; tests/red_si_r5_station_identity.py): the blob (without its contract import) moved from 2a0b103b... (Close-range departure reset)
-BASE_MAIN = "07043c5155b7ec577a02a1eae1b2418813d9ab56"
+# Legacy scoring LC-4b (cbebfd3) changed main.py on purpose (A14: Overlay.jump_group_available, the Retry menu entry refuses while the Jump group is unavailable; A16: the baseline block of apply_telemetry_text looks at the JUMP key; tests/test_lc4b_python_jump_state.py): the blob (without its contract import) moved from 07043c51... (SI-R5.2-C)
+BASE_MAIN = "c8be571506a858f6dc9cce5209ba77ff5e5da227"
 BASE_PROJECTS = {CURRENT_PROJECT: "61092229f34e5e4ceb52a4fb6e52280824ec2578", LEGACY_PROJECT: "defbe148ff815741c6b627cadaf8d024f649f804"}
 CODEC_FILES = ("jump_wire.py", "station_index_contract.py", "dataplane_contract.py", "telemetry_contract.py", "station_identity.py",
                SHARED_DIR + "/JumpWire.cs", SHARED_DIR + "/StationListIdentity.cs", SHARED_DIR + "/DataPlaneProtocol.cs", SHARED_DIR + "/TelemetryDirectoryReader.cs",
