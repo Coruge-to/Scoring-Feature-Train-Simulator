@@ -1733,12 +1733,13 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
                 # the waiting gate and the departure reset in update_physics_and_scoring; four new functions (the shared basic-braking initialisation, the anchor, the one pair evaluation, the reset); no score, no constant
                 # Legacy scoring LC-3A (on purpose): reset_transient_scoring_state clears the stop jerk state at a Jump boundary and update_stop_jerk_penalty does not judge a sample while a Jump is outstanding;
                 # LC-3B: update_physics_and_scoring replaces the last g_history entry when the clock time repeats; LC-4 / LC-4b: execute_retry refuses after the scoring finished and while the Jump group is unavailable;
-                # no score, no rule, no constant (E3 -> now: scoring_logic.py +350 -119 by git numstat, the numbers of Test-HudLinkE4.ps1 S10b)
+                # Close-range entry paths (fix O1, on purpose): close_range_fix_landing_stop (new, +17) is the anchor of a train placed at B by an official Jump; no existing function changed (tests/test_close_range_entry_paths.py);
+                # no score, no rule, no constant (E3 -> now: scoring_logic.py +367 -119 by git numstat, the numbers of Test-HudLinkE4.ps1 S10b)
                 ("scoring_logic.py", old_scoring, {"write_limit_debug_log", "execute_retry", "create_save_data", "evaluate_arrival", "update_physics_and_scoring", "evaluate_departure", "reset_station_evaluation_state",
                                                    "reset_transient_scoring_state", "update_stop_jerk_penalty"},
                  {"note_save_skipped", "operational_stop_station", "resolve_operational_stop_completion", "Import(names=[alias(name='station_identity')])",
                   "Import(names=[alias(name='jump_transaction')])", "Import(names=[alias(name='jump_wire')])",         # Phase ST-3d (on purpose): execute_retry builds its request with jump_transaction / jump_wire (the Jump wire v2)
-                  "close_range_fix_previous_stop", "init_basic_braking_state", "close_range_pair_is_close", "update_close_range_departure_reset"}),
+                  "close_range_fix_previous_stop", "init_basic_braking_state", "close_range_pair_is_close", "update_close_range_departure_reset", "close_range_fix_landing_stop"}),
                 ("utils.py", old_utils, {"write_desktop_log"}, {"set_desktop_log_enabled", "desktop_log_enabled", "desktop_log_requested"})):
             with open(os.path.join(ROOT, name), encoding="utf-8") as f:
                 new = f.read()

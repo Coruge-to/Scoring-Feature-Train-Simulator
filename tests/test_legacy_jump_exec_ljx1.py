@@ -130,7 +130,8 @@ REGION_PINS = {
         "Overlay._send_jump_datagram": ("whole", "28F6535FFD17481537E586D5F61A5D0BB2824E6CB309EF9F2D1F7D63A4DFF281", 1),
         "Overlay._log_rejected_completion": ("whole", "C5B2E6C61374F8CD15019919490069ADF03F0C8137168CAF51DAD397C1D54C83", 1),
         # Phase ST-3d (was 1709CFC1...): the settlement itself - judge_completion, the cut of the history (the ONE call of resolve_retry_history), the release, then the unchanged success body
-        "Overlay._settle_jump_complete": ("whole", "7995AA5F27B35E3FDABB9FCF85F2AC6EA20D6C854475133CD8FF4919B1C9E4CC", 1),
+        # Close-range entry paths (fix O1, was 7995AA5F...): + the one call that fixes the ACTUAL landing position of the settled completion as the anchor of the close-range departure protection (4 added lines, no changed line; tests/test_close_range_entry_paths.py)
+        "Overlay._settle_jump_complete": ("whole", "6EA67C0403E419B682207E2D5B2641B6AAE6F95C3E7B6EFC2CA7B3AE4972D021", 1),
         "Overlay._scoring_start_plan": ("whole", "1CAC50AE7FBF10311002294F0A9EE83929BA82770561AA79AA230E7DE777E74C", 1),
         "Overlay.send_jump_command": ("whole", "64A500353BD0B85B9E834D1F229191288688FAC19AFFC56C79C013F16526191C", 1),
         "_managed_jump_log": ("whole", "79C052E4112C613AE67EEE787BA19E15A2164441D18BA383057CE08F47133689", 1),

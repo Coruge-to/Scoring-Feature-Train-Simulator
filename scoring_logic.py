@@ -898,6 +898,23 @@ def close_range_fix_previous_stop(self, arrival_loc):
     self.prev_actual_stop_loc = self.bve_location if snapshot.valid else -1.0
 
 
+def close_range_fix_landing_stop(self, station_index, actual_location):
+    """The same anchor for a train that was PLACED at the current station by an official Jump (scoring start / Retry) instead of arriving there: the ACTUAL landing position of the settled completion
+    (jump_transaction.judge_completion has proven the request, the scope and the position), kept for the NEXT target switch. -1.0 when the index is not one of the adopted list or the position is not a finite
+    non-negative number. Nothing is searched by a position."""
+    station_list = getattr(self, 'station_list', None)
+    valid = (
+        station_list is not None
+        and station_identity.index_in_list(station_index, len(station_list))
+        and isinstance(actual_location, (int, float))
+        and not isinstance(actual_location, bool)
+        and actual_location == actual_location
+        and actual_location not in (float("inf"), float("-inf"))
+        and actual_location >= 0.0
+    )
+    self.prev_actual_stop_loc = float(actual_location) if valid else -1.0
+
+
 def init_basic_braking_state(self, current_time):
     """The new-section state of the basic braking: counts at zero, the start is the handle of this moment (the zone entry and the close-range departure reset share it)."""
     self.bb_state = "IDLE"

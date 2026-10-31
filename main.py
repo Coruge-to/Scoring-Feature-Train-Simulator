@@ -22,6 +22,7 @@ from scoring_logic import (
     reset_speed_penalty_state,
     reset_roll_state,
     begin_official_jump,
+    close_range_fix_landing_stop,
     add_score_popup,
 )
 from menu_ui import draw_menu
@@ -1166,6 +1167,9 @@ class Overlay(QWidget):
         self.door_open_loc = completed_location
         self.roll_penalty_count = 0
         self.roll_was_moving = False
+
+        # the station of this Jump is the current station: its ACTUAL landing position is the anchor of the close-range departure protection of the next pair (the START / RETRY entry; the arrival path is evaluate_arrival)
+        close_range_fix_landing_stop(self, verdict.selected_idx, verdict.actual_location)
 
     def is_station_timing(self, sta_idx):
         if sta_idx == self.setting_start_idx:

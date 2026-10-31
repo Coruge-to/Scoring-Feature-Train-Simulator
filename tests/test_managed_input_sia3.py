@@ -1782,8 +1782,10 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
         # Phase ST-2a (on purpose): note_save_skipped records a refused checkpoint (a diagnostic line, no score); Time Fix B2 (on purpose): operational_stop_station and resolve_operational_stop_completion are the two
         # pure helpers of the operational stop latch (the verified station + scheduled time of the stop; the cause and the error of its completion: no score, no rule, no constant)
         # Close-range departure reset (on purpose): the shared basic-braking initialisation, the anchor of the previous actual stop, the one pair evaluation and the departure reset are new functions (no score, no rule, no constant)
+        # Close-range entry paths (fix O1, on purpose): close_range_fix_landing_stop is the anchor of a train PLACED at B by an official Jump (scoring start / Retry): one new pure function, no existing function changed (tests/test_close_range_entry_paths.py)
         self.assertEqual(set(a) | {"note_save_skipped", "operational_stop_station", "resolve_operational_stop_completion",
-                                   "init_basic_braking_state", "close_range_fix_previous_stop", "close_range_pair_is_close", "update_close_range_departure_reset"}, set(b))
+                                   "init_basic_braking_state", "close_range_fix_previous_stop", "close_range_pair_is_close", "update_close_range_departure_reset",
+                                   "close_range_fix_landing_stop"}, set(b))
         changed = sorted(n for n in a if a[n] != b[n])
         # only the diagnostic writer got the switch and (PID-D6) execute_retry's one transport line; no score, no rule, no constant
         # Phase ST-2a (on purpose): create_save_data takes the station of the checkpoint from the verified arrival index, evaluate_arrival names the judged position in its one call of it,

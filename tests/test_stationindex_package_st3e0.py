@@ -78,7 +78,8 @@ BASE_BLOBS = {
     # SI-R5.2-A changed scoring_logic.py on purpose (P03, the HUD next station / rule section, takes the scoring target index bve_tgt_idx instead of the 1 m lookup at NEXTLOC; tests/test_si_r5_2a_stage_a.py / tests/red_si_r5_station_identity.py): the blob moved from 449e0c94... (Close-range departure reset)
     # Legacy scoring LC-3A (c12339a, the stop jerk state is reset at a Jump boundary and not judged while a Jump is outstanding), LC-3B (5aad2f1, a repeated clock time replaces the last g_history entry), LC-4 (0957634, execute_retry refuses after the scoring finished)
     # and LC-4b (cbebfd3, A14: execute_retry refuses while the Jump group is unavailable) changed scoring_logic.py on purpose (tests/test_lc3a_stop_jerk_boundary.py / tests/test_lc3b_clock_freeze.py / tests/test_lc4_retry_after_finish.py / tests/test_lc4b_python_jump_state.py): the blob moved from 88f61d75... (SI-R5.2-C)
-    "scoring_logic.py": "78e53ad3f6c346f9cab1800bbb30599584773814",       # was 88f61d75... after SI-R5.2-C: P02 takes prev_tgt_idx, the last distance lookup is gone (9c683795... after SI-R5.2-B: P01, P04, P05 take bve_tgt_idx; c4981e27... after SI-R5.2-A)
+    # Close-range entry paths (fix O1) added scoring_logic.close_range_fix_landing_stop on purpose (+17: the anchor of the close-range departure protection for a train PLACED at B by an official Jump; tests/test_close_range_entry_paths.py): the blob moved from 78e53ad3... (LC-4b)
+    "scoring_logic.py": "debb31c859ec2c2e1ac6f3be1ce5e354d00124af",       # was 78e53ad3... after the LC-4b state; 88f61d75... after SI-R5.2-C: P02 takes prev_tgt_idx, the last distance lookup is gone (9c683795... after SI-R5.2-B: P01, P04, P05 take bve_tgt_idx; c4981e27... after SI-R5.2-A)
     # SI-R5.2-A changed station_identity.py on purpose (the pure missing-index classifier, the run tracker and the managed diagnostic glue; tests/test_si_r5_2a_stage_a.py): the blob moved from 93ce7abc... (ST-3b)
     "station_identity.py": "2c971098059a6b8948cd842ed84af8ece9a054b9",
     "station_index_contract.py": "73c9ec9a75ca6dca450637f47d15d0ebdbdda423",
@@ -136,7 +137,8 @@ BASE_BLOBS = {
 # Close-range departure reset changed main.py on purpose (the two construction defaults close_range_departure_reset_pending / prev_actual_stop_loc; tests/test_close_range_contract.py): the blob (without its contract import) moved from 86e6929a... (SI-R2.3 C4b)
 # SI-R5.2-C changed main.py on purpose (the construction default prev_tgt_idx = -1 beside prev_next_loc; tests/red_si_r5_station_identity.py): the blob (without its contract import) moved from 2a0b103b... (Close-range departure reset)
 # Legacy scoring LC-4b (cbebfd3) changed main.py on purpose (A14: Overlay.jump_group_available, the Retry menu entry refuses while the Jump group is unavailable; A16: the baseline block of apply_telemetry_text looks at the JUMP key; tests/test_lc4b_python_jump_state.py): the blob (without its contract import) moved from 07043c51... (SI-R5.2-C)
-BASE_MAIN = "c8be571506a858f6dc9cce5209ba77ff5e5da227"
+# Close-range entry paths (fix O1) changed main.py on purpose (+4: the import of scoring_logic.close_range_fix_landing_stop and its one call in the success branch of Overlay._settle_jump_complete; tests/test_close_range_entry_paths.py): the blob (without its contract import) moved from c8be5715... (LC-4b)
+BASE_MAIN = "da5d5b2c4df26691edc11b85d5b14e4e722260cb"
 BASE_PROJECTS = {CURRENT_PROJECT: "61092229f34e5e4ceb52a4fb6e52280824ec2578", LEGACY_PROJECT: "defbe148ff815741c6b627cadaf8d024f649f804"}
 CODEC_FILES = ("jump_wire.py", "station_index_contract.py", "dataplane_contract.py", "telemetry_contract.py", "station_identity.py",
                SHARED_DIR + "/JumpWire.cs", SHARED_DIR + "/StationListIdentity.cs", SHARED_DIR + "/DataPlaneProtocol.cs", SHARED_DIR + "/TelemetryDirectoryReader.cs",
