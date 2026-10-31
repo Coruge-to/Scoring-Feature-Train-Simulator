@@ -99,6 +99,7 @@ GENERATION_DROP = frozenset({
     "bb_moved_after_first_valid_stop", "has_evaluated_initial_brake", "idle_entered_while_stopped", "prev_stop_detection_speed", "dbg_active_reds",
     "operational_stop_margins", "operational_stop_latch",
     "last_debug_state_key", "last_pending_log", "bve_door_close_time_ms", "is_base_off", "is_time_off",
+    "turnback_machine",             # the pseudo-turnback chain machine (created on first use by scoring_logic.turnback_machine_of): a new scenario instance starts without it
 })
 
 # the user's settings, the window state, the infrastructure and the input-hold bookkeeping: deliberately NOT discarded with a generation

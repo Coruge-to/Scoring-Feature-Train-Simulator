@@ -211,6 +211,11 @@ TIMEFIX_B3_EVALUATE_DEPARTURE_PIN = ("slice", "E2F27FF844D94A4D24756620B2F137950
 # The new digest is pinned on its own (it was 5EBC117E...).
 TIMEFIX_B3_UPDATE_PHYSICS_PIN = ("slice", "76263B7C83BB397626D63F1678A78EC0A52A482CA1D63631CA7C8F2D7B615D79", 26)
 
+# Pseudo-turnback A-side seam (Stage TB-B, an INTENDED change of a scoring region, not of the jump contract): evaluate_arrival starts the chain of a pair A only when no Jump landing or outstanding Jump is involved
+# (one statement names `jump_lock` and `is_official_jumping`: PU-3 / PU-6), so the slice of the function grows from 3 to 5 records; the Jump contract regions (begin_official_jump, execute_retry, the JUMP detection of
+# update_physics_and_scoring) are unchanged. The new digest is pinned on its own (tests/test_pt_scoring_continuity.py, test_pt_display_contract.py).
+PSEUDO_TURNBACK_EVALUATE_ARRIVAL_PIN = ("slice", "F86365E156A9C2ACD5097B692DE164351AE2C31F739E07D54296850D4EA605BA", 5)
+
 STATIONS = [0.0, 1000.0, 2000.0, 3000.0]
 SCORING_TOKENS = ["time", "speed", "loc", "station", "door", "handle", "brake_type", "brake_cab", "prates"]
 
@@ -294,6 +299,8 @@ class A2_TheLegacyJumpContractRegionsOfThePythonSide(unittest.TestCase):
         self.assertEqual(now.pop("evaluate_departure"), TIMEFIX_B3_EVALUATE_DEPARTURE_PIN)     # Time Fix B / B2 / B3: the intended changes, pinned on their own (the Time Fix B and B2 values stay above as history)
         then.pop("evaluate_departure")
         self.assertEqual(now.pop("update_physics_and_scoring"), TIMEFIX_B3_UPDATE_PHYSICS_PIN)   # Time Fix B3: the intended change, pinned on its own
+        self.assertEqual(now.pop("evaluate_arrival"), PSEUDO_TURNBACK_EVALUATE_ARRIVAL_PIN)     # Pseudo-turnback Stage TB-B: the intended change, pinned on its own
+        then.pop("evaluate_arrival")
         then.pop("update_physics_and_scoring")
         self.assertEqual(now, then)
         self.assertEqual(now_undeclared, [])

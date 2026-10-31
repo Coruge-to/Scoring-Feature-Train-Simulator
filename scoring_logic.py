@@ -5,6 +5,7 @@ from PyQt6.QtNetwork import QHostAddress
 from config import *
 import jump_transaction
 import jump_wire
+import pseudo_turnback_machine
 import station_identity
 from utils import (
     calculate_apex_speed,
@@ -915,6 +916,115 @@ def close_range_fix_landing_stop(self, station_index, actual_location):
     self.prev_actual_stop_loc = float(actual_location) if valid else -1.0
 
 
+TURNBACK_GUIDANCE_TEXT = "次の発車位置へ移動します"
+TURNBACK_GUIDANCE_CATEGORY = "疑似折り返し"
+TURNBACK_SPECIAL_SECONDS = pseudo_turnback_machine.SPECIAL_DISPLAY_MS / 1000.0
+TURNBACK_TOTAL_SECONDS = pseudo_turnback_machine.REQUEST_AFTER_MS / 1000.0
+
+
+def is_arrival_special_popup(popup):
+    """The special arrival popups the Owner names for the pseudo-turnback display: the basic braking achievement and the 0 cm stop. They are the 'big' popups of the categories 基本制動 and ボーナス that
+    evaluate_arrival writes with 0 points (the '+500' lines are 'pos' popups and keep their normal 5 s). Nothing else is a special popup (a warning, the end message and the like are not)."""
+    return popup.get("type") == "big" and popup.get("category") in ("基本制動", "ボーナス")
+
+
+def turnback_machine_of(self):
+    """The chain state machine of this Overlay (created on first use). The PairSet is published by the adapter (Stage TB-E); without one the machine has nothing to do and the scoring is the current one."""
+    machine = self.__dict__.get('turnback_machine')
+    if machine is None:
+        machine = pseudo_turnback_machine.TurnbackMachine()
+        self.turnback_machine = machine
+    return machine
+
+
+def turnback_pair_a_of(self, station_index):
+    """The pair whose A is `station_index` for the CURRENT scoring settings (PU-1..PU-5, the StationIndex and the PairSet only), else None. Pure: nothing is changed."""
+    machine = self.__dict__.get('turnback_machine')
+    if machine is None or machine.pairset is None or not getattr(self, 'is_scoring_mode', False) or getattr(self, 'is_scoring_finished', False):
+        return None
+    station_list = getattr(self, 'station_list', None)
+    if station_list is None:
+        return None
+    explicit_end = getattr(self, 'setting_end_idx', -1)
+    terminal = self.get_actual_terminal_idx() if hasattr(self, 'get_actual_terminal_idx') else len(station_list) - 1
+    resolved_end = explicit_end if explicit_end != -1 else terminal
+    list_id = getattr(station_list, 'list_id', None) or getattr(self, 'bve_list_id', "")
+    return pseudo_turnback_machine.qualifying_pair(machine.pairset, station_index, list_id, len(station_list), getattr(self, 'setting_start_idx', 0), resolved_end, explicit_end)
+
+
+def turnback_arrival_begin(self, current_time, station_index):
+    """The arrival at `station_index` was judged by evaluate_arrival at the BVE time `current_time`. Starts the chain when the station is the A of a pair. Returns True for a pair A (the caller then does not create
+    the A checkpoint). The start time of the 5.0 s is THIS tick's BVE time (never a wall clock, a door or a target change)."""
+    if turnback_pair_a_of(self, station_index) is None:
+        return False
+    machine = turnback_machine_of(self)
+    station_list = self.station_list
+    explicit_end = getattr(self, 'setting_end_idx', -1)
+    terminal = self.get_actual_terminal_idx() if hasattr(self, 'get_actual_terminal_idx') else len(station_list) - 1
+    list_id = getattr(station_list, 'list_id', None) or getattr(self, 'bve_list_id', "")
+    machine.on_arrival(int(round(current_time * 1000.0)), station_index, getattr(self, 'bve_arr_seq', -1), getattr(self, 'current_scenario_id', -1), list_id, len(station_list),
+                       getattr(self, 'setting_start_idx', 0), explicit_end if explicit_end != -1 else terminal, explicit_end, True)
+    return True                                         # a pair A never has a checkpoint, however many times the same arrival is judged (the machine itself starts one chain per arrival)
+
+
+def turnback_arrival_scored(self, current_time, popups_before):
+    """The arrival scoring of A is complete (stop position, basic braking, popups). The special popups this arrival wrote share ONE 3.0 s window from the arrival time (two of them are 3.0 s in total, never 6 s);
+    the guidance is shown from 0 s when there is no special popup, otherwise from 3.0 s (turnback_display_update). The '+500' lines are not touched."""
+    machine = turnback_machine_of(self)
+    if machine.state != pseudo_turnback_machine.RECOGNIZED:
+        return
+    special = [p for p in self.popups[popups_before:] if is_arrival_special_popup(p)]
+    arrival_s = machine.arrival_ms / 1000.0
+    for p in special:
+        p["expire_time"] = arrival_s + TURNBACK_SPECIAL_SECONDS
+    machine.a_scoring_complete(machine.arrival_ms, False, bool(special))
+    turnback_display_update(self, current_time)
+
+
+def turnback_display_update(self, current_time):
+    """Once per scoring tick: shows the guidance in its window, in BVE time since the arrival (a paused clock does not move it, a repaint or the wall clock never does). The guidance popup ends at arrival + 5.0 s,
+    where the Jump request is made (that time is decided by the machine from the arrival time alone; this display never moves it)."""
+    machine = self.__dict__.get('turnback_machine')
+    if machine is None or machine.state not in (pseudo_turnback_machine.RECOGNIZED, pseudo_turnback_machine.ARMED):
+        return
+    if machine.display_phase(int(round(current_time * 1000.0))) != "guide":
+        return
+    if any(p.get("category") == TURNBACK_GUIDANCE_CATEGORY for p in self.popups):
+        return
+    add_score_popup(self, 0, TURNBACK_GUIDANCE_TEXT, COLOR_N, "big", TURNBACK_GUIDANCE_CATEGORY, current_time)
+    self.popups[-1]["expire_time"] = machine.arrival_ms / 1000.0 + TURNBACK_TOTAL_SECONDS
+
+
+def create_turnback_b_checkpoint(self, station_index):
+    """The ONE checkpoint of B after the pseudo-turnback Jump settled and B is established: the fields of a scoring start's first checkpoint (loc / time / score / details / target / name / stop_error 0.0) with the
+    identity of an ARRIVED station (station_identity.build_snapshot, role arrived_station: a retry accepts only scoring_start at the first place of the history and arrived_station after it - measured at Stage TB-B,
+    so start_snapshot can not be used here). EVERYTHING is read at THIS call (score, details, history, time, position, target after the Jump landed), never from a snapshot of the A arrival. Returns True when created."""
+    if not getattr(self, 'is_scoring_mode', False) or getattr(self, 'is_scoring_finished', False):
+        return False
+    snapshot = station_identity.build_snapshot(
+        station_index, station_identity.scope_of(getattr(self, 'current_scenario_id', -1), getattr(self, 'bve_list_id', ""), getattr(self, 'station_list', None)),
+        getattr(self, 'station_list', None), station_identity.ROLE_ARRIVED_STATION)
+    if not snapshot.valid:
+        note_save_skipped(self, snapshot)
+        return False
+    if getattr(self, 'save_data', []) and station_identity.same_station(self.save_data[-1], snapshot):
+        return False                                                     # never a second checkpoint of the same B
+    station = self.station_list[station_index]
+    checkpoint = {
+        "loc": self.bve_location,                                        # the train as it landed at B (the actual landing), not the list position
+        "time_ms": self.bve_time_ms,
+        "score": self.score,
+        "score_details": self.score_details.copy(),
+        "target_loc": self.bve_next_loc if self.bve_next_loc >= 0.0 else station.get("location", self.bve_location),         # the target established after the landing
+        "station_name": station.get("name", "不明な駅"),
+        "stop_error": 0.0,
+        "origin": "turnback",
+    }
+    checkpoint.update(station_identity.checkpoint_fields(snapshot))
+    self.save_data.append(checkpoint)
+    return True
+
+
 def init_basic_braking_state(self, current_time):
     """The new-section state of the basic braking: counts at zero, the start is the handle of this moment (the zone entry and the close-range departure reset share it)."""
     self.bb_state = "IDLE"
@@ -979,6 +1089,11 @@ def evaluate_arrival(self, current_time, arrival_target_loc=None):
     is_end_sta_match = identity_ok and ((curr_sta_idx != -1 and curr_sta_idx == getattr(self, 'setting_end_idx', -1)) or (getattr(self, 'prev_term', 0) == 1))
     is_scoring_end_station = is_end_sta_match and not getattr(self, 'jump_lock', False) and getattr(self, 'is_scoring_mode', False)
 
+    # Pseudo-turnback: the arrival at the A of a pair (StationIndex + PairSet only). Dormant (False, nothing changed) while no PairSet is published.
+    popups_before = len(getattr(self, 'popups', []))
+    # (PU-3 / PU-6: an arrival that is the landing of a Jump, or happens during one, is not a pair arrival)
+    is_turnback_a = identity_ok and not getattr(self, 'jump_lock', False) and not getattr(self, 'is_official_jumping', False) and turnback_arrival_begin(self, current_time, curr_sta_idx)
+
     is_zero_stop = False
     if not getattr(self, 'is_first_station', False) and getattr(self, 'has_departed', False) and not getattr(self, 'has_scored_stop_this_station', False):
         if not getattr(self, 'jump_lock', False):
@@ -1041,6 +1156,9 @@ def evaluate_arrival(self, current_time, arrival_target_loc=None):
     if is_zero_stop and apply_ok and release_ok and getattr(self, 'is_scoring_mode', False):
         add_score_popup(self, 500, "ボーナス +500", COLOR_N, "pos", "ボーナス", current_time)
 
+    if is_turnback_a:
+        turnback_arrival_scored(self, current_time, popups_before)       # the special popups share one 3.0 s window; the guidance follows (or fills the 5.0 s)
+
     if is_scoring_end_station:
         self.is_scoring_finished = True
         # 採点終了から5秒後に終了メッセージを表示する
@@ -1075,7 +1193,8 @@ def evaluate_arrival(self, current_time, arrival_target_loc=None):
 
     else:
         if not getattr(self, 'jump_lock', False):
-            create_save_data(self, p_loc)
+            if not is_turnback_a:                       # the A of a pseudo-turnback pair has NO checkpoint (Owner OD-PR-1 beta): the score and the history stay, the restart point is B
+                create_save_data(self, p_loc)
             close_range_fix_previous_stop(self, p_loc)
 
 def operational_stop_station(self):
@@ -1361,6 +1480,7 @@ def update_physics_and_scoring(self, current_time, dt):
         self.active_features_str = " ".join(f_list) if f_list else "すべてOFF"
 
     update_result_display(self, current_time)
+    turnback_display_update(self, current_time)        # the pseudo-turnback guidance window (dormant without a chain)
 
     decel_g = -self.bve_calc_g
     # BVE時刻が止まっている間（一時停止、F1メニュー）も採点ステップは回り続ける。
@@ -1707,7 +1827,7 @@ def update_physics_and_scoring(self, current_time, dt):
                 is_scoring_end_station_op = (curr_sta_idx == getattr(self, 'setting_end_idx', -1)) or (getattr(self, 'prev_term', 0) == 1)
                 is_timing_active_op = self.is_station_timing(curr_sta_idx) if curr_sta_idx >= 0 else False
 
-                if not arrival_deferred and is_scoring_end_station_op and is_timing_active_op and not getattr(self, 'has_scored_time_this_station', False):
+                if not arrival_deferred and (is_scoring_end_station_op or turnback_pair_a_of(self, curr_sta_idx) is not None) and is_timing_active_op and not getattr(self, 'has_scored_time_this_station', False):
                     # 終了駅では駅データの着時刻を優先して運転時分を算出する
                     arr_target_s = self.bve_next_time // 1000
                     if curr_sta_idx >= 0 and getattr(self, 'station_list', [])[curr_sta_idx].get("raw_arr", -1) >= 0:
@@ -1774,7 +1894,7 @@ def update_physics_and_scoring(self, current_time, dt):
             and is_within_arrival_target_margin
         ):
             if (
-                is_scoring_end_station
+                (is_scoring_end_station or turnback_pair_a_of(self, curr_sta_idx) is not None)      # the A of a pseudo-turnback pair has no departure: its operating time is scored at the arrival, once
                 and is_timing_active
                 and not getattr(
                     self,

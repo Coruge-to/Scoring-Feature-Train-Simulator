@@ -1734,12 +1734,20 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
                 # Legacy scoring LC-3A (on purpose): reset_transient_scoring_state clears the stop jerk state at a Jump boundary and update_stop_jerk_penalty does not judge a sample while a Jump is outstanding;
                 # LC-3B: update_physics_and_scoring replaces the last g_history entry when the clock time repeats; LC-4 / LC-4b: execute_retry refuses after the scoring finished and while the Jump group is unavailable;
                 # Close-range entry paths (fix O1, on purpose): close_range_fix_landing_stop (new, +17) is the anchor of a train placed at B by an official Jump; no existing function changed (tests/test_close_range_entry_paths.py);
-                # no score, no rule, no constant (E3 -> now: scoring_logic.py +367 -119 by git numstat, the numbers of Test-HudLinkE4.ps1 S10b)
+                # Pseudo-turnback A-side seam (Stage TB-B, on purpose): 7 new functions and 4 module constants (the qualification at the arrival, the 3.0 s special popup window, the guidance, the B checkpoint) and the import of pseudo_turnback_machine;
+                # evaluate_arrival and update_physics_and_scoring (already changed above) call them; no score, no rule, no constant (tests/test_pt_scoring_continuity.py / test_pt_display_contract.py)
+                # no score, no rule, no constant (E3 -> now: scoring_logic.py +488 -120 by git numstat, the numbers of Test-HudLinkE4.ps1 S10b)
                 ("scoring_logic.py", old_scoring, {"write_limit_debug_log", "execute_retry", "create_save_data", "evaluate_arrival", "update_physics_and_scoring", "evaluate_departure", "reset_station_evaluation_state",
                                                    "reset_transient_scoring_state", "update_stop_jerk_penalty"},
                  {"note_save_skipped", "operational_stop_station", "resolve_operational_stop_completion", "Import(names=[alias(name='station_identity')])",
                   "Import(names=[alias(name='jump_transaction')])", "Import(names=[alias(name='jump_wire')])",         # Phase ST-3d (on purpose): execute_retry builds its request with jump_transaction / jump_wire (the Jump wire v2)
-                  "close_range_fix_previous_stop", "init_basic_braking_state", "close_range_pair_is_close", "update_close_range_departure_reset", "close_range_fix_landing_stop"}),
+                  "close_range_fix_previous_stop", "init_basic_braking_state", "close_range_pair_is_close", "update_close_range_departure_reset", "close_range_fix_landing_stop",
+                  "Import(names=[alias(name='pseudo_turnback_machine')])", "is_arrival_special_popup", "turnback_machine_of", "turnback_pair_a_of", "turnback_arrival_begin", "turnback_arrival_scored",
+                  "turnback_display_update", "create_turnback_b_checkpoint",
+                  "Assign(targets=[Name(id='TURNBACK_GUIDANCE_CATEGORY', ctx=Store())], value=Constant(value='疑似折り返し'))",
+                  "Assign(targets=[Name(id='TURNBACK_GUIDANCE_TEXT', ctx=Store())], value=Constant(value='次の発車位置へ移動します'))",
+                  "Assign(targets=[Name(id='TURNBACK_SPECIAL_SECONDS', ctx=Store())], value=BinOp(left=Attribute(value=Name(id='pseudo_turnback_machine', ctx=Load()), attr='SPECIAL_DISPLAY_MS', ctx=Load()), op=Div(), right=Constant(value=1000.0)))",
+                  "Assign(targets=[Name(id='TURNBACK_TOTAL_SECONDS', ctx=Store())], value=BinOp(left=Attribute(value=Name(id='pseudo_turnback_machine', ctx=Load()), attr='REQUEST_AFTER_MS', ctx=Load()), op=Div(), right=Constant(value=1000.0)))"}),
                 ("utils.py", old_utils, {"write_desktop_log"}, {"set_desktop_log_enabled", "desktop_log_enabled", "desktop_log_requested"})):
             with open(os.path.join(ROOT, name), encoding="utf-8") as f:
                 new = f.read()

@@ -46,7 +46,7 @@ REQUIRED_PYTHON = ("main.py", "scoring_logic.py", "managed_input.py", "station_i
 # SI-R2.2-S2a added official_target_contract.py (the receiver of the OFFTGT part, imported by main.py): the closure is the 22 modules of 0b8e511 plus this one (plus package_contract)
 # SI-R2.3 (C4b) added hud_target_contract.py (the display target of the HUD, imported by main.py): the closure is those 23 modules plus this one (plus package_contract)
 PYTHON_24 = ("config", "current_jump_client", "dataplane_contract", "hud_target_contract", "hud_ui", "jump_transaction", "jump_wire", "main", "managed_app_directory", "managed_hud", "managed_input",
-             "managed_mode", "managed_state", "menu_ui", "official_target_contract", "pause_recovery", "scoring_logic", "station_identity", "station_index_contract", "telemetry_contract",
+             "managed_mode", "managed_state", "menu_ui", "official_target_contract", "pause_recovery", "pseudo_turnback_machine", "scoring_logic", "station_identity", "station_index_contract", "telemetry_contract",
              "telemetry_dataplane_receiver", "telemetry_gate", "telemetry_receiver_directory", "utils")
 CAPABILITIES = ("jump-request-v2", "jump-completion-v2", "current-selected-idx", "legacy-selected-idx", "python-completion-settlement", "stationindex-transaction",
                 "target-reinitialization", "retry-history-settlement", "legacy-r1b", "current-station-range-fail-closed", "whole-list-reject", "partial-list-not-published")
@@ -68,7 +68,8 @@ BASE_BLOBS = {
     # Time Fix B2 changed managed_input.py (one more name in GENERATION_DROP) and scoring_logic.py (the operational stop is latched at its stop and completed by that record, tests/test_timefix_b2_operational_stop_contract.py): the blobs moved from 293b4a21... / 5be7a006... (Time Fix B)
     # UI-Q1-B changed managed_input.py on purpose (the Qt translation of the locale is installed for the result save dialog, the file filters are named in Japanese, tests/test_ui_q1b_result_dialog_localization.py): the blob moved from 7933e16d... (Time Fix B2)
     # Close-range departure reset added the two generation defaults (close_range_departure_reset_pending, prev_actual_stop_loc) to managed_input.py on purpose (tests/test_close_range_contract.py): the blob moved from 6b0bda0b... (UI-Q1-B)
-    "managed_input.py": "3ca69888a9ae4d6a9facf669ec163f2547e0fc2d",       # SI-R5.2-C: the generation default prev_tgt_idx and its clear in discard_scoring_session (was e1b79288... after the close-range departure reset)
+    # Pseudo-turnback (Stage TB-B) added turnback_machine to GENERATION_DROP in managed_input.py on purpose (the chain machine of the Overlay is dropped with the generation; tests/test_pt_scoring_continuity.py): the blob moved from 3ca69888... (SI-R5.2-C)
+    "managed_input.py": "3499865f2f416e971db7145cec1b63307ef29d48",       # SI-R5.2-C: the generation default prev_tgt_idx and its clear in discard_scoring_session (was e1b79288... after the close-range departure reset)
     "managed_mode.py": "60413e37938808b1f15c52c3b81db9353fd7a84a",
     "managed_state.py": "d8b75db1e870f3f01f825961ec37e7471244d2bc",
     "menu_ui.py": "412e722fb533e1627fa9c4a348e242144c6866df",
@@ -79,7 +80,8 @@ BASE_BLOBS = {
     # Legacy scoring LC-3A (c12339a, the stop jerk state is reset at a Jump boundary and not judged while a Jump is outstanding), LC-3B (5aad2f1, a repeated clock time replaces the last g_history entry), LC-4 (0957634, execute_retry refuses after the scoring finished)
     # and LC-4b (cbebfd3, A14: execute_retry refuses while the Jump group is unavailable) changed scoring_logic.py on purpose (tests/test_lc3a_stop_jerk_boundary.py / tests/test_lc3b_clock_freeze.py / tests/test_lc4_retry_after_finish.py / tests/test_lc4b_python_jump_state.py): the blob moved from 88f61d75... (SI-R5.2-C)
     # Close-range entry paths (fix O1) added scoring_logic.close_range_fix_landing_stop on purpose (+17: the anchor of the close-range departure protection for a train PLACED at B by an official Jump; tests/test_close_range_entry_paths.py): the blob moved from 78e53ad3... (LC-4b)
-    "scoring_logic.py": "debb31c859ec2c2e1ac6f3be1ce5e354d00124af",       # was 78e53ad3... after the LC-4b state; 88f61d75... after SI-R5.2-C: P02 takes prev_tgt_idx, the last distance lookup is gone (9c683795... after SI-R5.2-B: P01, P04, P05 take bve_tgt_idx; c4981e27... after SI-R5.2-A)
+    # Pseudo-turnback (Stage TB-B) added the A-side seam to scoring_logic.py on purpose (+126: the PairSet qualification at the arrival, the A time score once, no checkpoint for the A of a pair, the 3.0 s special popup window and the guidance, the B checkpoint; the module pseudo_turnback_machine joins the runtime set; tests/test_pt_display_contract.py / test_pt_scoring_continuity.py / test_pt_static_pins.py): the blob moved from debb31c8... (close-range entry paths)
+    "scoring_logic.py": "f12846bd430847b12d635faf49bb680b9171bf3f",       # was debb31c8... after the close-range entry paths; 78e53ad3... after the LC-4b state; after the LC-4b state; 88f61d75... after SI-R5.2-C: P02 takes prev_tgt_idx, the last distance lookup is gone (9c683795... after SI-R5.2-B: P01, P04, P05 take bve_tgt_idx; c4981e27... after SI-R5.2-A)
     # SI-R5.2-A changed station_identity.py on purpose (the pure missing-index classifier, the run tracker and the managed diagnostic glue; tests/test_si_r5_2a_stage_a.py): the blob moved from 93ce7abc... (ST-3b)
     "station_identity.py": "2c971098059a6b8948cd842ed84af8ece9a054b9",
     "station_index_contract.py": "73c9ec9a75ca6dca450637f47d15d0ebdbdda423",
@@ -403,7 +405,7 @@ class B_SourceSets(unittest.TestCase):
         for name in REQUIRED_PYTHON:
             self.assertIn(name[:-3], modules)
         contract("package_contract" in modules, "E0-07", "PYTHON-RUNTIME-SET-NOT-23-MODULES", "package_contract.py is not in the closure of main.py (%d modules)" % len(modules))
-        contract(len(modules) == 25, "E0-07", "PYTHON-RUNTIME-SET-NOT-23-MODULES", "%d modules" % len(modules))
+        contract(len(modules) == 26, "E0-07", "PYTHON-RUNTIME-SET-NOT-23-MODULES", "%d modules" % len(modules))
         main_lines = [l for l in read_text(os.path.join(ROOT, "main.py")).splitlines() if l.strip() == "import package_contract"]
         self.assertEqual(len(main_lines), 1, "main.py imports the contract once, at the top level")
 
@@ -484,7 +486,7 @@ class C_Manifest(unittest.TestCase):
         got = {s: sorted(e["path"] for e in m["files"] if e["set"] == s) for s in want}
         for s in want:
             contract(got[s] == want[s], "E0-12", "MANIFEST-ENTRIES-NOT-THE-RUNTIME-SETS", "%s: %s" % (s, sorted(set(got[s]) ^ set(want[s]))))
-        self.assertEqual({s: len(v) for s, v in got.items()}, {"python": 25, "current": 7, "legacy": 16, "shared": 7})
+        self.assertEqual({s: len(v) for s, v in got.items()}, {"python": 26, "current": 7, "legacy": 16, "shared": 7})
         paths = [e["path"] for e in m["files"]]
         self.assertEqual(len(paths), len(set(paths)))
         self.assertEqual(len(paths), len({p.lower() for p in paths}), "no path collision")
