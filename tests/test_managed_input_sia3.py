@@ -629,7 +629,7 @@ class D_ScoringPauseEndReselectReloadSoftOff(ManagedCase):
         r.start_scoring_via_menu()
         self.assertFalse(o.is_scoring_mode)
         self.assertEqual(o.menu_state, 0)
-        self.assertEqual([p["text"] for p in o.popups], ["採点を開始できません（入力が揃っていません）"])
+        self.assertEqual([p["text"] for p in o.popups], [])                      # OD-TB-30: the refusal is a diagnostic line (below), not a popup
         self.assertTrue(any("reason=no-station-list" in e for e in r.events("scoring-start-refused")))
         self.assertEqual(o.udp_socket.written, [])
 
@@ -1549,8 +1549,8 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
                                                                            or (isinstance(n.func, ast.Attribute) and n.func.attr == "write_desktop_log"))]
             if calls:
                 counts[name] = len(calls)
-        self.assertEqual(counts, {"main.py": 12, "scoring_logic.py": 22})
-        self.assertEqual(sum(counts.values()), 34)
+        self.assertEqual(counts, {"main.py": 12, "scoring_logic.py": 23})            # 23: Stage TB-C turnback_diag (fixed words only)
+        self.assertEqual(sum(counts.values()), 35)
         openers = {}
         for name in ("main.py", "scoring_logic.py", "hud_ui.py", "menu_ui.py", "utils.py", "managed_hud.py", "managed_input.py", "managed_mode.py",
                      "managed_state.py", "telemetry_contract.py", "telemetry_gate.py", "config.py"):
@@ -1795,7 +1795,8 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
         self.assertEqual(set(a) | {"note_save_skipped", "operational_stop_station", "resolve_operational_stop_completion",
                                    "init_basic_braking_state", "close_range_fix_previous_stop", "close_range_pair_is_close", "update_close_range_departure_reset",
                                    "close_range_fix_landing_stop", "is_arrival_special_popup", "turnback_machine_of", "turnback_pair_a_of", "turnback_arrival_begin", "turnback_arrival_scored",
-                                   "turnback_display_update", "create_turnback_b_checkpoint"}, set(b))
+                                   "turnback_display_update", "create_turnback_b_checkpoint",
+                               "turnback_fix_section", "turnback_session_active", "turnback_lifecycle_guard", "turnback_diag", "turnback_stop_scoring", "official_jump_f1_hold", "note_jump_settlement", "turnback_jump_available", "turnback_request", "turnback_establish_b", "turnback_landing_step", "turnback_drive"}, set(b))
         changed = sorted(n for n in a if a[n] != b[n])
         # only the diagnostic writer got the switch and (PID-D6) execute_retry's one transport line; no score, no rule, no constant
         # Phase ST-2a (on purpose): create_save_data takes the station of the checkpoint from the verified arrival index, evaluate_arrival names the judged position in its one call of it,

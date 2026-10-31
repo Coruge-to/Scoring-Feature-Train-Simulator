@@ -959,7 +959,7 @@ class D_TheScoringStart(ContractMixin, F1.Base):
                 self.assertFalse(o.is_official_jumping)
                 self.assertEqual((o.expected_target_loc, o.expected_target_time), (-1.0, -1))
 
-    def test_a_refused_start_closes_the_menu_shows_one_warning_and_says_why(self):
+    def test_a_refused_start_closes_the_menu_shows_no_popup_and_says_why(self):
         o = self.o
         seen = []
         o.input_event_sink = lambda event, **fields: seen.append((event, fields))
@@ -967,7 +967,7 @@ class D_TheScoringStart(ContractMixin, F1.Base):
         o.current_scenario_id = SID
         self.start_through_the_menu(1)                                                  # no list identity published
         self.assertEqual([ev[0] for ev in self.events if ev[0] == "toggle"], ["toggle"])
-        self.assertEqual(len([p for p in o.popups if p.get("category") == "警告"]), 1)
+        self.assertEqual(len([p for p in o.popups if p.get("category") == "警告"]), 0)       # OD-TB-30: the refusal is a diagnostic (below), not a popup
         refusals = [f for e, f in seen if e == "scoring-start-refused"]
         self.assertEqual(len(refusals), 1)
         self.assertEqual((refusals[0]["why"], refusals[0]["src"]), (SI.SCOPE_INCOMPLETE, "identity"))

@@ -762,9 +762,8 @@ class C_TheWholeScoringRun(OverlayCase):
         self.assertTrue(o.jump_lock)                                             # ... the lock follows the existing abort path (released by the next departure)
         self.assertFalse(o.is_scoring_finished)                                  # no result is fixed
         self.assertEqual(o.menu_state, 0)                                        # and none is shown
-        texts = [p["text"] for p in o.popups]
-        self.assertIn("採点を中断します。", texts)
-        self.assertTrue(all(p.get("category") == "警告" for p in o.popups))
+        self.assertEqual([p for p in o.popups if p.get("category") == "警告"], [])              # OD-TB-30: an internal product failure is a diagnostic, not a popup
+        self.assertEqual(o.internal_abort_reason, "jump")
 
     def test_the_abort_is_reported_by_the_input_controller_like_the_illegal_jump_abort(self):
         r = self.r
@@ -995,7 +994,7 @@ class D_StaticGuards(unittest.TestCase):
     def test_the_scoring_functions_other_than_the_transport_line_are_untouched(self):
         # the only change of scoring_logic.py in this slice is the transport call of execute_retry (pinned by tests/test_managed_input_sia3.py as well)
         text = read("scoring_logic.py")
-        self.assertEqual(len(re.findall(r"send_jump_command", text)), 1)
+        self.assertEqual(len(re.findall(r"send_jump_command", text)), 2)             # execute_retry and (Stage TB-C) turnback_request
 
     def test_the_shutdown_order_the_client_is_cancelled_before_the_receiver_stops(self):
         main = read("main.py")

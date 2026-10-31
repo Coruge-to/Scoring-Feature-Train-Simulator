@@ -13,6 +13,7 @@ for _p in (ROOT, HERE):
 
 import sia_rig as R  # noqa: E402
 import pseudo_turnback_contract as PC  # noqa: E402
+import jump_wire  # noqa: E402
 
 T0 = 36000000
 A_MARK = 1000.0
@@ -39,7 +40,7 @@ def checkpoint0(sl, idx=0):
 
 
 class Scene(object):
-    def __init__(self, test, with_pairs=True, jump_available=True):
+    def __init__(self, test, with_pairs=True, jump_available=True, drive=True):
         self.main, self.S = test.main, test.S
         previous = getattr(test, "_scene", None)
         if previous is not None:
@@ -57,6 +58,13 @@ class Scene(object):
         self.wall = 100.0
         self.n = 0
         self.rows = []
+        self.drive = drive              # False: the machine is driven by hand (the machine-level contract tests of TB-A / TB-B); the product driver is switched off for this scene
+        if not drive:
+            original_drive = self.S.turnback_drive
+            self.S.turnback_drive = lambda owner, current_time: None
+            test.addCleanup(lambda: setattr(self.S, 'turnback_drive', original_drive))
+        self.auto_fix = True            # the rig stands in for the scoring start button: the section is fixed (product turnback_fix_section) whenever the start/end settings it was given change
+        self._fix_key = None
         o.is_scoring_mode = True
         o.is_scoring_finished = False
         o.setting_start_idx = 0
@@ -90,6 +98,11 @@ class Scene(object):
             assert why is None, why
             self.S.turnback_machine_of(o).set_pairset(ps)
 
+    def fix(self):
+        fn = getattr(self.S, "turnback_fix_section", None)
+        if fn is not None:
+            fn(self.o)
+
     def close(self):
         if not self.closed:
             self.closed = True
@@ -98,6 +111,9 @@ class Scene(object):
     # -- the tick (BVE time; the wall clock argument is deliberately unrelated) ----------------------------------------------------------------------
     def tick(self, advance_ms=16, wall_advance=None, **fields):
         o = self.o
+        if self.auto_fix and self._fix_key != (o.setting_start_idx, o.setting_end_idx):
+            self._fix_key = (o.setting_start_idx, o.setting_end_idx)
+            self.fix()
         for k, v in fields.items():
             setattr(o, k, v)
         o.bve_time_ms += advance_ms
@@ -131,6 +147,66 @@ class Scene(object):
         """The door-open edge at A: the arrival judged by evaluate_arrival at THIS tick."""
         self.step(1, bve_door=1, bve_arr_idx=1, bve_arr_seq=1)
         return self.o.bve_time_ms
+
+    # -- the whole chain with the PRODUCT wiring (Stage TB-C): the request is made by the driver of update_physics_and_scoring, the completion by the real _note_jump_complete / _settle_jump_complete ------------------
+    def arrive_a(self, late_ms=5000, start=0, end=4):
+        """The arrival at A (door-open edge); returns the BVE time of the arrival. `late_ms`: how late the train is against the scheduled arrival (operating time band)."""
+        o = self.o
+        o.setting_start_idx, o.setting_end_idx = start, end
+        o.bve_time_ms = T0 + 90000 - late_ms - 600
+        o.bve_next_time = T0 + 90000
+        self.approach("plain")
+        self.stop_at(0.3)
+        return self.open_door()
+
+    def run_to_request(self, t_a):
+        """BVE time up to arrival + 5.0 s: the driver makes the request on the tick that reaches it."""
+        o = self.o
+        self.tick(advance_ms=t_a + 5000 - o.bve_time_ms)
+        return o.jump_expectation
+
+    def jump_tick(self, late_target=False):
+        """The telemetry of the Jump: the JUMP count, the B position and time; the A -> B NEXTLOC switch in the SAME tick (early) or one tick after the completion (late, see target_to_b)."""
+        o = self.o
+        exp = o.jump_expectation
+        b = self.sl[exp.station_index]
+        self.step(3)
+        o.bve_time_ms = exp.time_ms
+        fields = dict(bve_jump_count=getattr(o, "bve_jump_count", 0) + 1, bve_location=b["location"], bve_speed=0.0, bve_door=0)
+        if not late_target:
+            fields.update(bve_next_loc=b["location"], bve_tgt_idx=exp.station_index)
+        self.step(1, **fields)
+
+    def completion_text(self, **over):
+        exp = self.o.jump_expectation
+        text, why = jump_wire.format_completion_v2(over.get("command", exp.command), over.get("idx", exp.station_index), over.get("loc", exp.location), exp.time_ms, 1, tuple(over.get("scope", exp.scope)))
+        assert why is None, why
+        return text
+
+    def complete(self, **over):
+        o = self.o
+        o._note_jump_complete(self.completion_text(**over))
+        o._settle_jump_complete()
+
+    def target_to_b(self, idx=2):
+        b = self.sl[idx]
+        self.step(1, bve_next_loc=b["location"], bve_tgt_idx=idx)
+
+    def depart_b(self, order="close_then_go", c_loc=None):
+        """The departure telemetry of B: the NEXTLOC switch to C while the train stands (close_then_go) or after jump_lock was released by a moving train (moving_switch)."""
+        o = self.o
+        b = self.sl[2]
+        c_loc = self.sl[3]["location"] if c_loc is None else c_loc
+        o.bve_time_ms = b["raw_dep"] - 100
+        o.bve_next_time = b["raw_dep"]
+        if order == "close_then_go":
+            self.step(2, bve_door=0, bve_speed=0.0)
+            self.step(1, advance_ms=100, bve_next_loc=c_loc, bve_tgt_idx=3, bve_speed=0.0)
+            self.step(3, bve_speed=1.5, bve_location=b["location"] + 3.0)
+        else:
+            self.step(2, bve_door=0, bve_speed=2.0, bve_location=b["location"] + 1.0)
+            self.step(1, advance_ms=100, bve_next_loc=c_loc, bve_tgt_idx=3, bve_speed=2.5, bve_location=b["location"] + 2.0)
+            self.step(3, bve_speed=3.0, bve_location=b["location"] + 4.0)
 
     # -- observations ---------------------------------------------------------------------------------------------------------------------------------
     def popups(self, category=None):

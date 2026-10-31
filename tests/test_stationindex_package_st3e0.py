@@ -58,7 +58,7 @@ BASE_BLOBS = {
     "dataplane_contract.py": "56da8579207ae7f6d866f17ce4aafe6d0553c23f",
     # SI-R2.3 (C4b) changed hud_ui.py on purpose (the distance row, the time-left row and the timing label read the display target of the main.py sync - hud_target_* - and no longer the machine target; tests/test_hud_target_wiring_r23.py): the blob moved from a581b87c... (0b8e511)
     "hud_ui.py": "15ebccbbd2aed44fe36047998551aa5b548b307e",
-    "jump_transaction.py": "69ac19a6befca5a7a8810cbd544a48115cfd6c81",
+    "jump_transaction.py": "81996db3fa243cc0bc5412142c6035f8a6fb9648",
     "jump_wire.py": "00579f8031221333f2f6e471d7e30ab3f8b1a365",
     "managed_app_directory.py": "77bf8671ef364b05fb6a6524858ce2ffc2930060",
     # UI-ALT-F4 changed managed_hud.py on purpose (the Overlay's input ownership for the operation screens, the one close request to BVE for a close the user asked for, the shown flag re-aligned with the real Overlay, tests/test_managed_hud_input_ownership.py / tests/test_overlay_user_close_altf4.py / tests/test_managed_hud_shown_reconcile.py): the blob moved from 38a2e4b9... (0b8e511); the package manifest is regenerated for it
@@ -69,7 +69,7 @@ BASE_BLOBS = {
     # UI-Q1-B changed managed_input.py on purpose (the Qt translation of the locale is installed for the result save dialog, the file filters are named in Japanese, tests/test_ui_q1b_result_dialog_localization.py): the blob moved from 7933e16d... (Time Fix B2)
     # Close-range departure reset added the two generation defaults (close_range_departure_reset_pending, prev_actual_stop_loc) to managed_input.py on purpose (tests/test_close_range_contract.py): the blob moved from 6b0bda0b... (UI-Q1-B)
     # Pseudo-turnback (Stage TB-B) added turnback_machine to GENERATION_DROP in managed_input.py on purpose (the chain machine of the Overlay is dropped with the generation; tests/test_pt_scoring_continuity.py): the blob moved from 3ca69888... (SI-R5.2-C)
-    "managed_input.py": "3499865f2f416e971db7145cec1b63307ef29d48",       # SI-R5.2-C: the generation default prev_tgt_idx and its clear in discard_scoring_session (was e1b79288... after the close-range departure reset)
+    "managed_input.py": "580b651b9ef65e6bab2a0bec4c746c028daf5a1b",       # SI-R5.2-C: the generation default prev_tgt_idx and its clear in discard_scoring_session (was e1b79288... after the close-range departure reset)
     "managed_mode.py": "60413e37938808b1f15c52c3b81db9353fd7a84a",
     "managed_state.py": "d8b75db1e870f3f01f825961ec37e7471244d2bc",
     "menu_ui.py": "412e722fb533e1627fa9c4a348e242144c6866df",
@@ -81,7 +81,7 @@ BASE_BLOBS = {
     # and LC-4b (cbebfd3, A14: execute_retry refuses while the Jump group is unavailable) changed scoring_logic.py on purpose (tests/test_lc3a_stop_jerk_boundary.py / tests/test_lc3b_clock_freeze.py / tests/test_lc4_retry_after_finish.py / tests/test_lc4b_python_jump_state.py): the blob moved from 88f61d75... (SI-R5.2-C)
     # Close-range entry paths (fix O1) added scoring_logic.close_range_fix_landing_stop on purpose (+17: the anchor of the close-range departure protection for a train PLACED at B by an official Jump; tests/test_close_range_entry_paths.py): the blob moved from 78e53ad3... (LC-4b)
     # Pseudo-turnback (Stage TB-B) added the A-side seam to scoring_logic.py on purpose (+126: the PairSet qualification at the arrival, the A time score once, no checkpoint for the A of a pair, the 3.0 s special popup window and the guidance, the B checkpoint; the module pseudo_turnback_machine joins the runtime set; tests/test_pt_display_contract.py / test_pt_scoring_continuity.py / test_pt_static_pins.py): the blob moved from debb31c8... (close-range entry paths)
-    "scoring_logic.py": "f12846bd430847b12d635faf49bb680b9171bf3f",       # was debb31c8... after the close-range entry paths; 78e53ad3... after the LC-4b state; after the LC-4b state; 88f61d75... after SI-R5.2-C: P02 takes prev_tgt_idx, the last distance lookup is gone (9c683795... after SI-R5.2-B: P01, P04, P05 take bve_tgt_idx; c4981e27... after SI-R5.2-A)
+    "scoring_logic.py": "bd54fc8bbea510b9fc669decd1ad6bb33aee899c",       # was debb31c8... after the close-range entry paths; 78e53ad3... after the LC-4b state; after the LC-4b state; 88f61d75... after SI-R5.2-C: P02 takes prev_tgt_idx, the last distance lookup is gone (9c683795... after SI-R5.2-B: P01, P04, P05 take bve_tgt_idx; c4981e27... after SI-R5.2-A)
     # SI-R5.2-A changed station_identity.py on purpose (the pure missing-index classifier, the run tracker and the managed diagnostic glue; tests/test_si_r5_2a_stage_a.py): the blob moved from 93ce7abc... (ST-3b)
     "station_identity.py": "2c971098059a6b8948cd842ed84af8ece9a054b9",
     "station_index_contract.py": "73c9ec9a75ca6dca450637f47d15d0ebdbdda423",
@@ -140,7 +140,7 @@ BASE_BLOBS = {
 # SI-R5.2-C changed main.py on purpose (the construction default prev_tgt_idx = -1 beside prev_next_loc; tests/red_si_r5_station_identity.py): the blob (without its contract import) moved from 2a0b103b... (Close-range departure reset)
 # Legacy scoring LC-4b (cbebfd3) changed main.py on purpose (A14: Overlay.jump_group_available, the Retry menu entry refuses while the Jump group is unavailable; A16: the baseline block of apply_telemetry_text looks at the JUMP key; tests/test_lc4b_python_jump_state.py): the blob (without its contract import) moved from 07043c51... (SI-R5.2-C)
 # Close-range entry paths (fix O1) changed main.py on purpose (+4: the import of scoring_logic.close_range_fix_landing_stop and its one call in the success branch of Overlay._settle_jump_complete; tests/test_close_range_entry_paths.py): the blob (without its contract import) moved from c8be5715... (LC-4b)
-BASE_MAIN = "da5d5b2c4df26691edc11b85d5b14e4e722260cb"
+BASE_MAIN = "8d613d1bf5ca8655229712d6cbada7f5f99aa5ad"       # Stage TB-C changed main.py on purpose (the scoring start button fixes the section, the end-of-transaction record, the F1 hold, OD-TB-30 no popup); was da5d5b2c...
 BASE_PROJECTS = {CURRENT_PROJECT: "61092229f34e5e4ceb52a4fb6e52280824ec2578", LEGACY_PROJECT: "defbe148ff815741c6b627cadaf8d024f649f804"}
 CODEC_FILES = ("jump_wire.py", "station_index_contract.py", "dataplane_contract.py", "telemetry_contract.py", "station_identity.py",
                SHARED_DIR + "/JumpWire.cs", SHARED_DIR + "/StationListIdentity.cs", SHARED_DIR + "/DataPlaneProtocol.cs", SHARED_DIR + "/TelemetryDirectoryReader.cs",

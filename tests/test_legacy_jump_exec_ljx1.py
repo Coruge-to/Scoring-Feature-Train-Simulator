@@ -84,6 +84,19 @@ SCORING_LOGIC_AT_LJX1 = {
 #   order   the order of call names inside one function.
 # TTL (5.0 s), claim and breaker (N = 3) are C# contracts of the Legacy plane (Test-LegacyJumpExecLJX1.ps1 and the DLL pin); their Python counterparts are the 10.0 s outstanding
 # timeout (class A, current_jump_client.py), the cancel reasons and the shutdown order below.
+# Stage TB-C (OD-TB-25 / 27 / 28 / 29, INTENDED changes of the jump contract): the functions that were ADDED to scoring_logic.py after LJX-1 and name the contract. They did not exist at the formal LJX-1 commit
+# (so they are not compared with its blob); each is declared as a region and pinned on its own.
+TBC_ADDED_REGION_PINS = {
+    "note_jump_settlement": ("whole", "BC5F15FDEB4EC068A5B67872830FC0014289D1E751B5F6FB69882E44802F5348", 1),       # OD-TB-33 (was 88645BC2...): + the planned time of the Jump in the settlement record
+    "official_jump_f1_hold": ("whole", "FE2CBC6C1FF1E06D9245061DF851E00C582A694713DA1534CA8FD6C38A478512", 1),
+    "turnback_drive": ("whole", "EA4060E56ED3CFF13216E568588318BACE5B861A6C41DE78459F1CE21AE6864D", 1),
+    "turnback_establish_b": ("whole", "7B14B7E48E54B39F6FD6CA9BBEA3EA924B9F8DDDEBB203B392C9ACDE37B78E09", 1),       # OD-TB-33 (was 9C141C45...): the B checkpoint keeps the planned time of the Jump (fail-closed when the record has none)
+    "turnback_jump_available": ("whole", "D8BC38CB48D0C62417AED6530AE7CEFF28C645FFBF7D457054FED2FD9418CEEB", 1),
+    "turnback_landing_step": ("whole", "9DBEBA400DD7061FEA02BB3A3707AEE841E99B399B9B465DA8472E54A3F6ABA8", 1),
+    "turnback_request": ("whole", "76625C7CED5C0F739546F209A054A0631FB943279D501B4761E6E0309D535A27", 1),       # OD-TB-33 (was FAF4F182...): the Jump to B is planned by Overlay._scoring_start_plan(snapshot, index) - no time formula of its own
+    "turnback_stop_scoring": ("whole", "0163DC2175635020D457F9012E17F3AF02A4D94F6AC1116B568A987BEC8ADD99", 1),
+}
+
 JUMP_UNITS = {
     "main.py": {
         # Phase ST-3d (an INTENDED change of the jump contract): the completion is taken by the transport (_note_jump_complete) and judged by the settlement, the transaction is opened / closed in
@@ -94,7 +107,9 @@ JUMP_UNITS = {
                   "Overlay._settle_jump_complete", "Overlay._scoring_start_plan", "Overlay.send_jump_command",
                   "_managed_jump_log",
                   # Legacy scoring LC-4b (A14, an INTENDED change of the jump contract): the Overlay answers whether the Jump group is available (the retry is refused while it is not, the HUD tick polls it)
-                  "Overlay.jump_group_available"],
+                  "Overlay.jump_group_available",
+                  # Stage TB-C (OD-TB-27, an INTENDED change of the jump contract): the F1 key is ignored while an official Jump is in flight
+                  "Overlay._on_f1"],
         "sliced": [regions.MODULE, "Overlay.__init__", "Overlay.read_udp_data", "Overlay.apply_telemetry_text", "Overlay.handle_menu_enter",
                    "Overlay._detect_and_release_fast_forward", "Overlay._advance_scoring_clock_and_score", "run_managed"],
         # contract 13.2 step 7 (the jump client is closed, its outstanding request cancelled) before 15.2 step 3 (the data plane receiver stops)
@@ -107,7 +122,7 @@ JUMP_UNITS = {
     },
     # scoring_logic.py is compared with its blob in the formal LJX-1 commit, not with a digest of today
     "scoring_logic.py": {
-        "whole": ["begin_official_jump", "execute_retry"],
+        "whole": ["begin_official_jump", "execute_retry"] + list(TBC_ADDED_REGION_PINS),
         # Legacy scoring LC-3A (an INTENDED change of the stop jerk judgement): update_stop_jerk_penalty does not judge a sample while an official jump is outstanding (it names `is_official_jumping`), so it is a declared region
         "sliced": ["evaluate_arrival", "evaluate_departure", "update_physics_and_scoring", "update_basic_braking_first_stop", "update_speed_limit_penalty", "update_stop_jerk_penalty"],
         "order": [],
@@ -123,22 +138,23 @@ REGION_PINS = {
         "Overlay._poll_jump_client": ("whole", "752D31B04E7EA5B6BD6DA7D13D239D7444660CD754A2C70913F9996C1403EEA6", 1),
         "Overlay._open_jump_transaction": ("whole", "EB4E49E48B214801C9C8A0CE9663FD98B52FC23F55F3B61548C2E1FF77828406", 1),
         "Overlay._emit_jump_settled": ("whole", "7AB4809B8049C5D970490B897DEB34B51FEE7279A89273776D0E6C2270FF22F7", 1),
-        "Overlay._finish_jump_transaction": ("whole", "B6E82E3A2C9365893598E57E3AB54606A6A227C4C37C4F6FF512AADFEA79DAA7", 1),
+        "Overlay._finish_jump_transaction": ("whole", "19F2983456CB7EA8EF8A4C19463FEDC22EADF0EB2481C2FED4341B6DCE8F106C", 1),       # Stage TB-C (was B6E82E3A...): + note_jump_settlement (how the transaction ended, for the pseudo-turnback chain and the landing watch)
         "Overlay._jump_transaction_finish": ("whole", "3CFF60626FCE391D84E1A19483AE04BC144035FDCD3A4E16A9924B573003DF0E", 1),
         # Phase ST-3d (was D011C774...): also the one exit of every FAILED settlement (a verdict), closes the books of the transaction (jump-settled) and releases the pending retry
-        "Overlay._abort_unreleased_official_jump": ("whole", "2FDDD061237B01664F661F22B1B8ED019E8324EB52176AE064040B43E5C0C487", 1),
+        "Overlay._abort_unreleased_official_jump": ("whole", "714C5BDA96B51CC7C412FEF934D180E873ED75BCF76D50A0620EDE1175342741", 1),       # Stage TB-C (was 2FDDD061...): OD-TB-30 - no popup, a diagnostic and internal_abort_reason
         "Overlay._send_jump_datagram": ("whole", "28F6535FFD17481537E586D5F61A5D0BB2824E6CB309EF9F2D1F7D63A4DFF281", 1),
         "Overlay._log_rejected_completion": ("whole", "C5B2E6C61374F8CD15019919490069ADF03F0C8137168CAF51DAD397C1D54C83", 1),
         # Phase ST-3d (was 1709CFC1...): the settlement itself - judge_completion, the cut of the history (the ONE call of resolve_retry_history), the release, then the unchanged success body
         # Close-range entry paths (fix O1, was 7995AA5F...): + the one call that fixes the ACTUAL landing position of the settled completion as the anchor of the close-range departure protection (4 added lines, no changed line; tests/test_close_range_entry_paths.py)
         "Overlay._settle_jump_complete": ("whole", "6EA67C0403E419B682207E2D5B2641B6AAE6F95C3E7B6EFC2CA7B3AE4972D021", 1),
-        "Overlay._scoring_start_plan": ("whole", "1CAC50AE7FBF10311002294F0A9EE83929BA82770561AA79AA230E7DE777E74C", 1),
+        "Overlay._scoring_start_plan": ("whole", "C6AD7F5D9AB11B03C1AC4BBBA80F178678D004A0F0D2EDC5ED0C0A3EBB456AB1", 1),       # Stage TB-C OD-TB-33 (was 1CAC50AE...): + the optional `index` (None = setting_start_idx, the START plan is unchanged); the pseudo-turnback Jump to B uses this one plan
         "Overlay.send_jump_command": ("whole", "64A500353BD0B85B9E834D1F229191288688FAC19AFFC56C79C013F16526191C", 1),
         "_managed_jump_log": ("whole", "79C052E4112C613AE67EEE787BA19E15A2164441D18BA383057CE08F47133689", 1),
         # Legacy scoring LC-4b (A14, a NEW declared region): the Jump group availability of the Overlay (tests/test_lc4b_python_jump_state.py)
+        "Overlay._on_f1": ("whole", "2180E47335A332343A25044C3AD1503F56123FC2CA5E54A82A34AF04882B6705", 1),       # Stage TB-C (OD-TB-27): a NEW declared region
         "Overlay.jump_group_available": ("whole", "B5BDCEF607F1E6E5D7047993FFBD821311999DE954691582E0252359D6B6FCD6", 1),
         # Phase ST-3d (was 24D36E4E..., 3 records): + import jump_transaction, import jump_wire
-        "<module>": ("slice", "EDC95B2B14DA2329CBCB0F76C6C34119AB82D46AB8AD4D4C18679B39719BB8BD", 5),
+        "<module>": ("slice", "457C6A901412E1EB782D6C63F462C7763CC9928F8B1333858B32B141C7AA4A94", 7),       # Stage TB-C (was EDC95B2B..., 5 records): + the imports note_jump_settlement, official_jump_f1_hold
         # Phase ST-3d (was AF89937B..., 10 records): + self.jump_expectation = None
         "Overlay.__init__": ("slice", "7240852E3BE539E9A0B5493057188075368BFDEB189D816B33E2BB3EFE661146", 11),
         # Phase ST-3d (was 741D5BA4...): the JUMP_COMPLETE branch hands the body to _note_jump_complete; the settlement call is guarded (an exception releases the open jump)
@@ -164,7 +180,7 @@ REGION_PINS = {
         # Phase ST-3d (was 35BF78F1..., 2 records): + overlay.jump_expectation reset
         "discard_scoring_session": ("slice", "D8C47223B603D0E6BB275C4637729784D8DE14865988DF0B6DA8E306F8A180DE", 3),
         "discard_generation_state": ("slice", "2E51777AEEE6233FA907BBD73C25D0BD02D060A766149F6C2188CF5BA7133950", 2),
-        "ManagedInputController._observe": ("slice", "8275B1616287102B6C0054FF447B9A3F4216F1D74EEB652ED56168FC57093781", 1),
+        "ManagedInputController._observe": ("slice", "D84735A078A800DE92834344F0FCA2D04B7AF879D8168AEAB9EDF2B8114B87D7", 1),       # Stage TB-C (was 8275B161...): the abort reason names internal_abort_reason (OD-TB-30: no warning popup of W2)
     },
 }
 
@@ -290,6 +306,9 @@ class A2_TheLegacyJumpContractRegionsOfThePythonSide(unittest.TestCase):
         spec = JUMP_UNITS["scoring_logic.py"]
         then, then_undeclared = regions.region_digests(blob, spec["whole"], spec["sliced"])
         now, now_undeclared = regions.region_digests(read_source("scoring_logic.py"), spec["whole"], spec["sliced"])
+        for added, pin in TBC_ADDED_REGION_PINS.items():                             # Stage TB-C: new functions, pinned on their own (absent at the formal LJX-1 commit)
+            self.assertEqual(now.pop(added), pin)
+            self.assertIsNone(then.pop(added))
         self.assertEqual(then_undeclared, [])
         self.assertTrue(all(value is not None for value in then.values()), then)
         self.assertEqual(now.pop("execute_retry"), LC4B_EXECUTE_RETRY_PIN)           # Phase ST-2b / ST-3d / LC-4 / LC-4b: the intended changes, pinned on their own (the ST-2b and ST-3d values stay above as history)

@@ -23,6 +23,10 @@ from scoring_logic import (
     reset_roll_state,
     begin_official_jump,
     close_range_fix_landing_stop,
+    turnback_fix_section,
+    note_jump_settlement,
+    official_jump_f1_hold,
+    turnback_diag,
     add_score_popup,
 )
 from menu_ui import draw_menu
@@ -136,6 +140,7 @@ class Overlay(QWidget):
         self.bve_jump_count = 0
         self.last_jump_count = 0
         self.jump_lock = False
+        self.internal_abort_reason = ""                       # Stage TB-C: 'jump' after an internal Jump / pseudo-turnback failure (names the abort in the managed diagnostics; never a popup)
         self.ignore_next_pass_score = False
 
         # 公式ジャンプの保護・同期状態
@@ -571,6 +576,7 @@ class Overlay(QWidget):
             size = len(getattr(self, 'save_data', None) or [])
             history = (size, size)
         self._emit_jump_settled(expectation, end, selected, actual, history)
+        note_jump_settlement(self, expectation, end, selected, actual, pending)      # Stage TB-C: the end word is how a success is told (never the fall of is_official_jumping)
         return True
 
     def _jump_transaction_finish(self, reason):
@@ -605,8 +611,8 @@ class Overlay(QWidget):
         if getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False):
             self.is_scoring_mode = False
             current_time = self.bve_time_ms / 1000.0
-            add_score_popup(self, 0, "公式ジャンプが完了しませんでした。", COLOR_B_EMG, "big", "警告", current_time, force=True)
-            add_score_popup(self, 0, "採点を中断します。", COLOR_B_EMG, "big", "警告", current_time, force=True)
+            self.internal_abort_reason = "jump"                     # OD-TB-30: an internal product failure is a diagnostic, not a popup
+            turnback_diag(self, "jump-abort", reason=word)
         self.is_official_jumping = False
         self.jump_lock = True
 
@@ -813,11 +819,18 @@ class Overlay(QWidget):
             snapshot = snapshot._replace(reason=current.reason)
         return snapshot
 
-    def _scoring_start_plan(self, snapshot):
-        """Phase ST-3d: (start position, station name, target time, PlannedJump, refusal reason) of the scoring start at the VERIFIED station `snapshot` (setting_start_idx). The request is
+    def _scoring_start_plan(self, snapshot, index=None):
+        """Phase ST-3d: (start position, station name, target time, PlannedJump, refusal reason) of the scoring start at the VERIFIED station `snapshot` (setting_start_idx; `index` None) or at the station `index` (Stage TB-C,
+        OD-TB-33: the official Jump to the B of a pseudo-turnback uses this one plan, so START-at-B and the turnback share the time, the command and the fallbacks; an index outside the list is refused). The request is
         written by the one builder (jump_transaction.build_jump_request, the v2 wire); a request that can not be written is no request (PlannedJump None, the reason names why) and the
         start is refused before anything is changed. Nothing here changes the state."""
-        st = self.station_list[self.setting_start_idx]
+        if index is None:
+            idx = self.setting_start_idx
+        elif station_identity.index_in_list(index, len(getattr(self, 'station_list', None) or [])):
+            idx = index
+        else:
+            return 0.0, "", -1, None, "invalid-index"
+        st = self.station_list[idx]
         start_loc = st.get("location", 0.0)
         start_sta_name = st.get("name", "不明な駅")
 
@@ -828,7 +841,7 @@ class Overlay(QWidget):
 
         calc_t = (raw_dep - stop_t) if raw_dep >= 0 else -1
 
-        if self.setting_start_idx == 0:
+        if idx == 0:
             # 始発駅では作者定義時刻を優先する
             if def_t >= 0: target_time_ms = def_t
             elif calc_t >= 0: target_time_ms = calc_t
@@ -843,19 +856,18 @@ class Overlay(QWidget):
 
         # 途中駅で作者定義時刻が計算時刻より遅い場合は、不要な開扉待ちを避けるためLOC方式へ切り替える
         use_loc_command = False
-        if self.setting_start_idx > 0 and def_t >= 0 and def_t > target_time_ms:
+        if idx > 0 and def_t >= 0 and def_t > target_time_ms:
             use_loc_command = True
 
         command = jump_wire.KIND_LOC if use_loc_command else jump_wire.KIND_STA
-        planned, reason = jump_transaction.build_jump_request(command, self.setting_start_idx, target_time_ms, snapshot.scope, start_loc)
+        planned, reason = jump_transaction.build_jump_request(command, idx, target_time_ms, snapshot.scope, start_loc)
         return start_loc, start_sta_name, target_time_ms, planned, reason
 
     def _refuse_scoring_start(self, snapshot, is_bve_advancing):
         """The identity of the start station is not established: no scoring, no jump, no checkpoint. One warning on the HUD, one diagnostic line, the menu closes."""
         self._station_identity_note("scoring-start-refused", why=snapshot.reason, idx=snapshot.station_index, src="identity",
                                     scn=getattr(self, 'current_scenario_id', -1), cnt=len(getattr(self, 'station_list', None) or []))
-        add_score_popup(self, 0, "採点を開始できません（駅の識別が確定していません）", COLOR_B_EMG, "big", "警告", self.bve_time_ms / 1000.0, force=True)
-        self.toggle_menu(is_bve_advancing)
+        self.toggle_menu(is_bve_advancing)                     # OD-TB-30: the refusal is a diagnostic (scoring-start-refused above), not a popup
 
     def reset_telemetry_state(self):
         """Phase L3: a NEW scenario instance starts: every value that comes from the telemetry line returns to its construction default, so that a
@@ -1844,6 +1856,8 @@ class Overlay(QWidget):
                 if start_request is None:
                     self._refuse_scoring_start(start_identity._replace(valid=False, reason=start_refusal), is_bve_advancing)
                     return
+                turnback_fix_section(self)                 # OD-TB-26 / OD-TB-24: the section the scoring crosses is fixed HERE, once
+                self.internal_abort_reason = ""
                 self.is_scoring_mode = True
                 reset_result_display_state(self)
                 reset_score_accumulation(self)
@@ -2601,6 +2615,16 @@ class Overlay(QWidget):
                             self.handle_menu_backspace(is_bve_advancing)
         self.last_left_click = is_left_clicked
 
+    def _on_f1(self, is_bve_advancing):
+        """The F1 key: opens / closes the TS Scoring menu (which pauses / resumes BVE). OD-TB-27: while an OFFICIAL Jump is in flight (official_jump_f1_hold) this one input is ignored - no menu, no P to BVE, nothing
+        is held for later, no automatic Pause afterwards, no popup; one diagnostic event."""
+        if self.menu_state == 11 and not getattr(self, 'is_result_saved', False):
+            return                                  # 未保存時はF1無効
+        if official_jump_f1_hold(self):
+            self._emit_input_event("input-ignored", reason="official-jump-in-progress", key="F1")
+            return
+        self.toggle_menu(is_bve_advancing)
+
     def _handle_keys(self, is_bve_active, is_bve_advancing):
         """Edge detection of the tracked keys (BVE in front) and their dispatch: F1 F2 F11 F12 H A and the menu navigation."""
         for key in self.key_states.keys():
@@ -2629,10 +2653,7 @@ class Overlay(QWidget):
                 
                 # 数字キーは is_pressed ではなく numeric_router のイベントで処理する
                 if key == 'f1':
-                    if self.menu_state == 11 and not getattr(self, 'is_result_saved', False):
-                            pass # 未保存時はF1無効
-                    else:
-                        self.toggle_menu(is_bve_advancing)
+                    self._on_f1(is_bve_advancing)
                 elif key == 'f2':
                     # 非表示設定の減点項目を含むデバッグ表示を切り替える
                     self.debug_all_penalties = not getattr(self, 'debug_all_penalties', False)

@@ -12,6 +12,8 @@ What it decides (PTS-0 Pair contract §11, S22A, Owner OD-PR-1 beta / OD-PR-3 / 
   * a final pair (CompleteAfterJump): the finish action is returned from the completion event itself, before anything of B is scored (order protection I-12), and NO checkpoint.
 Door state and signal flags are not parameters of any function here, on purpose."""
 
+from typing import NamedTuple
+
 PURPOSE_TURNBACK = "turnback"        # the purpose of the Jump (distinct from retry / start); the formal home is jump_transaction.JUMP_TURNBACK (Stage TB-C)
 
 REQUEST_AFTER_MS = 5000              # the Jump request: BVE time of the arrival + 5.0 s
@@ -19,6 +21,8 @@ SPECIAL_DISPLAY_MS = 3000            # the special arrival popup (basic braking 
 GUIDE_TOTAL_MS = REQUEST_AFTER_MS    # the guidance ends where the request is made
 
 JUMP_UNAVAILABLE_REASON = "pseudo-turnback-jump-unavailable"
+B_STATE_FAILED_REASON = "pseudo-turnback-b-state-invariant-failed"
+B_WATCH_LIMIT_MS = 1000              # OD-TB-28: the positive BVE-time advance, counted from the first B-side telemetry time after the Jump, within which B has to be established
 
 # the display states of the Owner contract, DERIVED from the chain state and the BVE time (nothing is stored for them)
 DISPLAY_SPECIAL_3S = "ARRIVAL_SPECIAL_3S"
@@ -37,6 +41,19 @@ DISCARDED = "discarded"
 
 CONTINUE = 0
 COMPLETE_AFTER_JUMP = 1
+
+
+class Settlement(NamedTuple):
+    """How a Jump transaction ended (written by the Overlay's _finish_jump_transaction): the purpose, the end word of jump_transaction, the selected StationIndex and the ACTUAL landing the completion proved,
+    the scope of the request, the origin of the retried checkpoint ('turnback' or None), the generation and the PLANNED time of the Jump (OD-TB-33: the time the B checkpoint keeps)."""
+    purpose: str
+    end: str
+    selected: object
+    actual: object
+    scope: object
+    origin: object
+    generation: object
+    time_ms: object = None
 
 
 def qualifying_pair(pairset, a_index, list_id, station_count, start_idx, resolved_end_idx, explicit_end_idx):
@@ -92,6 +109,7 @@ class TurnbackMachine:
         self.issued = set()            # PU-7: (generation, list_id, A, arr_seq) of every request ever made in this world
         self._clear_chain()
         self._done_keys = set()
+        self._clear_session()
 
     # ------------------------------------------------------------------ world
     def _clear_chain(self):
@@ -104,6 +122,43 @@ class TurnbackMachine:
         self.awaiting_b = False
         self.failed_reason = None
 
+    def _clear_session(self):
+        """Everything that belongs to ONE scoring session (OD-TB-26 / CH-11): the section fixed at the scoring start button, the last settlement of a Jump transaction, the B watch and the landing watch."""
+        self.fixed = None              # the pairs the section crosses, fixed at the scoring start button (StationIndex + PairSet only)
+        self.fixed_by_a = None         # the same pairs by the StationIndex of their A (a lookup, never a search)
+        self.fixed_generation = None
+        self.settlement = None         # the end word of the latest Jump transaction (written by the Overlay's _finish_jump_transaction)
+        self.landing = None            # the settlement of THIS chain's Jump (ok / ok-plain), kept while B is being established
+        self.b_watch = None            # {"last": BVE ms of the previous observation, "acc": positive advance so far}
+        self.landing_watch = None      # START / Retry landing convergence (O1 anchor), see scoring_logic.turnback_landing_step
+
+    def discard_all(self):
+        """Drop the chain AND the session records (soft-off, abort, finish, a new scoring start, a generation change). The PairSet belongs to the station list and stays."""
+        self._clear_chain()
+        self._clear_session()
+        self.state = IDLE
+
+    def fix_section(self, pairs, generation):
+        self.fixed = tuple(pairs)
+        self.fixed_by_a = {p.arrival: p for p in self.fixed}
+        self.fixed_generation = generation
+
+    def start_b_watch(self):
+        self.b_watch = {"last": None, "acc": 0}
+
+    def b_watch_observe(self, now_ms):
+        """OD-TB-28: the reference is the first B-side BVE time after the Jump (the A -> B jump difference is never counted); afterwards only POSITIVE differences add up. 0 and negative differences add nothing; no clock."""
+        w = self.b_watch
+        if w is None:
+            return 0
+        if w["last"] is not None and now_ms > w["last"]:
+            w["acc"] += now_ms - w["last"]
+        w["last"] = now_ms
+        return w["acc"]
+
+    def b_watch_exceeded(self):
+        return self.b_watch is not None and self.b_watch["acc"] >= B_WATCH_LIMIT_MS
+
     def set_pairset(self, pairset):
         """The PairSet of the CURRENT station list (None: absent / invalid -> the current behaviour, no pseudo-turnback)."""
         self.pairset = pairset
@@ -114,6 +169,7 @@ class TurnbackMachine:
         self.issued = set()
         self._done_keys = set()
         self._clear_chain()
+        self._clear_session()
         self.state = IDLE
         return [("discard_pending", "world-reset")] if had else []
 
@@ -124,7 +180,10 @@ class TurnbackMachine:
             return []
         if self.state in (RECOGNIZED, ARMED, REQUESTED) or self.awaiting_b:
             return []                                           # a chain is already running: a duplicate / extra arrival never starts a second one
-        pair = qualifying_pair(self.pairset, a_index, list_id, station_count, start_idx, resolved_end_idx, explicit_end_idx)
+        if self.fixed is not None:                              # the section was fixed at the scoring start button: nothing is derived again here
+            pair = self.fixed_by_a.get(a_index)
+        else:
+            pair = qualifying_pair(self.pairset, a_index, list_id, station_count, start_idx, resolved_end_idx, explicit_end_idx)
         if pair is None:
             return []
         key = (generation, list_id, a_index, arr_seq)

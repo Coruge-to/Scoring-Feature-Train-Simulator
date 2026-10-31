@@ -187,7 +187,7 @@ class J_Completion(Base):
         self.assertFalse(o.is_official_jumping)
         self.assertTrue(o.jump_lock)
         self.assertFalse(o.is_scoring_mode)
-        self.assertEqual(len([p for p in o.popups if p.get("category") == "警告"]), 2)
+        self.assertEqual(len([p for p in o.popups if p.get("category") == "警告"]), 0)       # OD-TB-30: a diagnostic, not a popup
         self.assertFalse(r.client.has_outstanding)                      # the request counts as completed (the transport) ...
         self.assertEqual(r.client.counts["completed"], 1)
         self.assertIsNone(o.retry_pending)                              # ... and the transaction is closed (the settlement)

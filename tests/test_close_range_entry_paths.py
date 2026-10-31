@@ -531,7 +531,8 @@ class B_Protection(Base):
                     for patched in (True, False):
                         f = Flow(self, formal=formal)
                         if patched:
-                            with mock.patch.object(self.main, "close_range_fix_landing_stop", lambda *a, **k: None):
+                            with mock.patch.object(self.main, "close_range_fix_landing_stop", lambda *a, **k: None), \
+                                    mock.patch.object(self.S, "close_range_fix_landing_stop", lambda *a, **k: None):       # the settlement's supply and (Stage TB-C) the landing watch's re-supply
                                 loc_a = getattr(f, path)()
                         else:
                             loc_a = getattr(f, path)()
@@ -709,13 +710,14 @@ class D_Coverage(unittest.TestCase):
 
     def test_ENT_R20_every_official_entry_to_a_scoring_station_goes_through_the_settlement(self):
         """There is no scoring start without a Jump in the product: the ONLY writer of is_scoring_mode = True is the menu start, and the ONLY callers of begin_official_jump are the menu
-        start and execute_retry; each opens a jump transaction that only _settle_jump_complete can settle, and that settlement supplies the anchor. A new entry fails this test."""
+        start, execute_retry and (Stage TB-C) the pseudo-turnback request; each opens a jump transaction that only _settle_jump_complete can settle, and that settlement supplies the anchor. A new entry fails this test."""
         main_src, sl_src = self.source("main.py"), self.source("scoring_logic.py")
         self.assertEqual(len(re.findall(r"\bis_scoring_mode\s*=\s*True\b", main_src)) + len(re.findall(r"\bis_scoring_mode\s*=\s*True\b", sl_src)), 1)
         self.assertEqual(len(re.findall(r"(?<!def )\bbegin_official_jump\(self,", main_src)), 1)
-        self.assertEqual(len(re.findall(r"(?<!def )\bbegin_official_jump\(self,", sl_src)), 1)
+        self.assertEqual(len(re.findall(r"(?<!def )\bbegin_official_jump\(self,", sl_src)), 2, "execute_retry and (Stage TB-C) the pseudo-turnback request")
         self.assertEqual(len(re.findall(r"_open_jump_transaction\(jump_transaction\.JUMP_START,", main_src)), 1)
         self.assertEqual(len(re.findall(r"_open_jump_transaction\(jump_transaction\.JUMP_RETRY,", sl_src)), 1)
+        self.assertEqual(len(re.findall(r"_open_jump_transaction\(jump_transaction\.JUMP_TURNBACK,", sl_src)), 1)
         for other in ("managed_input.py", "managed_mode.py", "pause_recovery.py"):
             self.assertNotIn("begin_official_jump", self.source(other), other)
             self.assertIsNone(re.search(r"\bis_scoring_mode\s*=\s*True\b", self.source(other)), other)

@@ -24,7 +24,8 @@ NO_INDEX = station_identity.NO_INDEX
 # -- the purpose of a transaction ------------------------------------------------------------------------------------------------------------------
 JUMP_RETRY = "retry"                 # the retry to a checkpoint: a formal success cuts the history to that checkpoint
 JUMP_START = "start"                 # the scoring start: the history is never cut
-JUMPS = (JUMP_RETRY, JUMP_START)
+JUMP_TURNBACK = "turnback"           # the pseudo-turnback Jump A -> B (Stage TB-C): the history is never cut, the B checkpoint is created by the chain after the completion proved the request
+JUMPS = (JUMP_RETRY, JUMP_START, JUMP_TURNBACK)
 
 # -- the words a transaction ends with (fixed words; they contain no value, no name and no path) ----------------------------------------------------
 SETTLE_OK = "ok"                                          # formal success (managed: the RequestId is proven)

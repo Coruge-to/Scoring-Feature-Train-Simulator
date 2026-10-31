@@ -937,19 +937,277 @@ def turnback_machine_of(self):
     return machine
 
 
-def turnback_pair_a_of(self, station_index):
-    """The pair whose A is `station_index` for the CURRENT scoring settings (PU-1..PU-5, the StationIndex and the PairSet only), else None. Pure: nothing is changed."""
+def turnback_fix_section(self):
+    """The scoring start button (OD-TB-26 / OD-TB-24): fixes the pairs that the section crosses, once, from the start / end StationIndex and the PairSet only (no name, position, distance, nearest station, target look,
+    door or signal flag). `setting_end_idx == -1` is the default end sentinel 'terminal' (not 'unspecified'): with a PairSet it is resolved HERE to the last valid end candidate, i.e. the existing candidates
+    without the B of a pair (a terminal that is a B ends at its A) and written to setting_end_idx, so that the end-station judgement runs on it. Every earlier chain / record of the machine is dropped.
+    Without a machine (no PairSet was ever published) there is nothing to fix and the scoring is the current one."""
     machine = self.__dict__.get('turnback_machine')
-    if machine is None or machine.pairset is None or not getattr(self, 'is_scoring_mode', False) or getattr(self, 'is_scoring_finished', False):
-        return None
+    if machine is None:
+        return
+    machine.discard_all()
     station_list = getattr(self, 'station_list', None)
-    if station_list is None:
-        return None
+    if machine.pairset is None or station_list is None:
+        return
+    start = getattr(self, 'setting_start_idx', 0)
     explicit_end = getattr(self, 'setting_end_idx', -1)
-    terminal = self.get_actual_terminal_idx() if hasattr(self, 'get_actual_terminal_idx') else len(station_list) - 1
-    resolved_end = explicit_end if explicit_end != -1 else terminal
+    if explicit_end == -1:
+        terminal = self.get_actual_terminal_idx() if hasattr(self, 'get_actual_terminal_idx') else len(station_list) - 1
+        resolved = terminal
+        while resolved > start and any(p.departure == resolved for p in machine.pairset.pairs):
+            resolved = resolved - 1
+        if resolved != terminal and resolved > start:
+            self.setting_end_idx = resolved
+            explicit_end = resolved
+        else:
+            resolved = terminal
+    else:
+        resolved = explicit_end
     list_id = getattr(station_list, 'list_id', None) or getattr(self, 'bve_list_id', "")
-    return pseudo_turnback_machine.qualifying_pair(machine.pairset, station_index, list_id, len(station_list), getattr(self, 'setting_start_idx', 0), resolved_end, explicit_end)
+    crossed = [p for p in machine.pairset.pairs
+               if pseudo_turnback_machine.qualifying_pair(machine.pairset, p.arrival, list_id, len(station_list), start, resolved, explicit_end) is not None]
+    machine.fix_section(crossed, getattr(self, 'current_scenario_id', -1))
+
+
+def turnback_session_active(self):
+    return bool(getattr(self, 'is_scoring_mode', False)) and not getattr(self, 'is_scoring_finished', False)
+
+
+def turnback_lifecycle_guard(self):
+    """CH-11: nothing of the pseudo-turnback chain outlives its scoring session. Once per scoring tick; a scoring that is not active (soft-off, abort, finish, scenario reload) or a generation that is not the one
+    of the records drops the chain, the fixed section, the settlement, the B watch and the landing watch. Returns True when something was dropped."""
+    machine = self.__dict__.get('turnback_machine')
+    if machine is None:
+        return False
+    busy = (machine.state != pseudo_turnback_machine.IDLE or machine.awaiting_b or machine.fixed is not None or machine.settlement is not None
+            or machine.landing is not None or machine.b_watch is not None or machine.landing_watch is not None)
+    if not busy:
+        return False
+    generation = getattr(self, 'current_scenario_id', -1)
+    stale = (not turnback_session_active(self)
+             or (machine.fixed_generation is not None and machine.fixed_generation != generation)
+             or (machine.generation is not None and machine.generation != generation))
+    if stale:
+        machine.discard_all()
+    return stale
+
+
+def turnback_diag(self, event, **fields):
+    """Diagnostics ONLY (OD-TB-30): an internal product failure of the pseudo-turnback is never a popup. The managed sink (if any) and the desktop log get one fixed-word line; no station name, no value of the scoring."""
+    sink = getattr(self, '_emit_input_event', None)
+    if sink is not None:
+        try:
+            sink(event, **fields)
+        except Exception:
+            pass
+    try:
+        write_desktop_log("[TURNBACK] " + event + "".join(" %s=%s" % (k, fields[k]) for k in sorted(fields)))
+    except Exception:
+        pass
+
+
+def turnback_stop_scoring(self, reason):
+    """The safe stop of an internal pseudo-turnback failure (pre-send unavailable, B state invariant): the chain and its records are dropped, the scoring is OFF (the same state as the other fail-closed stops: no
+    result is fixed, jump_lock is set), nothing is resent, and there is NO popup - one diagnostic line with the fixed reason."""
+    machine = self.__dict__.get('turnback_machine')
+    if machine is not None:
+        machine.discard_all()
+    reset_transient_scoring_state(self)
+    if getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False):
+        self.is_scoring_mode = False
+    self.is_official_jumping = False
+    self.jump_lock = True
+    self.internal_abort_reason = "jump"
+    turnback_diag(self, "turnback-fail", reason=reason)
+
+
+def official_jump_f1_hold(self):
+    """OD-TB-27: while an OFFICIAL Jump is in flight the F1 input (and only that input) is ignored: START / Retry from the request to the end word of the transaction (_finish_jump_transaction); the pseudo-turnback
+    from the request until B is established (it is NOT released at the completion: B state is being established). Derived from the live state, so every way the transaction or the chain ends (success, failure,
+    timeout, scenario / generation change, session-off, soft-off, shutdown) releases it by itself. A menu that is already open can still be closed. The 5.0 s display window after the A arrival is not in flight: F1 is allowed there."""
+    if getattr(self, 'menu_state', 0) != 0:
+        return False
+    if getattr(self, 'jump_expectation', None) is not None:
+        return True
+    machine = self.__dict__.get('turnback_machine')
+    if machine is not None and turnback_session_active(self) and (machine.state == pseudo_turnback_machine.REQUESTED or machine.awaiting_b):
+        return True
+    return False
+
+
+def note_jump_settlement(self, expectation, end, selected, actual, pending):
+    """Called by the Overlay's _finish_jump_transaction (the books of EVERY official Jump close there, success or not): keeps how it ended. Success is ONLY the end word ok / ok-plain, never the fall of
+    is_official_jumping. A successful START / Retry also arms the landing watch (the O1 anchor of the landing has to survive a late target switch)."""
+    if expectation is None:
+        return
+    machine = turnback_machine_of(self)
+    checkpoint = getattr(pending, 'checkpoint', None)
+    origin = checkpoint.get('origin') if isinstance(checkpoint, dict) else None
+    generation = getattr(self, 'current_scenario_id', -1)
+    machine.settlement = pseudo_turnback_machine.Settlement(expectation.purpose, end, selected, actual, expectation.scope, origin, generation, expectation.time_ms)
+    ok = end in (jump_transaction.SETTLE_OK, jump_transaction.SETTLE_OK_PLAIN)
+    if ok and expectation.purpose in (jump_transaction.JUMP_START, jump_transaction.JUMP_RETRY):
+        machine.landing_watch = {"selected": selected, "actual": actual, "generation": generation, "mark": expectation.purpose == jump_transaction.JUMP_RETRY and origin == 'turnback'}
+    else:
+        machine.landing_watch = None
+
+
+def turnback_jump_available(self):
+    """The Jump can be sent: the managed caller needs the jump client and an announced jump group (LC-4b); the normal mode has the plain send (as START). Returns (available, auxiliary reason for the log)."""
+    managed = bool(getattr(self, 'dataplane_strict', False)) or getattr(self, 'jump_client', None) is not None
+    if not managed:
+        return True, ""
+    if getattr(self, 'jump_client', None) is None:
+        return False, "sender-unavailable"
+    group = getattr(self, 'jump_group_available', None)
+    if group is not None and not group():
+        return False, "group-unannounced"
+    return True, ""
+
+
+def turnback_request(self, request):
+    """THE ONE entry of the pseudo-turnback Jump (Stage TB-C): the machine asked for the Jump to B at arrival + 5.0 s. reset -> begin_official_jump -> send -> open the 'turnback' transaction. Nothing is sent when
+    another official Jump is open, when B has no scheduled departure time or when the request can not be written (the chain ends, internal failure: diagnostics only)."""
+    machine = turnback_machine_of(self)
+    station_list = getattr(self, 'station_list', None) or []
+    b_index = request["target_index"]
+    if getattr(self, 'jump_expectation', None) is not None or getattr(self, 'is_official_jumping', False):
+        machine.on_jump_failed("jump-outstanding")
+        turnback_diag(self, "turnback-fail", reason="pseudo-turnback-jump-outstanding")      # the existing transaction is kept
+        return
+    if not station_identity.index_in_list(b_index, len(station_list)):
+        machine.on_jump_failed("b-index")
+        turnback_stop_scoring(self, "pseudo-turnback-b-index-invalid")
+        return
+    scope = station_identity.scope_of(getattr(self, 'current_scenario_id', -1), getattr(self, 'bve_list_id', ""), station_list)
+    snapshot = station_identity.build_snapshot(b_index, scope, station_list, station_identity.ROLE_ARRIVED_STATION)
+    if not snapshot.valid:
+        machine.on_jump_failed("b-index")
+        turnback_stop_scoring(self, "pseudo-turnback-b-index-invalid")
+        return
+    # OD-TB-33: the time, the command (STA / LOC), the fallbacks and the request of the Jump to B are those of a scoring START at B: THE one plan of the Overlay, no formula of its own here
+    b_location, _b_name, b_time, planned, refusal = self._scoring_start_plan(snapshot, index=b_index)
+    if planned is None:
+        machine.on_jump_failed("request")
+        turnback_stop_scoring(self, "pseudo-turnback-request-refused")
+        return
+    machine.settlement = None
+    reset_station_evaluation_state(self)
+    begin_official_jump(self, b_location, b_time)
+    request_id = self.send_jump_command(planned.text)
+    self._open_jump_transaction(jump_transaction.JUMP_TURNBACK, planned, request_id)
+
+
+def turnback_establish_b(self, now_ms):
+    """C3 / OD-TB-28 / OD-TB-29: after the completion proved the Jump (end word ok / ok-plain), B is established when the live state says so: the target is B and its switch (and the reset it runs) is done, nothing is
+    outstanding, the landing the completion proved is valid, the generation and the scope are the request's. Then - in this order - the O1 anchor is confirmed against the actual landing (the existing official
+    function close_range_fix_landing_stop is applied again when a late target switch erased it; it is idempotent), the B operating time is marked as scored, and the B checkpoint is created. The only
+    clock is the BVE time: from the first B-side time after the Jump (the A -> B jump difference is never counted) only POSITIVE advances add up; at 1.0 s without B the state is a product FAILURE:
+    no checkpoint, no mark, no resend, the scoring stops on the safe side, one diagnostic line, no popup."""
+    machine = self.__dict__.get('turnback_machine')
+    record = machine.landing
+    pair = machine.pair
+    fail = pseudo_turnback_machine.B_STATE_FAILED_REASON
+    if record is None or pair is None:
+        turnback_stop_scoring(self, fail)
+        return
+    b_index = pair.departure
+    machine.b_watch_observe(now_ms)
+    generation = getattr(self, 'current_scenario_id', -1)
+    station_list = getattr(self, 'station_list', None)
+    actual = record.actual
+    landing_valid = (isinstance(actual, (int, float)) and not isinstance(actual, bool) and actual == actual and actual not in (float("inf"), float("-inf")) and actual >= 0.0)
+    scope = station_identity.scope_of(generation, getattr(station_list, 'list_id', None) or getattr(self, 'bve_list_id', ""), station_list) if station_list is not None else None
+    jump_time = record.time_ms
+    time_valid = isinstance(jump_time, int) and not isinstance(jump_time, bool) and jump_time >= 0          # OD-TB-33: the checkpoint keeps the PLANNED time of the Jump; a record without it is a product failure
+    if not landing_valid or not time_valid or record.selected != b_index or record.generation != generation or scope is None or tuple(record.scope) != tuple(scope):
+        turnback_stop_scoring(self, fail)
+        return
+    established = (getattr(self, 'bve_tgt_idx', -1) == b_index and getattr(self, 'bve_next_loc', -1.0) >= 0.0 and getattr(self, 'jump_expectation', None) is None
+                   and not getattr(self, 'is_official_jumping', False) and getattr(self, 'retry_pending', None) is None)
+    if not established:
+        if machine.b_watch_exceeded():
+            turnback_stop_scoring(self, fail)
+        return
+    if getattr(self, 'prev_actual_stop_loc', -1.0) != float(actual):
+        close_range_fix_landing_stop(self, b_index, actual)
+        if getattr(self, 'prev_actual_stop_loc', -1.0) != float(actual):
+            turnback_stop_scoring(self, fail)
+            return
+    self.has_scored_time_this_station = True
+    if not create_turnback_b_checkpoint(self, b_index, jump_time):
+        self.has_scored_time_this_station = False
+        turnback_stop_scoring(self, fail)
+        return
+    machine.on_b_established(now_ms)
+
+
+def turnback_landing_step(self):
+    """START / Retry landing (the O1 supply): after the completion the target of the landing station may switch LATER than the settlement, and that switch's reset erases the anchor that the settlement supplied. Once the
+    target is the landing station the anchor is made the actual landing again by the same official function (idempotent). A Retry to a checkpoint whose origin is the pseudo-turnback also marks the B operating time as
+    scored. Nothing is waited for beyond the departure: a watch ends at the first departure (jump_lock released), another Jump, or the end of the session."""
+    machine = self.__dict__.get('turnback_machine')
+    watch = machine.landing_watch
+    if watch is None:
+        return
+    if getattr(self, 'jump_expectation', None) is not None or getattr(self, 'is_official_jumping', False) or not getattr(self, 'jump_lock', False):
+        machine.landing_watch = None
+        return
+    selected = watch["selected"]
+    if getattr(self, 'bve_tgt_idx', -1) != selected or getattr(self, 'bve_next_loc', -1.0) < 0.0:
+        return
+    actual = watch["actual"]
+    if isinstance(actual, (int, float)) and not isinstance(actual, bool) and getattr(self, 'prev_actual_stop_loc', -1.0) != float(actual):
+        close_range_fix_landing_stop(self, selected, actual)
+    if watch["mark"]:
+        self.has_scored_time_this_station = True
+    machine.landing_watch = None
+
+
+def turnback_drive(self, current_time):
+    """The pseudo-turnback driver, once per scoring tick AFTER the target switch of this tick was processed (end of update_physics_and_scoring). Request at arrival + 5.0 s (BVE time), the completion by the end
+    word of the transaction, then the establishment of B (C3)."""
+    machine = self.__dict__.get('turnback_machine')
+    if machine is None:
+        return
+    if turnback_lifecycle_guard(self):
+        return
+    now_ms = int(round(current_time * 1000.0))
+    generation = getattr(self, 'current_scenario_id', -1)
+    if machine.state == pseudo_turnback_machine.ARMED and turnback_session_active(self):
+        available, aux = turnback_jump_available(self)
+        for act in machine.tick(now_ms, generation, True, menu_open=getattr(self, 'menu_state', 0) != 0, jump_available=available):
+            if act[0] == "request_jump":
+                turnback_request(self, act[1])
+            elif act[0] == "abort_scoring_jump_unavailable":
+                turnback_diag(self, "turnback-unavailable", aux=aux or "unknown")
+                turnback_stop_scoring(self, act[1])
+    if machine.state == pseudo_turnback_machine.REQUESTED:
+        record = machine.settlement
+        if record is not None and record.purpose == jump_transaction.JUMP_TURNBACK:
+            machine.settlement = None
+            if record.end in (jump_transaction.SETTLE_OK, jump_transaction.SETTLE_OK_PLAIN):
+                machine.on_jump_complete(True, record.selected, generation)
+                if machine.awaiting_b:
+                    machine.landing = record
+                    machine.start_b_watch()
+                else:
+                    turnback_stop_scoring(self, pseudo_turnback_machine.B_STATE_FAILED_REASON)
+            else:
+                machine.on_jump_failed(record.end)
+                turnback_stop_scoring(self, "pseudo-turnback-jump-failed-" + str(record.end))
+    if machine.awaiting_b:
+        turnback_establish_b(self, now_ms)
+    if machine.landing_watch is not None:
+        turnback_landing_step(self)
+
+
+def turnback_pair_a_of(self, station_index):
+    """The pair whose A is `station_index` in the section FIXED at the scoring start button, else None. Pure: nothing is changed and nothing is derived from the current settings."""
+    machine = self.__dict__.get('turnback_machine')
+    if machine is None or machine.pairset is None or machine.fixed_by_a is None or not getattr(self, 'is_scoring_mode', False) or getattr(self, 'is_scoring_finished', False):
+        return None
+    return machine.fixed_by_a.get(station_index)
 
 
 def turnback_arrival_begin(self, current_time, station_index):
@@ -987,6 +1245,8 @@ def turnback_display_update(self, current_time):
     machine = self.__dict__.get('turnback_machine')
     if machine is None or machine.state not in (pseudo_turnback_machine.RECOGNIZED, pseudo_turnback_machine.ARMED):
         return
+    if not getattr(self, 'is_scoring_mode', False) or getattr(self, 'is_scoring_finished', False):
+        return                                           # no guidance outside a scoring (add_score_popup adds nothing there)
     if machine.display_phase(int(round(current_time * 1000.0))) != "guide":
         return
     if any(p.get("category") == TURNBACK_GUIDANCE_CATEGORY for p in self.popups):
@@ -995,10 +1255,11 @@ def turnback_display_update(self, current_time):
     self.popups[-1]["expire_time"] = machine.arrival_ms / 1000.0 + TURNBACK_TOTAL_SECONDS
 
 
-def create_turnback_b_checkpoint(self, station_index):
+def create_turnback_b_checkpoint(self, station_index, planned_time_ms=None):
     """The ONE checkpoint of B after the pseudo-turnback Jump settled and B is established: the fields of a scoring start's first checkpoint (loc / time / score / details / target / name / stop_error 0.0) with the
     identity of an ARRIVED station (station_identity.build_snapshot, role arrived_station: a retry accepts only scoring_start at the first place of the history and arrived_station after it - measured at Stage TB-B,
-    so start_snapshot can not be used here). EVERYTHING is read at THIS call (score, details, history, time, position, target after the Jump landed), never from a snapshot of the A arrival. Returns True when created."""
+    so start_snapshot can not be used here). The score, the details, the history, the position and the target are read at THIS call (after the Jump landed), never from a snapshot of the A arrival; the TIME is the one the official Jump to B
+    was planned with (OD-TB-33: START-at-B = turnback = B checkpoint = Retry-to-B; `planned_time_ms` None keeps the BVE time of this call for the callers that have no Jump). Returns True when created."""
     if not getattr(self, 'is_scoring_mode', False) or getattr(self, 'is_scoring_finished', False):
         return False
     snapshot = station_identity.build_snapshot(
@@ -1012,7 +1273,7 @@ def create_turnback_b_checkpoint(self, station_index):
     station = self.station_list[station_index]
     checkpoint = {
         "loc": self.bve_location,                                        # the train as it landed at B (the actual landing), not the list position
-        "time_ms": self.bve_time_ms,
+        "time_ms": self.bve_time_ms if planned_time_ms is None else planned_time_ms,
         "score": self.score,
         "score_details": self.score_details.copy(),
         "target_loc": self.bve_next_loc if self.bve_next_loc >= 0.0 else station.get("location", self.bve_location),         # the target established after the landing
@@ -1941,6 +2202,7 @@ def update_physics_and_scoring(self, current_time, dt):
     self.prev_is_timing = self.bve_is_timing
     self.prev_term = self.bve_term
     self.prev_diff_s = diff_s
+    turnback_drive(self, current_time)
 
     rnd_tail_limit = round(self.map_tail_limit, 1)
     rnd_head_limit = round(self.map_head_limit, 1)

@@ -63,7 +63,7 @@ class Base(unittest.TestCase):
 
     def arrive(self, braking="plain", error_m=0.3, timing_diff_ms=None, **kw):
         """Arrive at A. timing_diff_ms: the BVE clock reads (scheduled arrival - timing_diff_ms) at the door-open edge, so that the operating-time diff is whole seconds."""
-        s = self.P.Scene(self, **kw)
+        s = self.P.Scene(self, drive=False, **kw)
         if timing_diff_ms is not None:
             # the arrival time of A is T0 + 90 000 ms; make NEXTTIME = that, and the clock read it minus the diff at the arrival
             s.o.bve_time_ms = self.P.T0 + 90000 - timing_diff_ms - 600
@@ -123,7 +123,7 @@ class A_ArrivalAtPairA(Base):
         self.assertFalse(s.o.has_scored_time_this_station)
 
     def test_G_A1_a_pair_a_that_is_not_a_timing_station_scores_no_time(self):
-        s = self.P.Scene(self)
+        s = self.P.Scene(self, drive=False)
         s.sl[1]["is_timing"] = False
         s.o.bve_time_ms = self.P.T0 + 90000 - 5000 - 600
         s.o.bve_next_time = self.P.T0 + 90000
@@ -152,7 +152,7 @@ class A_ArrivalAtPairA(Base):
 # ==============================================================================================================================================
 class P_UseConditionsInTheProduct(Base):
     def arrive_with(self, **settings):
-        s = self.P.Scene(self)
+        s = self.P.Scene(self, drive=False)
         for k, v in settings.items():
             setattr(s.o, k, v)
         s.approach("plain")
@@ -163,7 +163,7 @@ class P_UseConditionsInTheProduct(Base):
     def test_E07_an_arrival_that_is_a_jump_landing_never_starts_a_chain_and_creates_no_pair_a_state(self):
         for field in ("jump_lock", "is_official_jumping"):
             with self.subTest(field=field):
-                s = self.P.Scene(self)
+                s = self.P.Scene(self, drive=False)
                 s.approach("plain")
                 s.stop_at(0.3)
                 setattr(s.o, field, True)
@@ -175,7 +175,7 @@ class P_UseConditionsInTheProduct(Base):
         """The tick path rejects a phantom door-open during a Jump upstream; the evaluation keeps its own guard (defence in depth), proved by calling it directly."""
         for field in ("jump_lock", "is_official_jumping"):
             with self.subTest(field=field):
-                s = self.P.Scene(self)
+                s = self.P.Scene(self, drive=False)
                 s.approach("plain")
                 s.stop_at(0.3)
                 setattr(s.o, field, True)
@@ -206,7 +206,7 @@ class P_UseConditionsInTheProduct(Base):
         self.assertEqual(s.machine.state, M.IDLE)
 
     def test_the_arrival_at_a_station_that_is_not_a_pair_station_starts_nothing(self):
-        s = self.P.Scene(self)
+        s = self.P.Scene(self, drive=False)
         s.sl[1], s.sl[3] = s.sl[3], s.sl[1]                                  # (the stations are looked up by index only: swap the data, keep the pair 1-2)
         s.o.bve_tgt_idx = 3
         s.approach("plain")
@@ -217,7 +217,7 @@ class P_UseConditionsInTheProduct(Base):
     def test_E05_an_operational_stop_at_A_is_the_same_pair_arrival(self):
         """CHARACTERISATION (ledger E05, UNKNOWN whether an A can be an operational stop in the 15 reference scenarios): the product's operational-stop arrival (speed 0, door direction 0) at a pair A starts the chain
         and scores the A operating time once, like the door-open arrival."""
-        s = self.P.Scene(self)
+        s = self.P.Scene(self, drive=False)
         s.o.bve_time_ms = self.P.T0 + 90000 - 5000 - 600
         s.o.bve_next_time = self.P.T0 + 90000
         s.approach("plain")
@@ -323,7 +323,7 @@ class D_DoorIndependence(Base):
     GUIDE = "疑似折り返し"
 
     def edge_arrival(self, **kw):
-        s = self.P.Scene(self, **kw)
+        s = self.P.Scene(self, drive=False, **kw)
         s.approach("plain")
         s.stop_at(0.3)
         t = s.open_door()
@@ -331,7 +331,7 @@ class D_DoorIndependence(Base):
 
     def operational_arrival(self, door=0):
         """An arrival WITHOUT a door-open edge: the operational stop (speed 0, door direction 0) the existing evaluation already judges as an arrival (a train without passengers, a stop without doors)."""
-        s = self.P.Scene(self)
+        s = self.P.Scene(self, drive=False)
         s.approach("plain")
         s.o.bve_doordir = 0
         s.o.is_approaching = True
@@ -369,19 +369,19 @@ class D_DoorIndependence(Base):
 
     def test_TB_DOOR_R3_no_arrival_judgement_no_chain_whatever_the_door_does(self):
         # (a) the door opens and closes while the train is far from the station
-        s = self.P.Scene(self)
+        s = self.P.Scene(self, drive=False)
         s.approach("plain")
         for door in (1, 0, 1, 0):
             s.step(2, bve_door=door, bve_speed=3.0, bve_location=self.P.A_MARK - 400.0)
         self.assertEqual(s.machine.state, M.IDLE)
         # (b) the train stands in the stopping range with the door closed and a door direction that is not an operational stop: no arrival is judged
-        s = self.P.Scene(self)
+        s = self.P.Scene(self, drive=False)
         s.approach("plain")
         s.stop_at(0.3)
         s.step(30, bve_door=0)
         self.assertEqual((s.machine.state, [p for p in s.o.popups if p["category"] == self.GUIDE]), (M.IDLE, []))
         # (c) a door-open edge that lands outside the stopping range is not an arrival either
-        s = self.P.Scene(self)
+        s = self.P.Scene(self, drive=False)
         s.approach("plain")
         s.step(3, bve_speed=0.0, bve_location=self.P.A_MARK - 100.0)
         s.step(2, bve_door=1)
@@ -498,7 +498,7 @@ class R_RetryFromB(Base):
 # ============================================================================================================================================
 class M_Ownership(Base):
     def test_OD_TB_19_the_machine_is_dropped_with_the_generation_and_rebuilt_empty(self):
-        s = self.P.Scene(self)
+        s = self.P.Scene(self, drive=False)
         old = self.S.turnback_machine_of(s.o)
         self.assertIsNotNone(old.pairset)
         s.o.reset_generation_state()
@@ -509,7 +509,7 @@ class M_Ownership(Base):
 
     def test_OD_TB_19_two_overlays_never_share_a_machine_and_no_module_holds_one(self):
         import inspect
-        s = self.P.Scene(self)
+        s = self.P.Scene(self, drive=False)
         machine = self.S.turnback_machine_of(s.o)
         for module in (self.S, M, self.main):
             held = [name for name, value in vars(module).items() if isinstance(value, M.TurnbackMachine)]
@@ -543,7 +543,7 @@ class TB_SELECT_Existing(Base):
         return [opt["idx"] for opt in o.dropdown_options]
 
     def scene_with(self, pairset_text):
-        s = self.P.Scene(self, with_pairs=False)
+        s = self.P.Scene(self, drive=False, with_pairs=False)
         if pairset_text is not None:
             import pseudo_turnback_contract as PC
             ps, why = PC.decode_ptpair(pairset_text, len(s.sl))
@@ -568,7 +568,7 @@ class TB_SELECT_Existing(Base):
             self.assertEqual([i for i in a if i in ordinary], [i for i in b if i in ordinary], x)
 
     def test_TB_SELECT_R9_a_section_that_ends_at_A_scores_as_ever(self):
-        s = self.P.Scene(self)
+        s = self.P.Scene(self, drive=False)
         s.o.setting_start_idx, s.o.setting_end_idx = 0, 1
         s.approach("stepwise")
         s.stop_at(0.0)
@@ -579,7 +579,7 @@ class TB_SELECT_Existing(Base):
         self.assertEqual(s.machine.tick(t + 5000, s.o.current_scenario_id, False), [], "no Jump, no chain")
 
     def test_TB_SELECT_R10_a_section_that_starts_at_B_scores_as_ever(self):
-        s = self.P.Scene(self)
+        s = self.P.Scene(self, drive=False)
         s.sl[1], s.sl[3] = s.sl[3], s.sl[1]                     # (the data of C stands at index 1 and the data of A at index 3: the arrival below is the one at index 3)
         s.o.setting_start_idx, s.o.setting_end_idx = 2, 3
         s.o.bve_tgt_idx = 3
@@ -590,7 +590,7 @@ class TB_SELECT_Existing(Base):
         self.assertEqual(s.machine.state, M.IDLE)
         self.assertEqual([p for p in s.o.popups if p["category"] == "疑似折り返し"], [])
         # and the pair is not crossed from B: an arrival at the station that would be A (index 1) starts no chain either
-        s2 = self.P.Scene(self)
+        s2 = self.P.Scene(self, drive=False)
         s2.o.setting_start_idx = 2
         s2.approach("plain")
         s2.stop_at(0.3)
@@ -622,7 +622,7 @@ class TB_SAVE(Base):
         self.assertEqual((s.o.score, dict(s.o.score_details)), (score, details))
 
     def test_TB_SAVE_R3_the_history_is_kept(self):
-        s = self.P.Scene(self)
+        s = self.P.Scene(self, drive=False)
         before = [dict(c) for c in s.o.save_data]
         s.approach("plain")
         s.stop_at(0.3)

@@ -86,7 +86,7 @@ class StartConditions(unittest.TestCase):
         import jump_transaction as J
         h = Host(); h.arrive(); h.scored(); h.tick(105000)
         self.assertEqual(h.requests()[0][1]["purpose"], "turnback")
-        self.assertNotIn(M.PURPOSE_TURNBACK, J.JUMPS)
+        self.assertIn(M.PURPOSE_TURNBACK, J.JUMPS)          # Stage TB-C: the formal purpose exists (jump_transaction.JUMP_TURNBACK)
 
     def test_R22_R34_pause_and_menu_hold_the_request_without_losing_it(self):
         h = Host(); h.arrive(); h.scored()

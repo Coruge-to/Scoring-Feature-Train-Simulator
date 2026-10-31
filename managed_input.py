@@ -56,7 +56,7 @@ def generation_defaults():
         # roll
         "door_open_loc": 0.0, "roll_penalty_count": 0, "roll_was_moving": False,
         # position / time changes
-        "bve_jump_count": 0, "last_jump_count": 0, "jump_lock": False, "ignore_next_pass_score": False, "is_official_jumping": False,
+        "bve_jump_count": 0, "last_jump_count": 0, "jump_lock": False, "internal_abort_reason": "", "ignore_next_pass_score": False, "is_official_jumping": False,
         "is_official_retry": False, "expected_target_loc": -1.0, "expected_target_time": -1, "pending_jump_complete": None,
         # the menu
         "menu_state": 0, "menu_cursor": 0, "menu_scroll": 0, "target_retry_idx": -1, "menu_cursor_x": -1, "dropdown_active": False, "dropdown_cursor": 0,
@@ -488,12 +488,7 @@ class ManagedInputController(object):
             return True
         self.refusals += 1
         self.note("scoring-start-refused", reason=blockers[0], blockers=len(blockers), n=self.refusals)
-        if self._popup is not None:
-            try:
-                self._popup(self._o, "採点を開始できません（入力が揃っていません）")
-            except Exception:
-                pass
-        return False
+        return False                                # OD-TB-30: the refusal is a diagnostic line, not a popup (refusal_popup is kept dormant)
 
     # -- state changes ---------------------------------------------------------------------------------------------------------------------
     def on_generation(self, generation):
@@ -606,7 +601,7 @@ class ManagedInputController(object):
                 self.note("scoring-finish")
             else:
                 self.aborts += 1
-                self.note("scoring-abort", reason="jump" if getattr(o, "jump_lock", False) and any(p.get("category") == "警告" for p in getattr(o, "popups", [])) else "user")
+                self.note("scoring-abort", reason="jump" if getattr(o, "jump_lock", False) and (getattr(o, "internal_abort_reason", "") == "jump" or any(p.get("category") == "警告" for p in getattr(o, "popups", []))) else "user")
         self._scoring = active
         self._finished = finished
         wanted = window_lock_wanted(o)

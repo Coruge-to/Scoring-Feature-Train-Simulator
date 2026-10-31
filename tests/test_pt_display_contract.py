@@ -65,7 +65,7 @@ class Base(unittest.TestCase):
         cls.main, cls.S, cls.P = main, scoring_logic, pt_scene
 
     def arrived(self, braking, error_m, **kw):
-        s = self.P.Scene(self, **kw)
+        s = self.P.Scene(self, drive=False, **kw)
         s.approach(braking)
         s.stop_at(error_m)
         t = s.open_door()
@@ -263,7 +263,7 @@ class E_Scope(Base):
             self.assertFalse(S.is_arrival_special_popup(p), p)
 
     def test_a_warning_is_never_clamped_by_the_arrival(self):
-        s = self.P.Scene(self)
+        s = self.P.Scene(self, drive=False)
         s.approach("plain")
         s.stop_at(0.3)
         self.S.add_score_popup(s.o, 0, "警告", None, "big", "警告", s.o.bve_time_ms / 1000.0, force=True)
@@ -282,7 +282,7 @@ class E_Scope(Base):
         self.assertEqual(s.machine.state, M.IDLE)
 
     def test_scoring_off_the_display_does_not_intervene(self):
-        s = self.P.Scene(self)
+        s = self.P.Scene(self, drive=False)
         s.o.is_scoring_mode = False
         s.approach("stepwise")
         s.stop_at(0.0)
@@ -292,7 +292,7 @@ class E_Scope(Base):
     def test_a_door_that_does_not_open_makes_no_arrival_event_so_no_chain_starts(self):
         """CHARACTERISATION (ledger E06, UNKNOWN): the arrival detection is the existing one (the door-open edge, or speed 0 with the door direction 0); a normal stop whose door never opens produces no
         arrival event, so no chain. The Owner's wording 'the door does not open: keep the recognition and the Jump' is reported as an open question (it needs an arrival trigger that does not exist)."""
-        s = self.P.Scene(self)
+        s = self.P.Scene(self, drive=False)
         s.approach("plain")
         s.stop_at(0.3)
         s.step(400)
@@ -342,7 +342,7 @@ class G_Extra(Base):
         # (a) a display that never happens (the update is a no-op) neither delays, nor skips, nor repeats the request
         for braking in ("plain", "stepwise"):
             with self.subTest(display="failed", braking=braking):
-                s = self.P.Scene(self)
+                s = self.P.Scene(self, drive=False)
                 s.approach(braking)
                 s.stop_at(0.3)
                 original = self.S.turnback_display_update
