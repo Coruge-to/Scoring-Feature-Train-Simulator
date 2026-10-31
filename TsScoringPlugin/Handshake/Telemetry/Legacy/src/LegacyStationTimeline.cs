@@ -71,6 +71,8 @@ namespace TSScoringPlugin.Telemetry
         private int arrivalIndex = -1;
         private int arrivalSeq;
         private string listId = StationListIdentity.EmptyId;
+        private List<PseudoTurnbackRecord> ptRecords;   // Phase TB-E (see Build)
+        private string ptPairText;
 
         // Phase ST-3c: the ONE-SHOT requested target of an official (v2) jump. The executor adopted a StationIndex; the re-initialisation that follows the jump targets exactly that station and
         // never searches by position. It is consumed by the first selection (whatever the verdict), expires at the end of the Tick that carried it, and is cleared by Reset(). A
@@ -96,6 +98,9 @@ namespace TSScoringPlugin.Telemetry
         /// <summary>Phase ST-1A: CRC-32 of the STALIST payload of the list as it was built (00000000 for an empty list).</summary>
         internal string ListId { get { return listId; } }
 
+        /// <summary>Phase TB-E: the whole PTPAIR part text of the list as built (computed once per build), or null = no part (fail closed).</summary>
+        internal string PtPairText { get { return ptPairText; } }
+
         internal IList<StationEntry> Entries { get { return list; } }
 
         internal bool IsInitialized { get { return isInitialized; } }
@@ -114,6 +119,7 @@ namespace TSScoringPlugin.Telemetry
             arrivalIndex = -1;
             arrivalSeq = 0;
             listId = StationListIdentity.EmptyId;
+            ptRecords = null; ptPairText = null;
             requestedTargetActive = false;
             requestedTargetIndex = -1;
             requestedTargetLocation = 0.0;
@@ -501,6 +507,13 @@ namespace TSScoringPlugin.Telemetry
                 }
             }
 
+            // Phase TB-E: the five raw values per station (arrival stated, departure stated, explicit terminal, pass), read before any later normalisation of the list; nothing else is read
+            ptRecords = new List<PseudoTurnbackRecord>(list.Count);
+            for (int i = 0; i < list.Count; i++)
+            {
+                ptRecords.Add(new PseudoTurnbackRecord(list[i].RawArrTime > 0, list[i].RawDepTime > 0, list[i].IsTerminal, list[i].IsPass));
+            }
+
             // none stated: the last station is the terminal
             if (!explicitTerminalFound && list.Count > 0)
             {
@@ -660,6 +673,7 @@ namespace TSScoringPlugin.Telemetry
             // Phase ST-1A: the identity of the list as the STALIST will state it (the same text, hashed once per build; nothing above reads it)
             string payload = ComposeStaList();
             listId = payload == null ? StationListIdentity.EmptyId : StationListIdentity.Compute(payload.Substring(StaListPrefix.Length));
+            ptPairText = list.Count > 0 ? PseudoTurnbackPairCodec.Publish(ptRecords, listId) : null;   // Phase TB-E: null = no PTPAIR part
         }
     }
 }

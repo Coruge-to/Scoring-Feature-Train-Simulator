@@ -33,9 +33,11 @@ PINNED_BLOBS = {
     # Close-range entry paths (fix O1) added scoring_logic.close_range_fix_landing_stop on purpose (+17: the anchor of the close-range departure protection for a train placed at B by an official Jump; none of it touches the display target): the blob moved from 78e53ad3... (LC-4b)
     # Pseudo-turnback (Stage TB-B) added the A-side seam to scoring_logic.py on purpose (the qualification at the arrival, the A time score once, no A checkpoint, the 3.0 s special popup window, the guidance, the B checkpoint; none of it touches the displayed target or the official supply; tests/test_pt_scoring_continuity.py): the blob moved from debb31c8... (close-range entry paths)
     "scoring_logic.py": "7080b79ed455ba5f63227568100f6eccb02571f2",       # Stage TB-D (the scoring section snapshot and its readers, the Retry drop of a waiting chain; none of it touches the displayed target or the official supply; tests/test_pt_tbd_*.py): was bd54fc8b... (TB-C); was debb31c8... after the close-range entry paths; 78e53ad3... after LC-4b; 88f61d75... after SI-R5.2-C: P02 takes prev_tgt_idx too (was 9c683795... after SI-R5.2-B). Earlier: P01, P04, P05 take bve_tgt_idx too (was c4981e27... after SI-R5.2-A: P03 takes bve_tgt_idx, the distance lookup is gone; before that 449e0c94...; close-range departure reset before it: e8d1a3d0...)
-    "managed_input.py": "580b651b9ef65e6bab2a0bec4c746c028daf5a1b",       # + the generation default prev_tgt_idx of SI-R5.2-C (was e1b79288... : the two generation defaults of the close-range reset, was 6b0bda0b...)
+    # Stage TB-E (an intended change, not a drift) changed managed_input.py on purpose (the import of route_pairset, the generation drop of the pair set state, the start blocker "pairset-unavailable"; none of it touches the displayed target or the official supply; tests/test_pt_tbe_*.py): the blob moved from 580b651b... (SI-R5.2-C)
+    "managed_input.py": "64b3f5fcf1c8c0a95fc146e8717f88ddc8593047",       # + the generation default prev_tgt_idx of SI-R5.2-C (was e1b79288... : the two generation defaults of the close-range reset, was 6b0bda0b...)
     "official_target_contract.py": "9c0a68979113626724ccfa48e9c9d8cd117b3bae",
-    "telemetry_contract.py": "0cc2ef6a9e412e189ab34c84f435c59bdca061e4",
+    # Stage TB-E (an intended change, not a drift) changed telemetry_contract.py on purpose (the word PTPAIR in TOKEN_KEYS["station"], the receiver key of the pseudo-turnback pairs; the OFFTGT supply is untouched; tests/test_pt_tbe_receiver.py): the blob moved from 0cc2ef6a...
+    "telemetry_contract.py": "4074a585f27a913d153fa9b1677e53b60806300d",
     "network.py": "c3e394245a21f41ffeb02e89cf075c5218e111f8",
 }
 FIELDS = H.HudTarget._fields

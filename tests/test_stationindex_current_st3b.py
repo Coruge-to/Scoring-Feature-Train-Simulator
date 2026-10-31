@@ -388,7 +388,9 @@ class F_Projects(unittest.TestCase):
         ("src\\LegacyJumpExecutor.cs", None), ("src\\LegacyScoringProbe.cs", None), ("src\\LegacyStationTimeline.cs", None), ("src\\LegacyTelemetrySession.cs", None),
         ("src\\LegacyTelemetryExtension.cs", None), ("..\\Shared\\TelemetryContract.cs", "Shared\\TelemetryContract.cs"), ("..\\Shared\\StationListIdentity.cs", "Shared\\StationListIdentity.cs"),
         ("..\\Shared\\JumpWire.cs", "Shared\\JumpWire.cs"),
-        ("..\\Shared\\PackageContract.cs", "Shared\\PackageContract.cs")], key=lambda t: t[0])             # Phase ST-3e0 (pin moved): the package contract (TSJUMP2, constants only) is the one more link
+        ("..\\Shared\\PackageContract.cs", "Shared\\PackageContract.cs"),                                    # Phase ST-3e0 (pin moved): the package contract (TSJUMP2, constants only) is the one more link
+        ("..\\Shared\\PseudoTurnbackQualifier.cs", "Shared\\PseudoTurnbackQualifier.cs"),                    # Stage TB-E (pin moved, an intended change): the qualifier moved from PseudoTurnbackStaging to Shared and is linked
+        ("..\\Shared\\PseudoTurnbackPairCodec.cs", "Shared\\PseudoTurnbackPairCodec.cs")], key=lambda t: t[0])   # Stage TB-E (pin moved, an intended change): the PTPAIR codec, the same move and link
 
     @red("G-PC-1", "legacy-jumpwire-link-missing")
     def test_GPC1_the_legacy_project_gets_one_compile_only_link_of_jumpwire_and_nothing_else_changes(self):
@@ -531,7 +533,9 @@ class H_RefusalDiagnostic(unittest.TestCase):
 
 # ==============================================================================================================================================
 SENTINEL_CURRENT_SHA256 = "EA760E47C560B6ACD1FDC6457F9DA4594B11B84BEA3074D955108CC316783301"      # the builder of one Current station up to the three RawDepTime / IsTerminal sentinel branches: as committed by SI-R2.3 (0e4622d)
-SENTINEL_LEGACY_SHA256 = "29D463C624C8550F6DE88F0D318614FE766C4D9359BC3092151F72C83C3CF952"       # the Legacy Build up to the terminal fix-up of the list: as committed by SI-R2.3 (0e4622d)
+# Stage TB-E (the pin moved, an intended change, not a drift; was 29D463C6...): the region of the Legacy Build gained ONE inserted block, the read of the five raw values per station (ptRecords: RawArrTime > 0, RawDepTime > 0, IsTerminal, IsPass),
+# placed before the "none stated" fix-up; it only reads, no statement of the normalisation changed (git diff -U2 of LegacyStationTimeline.cs). The Current region is unchanged (its pin below did not move).
+SENTINEL_LEGACY_SHA256 = "9A72B33963F9EBB07F280A53FAB2525A42199AB2CBC5D969F751ED857812FF1D"       # the Legacy Build up to the terminal fix-up of the list: as committed by SI-R2.3 (0e4622d), plus the TB-E raw-value read
 
 
 def region_sha256(code, start, end):

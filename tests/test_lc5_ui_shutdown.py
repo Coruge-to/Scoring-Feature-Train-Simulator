@@ -548,7 +548,16 @@ class S_CSharp(unittest.TestCase):
             self.skipTest("git is not available")
         if out.returncode != 0:
             self.skipTest("cbebfd3 is not known to this checkout")
-        self.assertEqual(out.stdout.decode().split(), [])
+        # Stage TB-E (an intended change, not a drift): LegacyTelemetrySession.cs gained the PTPAIR key of the station group. Nothing of the end (Dispose, shutdown, withdraw) may differ: that file may differ
+        # from cbebfd3 by EXACTLY the two formal added lines (the comment and the one lb.Key call, directly after the STIDX statement) and by nothing else; every other file of the set not at all.
+        # Stage TB-E 1.1 (OD-TE2-3): the check is STRUCTURAL (tests/pt_tbe_c7_structure.py), not "an added line mentions PTPAIR": an unknown line, a malformed / duplicate / misplaced PTPAIR or an
+        # unrelated line that merely contains the word is a violation. The contrasting mutants are test_pt_tbe_c7_guard.
+        changed = out.stdout.decode().split()
+        self.assertEqual([c for c in changed if c != self.SES], [])
+        if changed:
+            import pt_tbe_c7_structure
+            base = subprocess.run(["git", "-C", ROOT, "show", "cbebfd3:" + self.SES], capture_output=True, timeout=60).stdout.decode("utf-8", "replace")
+            self.assertEqual(pt_tbe_c7_structure.session_violations(base, read(self.SES)), [])
 
 
 # ===================================================================================================================================================

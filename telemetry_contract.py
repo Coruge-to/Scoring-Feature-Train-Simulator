@@ -36,7 +36,8 @@ TOKEN_KEYS = {
     "grad": ("GRADIENT",),
     # STIDX (Phase ST-1A): the versioned station index part, written inside the same group as NEXTLOC
     # OFFTGT (Phase SI-R2.2-S2a): the versioned part with the target station the host itself names, same group; official_target_contract.py is its receiver
-    "station": ("NEXTLOC", "NEXTTIME", "ISPASS", "ISTIMING", "MARGINB", "MARGINF", "DOORDIR", "TERM", "STATNAME", "STALIST", "STIDX", "OFFTGT"),
+    # PTPAIR (Stage TB-E): the pseudo-turnback pairs the C# Qualifier certified for the station list, same group; route_pairset.py is its receiver
+    "station": ("NEXTLOC", "NEXTTIME", "ISPASS", "ISTIMING", "MARGINB", "MARGINF", "DOORDIR", "TERM", "STATNAME", "STALIST", "STIDX", "OFFTGT", "PTPAIR"),
     "door": ("DOOR",),
     "siglimit": ("SIGLIMIT",),
     "siglimit_ahead": ("FWDSIGLIMIT", "FWDSIGLOC"),

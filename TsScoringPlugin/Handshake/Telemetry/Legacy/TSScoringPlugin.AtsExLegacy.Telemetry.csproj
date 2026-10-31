@@ -114,6 +114,12 @@
     <Compile Include="..\Shared\PackageContract.cs">
       <Link>Shared\PackageContract.cs</Link>
     </Compile>
+    <Compile Include="..\Shared\PseudoTurnbackQualifier.cs">
+      <Link>Shared\PseudoTurnbackQualifier.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\PseudoTurnbackPairCodec.cs">
+      <Link>Shared\PseudoTurnbackPairCodec.cs</Link>
+    </Compile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

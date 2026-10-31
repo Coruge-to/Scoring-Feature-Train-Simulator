@@ -127,8 +127,8 @@ class ProductDecode(unittest.TestCase):
 
 class StaticPins(unittest.TestCase):
     """PR-R28: no distance search; PR-R3/R4/R29/R30/R-names: no door, signal flag, name or location input anywhere in the recognition sources."""
-    SOURCES = ('pseudo_turnback_contract.py', 'TsScoringPlugin/Handshake/Telemetry/PseudoTurnbackStaging/PseudoTurnbackQualifier.cs',
-               'TsScoringPlugin/Handshake/Telemetry/PseudoTurnbackStaging/PseudoTurnbackPairCodec.cs')
+    SOURCES = ('pseudo_turnback_contract.py', 'TsScoringPlugin/Handshake/Telemetry/Shared/PseudoTurnbackQualifier.cs',
+               'TsScoringPlugin/Handshake/Telemetry/Shared/PseudoTurnbackPairCodec.cs')
     FORBIDDEN = (r'door', r'signal', r'distance', r'location', r'\bspeed\b', r'Math\.Abs', r'\babs\(', r'\bnames?\b', r'station_list', r'\bloc\b')
 
     def test_forbidden_identifiers_absent(self):

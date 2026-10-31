@@ -35,6 +35,14 @@ namespace TSScoringPlugin.Telemetry
             return Key + ":" + Version.ToString(CultureInfo.InvariantCulture) + ":" + id + ":" + set.StationCount.ToString(CultureInfo.InvariantCulture) + ":" + set.Count.ToString(CultureInfo.InvariantCulture) + ":" + sb.ToString();
         }
 
+        /// <summary>Adapter entry: the whole part text PTPAIR:1:... for one station list, or null on any failure (the part is then omitted and the app treats the pair set as unavailable).</summary>
+        public static string Publish(IList<PseudoTurnbackRecord> records, string listId)
+        {
+            if (records == null) return null;
+            try { return Encode(PseudoTurnbackQualifier.Qualify(records), listId); }
+            catch (Exception) { return null; }
+        }
+
         /// <summary>Decodes and validates the whole key. expectedStationCount &lt; 0 skips the station count check (the adapter side); Python-side use passes the current count.</summary>
         public static PseudoTurnbackPairSet TryDecode(string text, int expectedStationCount, out string listId, out string reason)
         {

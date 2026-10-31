@@ -53,7 +53,8 @@ UNTOUCHED = {
     # Time Fix B3 changed Class1.cs on purpose (BVE supplies exactly 0.0 while the train stands: speed == 0.0 is stopped, speed != 0.0 is moving; the 0.1 km/h band is gone, tests\test_timefix_b3_zero_speed_contract.py / Handshake\Tests\Test-TimeFixB3.ps1): the blob moved from 04a12011... (Time Fix B2)
     # SI-R2.2-S2b (C3b) changed Class1.cs on purpose (the OFFTGT part after STIDX in its own try / catch and the read only CreateOfficialTargetHost; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 4aa4aac5... (the commit before S2b)
     # SI-R2.4 (C5b) changed Class1.cs on purpose (a re-initialisation that carries no StationIndex leaves the target UNSET: SelectTargetByPosition became SelectUnsetTarget and its one call site, no position is searched; tests/test_stationindex_current_st3b.py / tests/test_jf1_current_csharp_source_pins.py / Handshake\Tests\Test-TimeFixB3.ps1): the blob moved from e3f55d15... (SI-R2.2-S2b C3b)
-    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "afc404e7898248dc2e3680ba4dca19cd89730ad6",
+    # Stage TB-E (an intended change, not a drift) changed Class1.cs on purpose (the PTPAIR part between the STIDX part and the OFFTGT part; tests/test_pt_tbe_adapter_static.py): the blob moved from afc404e7... (SI-R2.4)
+    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "80f48dc08d855c82b266e79f22c0a1de54111051",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs": "3e0d3bffbb74e4a2ecc6d10d378a8b6e2788ae6f",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs": "8a54d6a14100e0021ca248d28369c335f965fafe",
     "TsScoringPlugin/TsScoringPlugin/CurrentDataPlane.cs": "71b0ebaa6f52871ceb2a59456a2b527041241c46",
@@ -350,7 +351,8 @@ class F_Untouched(unittest.TestCase):
     def test_N69_the_Legacy_project_compiles_exactly_the_sources_it_did(self):
         names = [i for i, _ in compile_items(LEGACY_CSPROJ)]
         # Phase ST-3e0 adds exactly one compile item (..\Shared\PackageContract.cs, the package contract, constants only): the 23 sources of ST-3c are all still there
-        self.assertEqual(len([n for n in names if not n.endswith("PackageContract.cs")]), 23)         # 22 AtsEx free sources + LegacyTelemetryExtension.cs
+        # Stage TB-E (an intended change, not a drift): two more compile items, the Shared PseudoTurnbackQualifier.cs and PseudoTurnbackPairCodec.cs (were 23)
+        self.assertEqual(len([n for n in names if not n.endswith("PackageContract.cs")]), 25)         # 22 AtsEx free sources + LegacyTelemetryExtension.cs + the two Shared pseudo-turnback sources of Stage TB-E
         self.assertEqual(names.count("..\\Shared\\PackageContract.cs"), 1)
         self.assertNotIn("src\\LegacyJumpJudge.cs", names)                                           # the judgement lives in LegacyJumpExecutor.cs: no new product file
         self.assertTrue(all(n in names for n in ("src\\LegacyJumpExecutor.cs", "src\\LegacyJumpControlPlane.cs", "src\\LegacyStationTimeline.cs", "..\\Shared\\JumpWire.cs")))

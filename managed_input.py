@@ -20,6 +20,7 @@ The six states are kept apart:
 
 The pure parts (tables, discard functions, the gate) need no Qt, no window and no keyboard; the keyboard and the window API are injected.
 """
+import route_pairset
 
 # -- the state contract ------------------------------------------------------------------------------------------------------------------------
 # Every plain attribute the Overlay has (its __init__, the attributes it sets later, the ones scoring_logic sets on it) is in exactly ONE of these sets:
@@ -100,6 +101,7 @@ GENERATION_DROP = frozenset({
     "operational_stop_margins", "operational_stop_latch",
     "last_debug_state_key", "last_pending_log", "bve_door_close_time_ms", "is_base_off", "is_time_off",
     "turnback_machine",             # the pseudo-turnback chain machine (created on first use by scoring_logic.turnback_machine_of): a new scenario instance starts without it
+    "route_pairset",                # Stage TB-E: the state of the route pair set (route_pairset.RoutePairSetHolder): a new scenario instance starts UNAVAILABLE
 })
 
 # the user's settings, the window state, the infrastructure and the input-hold bookkeeping: deliberately NOT discarded with a generation
@@ -478,6 +480,8 @@ class ManagedInputController(object):
             blockers.append("telemetry-not-ready")
         if not getattr(o, "station_list", None):
             blockers.append("no-station-list")
+        if route_pairset.state_of(o) == route_pairset.UNAVAILABLE:
+            blockers.append("pairset-unavailable")      # Stage TB-E: the A / B of the pseudo-turnback pairs can not be left out of the candidates yet: no start on an unfiltered list (a diagnostic, never a popup)
         blockers += scoring_input_blockers(self._hud.telemetry_availability, getattr(o, "bve_btype", "Ecb"), getattr(o, "bve_bp_initial_received", False))
         return blockers
 

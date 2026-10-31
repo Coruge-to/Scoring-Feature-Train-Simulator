@@ -52,7 +52,9 @@ PYTHON_PINS = {
     # tests\test_stationindex_supply_st1a.py (class D) pins the hooks.
     # Phase SI-R2.2-S2a (the pin moved, was 792B5C6E...): telemetry_contract.py gained the word OFFTGT in TOKEN_KEYS["station"] and the six published values of the OFFTGT part in
     # telemetry_state_defaults() (+ comments). It does not touch the jump contract; the regions of main.py that name the jump contract are unchanged (tests\test_official_target_supply_s2a.py, class F).
-    "telemetry_contract.py": "87A3CAA65FA9E34BACAC9E2A4FBA9425AB57BA5264BCB1F112EA202D9CCC8F32",
+    # Stage TB-E (the pin moved, an intended change, was 87A3CAA6...): telemetry_contract.py gained the word PTPAIR in TOKEN_KEYS["station"] (+ a comment). It does not touch the jump contract;
+    # tests\test_pt_tbe_receiver.py holds the receiver of the new key.
+    "telemetry_contract.py": "1675EE0677AA241706CB2E0219DDD6A24AD7C35B3F78F9751D625DCA56CC6609",
     "dataplane_contract.py": "53D23EA683DE8C6344932DEF5D550C0646B3B95ECC5561A3CDAF66F46D9EF27D",
     "telemetry_dataplane_receiver.py": "7E651F9E2523F035C9A15ED1AF7A23EC8D373BDAB99B7085A8E9BA26521A44E9",
     "managed_app_directory.py": "7B77DA8C4D04B32603AE7BFFAA1A74FCE07253B1BE2084ECB11EBBE5B46DCA8A",

@@ -45,8 +45,9 @@ SET_RANK = {"python": 0, "current": 1, "legacy": 2, "shared": 3}
 REQUIRED_PYTHON = ("main.py", "scoring_logic.py", "managed_input.py", "station_identity.py", "jump_wire.py", "jump_transaction.py")
 # SI-R2.2-S2a added official_target_contract.py (the receiver of the OFFTGT part, imported by main.py): the closure is the 22 modules of 0b8e511 plus this one (plus package_contract)
 # SI-R2.3 (C4b) added hud_target_contract.py (the display target of the HUD, imported by main.py): the closure is those 23 modules plus this one (plus package_contract)
+# Stage TB-E (an intended change, not a drift) added route_pairset.py (the receiver and holder of the PTPAIR part, imported by main.py and managed_input.py) and, through it, pseudo_turnback_contract.py: the closure is those 24 modules plus these two (plus package_contract)
 PYTHON_24 = ("config", "current_jump_client", "dataplane_contract", "hud_target_contract", "hud_ui", "jump_transaction", "jump_wire", "main", "managed_app_directory", "managed_hud", "managed_input",
-             "managed_mode", "managed_state", "menu_ui", "official_target_contract", "pause_recovery", "pseudo_turnback_machine", "scoring_logic", "station_identity", "station_index_contract", "telemetry_contract",
+             "managed_mode", "managed_state", "menu_ui", "official_target_contract", "pause_recovery", "pseudo_turnback_contract", "pseudo_turnback_machine", "route_pairset", "scoring_logic", "station_identity", "station_index_contract", "telemetry_contract",
              "telemetry_dataplane_receiver", "telemetry_gate", "telemetry_receiver_directory", "utils")
 CAPABILITIES = ("jump-request-v2", "jump-completion-v2", "current-selected-idx", "legacy-selected-idx", "python-completion-settlement", "stationindex-transaction",
                 "target-reinitialization", "retry-history-settlement", "legacy-r1b", "current-station-range-fail-closed", "whole-list-reject", "partial-list-not-published")
@@ -69,7 +70,8 @@ BASE_BLOBS = {
     # UI-Q1-B changed managed_input.py on purpose (the Qt translation of the locale is installed for the result save dialog, the file filters are named in Japanese, tests/test_ui_q1b_result_dialog_localization.py): the blob moved from 7933e16d... (Time Fix B2)
     # Close-range departure reset added the two generation defaults (close_range_departure_reset_pending, prev_actual_stop_loc) to managed_input.py on purpose (tests/test_close_range_contract.py): the blob moved from 6b0bda0b... (UI-Q1-B)
     # Pseudo-turnback (Stage TB-B) added turnback_machine to GENERATION_DROP in managed_input.py on purpose (the chain machine of the Overlay is dropped with the generation; tests/test_pt_scoring_continuity.py): the blob moved from 3ca69888... (SI-R5.2-C)
-    "managed_input.py": "580b651b9ef65e6bab2a0bec4c746c028daf5a1b",       # SI-R5.2-C: the generation default prev_tgt_idx and its clear in discard_scoring_session (was e1b79288... after the close-range departure reset)
+    # Stage TB-E (an intended change, not a drift) changed managed_input.py on purpose (the import of route_pairset, "route_pairset" in GENERATION_DROP, the start blocker "pairset-unavailable"; tests/test_pt_tbe_*.py): the blob moved from 580b651b... (SI-R5.2-C); the package manifest is regenerated for it
+    "managed_input.py": "64b3f5fcf1c8c0a95fc146e8717f88ddc8593047",       # SI-R5.2-C: the generation default prev_tgt_idx and its clear in discard_scoring_session (was e1b79288... after the close-range departure reset)
     "managed_mode.py": "60413e37938808b1f15c52c3b81db9353fd7a84a",
     "managed_state.py": "d8b75db1e870f3f01f825961ec37e7471244d2bc",
     "menu_ui.py": "412e722fb533e1627fa9c4a348e242144c6866df",
@@ -86,7 +88,8 @@ BASE_BLOBS = {
     "station_identity.py": "2c971098059a6b8948cd842ed84af8ece9a054b9",
     "station_index_contract.py": "73c9ec9a75ca6dca450637f47d15d0ebdbdda423",
     # SI-R2.2-S2a changed telemetry_contract.py on purpose (OFFTGT is a token of the station group; telemetry_state_defaults() carries the six published values of the OFFTGT part, tests/test_official_target_supply_s2a.py): the blob moved from 6eab0e7e... (0b8e511)
-    "telemetry_contract.py": "0cc2ef6a9e412e189ab34c84f435c59bdca061e4",
+    # Stage TB-E (an intended change, not a drift) changed telemetry_contract.py on purpose (the word PTPAIR in TOKEN_KEYS["station"]; tests/test_pt_tbe_receiver.py): the blob moved from 0cc2ef6a... (SI-R2.2-S2a); the package manifest is regenerated for it
+    "telemetry_contract.py": "4074a585f27a913d153fa9b1677e53b60806300d",
     "telemetry_dataplane_receiver.py": "87240b408cef4e70d3d31fccbc63292cb5f03ace",
     "telemetry_gate.py": "2e0c8b70041a1e9339c2fdf116edb7e57fce8219",
     "telemetry_receiver_directory.py": "5219d2940ca8b714fb999cae51341fc3881067d1",
@@ -108,11 +111,13 @@ BASE_BLOBS = {
     # Time Fix B2 changed LegacyStationTimeline.cs on purpose (the same branch, tests\test_timefix_b2_operational_stop_contract.py / Handshake\Tests\Test-TimeFixB2.ps1): the blob moved from 4bb9c312... (Time Fix A)
     # Time Fix B3 changed LegacyStationTimeline.cs on purpose (the same two comparisons, tests\test_timefix_b3_zero_speed_contract.py / Handshake\Tests\Test-TimeFixB3.ps1): the blob moved from 4554795a... (Time Fix B2)
     # SI-R2.4 (C5b) changed LegacyStationTimeline.cs on purpose (SelectTarget: the loop of the position search is gone, a re-initialisation that carries no StationIndex leaves target = list.Count; Handshake\Tests\LegacyJumpST3CTestCases.cs N-35 / N-63 / Handshake\Tests\Test-TimeFixB3.ps1): the blob moved from d33ecdba... (Time Fix B3)
-"TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs": "83db89f99a32cd8f2df52c585000d79c7bdccbd0",
+    # Stage TB-E (an intended change, not a drift) changed LegacyStationTimeline.cs on purpose (the PtPairText member, the read of the five raw values per station in the Build and the PTPAIR text made where the list identity is made; tests/test_pt_tbe_adapter_static.py): the blob moved from 83db89f9... (SI-R2.4); the package manifest is regenerated for it
+    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs": "d26a444b73d478a7e9cb56558d16cdf49bc85956",
     # SI-R2.2-S2b (C3a) changed LegacyTelemetryExtension.cs on purpose (the read only adapter ILegacyOfficialTargetApi.ReadOfficialTarget and the E-9 rule text of the header; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 12a0f84a... (the commit before S2b)
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "ad89eb30b5b4f16fb36bef4824adbd734565bd7b",
     # SI-R2.2-S2b (C3a) changed LegacyTelemetrySession.cs on purpose (the ILegacyOfficialTargetApi port, the official field, the ten-argument constructor and the OFFTGT key after STIDX; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 5dd33902... (the commit before S2b)
-    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetrySession.cs": "c5bc298a7b4cc901f6fe5aa64492082e16071b1f",
+    # Stage TB-E (an intended change, not a drift) changed LegacyTelemetrySession.cs on purpose (the PTPAIR key directly after the STIDX group, before the OFFTGT key; tests/test_pt_tbe_adapter_static.py): the blob moved from c5bc298a... (S2b); the package manifest is regenerated for it
+    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetrySession.cs": "5516d9c575a1fdf69087644b4e8e74ec7d171d07",
     "TsScoringPlugin/Handshake/Telemetry/Shared/DataPlaneProtocol.cs": "bed2ed8585b502578d4d4e17f64307206d0920fc",
     "TsScoringPlugin/Handshake/Telemetry/Shared/GenericHandleTextContract.cs": "94746abf0d4395b0ddbfa351df3adadb1aa70132",
     "TsScoringPlugin/Handshake/Telemetry/Shared/JumpWire.cs": "dff2a85a25ff22f76892b3d19209b1da9c089387",
@@ -125,7 +130,8 @@ BASE_BLOBS = {
     # Time Fix B3 changed Class1.cs on purpose (BVE supplies exactly 0.0 while the train stands: speed == 0.0 is stopped, speed != 0.0 is moving; the 0.1 km/h band is gone, tests\test_timefix_b3_zero_speed_contract.py / Handshake\Tests\Test-TimeFixB3.ps1): the blob moved from 04a12011... (Time Fix B2)
     # SI-R2.2-S2b (C3b) changed Class1.cs on purpose (the OFFTGT part after STIDX in its own try / catch and the read only CreateOfficialTargetHost; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 4aa4aac5... (the commit before S2b)
     # SI-R2.4 (C5b) changed Class1.cs on purpose (a re-initialisation that carries no StationIndex leaves the target UNSET: SelectTargetByPosition became SelectUnsetTarget and its one call site, no position is searched; tests/test_stationindex_current_st3b.py / tests/test_jf1_current_csharp_source_pins.py / Handshake\Tests\Test-TimeFixB3.ps1): the blob moved from e3f55d15... (SI-R2.2-S2b C3b)
-    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "afc404e7898248dc2e3680ba4dca19cd89730ad6",
+    # Stage TB-E (an intended change, not a drift) changed Class1.cs on purpose (the PTPAIR part between the STIDX part and the OFFTGT part; tests/test_pt_tbe_adapter_static.py): the blob moved from afc404e7... (SI-R2.4); the package manifest is regenerated for it
+    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "80f48dc08d855c82b266e79f22c0a1de54111051",
     "TsScoringPlugin/TsScoringPlugin/CurrentDataPlane.cs": "71b0ebaa6f52871ceb2a59456a2b527041241c46",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs": "3e0d3bffbb74e4a2ecc6d10d378a8b6e2788ae6f",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs": "8a54d6a14100e0021ca248d28369c335f965fafe",
@@ -140,7 +146,7 @@ BASE_BLOBS = {
 # SI-R5.2-C changed main.py on purpose (the construction default prev_tgt_idx = -1 beside prev_next_loc; tests/red_si_r5_station_identity.py): the blob (without its contract import) moved from 2a0b103b... (Close-range departure reset)
 # Legacy scoring LC-4b (cbebfd3) changed main.py on purpose (A14: Overlay.jump_group_available, the Retry menu entry refuses while the Jump group is unavailable; A16: the baseline block of apply_telemetry_text looks at the JUMP key; tests/test_lc4b_python_jump_state.py): the blob (without its contract import) moved from 07043c51... (SI-R5.2-C)
 # Close-range entry paths (fix O1) changed main.py on purpose (+4: the import of scoring_logic.close_range_fix_landing_stop and its one call in the success branch of Overlay._settle_jump_complete; tests/test_close_range_entry_paths.py): the blob (without its contract import) moved from c8be5715... (LC-4b)
-BASE_MAIN = "1f1313c3fe66a8db4c69550bce9d9733f73da1d1"       # Stage TB-D Stage 2.1 changed main.py on purpose (Overlay.get_timing_target_stas reads the scoring-section snapshot while a Run is active; tests/test_pt_tbd_timing_targets.py); was 2dcf2bb4... (Stage TB-D). Stage TB-D changed main.py on purpose (the candidate generation without the A / B of a certified pair, the initial end station, the scoring section snapshot of the start button; tests/test_pt_tbd_*.py); was 8d613d1b... (Stage TB-C). Stage TB-C changed main.py on purpose (the scoring start button fixes the section, the end-of-transaction record, the F1 hold, OD-TB-30 no popup); was da5d5b2c...
+BASE_MAIN = "cd2c3480c0cc9c0f4f826984eefb3ee791182738"       # Stage TB-E (an intended change, not a drift) changed main.py on purpose (the import of route_pairset, _route_pairset_sync and its calls, the capture of the PTPAIR part of a line, the clear at the epoch reset / scenario change / shutdown; tests/test_pt_tbe_*.py); was 1f1313c3... (Stage TB-D Stage 2.1). Stage TB-D Stage 2.1 changed main.py on purpose (Overlay.get_timing_target_stas reads the scoring-section snapshot while a Run is active; tests/test_pt_tbd_timing_targets.py); was 2dcf2bb4... (Stage TB-D). Stage TB-D changed main.py on purpose (the candidate generation without the A / B of a certified pair, the initial end station, the scoring section snapshot of the start button; tests/test_pt_tbd_*.py); was 8d613d1b... (Stage TB-C). Stage TB-C changed main.py on purpose (the scoring start button fixes the section, the end-of-transaction record, the F1 hold, OD-TB-30 no popup); was da5d5b2c...
 BASE_PROJECTS = {CURRENT_PROJECT: "61092229f34e5e4ceb52a4fb6e52280824ec2578", LEGACY_PROJECT: "defbe148ff815741c6b627cadaf8d024f649f804"}
 CODEC_FILES = ("jump_wire.py", "station_index_contract.py", "dataplane_contract.py", "telemetry_contract.py", "station_identity.py",
                SHARED_DIR + "/JumpWire.cs", SHARED_DIR + "/StationListIdentity.cs", SHARED_DIR + "/DataPlaneProtocol.cs", SHARED_DIR + "/TelemetryDirectoryReader.cs",
@@ -405,7 +411,7 @@ class B_SourceSets(unittest.TestCase):
         for name in REQUIRED_PYTHON:
             self.assertIn(name[:-3], modules)
         contract("package_contract" in modules, "E0-07", "PYTHON-RUNTIME-SET-NOT-23-MODULES", "package_contract.py is not in the closure of main.py (%d modules)" % len(modules))
-        contract(len(modules) == 26, "E0-07", "PYTHON-RUNTIME-SET-NOT-23-MODULES", "%d modules" % len(modules))
+        contract(len(modules) == 28, "E0-07", "PYTHON-RUNTIME-SET-NOT-23-MODULES", "%d modules" % len(modules))       # Stage TB-E (an intended change): 28 = 26 + route_pairset + pseudo_turnback_contract
         main_lines = [l for l in read_text(os.path.join(ROOT, "main.py")).splitlines() if l.strip() == "import package_contract"]
         self.assertEqual(len(main_lines), 1, "main.py imports the contract once, at the top level")
 
@@ -413,8 +419,8 @@ class B_SourceSets(unittest.TestCase):
     def test_RED_E0_08_the_current_source_set(self):
         items = ref_compile(CURRENT_PROJECT, read_text(os.path.join(ROOT, CURRENT_PROJECT.replace("/", os.sep))))
         before = [i for i in items if not i.endswith("PackageContract.cs")]
-        self.assertEqual(len(before), 11, "the 11 compile inputs of 0b8e511")
-        contract(len(items) == 12, "E0-08", "CURRENT-SOURCE-SET-NOT-FIXED", "%d compile inputs" % len(items))
+        self.assertEqual(len(before), 13, "the 11 compile inputs of 0b8e511 plus the two Shared pseudo-turnback sources of Stage TB-E (an intended change, not a drift; was 11)")
+        contract(len(items) == 14, "E0-08", "CURRENT-SOURCE-SET-NOT-FIXED", "%d compile inputs" % len(items))       # Stage TB-E: was 12
         self.assertEqual(len(items), len(set(items)))
         for i in items:
             self.assertTrue(i.startswith("TsScoringPlugin/TsScoringPlugin/") or i.startswith(SHARED_DIR + "/"), i)
@@ -424,8 +430,8 @@ class B_SourceSets(unittest.TestCase):
     def test_RED_E0_09_the_legacy_source_set(self):
         items = ref_compile(LEGACY_PROJECT, read_text(os.path.join(ROOT, LEGACY_PROJECT.replace("/", os.sep))))
         before = [i for i in items if not i.endswith("PackageContract.cs")]
-        self.assertEqual(len(before), 23, "the 23 compile inputs of 0b8e511")
-        contract(len(items) == 24, "E0-09", "LEGACY-SOURCE-SET-NOT-FIXED", "%d compile inputs" % len(items))
+        self.assertEqual(len(before), 25, "the 23 compile inputs of 0b8e511 plus the two Shared pseudo-turnback sources of Stage TB-E (an intended change, not a drift; was 23)")
+        contract(len(items) == 26, "E0-09", "LEGACY-SOURCE-SET-NOT-FIXED", "%d compile inputs" % len(items))       # Stage TB-E: was 24
         self.assertEqual(len(items), len(set(items)))
         current = ref_compile(CURRENT_PROJECT, read_text(os.path.join(ROOT, CURRENT_PROJECT.replace("/", os.sep))))
         self.assertIn(SHARED_DIR + "/TelemetryContract.cs", items)
@@ -436,8 +442,8 @@ class B_SourceSets(unittest.TestCase):
     @e0("E0-10", "RED", "SHARED-SOURCE-SET-NOT-FIXED", "Shared: 6 files of 0b8e511 + PackageContract.cs; both projects compile the one new blob; every shared file is compiled by at least one project")
     def test_RED_E0_10_the_shared_source_set(self):
         shared = sorted(n for n in base_files() if n.startswith(SHARED_DIR + "/"))
-        self.assertEqual(len([s for s in shared if not s.endswith("PackageContract.cs")]), 6)
-        contract(len(shared) == 7 and SHARED_DIR + "/PackageContract.cs" in shared, "E0-10", "SHARED-SOURCE-SET-NOT-FIXED", "shared files: %s" % shared)
+        self.assertEqual(len([s for s in shared if not s.endswith("PackageContract.cs")]), 8)       # Stage TB-E (an intended change, not a drift): 6 + PseudoTurnbackQualifier.cs and PseudoTurnbackPairCodec.cs (moved from PseudoTurnbackStaging)
+        contract(len(shared) == 9 and SHARED_DIR + "/PackageContract.cs" in shared, "E0-10", "SHARED-SOURCE-SET-NOT-FIXED", "shared files: %s" % shared)
         cur = ref_compile(CURRENT_PROJECT, read_text(os.path.join(ROOT, CURRENT_PROJECT.replace("/", os.sep))))
         leg = ref_compile(LEGACY_PROJECT, read_text(os.path.join(ROOT, LEGACY_PROJECT.replace("/", os.sep))))
         for s in shared:
@@ -486,7 +492,7 @@ class C_Manifest(unittest.TestCase):
         got = {s: sorted(e["path"] for e in m["files"] if e["set"] == s) for s in want}
         for s in want:
             contract(got[s] == want[s], "E0-12", "MANIFEST-ENTRIES-NOT-THE-RUNTIME-SETS", "%s: %s" % (s, sorted(set(got[s]) ^ set(want[s]))))
-        self.assertEqual({s: len(v) for s, v in got.items()}, {"python": 26, "current": 7, "legacy": 16, "shared": 7})
+        self.assertEqual({s: len(v) for s, v in got.items()}, {"python": 28, "current": 7, "legacy": 16, "shared": 9})       # Stage TB-E (an intended change): python 26 -> 28, shared 7 -> 9
         paths = [e["path"] for e in m["files"]]
         self.assertEqual(len(paths), len(set(paths)))
         self.assertEqual(len(paths), len({p.lower() for p in paths}), "no path collision")
@@ -1030,9 +1036,10 @@ class F_NonRegression(unittest.TestCase):
         self.assertLessEqual(main.count(b"import package_contract\n"), 1)
         for proj, want in BASE_PROJECTS.items():
             text = clean(files[proj]).decode("utf-8")
-            stripped = re.sub(r'[ \t]*<Compile Include="[^"]*PackageContract\.cs">\s*<Link>[^<]*</Link>\s*</Compile>[ \t]*\n', "", text)
-            stripped = re.sub(r'[ \t]*<Compile Include="[^"]*PackageContract\.cs"><Link>[^<]*</Link></Compile>[ \t]*\n', "", stripped)
-            self.assertEqual(blob_id(stripped.encode("utf-8")), want, proj + " differs from 0b8e511 by the contract compile item only")
+            # Stage TB-E (an intended change, not a drift): the two Shared pseudo-turnback compile items (PseudoTurnbackQualifier.cs, PseudoTurnbackPairCodec.cs) are stripped like the contract item
+            stripped = re.sub(r'[ \t]*<Compile Include="[^"]*(?:PackageContract|PseudoTurnbackQualifier|PseudoTurnbackPairCodec)\.cs">\s*<Link>[^<]*</Link>\s*</Compile>[ \t]*\n', "", text)
+            stripped = re.sub(r'[ \t]*<Compile Include="[^"]*(?:PackageContract|PseudoTurnbackQualifier|PseudoTurnbackPairCodec)\.cs"><Link>[^<]*</Link></Compile>[ \t]*\n', "", stripped)
+            self.assertEqual(blob_id(stripped.encode("utf-8")), want, proj + " differs from 0b8e511 by the contract and the pseudo-turnback compile items only")
         self.assertEqual(len(re.findall(r"^import (?!package_contract)", main.decode("utf-8"), re.M)) >= 1, True)
 
 

@@ -890,10 +890,13 @@ class D_Boundary(unittest.TestCase):
         # SI-R2.2-S2b C3b (an intended change): the STIDX statement is unchanged and is still the first statement of its block; the OFFTGT part follows it IN THE SAME block (tests\test_official_target_wire_s2b.py::D_CurrentSource),
         # so the block now holds two appends (STIDX, OFFTGT) and the second one is made in a try / catch of its own
         official = 'string officialValue; try { officialValue = TSScoringPlugin.Telemetry.OfficialTargetWire.Value(TSScoringPlugin.Telemetry.OfficialTargetReader.Read(CreateOfficialTargetHost()), stidxListId); } catch { officialValue = TSScoringPlugin.Telemetry.OfficialTargetWire.Placeholder("F"); } data += "," + TSScoringPlugin.Telemetry.OfficialTargetWire.Key + ":" + officialValue;'
+        # Stage TB-E (an intended change, not a drift): the PTPAIR part follows the STIDX append in the same block, under `if (ptpairText != null)` (null = no part, fail closed); the OFFTGT try / catch follows it
+        # (tests\test_pt_tbe_adapter_static.py); the block now holds three appends (STIDX, PTPAIR, OFFTGT)
+        ptpair = 'if (ptpairText != null) data += "," + ptpairText; '
         m = re.search(r'string data = \$"[^"]*"; (if \(isInitialized && stidxListReady && stidxListCount == stationList\.Count\) \{ data \+= ",STIDX:1:" \+ '
-                      r'TSScoringPlugin\.Telemetry\.StationIndexWire\.Fields\(stidxTarget, stidxArrivalIndex, stidxArrivalSeq, stidxListCount, stidxListId\); ' + re.escape(official) + r' \}) lastUdpData = data;', self.c1)
-        self.assertIsNotNone(m, "the STIDX statement is not directly between 'string data = ...;' and 'lastUdpData = data;' (the OFFTGT statements follow it in the same block)")
-        self.assertEqual(self.c1.count("data +="), 2)
+                      r'TSScoringPlugin\.Telemetry\.StationIndexWire\.Fields\(stidxTarget, stidxArrivalIndex, stidxArrivalSeq, stidxListCount, stidxListId\); ' + re.escape(ptpair) + re.escape(official) + r' \}) lastUdpData = data;', self.c1)
+        self.assertIsNotNone(m, "the STIDX statement is not directly between 'string data = ...;' and 'lastUdpData = data;' (the PTPAIR and the OFFTGT statements follow it in the same block)")
+        self.assertEqual(self.c1.count("data +="), 3)                                                # Stage TB-E (an intended change): STIDX, PTPAIR, OFFTGT (was 2)
         self.assertNotIn("STIDX", re.search(r'string data = \$"([^"]*)";', self.c1).group(1))      # the interpolated line itself is exactly what it was
 
     def test_current_new_fields_are_read_by_the_stidx_statements_only(self):
@@ -906,7 +909,8 @@ class D_Boundary(unittest.TestCase):
         # completion (id, ready): stidxListId 4 -> 6, stidxListCount 5 -> 6, stidxListReady 4 -> 6. The STIDX statements themselves are unchanged; ST-1A's arrival / target / door reads are untouched.
         # Phase U10 (an intended change, not a drift): RejectStationList empties the published identity of a list that was rejected (id, count, ready: 6 -> 7 each); it publishes nothing and the STIDX statements are unchanged.
         # SI-R2.2-S2b C3b (an intended change, not a drift): the OFFTGT statement READS stidxListId once more (the identity it is written for): 7 -> 8; nothing else of the list identity is read or written by it.
-        self.assertEqual(counts, {"stidxArrivalIndex": 4, "stidxArrivalSeq": 4, "stidxListId": 8, "stidxListCount": 7, "stidxListReady": 7, "stidxTarget": 3, "stidxDoorOpenedBefore": 2})
+        # Stage TB-E (an intended change, not a drift): the PTPAIR codec call READS stidxListId once more (the identity the part is written for, where the STIDX text is made): 8 -> 9; nothing else of the list identity is read or written by it.
+        self.assertEqual(counts, {"stidxArrivalIndex": 4, "stidxArrivalSeq": 4, "stidxListId": 9, "stidxListCount": 7, "stidxListReady": 7, "stidxTarget": 3, "stidxDoorOpenedBefore": 2})
 
     def test_current_state_machine_statements_are_untouched(self):
         c1 = self.c1
@@ -929,7 +933,9 @@ class D_Boundary(unittest.TestCase):
         # SI-R2.2-S2b (an intended change): the Group( call is unchanged and still ends with STIDX; the OFFTGT key is added AFTER it, by LineBuilder.Key under `if (official != null)`
         # (the last key of the station group, tests/test_official_target_wire_s2b.py::C_LegacySource), so STIDX is the last key OF THE Group( CALL, no longer of the group
         ls = self.lses
-        m = re.search(r"lb\.Group\(TelemetryContract\.TokStation, (.*?)\)\); if \(official != null\) \{", ls)
+        # Stage TB-E (an intended change, not a drift): the Group( call is still unchanged and still ends with STIDX; the PTPAIR key is added directly AFTER it (`if (timeline.PtPairText != null) lb.Key("PTPAIR", ...)`),
+        # before the OFFTGT key (tests/test_pt_tbe_adapter_static.py), so STIDX stays the last key OF THE Group( CALL
+        m = re.search(r'lb\.Group\(TelemetryContract\.TokStation, (.*?)\)\); if \(timeline\.PtPairText != null\) lb\.Key\("PTPAIR", timeline\.PtPairText\.Substring\("PTPAIR:"\.Length\)\); if \(official != null\) \{', ls)
         self.assertIsNotNone(m)
         keys = re.findall(r'"([A-Z]+)",', m.group(1) + ")")
         self.assertEqual(keys, ["NEXTLOC", "NEXTTIME", "ISPASS", "ISTIMING", "MARGINB", "MARGINF", "DOORDIR", "TERM", "STATNAME", "STIDX"])
@@ -946,7 +952,8 @@ class D_Boundary(unittest.TestCase):
                        "if (hasDoorOpenedAtTarget && timeMs >= depTime && !isTerminal) { if (opStopDelayStartMs < 0) { opStopDelayStartMs = timeMs; } else if (timeMs >= opStopDelayStartMs + 300) { target++;"):
             self.assertIn(pinned, ltl)
         counts = {name: len(re.findall(r"\b" + name + r"\b", ltl)) for name in ("arrivalIndex", "arrivalSeq", "listId", "doorOpenedBefore", "shownIndex")}
-        self.assertEqual(counts, {"arrivalIndex": 4, "arrivalSeq": 4, "listId": 4, "doorOpenedBefore": 2, "shownIndex": 3})
+        # Stage TB-E (an intended change, not a drift): the PTPAIR text is made where the list identity is made, so listId is read once more (the identity the part is written for): 4 -> 5
+        self.assertEqual(counts, {"arrivalIndex": 4, "arrivalSeq": 4, "listId": 5, "doorOpenedBefore": 2, "shownIndex": 3})
         writes = re.findall(r"\btarget\s*(\+\+|=(?!=))", ltl)
         # Phase ST-3c (intended update; was three "="): the fourth "=" is SelectRequestedTarget (the target of an official v2 jump: the adopted index, no position involved); Reset, "no station in range"
         # and the position search are the three of before, and the three advances are untouched

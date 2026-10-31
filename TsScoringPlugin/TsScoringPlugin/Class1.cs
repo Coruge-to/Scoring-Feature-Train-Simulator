@@ -60,6 +60,9 @@ namespace TsScoringPlugin
         private string stidxListId = TSScoringPlugin.Telemetry.StationListIdentity.EmptyId;
         private int stidxListCount = 0;
         private bool stidxListReady = false;
+        // Phase TB-E: the PTPAIR part (pseudo-turnback pairs). ptRecords = the five raw values per station of the list being built; ptpairText = the published part text, null = no part (fail closed).
+        private List<TSScoringPlugin.Telemetry.PseudoTurnbackRecord> ptRecords = null;
+        private string ptpairText = null;
 
         private int lastTimeMs = 0;
         private double lastSpeedMps = 0.0;
@@ -408,6 +411,7 @@ namespace TsScoringPlugin
             stationList.Clear();
             lastStaListPacket = "";
             stidxListId = TSScoringPlugin.Telemetry.StationListIdentity.EmptyId;
+            ptRecords = null; ptpairText = null;
             stidxListCount = 0;
             stidxListReady = false;
             isInitialized = false;
@@ -481,6 +485,7 @@ namespace TsScoringPlugin
                     stidxArrivalIndex = -1;
                     stidxArrivalSeq = 0;
                     stidxListId = TSScoringPlugin.Telemetry.StationListIdentity.EmptyId;
+                    ptRecords = null; ptpairText = null;
                     stidxListCount = 0;
                     stidxListReady = false;
                     lastUdpData = "";
@@ -909,6 +914,13 @@ namespace TsScoringPlugin
                             }
                         }
 
+                        // Phase TB-E: the five raw values per station (arrival stated, departure stated, explicit terminal, pass), read before any later normalisation of the list; nothing else is read
+                        ptRecords = new List<TSScoringPlugin.Telemetry.PseudoTurnbackRecord>(stationList.Count);
+                        for (int i = 0; i < stationList.Count; i++)
+                        {
+                            ptRecords.Add(new TSScoringPlugin.Telemetry.PseudoTurnbackRecord(stationList[i].RawArrTime > 0, stationList[i].RawDepTime > 0, stationList[i].IsTerminal, stationList[i].IsPass));
+                        }
+
                         // departureTime="t"が存在しない場合は、駅リストの最終駅を終着とする
                         if (!explicitTerminalFound && stationList.Count > 0)
                         {
@@ -1101,6 +1113,7 @@ namespace TsScoringPlugin
                         stidxListCount = stationList.Count;
                         stidxListId = staInfoList.Count > 0 ? TSScoringPlugin.Telemetry.StationListIdentity.Compute(string.Join(",", staInfoList)) : TSScoringPlugin.Telemetry.StationListIdentity.EmptyId;
                         stidxListReady = true;
+                        ptpairText = staInfoList.Count > 0 ? TSScoringPlugin.Telemetry.PseudoTurnbackPairCodec.Publish(ptRecords, stidxListId) : null;   // Phase TB-E: null = no PTPAIR part
 
                         string Sanitize(string s) => string.IsNullOrEmpty(s) ? "" : s.Replace(":", "：").Replace(",", "、").Replace("\r", "").Replace("\n", " ");
                         lastMetaPacket = $"META:{Sanitize(metaTitle)}:{Sanitize(metaRoute)}:{Sanitize(metaVehicle)}:{Sanitize(metaAuthor)}:{Sanitize(metaComment)}";
@@ -1559,6 +1572,7 @@ namespace TsScoringPlugin
                     if (isInitialized && stidxListReady && stidxListCount == stationList.Count)
                     {
                         data += ",STIDX:1:" + TSScoringPlugin.Telemetry.StationIndexWire.Fields(stidxTarget, stidxArrivalIndex, stidxArrivalSeq, stidxListCount, stidxListId);
+                        if (ptpairText != null) data += "," + ptpairText;   // Phase TB-E: the PTPAIR part, same condition as STIDX
                         // Phase SI-R2.2-S2b: the OFFTGT part (the host's official next-station target), appended after STIDX under the same condition. It is made inside its OWN try / catch: a failure writes the F form
                         // of this part and can never reach the outer catch, which keeps the previous Tick's line (lastUdpData) and sends it again. Host values only; nothing of an earlier Tick is kept.
                         string officialValue;

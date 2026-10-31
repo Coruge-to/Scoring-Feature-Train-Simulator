@@ -723,6 +723,8 @@ namespace TSScoringPlugin.Telemetry
                         "TERM", TelemetryContract.I(sv.Term),
                         "STATNAME", sv.Name == null ? TelemetryContract.StationName(null) : sv.Name.Replace(",", string.Empty),
                         "STIDX", StationIndexWire.Value(sv.Index, timeline.ArrivalIndex, timeline.ArrivalSeq, timeline.Count, timeline.ListId));
+                    // Phase TB-E: the PTPAIR key, right after STIDX (the Current sender writes the same part in the same place); absent when the list could not be qualified (fail closed)
+                    if (timeline.PtPairText != null) lb.Key("PTPAIR", timeline.PtPairText.Substring("PTPAIR:".Length));
                     if (official != null)
                     {
                         // Phase SI-R2.2-S2b: the OFFTGT key, the last key of the station group. Its value is made in a try / catch of its own: a failure writes the F form and touches no other key.

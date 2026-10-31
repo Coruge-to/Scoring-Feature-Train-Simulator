@@ -24,6 +24,7 @@ from scoring_logic import (
     begin_official_jump,
     close_range_fix_landing_stop,
     turnback_fix_section,
+    turnback_machine_of,
     build_scoring_section,
     active_scoring_section,
     section_start_index,
@@ -36,6 +37,7 @@ from menu_ui import draw_menu
 from hud_ui import draw_hud
 from utils import write_desktop_log, NumericKeyInputRouter
 import pseudo_turnback_machine
+import route_pairset
 import managed_input
 import managed_mode
 import managed_app_directory
@@ -500,6 +502,7 @@ class Overlay(QWidget):
                 self.station_list = committed
             self._station_identity_sync()                    # Phase ST-2a: AFTER the line is applied (and observed) and the station list is adopted, never before
             self._offtgt_sync()                              # Phase SI-R2.2-S2a: the line is judged again against the list it was sent with
+            self._route_pairset_sync()                       # Stage TB-E: the route pair set of the line, judged against the adopted list and the current generation
 
         self._poll_jump_client()
         try:
@@ -746,6 +749,17 @@ class Overlay(QWidget):
             setattr(self, name, value)
         self._hud_target_sync()
 
+    # -- Stage TB-E: the route pair set (the certified static pairs of the route, supplied by the C# Qualifier as the PTPAIR part). The line is captured in apply_telemetry_text; this judges it once the
+    # station list of the line is adopted (like the two syncs above). Any failure is fail closed: the state is dropped (UNAVAILABLE) and no managed scoring start is allowed on an unfiltered list.
+    def _route_pairset_sync(self):
+        try:
+            route_pairset.sync(self, turnback_machine_of)
+        except Exception:
+            try:
+                route_pairset.clear(self, "internal-error")
+            except Exception:
+                pass
+
     # -- Phase SI-R2.3: the display target of the HUD. The scoring session owns the target while it runs (is_scoring_mode and not is_scoring_finished): the HUD then draws the machine target the C#
     # state machine holds, exactly as before. Otherwise BVE owns it and the HUD draws the official target (a KNOWN one only; every other state is "no target" and nothing is kept or looked up).
     # The sync runs after every judged line and again right before the HUD is drawn (the owner changes inside a Tick, not with a line). It is READ ONLY toward the machine target, the official
@@ -880,6 +894,8 @@ class Overlay(QWidget):
             setattr(self, name, value)
         self._station_index_reset()
         self._station_identity_clear()
+        route_pairset.clear(self, "epoch-reset")
+        self._ptpair_raw = None
         self._offtgt_raw = None
         self._offtgt_since = None
         self._hud_target = hud_target_contract.NO_TARGET            # Phase SI-R2.3: nothing of the previous scenario is displayed, and its terminal freeze ends
@@ -893,6 +909,7 @@ class Overlay(QWidget):
         if latest_telemetry:
             parts = latest_telemetry.split(',')
             self._offtgt_raw = offtgt_capture(parts)
+            self._ptpair_raw = route_pairset.capture(parts)             # Stage TB-E: the PTPAIR part of THIS line with the SCENARIO_ID of the same line; judged by _route_pairset_sync after the line is applied
             for part in parts:
                 try:
                     if part.startswith("SCENARIO_ID:"):
@@ -933,6 +950,7 @@ class Overlay(QWidget):
                                 self.operational_stop_latch = None
                                 self.operational_stop_margins = None
 
+                            route_pairset.clear(self, "scenario-change")      # Stage TB-E: a new scenario instance / F5: the route pair set (and the run's set) of the old one is void
                             self.needs_margin_recalc = True
                             self.current_scenario_id = new_id
                             
@@ -2932,6 +2950,7 @@ class Overlay(QWidget):
             self.station_list = held
         self._station_identity_sync()
         self._offtgt_sync()
+        self._route_pairset_sync()
 
     def drop_held_station_list(self):
         self.held_station_list = None
@@ -3020,6 +3039,10 @@ def _attach_managed_hud(overlay, hud, recovery_keys=None):
 def _release_overlay(overlay, hud=None):
     """Managed-mode clean-up of the Overlay: end the HUD controller (hidden, state released), stop its timer, release any key hook it holds,
     close the UDP socket and the window."""
+    try:
+        route_pairset.clear(overlay, "shutdown")            # Stage TB-E: nothing of the route pair set outlives the application
+    except Exception:
+        pass
     if hud is not None:
         try:
             hud.shutdown()

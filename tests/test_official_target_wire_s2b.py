@@ -286,12 +286,16 @@ class C_LegacySource(unittest.TestCase):
 
     def test_the_key_is_the_last_key_of_the_station_group_and_is_made_in_a_try_of_its_own(self):
         flat = re.sub(r"\s+", "", self.session)
+        # Stage TB-E (an intended change, not a drift): the PTPAIR key (LineBuilder.Key, under `if (timeline.PtPairText != null)`) sits directly after the unchanged Group( call and before the OFFTGT key, so the OFFTGT key is the last key
+        # of the station group still, and `lb.Key(` is written twice (PTPAIR, OFFTGT; was once)
         want = ("StationIndexWire.Value(sv.Index,timeline.ArrivalIndex,timeline.ArrivalSeq,timeline.Count,timeline.ListId));"
+                "if(timeline.PtPairText!=null)lb.Key(\"PTPAIR\",timeline.PtPairText.Substring(\"PTPAIR:\".Length));"
                 "if(official!=null){stringofficialValue;try{officialValue=OfficialTargetWire.Value(official.ReadOfficialTarget(),timeline.ListId);}"
                 "catch{officialValue=OfficialTargetWire.Placeholder(\"F\");}lb.Key(OfficialTargetWire.Key,officialValue);}")
         self.assertEqual(flat.count(want), 1)
         # the key is only ever written there, and the session holds no value between two Ticks
-        self.assertEqual(len(re.findall(r"lb\.Key\(", self.session)), 1)
+        self.assertEqual(len(re.findall(r"lb\.Key\(", self.session)), 2)                              # Stage TB-E: PTPAIR and OFFTGT (was 1)
+        self.assertEqual(len(re.findall(r"lb\.Key\(OfficialTargetWire\.Key,", self.session)), 1)       # the OFFTGT key is still written once, only there
         self.assertEqual(len(re.findall(r"\bOfficialTargetReading\b", self.session)), 1)             # the return type of the port: no field, no local copy of a reading
         self.assertEqual(len(re.findall(r"\bOfficialTargetWire\b", self.session)), 3)
         self.assertEqual(len(re.findall(r"\bofficial\.", self.session)), 1)                          # the port is called once: one read per line
@@ -332,6 +336,7 @@ class C_LegacySource(unittest.TestCase):
 # D - the Current sender (Class1.cs): what can not run offline is held as source shape (the host reads themselves are judged by the scratch compile-check now and by SI-R2.5 / SI-R2.6 live)
 # ==============================================================================================================================================
 STIDX_APPEND = 'data+=",STIDX:1:"+TSScoringPlugin.Telemetry.StationIndexWire.Fields(stidxTarget,stidxArrivalIndex,stidxArrivalSeq,stidxListCount,stidxListId);'
+PTPAIR_APPEND = 'if(ptpairText!=null)data+=","+ptpairText;'           # Stage TB-E: the PTPAIR part, between the STIDX append and the OFFTGT part (null = no part)
 OFFICIAL_APPEND = ('stringofficialValue;try{officialValue=TSScoringPlugin.Telemetry.OfficialTargetWire.Value(TSScoringPlugin.Telemetry.OfficialTargetReader.Read(CreateOfficialTargetHost()),stidxListId);}'
                    'catch{officialValue=TSScoringPlugin.Telemetry.OfficialTargetWire.Placeholder("F");}data+=","+TSScoringPlugin.Telemetry.OfficialTargetWire.Key+":"+officialValue;')
 
@@ -344,10 +349,11 @@ class D_CurrentSource(unittest.TestCase):
         cls.host = block(cls.text, r"private\s+TSScoringPlugin\.Telemetry\.OfficialTargetHost\s+CreateOfficialTargetHost\(\)")
 
     def test_the_official_part_follows_the_unchanged_stidx_part_in_the_same_if_block_and_before_the_line_is_stored(self):
-        want = STIDX_APPEND + OFFICIAL_APPEND + "}lastUdpData=data;}catch{}"
+        # Stage TB-E (an intended change, not a drift): the PTPAIR append sits between the STIDX append and the OFFTGT part (the OFFTGT part still ends the same if block and still comes before the line is stored)
+        want = STIDX_APPEND + PTPAIR_APPEND + OFFICIAL_APPEND + "}lastUdpData=data;}catch{}"
         self.assertEqual(self.flat.count(want), 1)
         self.assertEqual(self.flat.count(STIDX_APPEND), 1)                                           # the STIDX statement is exactly the one of ST-1A
-        self.assertEqual(len(re.findall(r"\bdata\s*\+=", self.text)), 2)                              # STIDX and OFFTGT: the only two appends
+        self.assertEqual(len(re.findall(r"\bdata\s*\+=", self.text)), 3)                              # STIDX, PTPAIR (Stage TB-E) and OFFTGT: the only three appends (was two)
 
     def test_the_official_part_is_made_in_a_try_of_its_own_so_it_can_never_reach_the_previous_line_replay(self):
         # the outer catch keeps lastUdpData (the line of the PREVIOUS Tick) and sends it again: a failing OFFTGT read must end in its own catch with the F form

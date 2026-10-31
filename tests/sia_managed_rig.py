@@ -30,6 +30,11 @@ _AUTO = object()
 DEFAULT_STIDX = "STIDX:1:1:-1:0:3:%s" % station_index_contract.list_id(STALIST.split(":", 1)[1])
 
 
+# Stage TB-E: a sender of the pseudo-turnback supply contract writes the PTPAIR part next to STIDX; the default line states ZERO pairs for the default STALIST (READY_EMPTY). Without a PTPAIR part the
+# route pair set is UNAVAILABLE and a managed scoring start is refused (PTPAIR=None: a sender without one; PTPAIR='PTPAIR:1:...': the part as it is).
+DEFAULT_PTPAIR = "PTPAIR:1:%s:3:0:" % station_index_contract.list_id(STALIST.split(":", 1)[1])
+
+
 def stidx(stalist, tgt, arr=-1, seq=0):
     """The STIDX part a sender of the supply contract writes for the STALIST datagram text `stalist` (with its 'STALIST:' prefix): target, arrival candidate, event number."""
     payload = stalist.split(":", 1)[1]
@@ -40,6 +45,7 @@ def tele(sid, time_ms=36000000, speed=0.0, loc=0.0, avail=None, brk="N:0:8", bty
     """One telemetry line of the Current sender (no AVAIL unless given); keys are appended as KEY:value. brk = 'text:notch:max'.
     STIDX= gives the STIDX part (default: the one of the default STALIST and NEXTLOC; None = a sender without one)."""
     stidx = keys.pop("STIDX", _AUTO)
+    ptpair = keys.pop("PTPAIR", _AUTO)
     parts = ["SCENARIO_ID:%d" % sid, "TIME:%d" % time_ms, "LOCATION:%s" % loc, "SPEED:%s" % speed, "BTYPE:%s" % keys.pop("BTYPE", btype), "BRK:%s" % brk,
              "NEXTLOC:1000.0", "NEXTTIME:%d" % (time_ms + 60000),
              "ISPASS:0", "ISTIMING:1", "DOORDIR:1", "DOOR:0", "TERM:0", "CAB:8:0", "PRATES:0_0.1_0.2_0.3_0.4_0.5_0.6_0.7_0.8:440.0", "JUMP:0"]
@@ -47,6 +53,11 @@ def tele(sid, time_ms=36000000, speed=0.0, loc=0.0, avail=None, brk="N:0:8", bty
         parts.append(DEFAULT_STIDX)
     elif stidx is not None:
         parts.append(stidx)
+    if ptpair is _AUTO:
+        fields = stidx.split(":") if isinstance(stidx, str) else []
+        parts.append("PTPAIR:1:%s:%s:0:" % (fields[6], fields[5]) if len(fields) == 7 else DEFAULT_PTPAIR)      # zero pairs for the list the STIDX of the same line describes
+    elif ptpair is not None:
+        parts.append(ptpair)
     for k, v in keys.items():
         parts.append("%s:%s" % (k, v))
     if avail is not None:
