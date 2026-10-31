@@ -89,7 +89,8 @@ SCORING_LOGIC_AT_LJX1 = {
 TBC_ADDED_REGION_PINS = {
     "note_jump_settlement": ("whole", "BC5F15FDEB4EC068A5B67872830FC0014289D1E751B5F6FB69882E44802F5348", 1),       # OD-TB-33 (was 88645BC2...): + the planned time of the Jump in the settlement record
     "official_jump_f1_hold": ("whole", "FE2CBC6C1FF1E06D9245061DF851E00C582A694713DA1534CA8FD6C38A478512", 1),
-    "turnback_drive": ("whole", "EA4060E56ED3CFF13216E568588318BACE5B861A6C41DE78459F1CE21AE6864D", 1),
+    "turnback_drive": ("whole", "059E5770C886936A40A834D4A177A14738E72E42ADF0254F614111426CF2E9CE", 1),       # Stage TB-D (was EA4060E5...): + the housekeeping call that drops the scoring section snapshot of a Run that is over
+    "turnback_lifecycle_guard": ("whole", "4143485E797E130329ED9EA499CCD480A6E0C15E001BA54B87DE655AC8032370", 1),       # Stage TB-D (OD-TD-3, E10): newly names the jump contract - a START / Retry Jump in flight drops a chain that only waits in its 5.0 s window
     "turnback_establish_b": ("whole", "7B14B7E48E54B39F6FD6CA9BBEA3EA924B9F8DDDEBB203B392C9ACDE37B78E09", 1),       # OD-TB-33 (was 9C141C45...): the B checkpoint keeps the planned time of the Jump (fail-closed when the record has none)
     "turnback_jump_available": ("whole", "D8BC38CB48D0C62417AED6530AE7CEFF28C645FFBF7D457054FED2FD9418CEEB", 1),
     "turnback_landing_step": ("whole", "9DBEBA400DD7061FEA02BB3A3707AEE841E99B399B9B465DA8472E54A3F6ABA8", 1),

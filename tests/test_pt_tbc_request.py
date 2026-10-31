@@ -238,10 +238,15 @@ class B_FailClosedBeforeSending(Base):
         self.S.begin_official_jump(o, s.sl[2]["location"], 36000000)
         o._open_jump_transaction(self.JT.JUMP_RETRY, planned, None)
         existing = o.jump_expectation
-        s.run_to_request(t_a)
+        # Stage TB-D (OD-TD-3, E10): in the PRODUCT flow a Retry in flight during the 5.0 s window now drops the waiting chain (tests/test_pt_tbd_retry.py), so the request never reaches this refusal.
+        # The refusal itself - turnback_request with another official Jump open - is kept as the defence and is tested directly:
+        self.S.turnback_request(o, {"purpose": "turnback", "target_index": 2, "key": s.machine.key})
         self.assertIs(o.jump_expectation, existing, "the existing transaction is kept")
         self.assertEqual(self.sent, [])
         self.assertIn("pseudo-turnback-jump-outstanding", [f["reason"] for e, f in self.events if e == "turnback-fail"])
+        s.run_to_request(t_a)
+        self.assertIs(o.jump_expectation, existing, "and the product flow adds no request either")
+        self.assertEqual(self.sent, [])
 
 
 class C_F1WhileAnOfficialJumpIsInFlight(Base):

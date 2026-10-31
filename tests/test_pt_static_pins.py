@@ -154,12 +154,15 @@ class B_SelectionContract(unittest.TestCase):
                 self.assertTrue(M.end_station_allowed(ps, idx))
 
     def test_the_rule_is_defined_once_and_nothing_in_the_product_files_applies_it_yet(self):
-        """Stage TB-D wires the candidate generation; TB-A / TB-B contain the pure rule only (main.py is unchanged by design)."""
+        """Stage TB-D (the name is kept so that the ledger shows no GONE): the rule is defined once; the candidate generation of main.py applies it ONCE each (the helpers _start_allowed / _end_allowed, which the
+        drop-downs and the initial end station share); menu_ui.py and scoring_logic.py do not apply it."""
         self.assertEqual(len(re.findall(r"\bdef start_station_allowed\(", source("pseudo_turnback_machine.py"))), 1)
         self.assertEqual(len(re.findall(r"\bdef end_station_allowed\(", source("pseudo_turnback_machine.py"))), 1)
-        for name in ("main.py", "menu_ui.py", "scoring_logic.py"):
+        for name in ("menu_ui.py", "scoring_logic.py"):
             self.assertNotIn("start_station_allowed", source(name), name)
             self.assertNotIn("end_station_allowed", source(name), name)
+        self.assertEqual(len(re.findall(r"pseudo_turnback_machine\.start_station_allowed\(", source("main.py"))), 1)
+        self.assertEqual(len(re.findall(r"pseudo_turnback_machine\.end_station_allowed\(", source("main.py"))), 1)
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,4 +1,5 @@
 import os
+from typing import NamedTuple
 
 from PyQt6.QtNetwork import QHostAddress
 
@@ -959,6 +960,8 @@ def turnback_fix_section(self):
         if resolved != terminal and resolved > start:
             self.setting_end_idx = resolved
             explicit_end = resolved
+            # Stage TB-D: with the candidate contract the end is already the A BEFORE this button (get_actual_terminal_idx); this write is a DORMANT defence for an abnormal input and must be diagnosable
+            turnback_diag(self, "turnback-end-corrected", terminal=terminal, resolved=resolved)
         else:
             resolved = terminal
     else:
@@ -967,6 +970,65 @@ def turnback_fix_section(self):
     crossed = [p for p in machine.pairset.pairs
                if pseudo_turnback_machine.qualifying_pair(machine.pairset, p.arrival, list_id, len(station_list), start, resolved, explicit_end) is not None]
     machine.fix_section(crossed, getattr(self, 'current_scenario_id', -1))
+
+
+class ScoringSectionSnapshot(NamedTuple):
+    """Stage TB-D (OD-TD-4): the scoring section of ONE Run, fixed by the scoring start button, immutable, held in ONE attribute of the Overlay (_scoring_section). While a Run is active it is the only source of the start
+    / end StationIndex that the scoring reads; the settings (setting_start_idx / setting_end_idx) are an input of the menu BEFORE the start. `judge_end` is the StationIndex that the end-station judgement compares
+    (-1: the sentinel is kept and the sender's terminal flag decides, as ever); `pairs` is the SAME tuple as TurnbackMachine.fixed (one fixing event, written by the start button only)."""
+    start: int
+    end: int
+    judge_end: int
+    generation: object
+    pairs: tuple
+    turnback: bool
+
+    @property
+    def section(self):
+        return (self.start, self.end)
+
+
+def build_scoring_section(self):
+    """Called once by the scoring start button after turnback_fix_section. Nothing is searched; the values are the start / end the candidate contract produced (get_actual_terminal_idx for the sentinel)."""
+    start = getattr(self, 'setting_start_idx', 0)
+    explicit = getattr(self, 'setting_end_idx', -1)
+    station_list = getattr(self, 'station_list', None) or []
+    actual = self.get_actual_terminal_idx() if hasattr(self, 'get_actual_terminal_idx') else len(station_list) - 1
+    raw = self.get_raw_terminal_idx() if hasattr(self, 'get_raw_terminal_idx') else actual
+    end = explicit if explicit != -1 else actual
+    judge_end = explicit if explicit != -1 else (end if end != raw else -1)
+    machine = self.__dict__.get('turnback_machine')
+    pairs = machine.fixed if (machine is not None and machine.fixed is not None) else ()
+    return ScoringSectionSnapshot(start, end, judge_end, getattr(self, 'current_scenario_id', -1), pairs, bool(pairs))
+
+
+def active_scoring_section(self):
+    """The snapshot of the Run that is going on, else None: a snapshot of another generation, of a scoring that is off or finished is never used."""
+    snapshot = self.__dict__.get('_scoring_section')
+    if snapshot is None:
+        return None
+    if not getattr(self, 'is_scoring_mode', False) or getattr(self, 'is_scoring_finished', False):
+        return None
+    if snapshot.generation != getattr(self, 'current_scenario_id', -1):
+        return None
+    return snapshot
+
+
+def section_start_index(self):
+    snapshot = active_scoring_section(self)
+    return snapshot.start if snapshot is not None else getattr(self, 'setting_start_idx', 0)
+
+
+def section_end_judge_index(self):
+    """The StationIndex that the end-station judgement compares with the arrival (-1 = none: the sender's terminal flag decides)."""
+    snapshot = active_scoring_section(self)
+    return snapshot.judge_end if snapshot is not None else getattr(self, 'setting_end_idx', -1)
+
+
+def scoring_section_housekeeping(self):
+    """Once per scoring tick: a snapshot that is no longer the Run's (session off, scoring finished or aborted, another generation) is dropped, never carried on."""
+    if self.__dict__.get('_scoring_section') is not None and active_scoring_section(self) is None:
+        self._scoring_section = None
 
 
 def turnback_session_active(self):
@@ -989,6 +1051,14 @@ def turnback_lifecycle_guard(self):
              or (machine.generation is not None and machine.generation != generation))
     if stale:
         machine.discard_all()
+        return stale
+    # Stage TB-D (OD-TD-3, E10): a START / Retry official Jump is in flight while a chain only RECOGNIZED / ARMED (the 5.0 s window) is still waiting: the Run went back to an earlier place, the chain belongs to an
+    # arrival that no longer happened. Dropped here (the guidance popup of its window is already removed by the reset that begin_official_jump runs: reset_transient_scoring_state keeps only the warnings); the fixed section
+    # and the issued keys of the Run stay. The chain's OWN Jump exists only in REQUESTED / awaiting_b.
+    if (machine.state in (pseudo_turnback_machine.RECOGNIZED, pseudo_turnback_machine.ARMED)
+            and (getattr(self, 'jump_expectation', None) is not None or getattr(self, 'is_official_jumping', False))):
+        machine.on_retry()
+        return True
     return stale
 
 
@@ -1167,6 +1237,7 @@ def turnback_landing_step(self):
 def turnback_drive(self, current_time):
     """The pseudo-turnback driver, once per scoring tick AFTER the target switch of this tick was processed (end of update_physics_and_scoring). Request at arrival + 5.0 s (BVE time), the completion by the end
     word of the transaction, then the establishment of B (C3)."""
+    scoring_section_housekeeping(self)                 # Stage TB-D: the snapshot of a Run that is over is dropped (also when no machine ever existed)
     machine = self.__dict__.get('turnback_machine')
     if machine is None:
         return
@@ -1217,11 +1288,13 @@ def turnback_arrival_begin(self, current_time, station_index):
         return False
     machine = turnback_machine_of(self)
     station_list = self.station_list
-    explicit_end = getattr(self, 'setting_end_idx', -1)
+    snapshot = active_scoring_section(self)           # Stage TB-D: the start / end of the Run are the snapshot's (the settings only when no Run was started by the button)
+    explicit_end = section_end_judge_index(self)
     terminal = self.get_actual_terminal_idx() if hasattr(self, 'get_actual_terminal_idx') else len(station_list) - 1
+    resolved_end = snapshot.end if snapshot is not None else (explicit_end if explicit_end != -1 else terminal)
     list_id = getattr(station_list, 'list_id', None) or getattr(self, 'bve_list_id', "")
     machine.on_arrival(int(round(current_time * 1000.0)), station_index, getattr(self, 'bve_arr_seq', -1), getattr(self, 'current_scenario_id', -1), list_id, len(station_list),
-                       getattr(self, 'setting_start_idx', 0), explicit_end if explicit_end != -1 else terminal, explicit_end, True)
+                       section_start_index(self), resolved_end, explicit_end, True)
     return True                                         # a pair A never has a checkpoint, however many times the same arrival is judged (the machine itself starts one chain per arrival)
 
 
@@ -1347,7 +1420,7 @@ def evaluate_arrival(self, current_time, arrival_target_loc=None):
     else:
         station_identity.note_missing(self, "P01", current_time, target_idx, "suppress_terminal_evaluation")
 
-    is_end_sta_match = identity_ok and ((curr_sta_idx != -1 and curr_sta_idx == getattr(self, 'setting_end_idx', -1)) or (getattr(self, 'prev_term', 0) == 1))
+    is_end_sta_match = identity_ok and ((curr_sta_idx != -1 and curr_sta_idx == section_end_judge_index(self)) or (getattr(self, 'prev_term', 0) == 1))
     is_scoring_end_station = is_end_sta_match and not getattr(self, 'jump_lock', False) and getattr(self, 'is_scoring_mode', False)
 
     # Pseudo-turnback: the arrival at the A of a pair (StationIndex + PairSet only). Dormant (False, nothing changed) while no PairSet is published.
@@ -2085,7 +2158,7 @@ def update_physics_and_scoring(self, current_time, dt):
 
                 # 1. 先に時分採点を行う
                 curr_sta_idx = arrival_target_idx if arrival_identity_ok else -1
-                is_scoring_end_station_op = (curr_sta_idx == getattr(self, 'setting_end_idx', -1)) or (getattr(self, 'prev_term', 0) == 1)
+                is_scoring_end_station_op = (curr_sta_idx == section_end_judge_index(self)) or (getattr(self, 'prev_term', 0) == 1)
                 is_timing_active_op = self.is_station_timing(curr_sta_idx) if curr_sta_idx >= 0 else False
 
                 if not arrival_deferred and (is_scoring_end_station_op or turnback_pair_a_of(self, curr_sta_idx) is not None) and is_timing_active_op and not getattr(self, 'has_scored_time_this_station', False):
@@ -2119,7 +2192,7 @@ def update_physics_and_scoring(self, current_time, dt):
     arrival_target_loc = getattr(self, 'bve_next_loc', -1.0)
 
     is_scoring_end_station = (
-        curr_sta_idx == getattr(self, 'setting_end_idx', -1)
+        curr_sta_idx == section_end_judge_index(self)
     ) or (
         getattr(self, 'bve_term', 0) == 1
     )

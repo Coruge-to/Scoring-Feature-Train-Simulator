@@ -138,8 +138,11 @@ class OD26_FixedAtStart(Base):
 class OD24_UnspecifiedEndResolvesAtStart(Base):
     def test_OD24_a_terminal_B_with_the_default_end_resolves_to_A_at_the_start_button(self):
         s = self.scene(terminal_b=True, start=0, end=-1)
+        # Stage TB-D: the end is the A BEFORE the button (the initial end station is the last filtered end candidate); the start-button correction of TB-C is a dormant defence that does not write
+        self.assertEqual((s.o.setting_end_idx, s.o.get_actual_terminal_idx()), (-1, 1))
         self.press_start(s)
-        self.assertEqual(s.o.setting_end_idx, 1, "the unspecified end is written as the last valid end candidate (A) by the start button")
+        self.assertEqual(s.o.setting_end_idx, -1, "nothing was written back by the start button: the correction is dormant")
+        self.assertEqual(s.o._scoring_section.end, 1, "the end StationIndex of the Run (the snapshot) is the A")
 
     def test_OD24_a_terminal_B_still_ends_at_A_and_never_jumps_to_B(self):
         s = self.scene(terminal_b=True, start=0, end=-1)

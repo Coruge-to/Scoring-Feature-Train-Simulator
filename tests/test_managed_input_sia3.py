@@ -1771,7 +1771,13 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
             "if not arrival_deferred and is_scoring_end_station_op and is_timing_active_op and not getattr(self, 'has_scored_time_this_station', False):",
             "is_scoring_end_station",
         )
-        self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport) + pseudo_turnback_a_seam + st2a_checkpoint_identity + st2b_retry_by_saved_index
+        # Stage TB-D (on purpose): the two running end-station judgements (the operational stop and the end-station arrival) compare the StationIndex of the scoring section snapshot (section_end_judge_index) instead of reading
+        # setting_end_idx: these are the 2 distinct lines (stripped) that the diff shows as removed; no score, no rule and no constant is among them (tests/test_pt_tbd_snapshot.py).
+        tbd_running_end_judgement = (
+            "is_scoring_end_station_op = (curr_sta_idx == getattr(self, 'setting_end_idx', -1)) or (getattr(self, 'prev_term', 0) == 1)",
+            "curr_sta_idx == getattr(self, 'setting_end_idx', -1)",
+        )
+        self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport) + tbd_running_end_judgement + pseudo_turnback_a_seam + st2a_checkpoint_identity + st2b_retry_by_saved_index
                                    + st3d_request_by_the_one_builder + st2c_first_station_distance + timefix_b_departure_margins + timefix_b3_zero_speed_and_jump_boundary
                                    + close_range_shared_basic_braking_init + si_r5_2a_p03_target_index + si_r5_2b_arrival_target_index + si_r5_2c_departure_prev_target_index
                                    + lc3b_same_time_history_replace], removed)
@@ -1796,6 +1802,7 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
                                    "init_basic_braking_state", "close_range_fix_previous_stop", "close_range_pair_is_close", "update_close_range_departure_reset",
                                    "close_range_fix_landing_stop", "is_arrival_special_popup", "turnback_machine_of", "turnback_pair_a_of", "turnback_arrival_begin", "turnback_arrival_scored",
                                    "turnback_display_update", "create_turnback_b_checkpoint",
+                               "build_scoring_section", "active_scoring_section", "section_start_index", "section_end_judge_index", "scoring_section_housekeeping",
                                "turnback_fix_section", "turnback_session_active", "turnback_lifecycle_guard", "turnback_diag", "turnback_stop_scoring", "official_jump_f1_hold", "note_jump_settlement", "turnback_jump_available", "turnback_request", "turnback_establish_b", "turnback_landing_step", "turnback_drive"}, set(b))
         changed = sorted(n for n in a if a[n] != b[n])
         # only the diagnostic writer got the switch and (PID-D6) execute_retry's one transport line; no score, no rule, no constant

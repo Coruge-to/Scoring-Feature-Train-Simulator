@@ -24,6 +24,9 @@ from scoring_logic import (
     begin_official_jump,
     close_range_fix_landing_stop,
     turnback_fix_section,
+    build_scoring_section,
+    active_scoring_section,
+    section_start_index,
     note_jump_settlement,
     official_jump_f1_hold,
     turnback_diag,
@@ -32,6 +35,7 @@ from scoring_logic import (
 from menu_ui import draw_menu
 from hud_ui import draw_hud
 from utils import write_desktop_log, NumericKeyInputRouter
+import pseudo_turnback_machine
 import managed_input
 import managed_mode
 import managed_app_directory
@@ -1184,8 +1188,8 @@ class Overlay(QWidget):
         close_range_fix_landing_stop(self, verdict.selected_idx, verdict.actual_location)
 
     def is_station_timing(self, sta_idx):
-        if sta_idx == self.setting_start_idx:
-            return False 
+        if sta_idx == section_start_index(self):             # Stage TB-D: the start of the scoring Run is the snapshot's while a Run is active, the setting before it
+            return False
         if sta_idx in self.user_timing_overrides:
             return self.user_timing_overrides[sta_idx] 
         if 0 <= sta_idx < len(self.station_list):
@@ -1194,12 +1198,15 @@ class Overlay(QWidget):
         
     def get_timing_target_stas(self):
         if not self.station_list: return []
-        end_idx = self.setting_end_idx if self.setting_end_idx != -1 else self.get_actual_terminal_idx()
+        snapshot = active_scoring_section(self)            # Stage 2.1: while a scoring Run is active its snapshot is the only source of the range; before the start (no valid snapshot) the settings, as ever
+        start_idx = snapshot.start if snapshot is not None else self.setting_start_idx
+        end_idx = snapshot.end if snapshot is not None else (self.setting_end_idx if self.setting_end_idx != -1 else self.get_actual_terminal_idx())
         if end_idx == -1 or end_idx >= len(self.station_list):
             end_idx = len(self.station_list) - 1
-        return [i for i in range(len(self.station_list)) if self.setting_start_idx <= i <= end_idx]
+        return [i for i in range(len(self.station_list)) if start_idx <= i <= end_idx]
 
-    def get_actual_terminal_idx(self):
+    def get_raw_terminal_idx(self):
+        """The terminal of the route data as the sender names it (the former body of get_actual_terminal_idx). The brake rule screens, the upper bound of the candidates and the brake rule of the scoring read THIS."""
         if not self.station_list:
             return -1
 
@@ -1213,12 +1220,59 @@ class Overlay(QWidget):
         # 古いC#プラグインや、終着フラグのないSTALISTとの互換性用
         return len(self.station_list) - 1
 
+    def get_actual_terminal_idx(self):
+        """The end station of the scoring section when setting_end_idx is the sentinel -1 (the initial end station, as the menu draws it). Stage TB-D: the raw terminal when it is a legal end candidate (no PairSet: always);
+        when the raw terminal is the B of a certified pair it is no end candidate, and the initial end station is the LAST of the filtered end candidates (the same list the end drop-down shows)."""
+        raw = self.get_raw_terminal_idx()
+        if raw == -1 or self._static_pairset() is None or self._end_allowed(raw):
+            return raw
+        candidates = self._scoring_end_candidates()
+        return candidates[-1]["idx"] if candidates else raw
+
+    # ---- Stage TB-D: the candidate lists of the scoring section (the certified STATIC pair set; the Run-specific set is fixed by the start button and is never read here) -------------------------------
+    def _static_pairset(self):
+        """The certified static pair set of the CURRENT station list (turnback_machine.pairset, supplied from Stage TB-E; injected by tests), else None. Reads only: no machine is created. A set of another station list is no set (PU-5)."""
+        machine = self.__dict__.get('turnback_machine')
+        pairset = machine.pairset if machine is not None else None
+        station_list = getattr(self, 'station_list', None)
+        if pairset is None or not station_list:
+            return None
+        list_id = getattr(station_list, 'list_id', None) or getattr(self, 'bve_list_id', "")
+        if pairset.list_id != list_id or pairset.station_count != len(station_list):
+            return None
+        return pairset
+
+    def _start_allowed(self, idx):
+        return pseudo_turnback_machine.start_station_allowed(self._static_pairset(), idx)        # the A of a pair is no start (StationIndex and pair structure only)
+
+    def _end_allowed(self, idx):
+        return pseudo_turnback_machine.end_station_allowed(self._static_pairset(), idx)          # the B of a pair is no end, even when it is the raw terminal
+
+    def _scoring_candidate_stations(self):
+        stations = []
+        if getattr(self, 'station_list', []):
+            stations.append({"idx": 0, "name": self.station_list[0]["name"]})
+            for i, s in enumerate(self.station_list):
+                if i > 0 and not s.get("is_pass", False):
+                    stations.append({"idx": i, "name": s["name"]})
+        return stations
+
+    def _scoring_start_candidates(self):
+        end = getattr(self, 'setting_end_idx', -1)
+        e_idx = end if end != -1 else self.get_raw_terminal_idx()
+        return [s for s in self._scoring_candidate_stations() if s["idx"] < e_idx and self._start_allowed(s["idx"])]
+
+    def _scoring_end_candidates(self):
+        s_idx = getattr(self, 'setting_start_idx', 0)
+        terminal = self.get_raw_terminal_idx()
+        return [s for s in self._scoring_candidate_stations() if s["idx"] > s_idx and s["idx"] <= terminal and self._end_allowed(s["idx"])]
+
     def get_current_brake_rule(self):
         if not self.is_scoring_mode or not self.station_list:
             return "制動：階段 / 緩め：階段"
 
         next_loc = self.bve_next_loc
-        actual_terminal_idx = self.get_actual_terminal_idx()
+        actual_terminal_idx = self.get_raw_terminal_idx()
         overall_end_loc = self.station_list[actual_terminal_idx]["location"] if 0 <= actual_terminal_idx < len(self.station_list) else -1.0
         
         if next_loc < 0 or next_loc > overall_end_loc:
@@ -1632,26 +1686,13 @@ class Overlay(QWidget):
                 getattr(self, 'disp_settings', {})[key] = not getattr(self, 'disp_settings', {})[key]
 
         elif self.menu_state == 5:
-            valid_stas = []
-            if getattr(self, 'station_list', []):
-                valid_stas.append({"idx": 0, "name": self.station_list[0]["name"]})
-                for i, s in enumerate(self.station_list):
-                    if i > 0 and not s.get("is_pass", False):
-                        valid_stas.append({"idx": i, "name": s["name"]})
-
             if self.menu_cursor == 0 and getattr(self, 'menu_cursor_x', 0) >= 0:
                 self.dropdown_active = True
                 self.dropdown_cursor = 0
                 self.dropdown_scroll = 0
                 self.dropdown_target = "start_sta" if getattr(self, 'menu_cursor_x', 0) == 0 else "end_sta"
-                actual_terminal_idx = self.get_actual_terminal_idx() if hasattr(self, 'get_actual_terminal_idx') else -1
-                
-                if self.dropdown_target == "start_sta":
-                    e_idx = getattr(self, 'setting_end_idx', -1) if getattr(self, 'setting_end_idx', -1) != -1 else actual_terminal_idx
-                    opts = [s for s in valid_stas if s["idx"] < e_idx]
-                else:
-                    s_idx = getattr(self, 'setting_start_idx', 0)
-                    opts = [s for s in valid_stas if s["idx"] > s_idx and s["idx"] <= actual_terminal_idx]
+                # Stage TB-D: the candidates are GENERATED without the A (start) / the B (end) of a certified pair; the initial end station (sentinel -1) is the last of the same filtered end candidates
+                opts = self._scoring_start_candidates() if self.dropdown_target == "start_sta" else self._scoring_end_candidates()
                 self.dropdown_options = opts if opts else [{"idx": -1, "name": "選択可能駅なし"}]
                 
             elif self.menu_cursor == 1 and getattr(self, 'menu_cursor_x', 0) == 0:
@@ -1786,7 +1827,7 @@ class Overlay(QWidget):
                                 if i > 0 and not s.get("is_pass", False):
                                     valid_stas.append({"idx": i, "name": s["name"]})
 
-                        actual_terminal_idx = self.get_actual_terminal_idx() if hasattr(self, 'get_actual_terminal_idx') else -1
+                        actual_terminal_idx = self.get_raw_terminal_idx() if hasattr(self, 'get_raw_terminal_idx') else -1
                         e_overall = getattr(self, 'setting_end_idx', -1) if getattr(self, 'setting_end_idx', -1) != -1 else actual_terminal_idx
                         
                         opts = [s for s in valid_stas if s["idx"] > s_idx and s["idx"] <= e_overall]
@@ -1857,6 +1898,7 @@ class Overlay(QWidget):
                     self._refuse_scoring_start(start_identity._replace(valid=False, reason=start_refusal), is_bve_advancing)
                     return
                 turnback_fix_section(self)                 # OD-TB-26 / OD-TB-24: the section the scoring crosses is fixed HERE, once
+                self._scoring_section = build_scoring_section(self)      # Stage TB-D (OD-TD-4): start / end / section / generation / crossed pairs of THIS Run, immutable, the only running source
                 self.internal_abort_reason = ""
                 self.is_scoring_mode = True
                 reset_result_display_state(self)
@@ -1943,7 +1985,7 @@ class Overlay(QWidget):
             
         elif getattr(self, 'dropdown_target', "") in ["sub_end_sta", "init_sub_end_sta"]:
             rules = getattr(self, 'brake_rules', []) if getattr(self, 'dropdown_target', "") == "sub_end_sta" else getattr(self, 'penalty_init_rules', [])
-            actual_terminal_idx = self.get_actual_terminal_idx() if hasattr(self, 'get_actual_terminal_idx') else -1
+            actual_terminal_idx = self.get_raw_terminal_idx() if hasattr(self, 'get_raw_terminal_idx') else -1
             e_overall = getattr(self, 'setting_end_idx', -1) if getattr(self, 'setting_end_idx', -1) != -1 else actual_terminal_idx
             is_terminal = (val_idx == e_overall)
             rules[-1]["end_idx"] = val_idx

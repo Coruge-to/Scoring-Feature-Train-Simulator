@@ -1744,6 +1744,8 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
                   "close_range_fix_previous_stop", "init_basic_braking_state", "close_range_pair_is_close", "update_close_range_departure_reset", "close_range_fix_landing_stop",
                   "Import(names=[alias(name='pseudo_turnback_machine')])", "is_arrival_special_popup", "turnback_machine_of", "turnback_pair_a_of", "turnback_arrival_begin", "turnback_arrival_scored",
                   "turnback_display_update", "create_turnback_b_checkpoint",
+                  # Stage TB-D (on purpose): the scoring section snapshot of the start button and its accessors, the housekeeping that drops a snapshot of a Run that is over (tests/test_pt_tbd_snapshot.py)
+                  "ScoringSectionSnapshot", "build_scoring_section", "active_scoring_section", "section_start_index", "section_end_judge_index", "scoring_section_housekeeping", "ImportFrom(module='typing', names=[alias(name='NamedTuple')], level=0)",
                   # Stage TB-C (on purpose): the section fixed at the scoring start button, the lifecycle guard, the request / completion / establishment of B, the F1 hold, the diagnostics, the landing watch (tests/test_pt_tbc_*.py)
                   "turnback_fix_section", "turnback_session_active", "turnback_lifecycle_guard", "turnback_diag", "turnback_stop_scoring", "official_jump_f1_hold", "note_jump_settlement", "turnback_jump_available", "turnback_request", "turnback_establish_b", "turnback_landing_step", "turnback_drive",
                   "Assign(targets=[Name(id='TURNBACK_GUIDANCE_CATEGORY', ctx=Store())], value=Constant(value='疑似折り返し'))",
