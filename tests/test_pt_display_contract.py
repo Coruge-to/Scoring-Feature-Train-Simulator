@@ -368,10 +368,35 @@ class G_Extra(Base):
         for word in ("jump", "ジャンプ", "transaction", "completion", "トランザクション", "完了通知"):
             self.assertNotIn(word, self.S.TURNBACK_GUIDANCE_TEXT.lower())
             self.assertNotIn(word, self.S.TURNBACK_GUIDANCE_CATEGORY.lower())
-        self.assertEqual(self.S.TURNBACK_GUIDANCE_TEXT, "次の発車位置へ移動します")
+        self.assertEqual(self.S.TURNBACK_GUIDANCE_TEXT, "次の発車位置へ移動します。")
         self.assertEqual(self.S.TURNBACK_GUIDANCE_CATEGORY, "疑似折り返し")
         s, t = self.arrived("plain", 0.3)
-        self.assertEqual([p["text"] for p in self.guides(s)], ["次の発車位置へ移動します"])
+        self.assertEqual([p["text"] for p in self.guides(s)], ["次の発車位置へ移動します。"])
+
+    def test_TB_STYLE_the_guidance_ends_with_one_full_stop_and_has_the_colour_of_the_farewell(self):
+        """Style commit (Owner OD-C01-FIX-2): the text ends with exactly one '。' and the popup is drawn as '運転お疲れ様でした。' is: COLOR_WHITE, 'big', the black outline of utils.get_outline_color."""
+        import ast
+        import config
+        import utils
+        text = self.S.TURNBACK_GUIDANCE_TEXT
+        self.assertEqual(text, "次の発車位置へ移動します。")
+        self.assertEqual(text.count("。"), 1)
+        self.assertTrue(text.endswith("。"))
+        s, t = self.arrived("plain", 0.3)
+        guides = self.guides(s)
+        self.assertEqual(len(guides), 1)
+        self.assertEqual(guides[0]["color"], config.COLOR_WHITE)
+        self.assertEqual(guides[0]["type"], "big")
+        self.assertEqual(utils.get_outline_color(guides[0]["color"]), config.COLOR_OUTLINE_BLACK, "white letters with a black outline, not black letters")
+        with open(os.path.join(ROOT, "scoring_logic.py"), encoding="utf-8") as f:
+            source = f.read()
+        calls = [n for n in ast.walk(ast.parse(source)) if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "add_score_popup"
+                 and any(isinstance(a, ast.Constant) and a.value == "運転お疲れ様でした。" for a in n.args)]
+        self.assertEqual(len(calls), 1)
+        farewell_colour = ast.unparse(calls[0].args[3])
+        self.assertEqual(farewell_colour, "COLOR_WHITE")
+        self.assertEqual(guides[0]["color"], getattr(config, farewell_colour), "the same colour setting as the farewell")
+        self.assertNotIn('"次の発車位置へ移動します"', source, "no old wording without the full stop is left in the scoring source")
 
 class F_Static(unittest.TestCase):
     def test_the_machine_takes_no_door_signal_or_distance_parameter(self):

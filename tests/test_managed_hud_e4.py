@@ -1749,7 +1749,7 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
                   # Stage TB-C (on purpose): the section fixed at the scoring start button, the lifecycle guard, the request / completion / establishment of B, the F1 hold, the diagnostics, the landing watch (tests/test_pt_tbc_*.py)
                   "turnback_fix_section", "turnback_session_active", "turnback_lifecycle_guard", "turnback_diag", "turnback_stop_scoring", "official_jump_f1_hold", "note_jump_settlement", "turnback_jump_available", "turnback_request", "turnback_establish_b", "turnback_landing_step", "turnback_drive",
                   "Assign(targets=[Name(id='TURNBACK_GUIDANCE_CATEGORY', ctx=Store())], value=Constant(value='疑似折り返し'))",
-                  "Assign(targets=[Name(id='TURNBACK_GUIDANCE_TEXT', ctx=Store())], value=Constant(value='次の発車位置へ移動します'))",
+                  "Assign(targets=[Name(id='TURNBACK_GUIDANCE_TEXT', ctx=Store())], value=Constant(value='次の発車位置へ移動します。'))",
                   "Assign(targets=[Name(id='TURNBACK_SPECIAL_SECONDS', ctx=Store())], value=BinOp(left=Attribute(value=Name(id='pseudo_turnback_machine', ctx=Load()), attr='SPECIAL_DISPLAY_MS', ctx=Load()), op=Div(), right=Constant(value=1000.0)))",
                   "Assign(targets=[Name(id='TURNBACK_TOTAL_SECONDS', ctx=Store())], value=BinOp(left=Attribute(value=Name(id='pseudo_turnback_machine', ctx=Load()), attr='REQUEST_AFTER_MS', ctx=Load()), op=Div(), right=Constant(value=1000.0)))"}),
                 ("utils.py", old_utils, {"write_desktop_log"}, {"set_desktop_log_enabled", "desktop_log_enabled", "desktop_log_requested"})):

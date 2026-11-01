@@ -917,7 +917,7 @@ def close_range_fix_landing_stop(self, station_index, actual_location):
     self.prev_actual_stop_loc = float(actual_location) if valid else -1.0
 
 
-TURNBACK_GUIDANCE_TEXT = "次の発車位置へ移動します"
+TURNBACK_GUIDANCE_TEXT = "次の発車位置へ移動します。"
 TURNBACK_GUIDANCE_CATEGORY = "疑似折り返し"
 TURNBACK_SPECIAL_SECONDS = pseudo_turnback_machine.SPECIAL_DISPLAY_MS / 1000.0
 TURNBACK_TOTAL_SECONDS = pseudo_turnback_machine.REQUEST_AFTER_MS / 1000.0
@@ -1325,7 +1325,7 @@ def turnback_display_update(self, current_time):
         return
     if any(p.get("category") == TURNBACK_GUIDANCE_CATEGORY for p in self.popups):
         return
-    add_score_popup(self, 0, TURNBACK_GUIDANCE_TEXT, COLOR_N, "big", TURNBACK_GUIDANCE_CATEGORY, current_time)
+    add_score_popup(self, 0, TURNBACK_GUIDANCE_TEXT, COLOR_WHITE, "big", TURNBACK_GUIDANCE_CATEGORY, current_time)
     self.popups[-1]["expire_time"] = machine.arrival_ms / 1000.0 + TURNBACK_TOTAL_SECONDS
 
 
