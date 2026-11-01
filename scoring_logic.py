@@ -1164,6 +1164,8 @@ def note_jump_settlement(self, expectation, end, selected, actual, pending):
     ok = end in (jump_transaction.SETTLE_OK, jump_transaction.SETTLE_OK_PLAIN)
     if ok and expectation.purpose in (jump_transaction.JUMP_START, jump_transaction.JUMP_RETRY):
         machine.landing_watch = {"selected": selected, "actual": actual, "generation": generation, "mark": expectation.purpose == jump_transaction.JUMP_RETRY and origin == 'turnback'}
+        if expectation.purpose == jump_transaction.JUMP_RETRY and tuple(expectation.scope)[0] == generation:
+            self.jump_lock = True       # Stage TB-H (layer A): the landing of a SUCCESSFUL Retry of THIS generation belongs to the Retry whatever the order the host reports the Jump (the Current completion absorbs the sender's JUMP counter, so the jump rule alone may never set it; as the C-01 Root Fix for the turnback request). Released by the first departure (existing rule). execute_retry stays byte-identical.
     else:
         machine.landing_watch = None
 

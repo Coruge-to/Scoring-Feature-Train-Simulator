@@ -89,7 +89,7 @@ SCORING_LOGIC_AT_LJX1 = {
 # Stage TB-C (OD-TB-25 / 27 / 28 / 29, INTENDED changes of the jump contract): the functions that were ADDED to scoring_logic.py after LJX-1 and name the contract. They did not exist at the formal LJX-1 commit
 # (so they are not compared with its blob); each is declared as a region and pinned on its own.
 TBC_ADDED_REGION_PINS = {
-    "note_jump_settlement": ("whole", "BC5F15FDEB4EC068A5B67872830FC0014289D1E751B5F6FB69882E44802F5348", 1),       # OD-TB-33 (was 88645BC2...): + the planned time of the Jump in the settlement record
+    "note_jump_settlement": ("whole", "7F9537E1BAC901576036DAB4DAD5A15822B0EE7CB3DF65C71F9E2509B23C34EA", 1),       # Stage TB-H Commit 2 (was BC5F15FD...): + a SUCCESSFUL Retry of the current generation takes jump_lock at its settlement (the landing of the Retry belongs to the Retry whatever the order the host reports the Jump); OD-TB-33 (was 88645BC2...): + the planned time of the Jump in the settlement record
     "official_jump_f1_hold": ("whole", "FE2CBC6C1FF1E06D9245061DF851E00C582A694713DA1534CA8FD6C38A478512", 1),
     "turnback_drive": ("whole", "059E5770C886936A40A834D4A177A14738E72E42ADF0254F614111426CF2E9CE", 1),       # Stage TB-D (was EA4060E5...): + the housekeeping call that drops the scoring section snapshot of a Run that is over
     "turnback_lifecycle_guard": ("whole", "4143485E797E130329ED9EA499CCD480A6E0C15E001BA54B87DE655AC8032370", 1),       # Stage TB-D (OD-TD-3, E10): newly names the jump contract - a START / Retry Jump in flight drops a chain that only waits in its 5.0 s window

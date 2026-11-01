@@ -260,6 +260,7 @@ class Base(unittest.TestCase):
 
     def retry_to_b(self, origin, late_target=False):
         s = self.P.Scene(self)
+        self.last_scene = s                                  # Stage TB-H: OD25_9 checks that this fixture's B is a formal pair B of the fixed section
         o = s.o
         s.sl[2]["location"] = self.P.A_MARK + 500.0
         t_a = s.arrive_a()
@@ -299,10 +300,16 @@ class Base(unittest.TestCase):
         self.assertTrue(mark)
         self.assertEqual(after, before)
 
-    def test_OD25_9_a_retry_to_an_ordinary_checkpoint_of_the_same_station_keeps_the_ordinary_rule(self):
+    def test_OD25_9_a_retry_to_a_checkpoint_without_origin_of_the_pair_B_leaves_B_untimed(self):
+        """Stage TB-H (Owner ruling R2, approval O-1 of 2026-11-01): the old expectation (+300 at the B departure after a Retry to a checkpoint of B that carries no origin) fixed a past behaviour of a PRODUCT DEFECT,
+        not a specification: the B of a pair that the section crosses has effective timing = false, so its operating time is scored 0 times whatever the checkpoint's origin says. It is an updated expectation, not a removal.
+        What is NOT changed: the ordinary station contract (test_pt_tbh_retry_state.py: the Retry to an ordinary checkpoint of C still scores its departure) and the sections that do not cross the pair (UB_4)."""
         mark, before, after = self.retry_to_b(None)
-        self.assertFalse(mark, "no origin=turnback: no mark")
-        self.assertEqual(after - before, 300, "the ordinary Retry rule (is_official_retry) scores the departure")
+        s = self.last_scene
+        self.assertEqual({p.departure for p in s.machine.fixed}, {2}, "the fixture's B (StationIndex 2) is the B of the formal pair of the fixed section, not a plain station or a variable called B")
+        self.assertEqual(self.S.untimed_reason(s.o, 2), "UNTIMED_TURNBACK_B")
+        self.assertFalse(mark, "no origin=turnback: no mark (the contract, not the mark, keeps the time out)")
+        self.assertEqual(after - before, 0, "pair B: operating time 0 times (R2)")
 
     def test_OD25_11_the_retry_mark_waits_for_the_successful_settlement(self):
         s = self.P.Scene(self)
