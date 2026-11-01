@@ -917,8 +917,11 @@ def close_range_fix_landing_stop(self, station_index, actual_location):
     self.prev_actual_stop_loc = float(actual_location) if valid else -1.0
 
 
-TURNBACK_GUIDANCE_TEXT = "次の発車位置へ移動します。"
+TURNBACK_GUIDANCE_TEXT = "発車位置へ移動します。"
+TURNBACK_RESTOP_GUIDANCE_TEXT = "列車を動かさないでください。"
 TURNBACK_GUIDANCE_CATEGORY = "疑似折り返し"
+TURNBACK_CANCEL_TEXTS = ("発車位置への移動がキャンセルされました。", "許容範囲内に再度列車を停止させてください。")
+TURNBACK_CANCEL_CATEGORY = "疑似折り返し中止"
 TURNBACK_SPECIAL_SECONDS = pseudo_turnback_machine.SPECIAL_DISPLAY_MS / 1000.0
 TURNBACK_TOTAL_SECONDS = pseudo_turnback_machine.REQUEST_AFTER_MS / 1000.0
 
@@ -1098,6 +1101,14 @@ def turnback_lifecycle_guard(self):
     if stale:
         machine.discard_all()
         return stale
+    # Stage TB-H: a waiting chain whose pair is no longer in the Run's fixed section / the published PairSet (RunPairSet changed) is dropped
+    if machine.drop_if_pair_not_in_run():
+        return True
+    # Stage TB-H: a START / Retry Jump in flight while the chain waits in RESTOP_WAIT drops it (the RECOGNIZED / ARMED window is dropped by the existing rule below, which stays byte-identical)
+    if (machine.state == pseudo_turnback_machine.RESTOP_WAIT
+            and (getattr(self, 'jump_expectation', None) is not None or getattr(self, 'is_official_jumping', False))):
+        machine.drop_waiting("retry")
+        return True
     # Stage TB-D (OD-TD-3, E10): a START / Retry official Jump is in flight while a chain only RECOGNIZED / ARMED (the 5.0 s window) is still waiting: the Run went back to an earlier place, the chain belongs to an
     # arrival that no longer happened. Dropped here (the guidance popup of its window is already removed by the reset that begin_official_jump runs: reset_transient_scoring_state keeps only the warnings); the fixed section
     # and the issued keys of the Run stay. The chain's OWN Jump exists only in REQUESTED / awaiting_b.
@@ -1294,14 +1305,19 @@ def turnback_drive(self, current_time):
         return
     now_ms = int(round(current_time * 1000.0))
     generation = getattr(self, 'current_scenario_id', -1)
-    if machine.state == pseudo_turnback_machine.ARMED and turnback_session_active(self):
+    if machine.state in (pseudo_turnback_machine.ARMED, pseudo_turnback_machine.RESTOP_WAIT) and turnback_session_active(self):
         available, aux = turnback_jump_available(self)
-        for act in machine.tick(now_ms, generation, True, menu_open=getattr(self, 'menu_state', 0) != 0, jump_available=available):
+        moving, in_range = turnback_train_state(self)
+        for act in machine.tick(now_ms, generation, True, menu_open=getattr(self, 'menu_state', 0) != 0, jump_available=available, moving=moving, in_stop_range=in_range):
             if act[0] == "request_jump":
                 turnback_request(self, act[1])
             elif act[0] == "abort_scoring_jump_unavailable":
                 turnback_diag(self, "turnback-unavailable", aux=aux or "unknown")
                 turnback_stop_scoring(self, act[1])
+            elif act[0] == "cancel_jump":
+                turnback_cancel_show(self, now_ms)
+            elif act[0] == "restop_established":
+                turnback_restop_show(self, now_ms)
     if machine.state == pseudo_turnback_machine.REQUESTED:
         record = machine.settlement
         if record is not None and record.purpose == jump_transaction.JUMP_TURNBACK:
@@ -1330,7 +1346,73 @@ def turnback_pair_a_of(self, station_index):
     return machine.fixed_by_a.get(station_index)
 
 
-def turnback_arrival_begin(self, current_time, station_index):
+def turnback_stop_range_capture(self, stop_position):
+    """Stage TB-H: the author-defined stop range of the A that was just judged: (position of A, margin_f, margin_b) exactly as the arrival tick sees them (the same numbers as the stop judgement of that tick). None when any
+    of them is not a finite real number. Kept by the machine, so that a re-stop is judged against THIS A even after the sender switched its target (never the 330 m scoring range)."""
+    numbers = (stop_position, getattr(self, 'bve_margin_f', None), getattr(self, 'bve_margin_b', None))
+    if any(isinstance(n, bool) or not isinstance(n, (int, float)) or n != n or n in (float("inf"), float("-inf")) for n in numbers):
+        return None
+    return tuple(float(n) for n in numbers)
+
+
+def turnback_train_state(self):
+    """Stage TB-H: the two facts the re-stop wait needs, judged STRICTLY here (the machine knows neither a speed nor a position): `moving` = speed != 0 (no small-speed threshold, no consecutive ticks, no travelled
+    distance; None when the speed is not a finite real number), `in_range` = the train is inside the author-defined stop range of the A that was kept at its arrival: -margin_f <= (A position - train position) <= margin_b,
+    boundaries inside (False on any missing / non-finite number; never the 330 m scoring range, never the range of the next target). Door, indicator lamp and signalFlag are no input."""
+    speed = getattr(self, 'bve_speed', None)
+    moving = None if (isinstance(speed, bool) or not isinstance(speed, (int, float)) or speed != speed or speed in (float("inf"), float("-inf"))) else (speed != 0)
+    machine = self.__dict__.get('turnback_machine')
+    kept = machine.stop_range if machine is not None else None
+    position = getattr(self, 'bve_location', None)
+    in_range = False
+    if kept is not None and len(kept) == 3:
+        numbers = tuple(kept) + (position,)
+        if not any(isinstance(n, bool) or not isinstance(n, (int, float)) or n != n or n in (float("inf"), float("-inf")) for n in numbers):
+            a_position, margin_f, margin_b = kept
+            in_range = -margin_f <= a_position - position <= margin_b
+    return moving, in_range
+
+
+def turnback_drop_popups(self, guidance=True, warning=True):
+    """Stage TB-H: removes the popups of the chain's own display (the guidance lines, the red cancellation lines). Nothing else is touched."""
+    categories = ((TURNBACK_GUIDANCE_CATEGORY,) if guidance else ()) + ((TURNBACK_CANCEL_CATEGORY,) if warning else ())
+    if categories and any(p.get("category") in categories for p in (getattr(self, 'popups', None) or ())):
+        self.popups = [p for p in self.popups if p.get("category") not in categories]
+
+
+def turnback_cancel_show(self, now_ms):
+    """The train moved while the Jump was waiting: the guidance goes AT ONCE and the red two-line warning (the colour of the illegal-Jump warning) is shown for 5.0 s. The machine already holds the wait state."""
+    turnback_drop_popups(self)
+    for text in TURNBACK_CANCEL_TEXTS:
+        add_score_popup(self, 0, text, COLOR_B_EMG, "big", TURNBACK_CANCEL_CATEGORY, now_ms / 1000.0)
+    turnback_diag(self, "turnback-wait-cancelled", count=turnback_machine_of(self).cancel_count)
+
+
+def turnback_restop_show(self, now_ms):
+    """The re-stop was established (speed 0 inside the author range of A): the warning goes AT ONCE and the two-line guidance of the new 5.0 s is shown (turnback_display_update)."""
+    turnback_drop_popups(self)
+    turnback_display_update(self, now_ms / 1000.0)
+    turnback_diag(self, "turnback-restop", count=turnback_machine_of(self).restop_count)
+
+
+def turnback_other_arrival(self, station_index):
+    """Stage TB-H: a FORMAL arrival (never the landing of a Jump) at `station_index` while the chain waits. True = the scoring was aborted (the train was driven from A to B by itself): the caller stops judging this
+    arrival, so B is not scored as an ordinary arrival. Any other station only drops the wait state."""
+    machine = self.__dict__.get('turnback_machine')
+    if machine is None or machine.state not in pseudo_turnback_machine.WAITING:
+        return False
+    if getattr(self, 'jump_lock', False) or getattr(self, 'is_official_jumping', False):
+        return False
+    aborted = False
+    for act in machine.on_other_arrival(station_index):
+        turnback_drop_popups(self)
+        if act[0] == "abort_scoring_self_drive_b":
+            turnback_stop_scoring(self, act[1])
+            aborted = True
+    return aborted
+
+
+def turnback_arrival_begin(self, current_time, station_index, stop_position=None):
     """The arrival at `station_index` was judged by evaluate_arrival at the BVE time `current_time`. Starts the chain when the station is the A of a pair. Returns True for a pair A (the caller then does not create
     the A checkpoint). The start time of the 5.0 s is THIS tick's BVE time (never a wall clock, a door or a target change)."""
     if turnback_pair_a_of(self, station_index) is None:
@@ -1343,7 +1425,7 @@ def turnback_arrival_begin(self, current_time, station_index):
     resolved_end = snapshot.end if snapshot is not None else (explicit_end if explicit_end != -1 else terminal)
     list_id = getattr(station_list, 'list_id', None) or getattr(self, 'bve_list_id', "")
     machine.on_arrival(int(round(current_time * 1000.0)), station_index, getattr(self, 'bve_arr_seq', -1), getattr(self, 'current_scenario_id', -1), list_id, len(station_list),
-                       section_start_index(self), resolved_end, explicit_end, True)
+                       section_start_index(self), resolved_end, explicit_end, True, stop_range=turnback_stop_range_capture(self, stop_position))
     return True                                         # a pair A never has a checkpoint, however many times the same arrival is judged (the machine itself starts one chain per arrival)
 
 
@@ -1365,6 +1447,8 @@ def turnback_display_update(self, current_time):
     """Once per scoring tick: shows the guidance in its window, in BVE time since the arrival (a paused clock does not move it, a repaint or the wall clock never does). The guidance popup ends at arrival + 5.0 s,
     where the Jump request is made (that time is decided by the machine from the arrival time alone; this display never moves it)."""
     machine = self.__dict__.get('turnback_machine')
+    if machine is not None and machine.state not in (pseudo_turnback_machine.RECOGNIZED, pseudo_turnback_machine.ARMED):
+        turnback_drop_popups(self, warning=(machine.state != pseudo_turnback_machine.RESTOP_WAIT))
     if machine is None or machine.state not in (pseudo_turnback_machine.RECOGNIZED, pseudo_turnback_machine.ARMED):
         return
     if not getattr(self, 'is_scoring_mode', False) or getattr(self, 'is_scoring_finished', False):
@@ -1373,8 +1457,10 @@ def turnback_display_update(self, current_time):
         return
     if any(p.get("category") == TURNBACK_GUIDANCE_CATEGORY for p in self.popups):
         return
-    add_score_popup(self, 0, TURNBACK_GUIDANCE_TEXT, COLOR_WHITE, "big", TURNBACK_GUIDANCE_CATEGORY, current_time)
-    self.popups[-1]["expire_time"] = machine.arrival_ms / 1000.0 + TURNBACK_TOTAL_SECONDS
+    # the first window of an arrival: one line; every window that starts at a re-stop: two lines (Stage TB-H). The window ends 5.0 s after its start, where the Jump request is made.
+    for text in ((TURNBACK_GUIDANCE_TEXT,) if machine.restop_count == 0 else (TURNBACK_GUIDANCE_TEXT, TURNBACK_RESTOP_GUIDANCE_TEXT)):
+        add_score_popup(self, 0, text, COLOR_WHITE, "big", TURNBACK_GUIDANCE_CATEGORY, current_time)
+        self.popups[-1]["expire_time"] = machine.window_ms / 1000.0 + TURNBACK_TOTAL_SECONDS
 
 
 def create_turnback_b_checkpoint(self, station_index, planned_time_ms=None):
@@ -1475,7 +1561,9 @@ def evaluate_arrival(self, current_time, arrival_target_loc=None):
     # Pseudo-turnback: the arrival at the A of a pair (StationIndex + PairSet only). Dormant (False, nothing changed) while no PairSet is published.
     popups_before = len(getattr(self, 'popups', []))
     # (PU-3 / PU-6: an arrival that is the landing of a Jump, or happens during one, is not a pair arrival)
-    is_turnback_a = identity_ok and not getattr(self, 'jump_lock', False) and not getattr(self, 'is_official_jumping', False) and turnback_arrival_begin(self, current_time, curr_sta_idx)
+    if identity_ok and turnback_other_arrival(self, curr_sta_idx):       # Stage TB-H: the train was driven from A to B by itself: the scoring is aborted, B is not scored as an ordinary arrival
+        return
+    is_turnback_a = identity_ok and not getattr(self, 'jump_lock', False) and not getattr(self, 'is_official_jumping', False) and turnback_arrival_begin(self, current_time, curr_sta_idx, p_loc)
 
     is_zero_stop = False
     if not getattr(self, 'is_first_station', False) and getattr(self, 'has_departed', False) and not getattr(self, 'has_scored_stop_this_station', False):

@@ -1805,7 +1805,9 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
                                "build_scoring_section", "active_scoring_section", "section_start_index", "section_end_judge_index", "scoring_section_housekeeping",
                                "turnback_fix_section", "turnback_session_active", "turnback_lifecycle_guard", "turnback_diag", "turnback_stop_scoring", "official_jump_f1_hold", "note_jump_settlement", "turnback_jump_available", "turnback_request", "turnback_establish_b", "turnback_landing_step", "turnback_drive",
                                    # Stage TB-H (on purpose): pair B untimed by contract - one PURE helper of the section (turnback_crossed_pairs; turnback_fix_section itself is untouched), the set of the crossed B (turnback_b_indexes) and the reason (untimed_reason); the points, the rules and the constants of the scoring are not among them (tests/test_pt_tbh_pairb_contract.py)
-                                   "turnback_crossed_pairs", "turnback_b_indexes", "untimed_reason"}, set(b))
+                                   "turnback_crossed_pairs", "turnback_b_indexes", "untimed_reason",
+                                   # Stage TB-H (A re-stop wait; on purpose): the strict facts of the wait, the kept range, the removal of the chain's own popups, the two displays, the arrival at another station; no score, no rule, no constant of the scoring (tests/test_pt_tbh_arestop.py)
+                                   "turnback_train_state", "turnback_stop_range_capture", "turnback_drop_popups", "turnback_cancel_show", "turnback_restop_show", "turnback_other_arrival"}, set(b))
         changed = sorted(n for n in a if a[n] != b[n])
         # only the diagnostic writer got the switch and (PID-D6) execute_retry's one transport line; no score, no rule, no constant
         # Phase ST-2a (on purpose): create_save_data takes the station of the checkpoint from the verified arrival index, evaluate_arrival names the judged position in its one call of it,

@@ -91,13 +91,14 @@ SCORING_LOGIC_AT_LJX1 = {
 TBC_ADDED_REGION_PINS = {
     "note_jump_settlement": ("whole", "7F9537E1BAC901576036DAB4DAD5A15822B0EE7CB3DF65C71F9E2509B23C34EA", 1),       # Stage TB-H Commit 2 (was BC5F15FD...): + a SUCCESSFUL Retry of the current generation takes jump_lock at its settlement (the landing of the Retry belongs to the Retry whatever the order the host reports the Jump); OD-TB-33 (was 88645BC2...): + the planned time of the Jump in the settlement record
     "official_jump_f1_hold": ("whole", "FE2CBC6C1FF1E06D9245061DF851E00C582A694713DA1534CA8FD6C38A478512", 1),
-    "turnback_drive": ("whole", "059E5770C886936A40A834D4A177A14738E72E42ADF0254F614111426CF2E9CE", 1),       # Stage TB-D (was EA4060E5...): + the housekeeping call that drops the scoring section snapshot of a Run that is over
-    "turnback_lifecycle_guard": ("whole", "4143485E797E130329ED9EA499CCD480A6E0C15E001BA54B87DE655AC8032370", 1),       # Stage TB-D (OD-TD-3, E10): newly names the jump contract - a START / Retry Jump in flight drops a chain that only waits in its 5.0 s window
+    "turnback_drive": ("whole", "D8706FED07DA49CE7C9139991B81D2BFE6A90E565DD7F8C95ACE02989E49C35F", 1),       # Stage TB-H A re-stop wait (was 059E5770...): the wait states ARMED / RESTOP_WAIT are ticked with the strict facts of the train (turnback_train_state) and the cancellation / re-stop displays are called; Stage TB-D (was EA4060E5...): + the housekeeping call that drops the scoring section snapshot of a Run that is over
+    "turnback_lifecycle_guard": ("whole", "E6E60E8446E7C99BC844B3A838CB0305B553C8C965777F79C93A0CEAC8FB6776", 1),       # Stage TB-H A re-stop wait (was 4143485E...): a START / Retry Jump in flight drops EVERY waiting chain (RESTOP_WAIT too), a stale chain also drops its popups, a pair that left the Run drops the chain; Stage TB-D (OD-TD-3, E10): newly names the jump contract - a START / Retry Jump in flight drops a chain that only waits in its 5.0 s window
     "turnback_establish_b": ("whole", "7B14B7E48E54B39F6FD6CA9BBEA3EA924B9F8DDDEBB203B392C9ACDE37B78E09", 1),       # OD-TB-33 (was 9C141C45...): the B checkpoint keeps the planned time of the Jump (fail-closed when the record has none)
     "turnback_jump_available": ("whole", "D8BC38CB48D0C62417AED6530AE7CEFF28C645FFBF7D457054FED2FD9418CEEB", 1),
     "turnback_landing_step": ("whole", "9DBEBA400DD7061FEA02BB3A3707AEE841E99B399B9B465DA8472E54A3F6ABA8", 1),
     "turnback_request": ("whole", "C12927B98D42ACA406E6CBD2244CD60E74EBD80A559E9BE50447353B72163F53", 1),       # TB-G C-01 (was 76625C7C...): + self.jump_lock = True right after begin_official_jump (the landing at B belongs to the chain; the Current settlement absorbs the JUMP counter so the jump rule never sets it); OD-TB-33 (was FAF4F182...): the Jump to B is planned by Overlay._scoring_start_plan(snapshot, index) - no time formula of its own
     "turnback_stop_scoring": ("whole", "0163DC2175635020D457F9012E17F3AF02A4D94F6AC1116B568A987BEC8ADD99", 1),
+    "turnback_other_arrival": ("whole", "1FE2E632766C48D11C235968E5BF70874D79EB5B576051C7A0C68AEB9E7B317B", 1),       # Stage TB-H A re-stop wait (a NEW declared region): a FORMAL arrival (never the landing of a Jump: jump_lock / is_official_jumping) while the chain waits; the train driven from A to B by itself aborts the scoring (fail-closed)
 }
 
 JUMP_UNITS = {
@@ -233,7 +234,7 @@ TIMEFIX_B3_UPDATE_PHYSICS_PIN = ("slice", "76263B7C83BB397626D63F1678A78EC0A52A4
 # Pseudo-turnback A-side seam (Stage TB-B, an INTENDED change of a scoring region, not of the jump contract): evaluate_arrival starts the chain of a pair A only when no Jump landing or outstanding Jump is involved
 # (one statement names `jump_lock` and `is_official_jumping`: PU-3 / PU-6), so the slice of the function grows from 3 to 5 records; the Jump contract regions (begin_official_jump, execute_retry, the JUMP detection of
 # update_physics_and_scoring) are unchanged. The new digest is pinned on its own (tests/test_pt_scoring_continuity.py, test_pt_display_contract.py).
-PSEUDO_TURNBACK_EVALUATE_ARRIVAL_PIN = ("slice", "F86365E156A9C2ACD5097B692DE164351AE2C31F739E07D54296850D4EA605BA", 5)
+PSEUDO_TURNBACK_EVALUATE_ARRIVAL_PIN = ("slice", "1799B91A5825CC6369A569357692F6E5BF467D17FF1D8A8F5C602F44B0E3FCA3", 5)       # Stage TB-H A re-stop wait (was F86365E1..., 5 records): the same statement now also hands the arrival position to turnback_arrival_begin (the stop range of A); no record added
 
 STATIONS = [0.0, 1000.0, 2000.0, 3000.0]
 SCORING_TOKENS = ["time", "speed", "loc", "station", "door", "handle", "brake_type", "brake_cab", "prates"]

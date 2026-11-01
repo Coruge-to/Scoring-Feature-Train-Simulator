@@ -1751,10 +1751,16 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
                   "turnback_fix_section", "turnback_session_active", "turnback_lifecycle_guard", "turnback_diag", "turnback_stop_scoring", "official_jump_f1_hold", "note_jump_settlement", "turnback_jump_available", "turnback_request", "turnback_establish_b", "turnback_landing_step", "turnback_drive",
                   # Stage TB-H (on purpose): pair B untimed by contract (one pure section helper, the set of crossed B, the reason; two reason constants; tests/test_pt_tbh_pairb_contract.py)
                   "turnback_crossed_pairs", "turnback_b_indexes", "untimed_reason",
+                  # Stage TB-H (A re-stop wait; on purpose): the strict facts of the re-stop wait (speed != 0 / inside the author range of A), the range kept at the arrival, the removal of the chain's own popups, the two displays of the wait, the arrival at another station (tests/test_pt_tbh_arestop.py)
+                  "turnback_train_state", "turnback_stop_range_capture", "turnback_drop_popups", "turnback_cancel_show", "turnback_restop_show", "turnback_other_arrival",
                   "Assign(targets=[Name(id='UNTIMED_SCORING_START', ctx=Store())], value=Constant(value='UNTIMED_SCORING_START'))",
                   "Assign(targets=[Name(id='UNTIMED_TURNBACK_B', ctx=Store())], value=Constant(value='UNTIMED_TURNBACK_B'))",
                   "Assign(targets=[Name(id='TURNBACK_GUIDANCE_CATEGORY', ctx=Store())], value=Constant(value='疑似折り返し'))",
-                  "Assign(targets=[Name(id='TURNBACK_GUIDANCE_TEXT', ctx=Store())], value=Constant(value='次の発車位置へ移動します。'))",
+                  # Stage TB-H (A re-stop wait; on purpose): the first guidance line changes with Owner ruling R7; one more guidance line, the two red cancellation lines and their category (tests/test_pt_tbh_arestop.py)
+                  "Assign(targets=[Name(id='TURNBACK_GUIDANCE_TEXT', ctx=Store())], value=Constant(value='発車位置へ移動します。'))",
+                  "Assign(targets=[Name(id='TURNBACK_RESTOP_GUIDANCE_TEXT', ctx=Store())], value=Constant(value='列車を動かさないでください。'))",
+                  "Assign(targets=[Name(id='TURNBACK_CANCEL_TEXTS', ctx=Store())], value=Tuple(elts=[Constant(value='発車位置への移動がキャンセルされました。'), Constant(value='許容範囲内に再度列車を停止させてください。')], ctx=Load()))",
+                  "Assign(targets=[Name(id='TURNBACK_CANCEL_CATEGORY', ctx=Store())], value=Constant(value='疑似折り返し中止'))",
                   "Assign(targets=[Name(id='TURNBACK_SPECIAL_SECONDS', ctx=Store())], value=BinOp(left=Attribute(value=Name(id='pseudo_turnback_machine', ctx=Load()), attr='SPECIAL_DISPLAY_MS', ctx=Load()), op=Div(), right=Constant(value=1000.0)))",
                   "Assign(targets=[Name(id='TURNBACK_TOTAL_SECONDS', ctx=Store())], value=BinOp(left=Attribute(value=Name(id='pseudo_turnback_machine', ctx=Load()), attr='REQUEST_AFTER_MS', ctx=Load()), op=Div(), right=Constant(value=1000.0)))"}),
                 ("utils.py", old_utils, {"write_desktop_log"}, {"set_desktop_log_enabled", "desktop_log_enabled", "desktop_log_requested"}),

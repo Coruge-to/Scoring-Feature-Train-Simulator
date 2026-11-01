@@ -365,13 +365,14 @@ class G_Extra(Base):
         self.assertEqual(len(self.request_at(s, s.o.bve_time_ms)), 1)
 
     def test_OD_TB_16_the_guidance_names_none_of_the_internal_words(self):
+        # Stage TB-H (A re-stop wait; on purpose): Owner ruling R7 (C-01 retest Close, 2026-11-01) changes the first guidance line from the old 'next departure position' text; the other words and the rules of this test are unchanged
         for word in ("jump", "ジャンプ", "transaction", "completion", "トランザクション", "完了通知"):
             self.assertNotIn(word, self.S.TURNBACK_GUIDANCE_TEXT.lower())
             self.assertNotIn(word, self.S.TURNBACK_GUIDANCE_CATEGORY.lower())
-        self.assertEqual(self.S.TURNBACK_GUIDANCE_TEXT, "次の発車位置へ移動します。")
+        self.assertEqual(self.S.TURNBACK_GUIDANCE_TEXT, "発車位置へ移動します。")
         self.assertEqual(self.S.TURNBACK_GUIDANCE_CATEGORY, "疑似折り返し")
         s, t = self.arrived("plain", 0.3)
-        self.assertEqual([p["text"] for p in self.guides(s)], ["次の発車位置へ移動します。"])
+        self.assertEqual([p["text"] for p in self.guides(s)], ["発車位置へ移動します。"])
 
     def test_TB_STYLE_the_guidance_ends_with_one_full_stop_and_has_the_colour_of_the_farewell(self):
         """Style commit (Owner OD-C01-FIX-2): the text ends with exactly one '。' and the popup is drawn as '運転お疲れ様でした。' is: COLOR_WHITE, 'big', the black outline of utils.get_outline_color."""
@@ -379,7 +380,7 @@ class G_Extra(Base):
         import config
         import utils
         text = self.S.TURNBACK_GUIDANCE_TEXT
-        self.assertEqual(text, "次の発車位置へ移動します。")
+        self.assertEqual(text, "発車位置へ移動します。")
         self.assertEqual(text.count("。"), 1)
         self.assertTrue(text.endswith("。"))
         s, t = self.arrived("plain", 0.3)

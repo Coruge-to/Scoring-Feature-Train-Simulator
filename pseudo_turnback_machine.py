@@ -21,6 +21,8 @@ SPECIAL_DISPLAY_MS = 3000            # the special arrival popup (basic braking 
 GUIDE_TOTAL_MS = REQUEST_AFTER_MS    # the guidance ends where the request is made
 
 JUMP_UNAVAILABLE_REASON = "pseudo-turnback-jump-unavailable"
+SELF_DRIVE_B_REASON = "pseudo-turnback-self-drive-b"      # Stage TB-H (A re-stop wait): the train was driven from A to B by itself; the planned Jump to B must never be sent
+CANCEL_WARNING_MS = 5000                                   # the red cancellation warning is shown for 5.0 s (derived display state only)
 B_STATE_FAILED_REASON = "pseudo-turnback-b-state-invariant-failed"
 B_WATCH_LIMIT_MS = 1000              # OD-TB-28: the positive BVE-time advance, counted from the first B-side telemetry time after the Jump, within which B has to be established
 
@@ -30,14 +32,20 @@ DISPLAY_GUIDANCE = "TURNBACK_GUIDANCE"
 DISPLAY_REQUEST_READY = "JUMP_REQUEST_READY"
 DISPLAY_UNAVAILABLE_ABORT = "JUMP_UNAVAILABLE_ABORT"
 DISPLAY_REQUESTED = "JUMP_REQUESTED"
+DISPLAY_CANCEL_WARNING = "CANCEL_WARNING"
+DISPLAY_RESTOP_WAIT = "RESTOP_WAIT"
 
 IDLE = "idle"
 RECOGNIZED = "recognized"
 ARMED = "armed"
+RESTOP_WAIT = "restop-wait"      # Stage TB-H: the planned Jump was cancelled because the train moved; waits for a re-stop inside the author range of the same A (no Jump in this state)
 REQUESTED = "requested"
 COMPLETED = "completed"
 FAILED = "failed"
 DISCARDED = "discarded"
+
+WAITING = (RECOGNIZED, ARMED, RESTOP_WAIT)         # the chain exists and the Jump has not been requested yet
+LIVE = WAITING + (REQUESTED,)
 
 CONTINUE = 0
 COMPLETE_AFTER_JUMP = 1
@@ -121,6 +129,12 @@ class TurnbackMachine:
         self.has_special = False
         self.awaiting_b = False
         self.failed_reason = None
+        self.jump_earliest_ms = None   # Stage TB-H: the BVE time at or after which the Jump may be requested: arrival + 5.0 s, then re-stop + 5.0 s (arrival_ms itself is never overwritten)
+        self.window_ms = None          # the start of the CURRENT guidance window: the arrival, then every re-stop
+        self.stop_range = None         # (A position, margin_f, margin_b) of the arrival tick: the author-defined stop range of THIS A (never the 330 m scoring range, never the next target's)
+        self.cancel_count = 0
+        self.restop_count = 0
+        self.cancel_ms = None
 
     def _clear_session(self):
         """Everything that belongs to ONE scoring session (OD-TB-26 / CH-11): the section fixed at the scoring start button, the last settlement of a Jump transaction, the B watch and the landing watch."""
@@ -165,7 +179,7 @@ class TurnbackMachine:
 
     def reset_world(self):
         """A new scenario instance / F5 / scenario close / telemetry epoch: nothing is carried over (PR-R20, R21, R23)."""
-        had = self.state in (RECOGNIZED, ARMED, REQUESTED) or self.awaiting_b
+        had = self.state in LIVE or self.awaiting_b
         self.issued = set()
         self._done_keys = set()
         self._clear_chain()
@@ -174,11 +188,12 @@ class TurnbackMachine:
         return [("discard_pending", "world-reset")] if had else []
 
     # ------------------------------------------------------------------ arrival
-    def on_arrival(self, now_ms, a_index, arr_seq, generation, list_id, station_count, start_idx, resolved_end_idx, explicit_end_idx, scoring_active):
-        """The host judged an arrival at StationIndex `a_index` (its own, existing arrival detection; now_ms is the BVE time of the tick that ran evaluate_arrival). Returns actions (always empty: the chain only starts)."""
+    def on_arrival(self, now_ms, a_index, arr_seq, generation, list_id, station_count, start_idx, resolved_end_idx, explicit_end_idx, scoring_active, stop_range=None):
+        """The host judged an arrival at StationIndex `a_index` (its own, existing arrival detection; now_ms is the BVE time of the tick that ran evaluate_arrival). Returns actions (always empty: the chain only starts).
+        `stop_range` (Stage TB-H): (position of A, margin_f, margin_b) as the arrival tick saw them - the author-defined stop range that a re-stop is judged against."""
         if self.pairset is None or not scoring_active:
             return []
-        if self.state in (RECOGNIZED, ARMED, REQUESTED) or self.awaiting_b:
+        if self.state in LIVE or self.awaiting_b:
             return []                                           # a chain is already running: a duplicate / extra arrival never starts a second one
         if self.fixed is not None:                              # the section was fixed at the scoring start button: nothing is derived again here
             pair = self.fixed_by_a.get(a_index)
@@ -190,6 +205,11 @@ class TurnbackMachine:
         if key in self.issued:                                  # PU-7
             return []
         self.pair, self.key, self.generation, self.arrival_ms = pair, key, generation, now_ms
+        self.jump_earliest_ms = now_ms + REQUEST_AFTER_MS      # Stage TB-H: fixed at the arrival
+        self.window_ms = now_ms
+        self.stop_range = stop_range
+        self.cancel_count = self.restop_count = 0
+        self.cancel_ms = None
         self.timing_scored = False
         self.has_special = False
         self.failed_reason = None
@@ -211,9 +231,9 @@ class TurnbackMachine:
 
     def display_phase(self, now_ms):
         """'special' (0-3 s, only with a special popup), 'guide' (3-5 s with a special popup, 0-5 s without) or None, in BVE time since the arrival."""
-        if self.state not in (RECOGNIZED, ARMED) or self.arrival_ms is None:
+        if self.state not in (RECOGNIZED, ARMED) or self.window_ms is None:
             return None
-        dt = now_ms - self.arrival_ms
+        dt = now_ms - self.window_ms
         if dt < 0 or dt >= GUIDE_TOTAL_MS:
             return None
         if self.has_special and dt < SPECIAL_DISPLAY_MS:
@@ -226,26 +246,47 @@ class TurnbackMachine:
             return DISPLAY_REQUESTED
         if self.state == FAILED and self.failed_reason == JUMP_UNAVAILABLE_REASON:
             return DISPLAY_UNAVAILABLE_ABORT
+        if self.state == RESTOP_WAIT:
+            if self.cancel_ms is not None and 0 <= now_ms - self.cancel_ms < CANCEL_WARNING_MS:
+                return DISPLAY_CANCEL_WARNING
+            return DISPLAY_RESTOP_WAIT
         phase = self.display_phase(now_ms)
         if phase == "special":
             return DISPLAY_SPECIAL_3S
         if phase == "guide":
             return DISPLAY_GUIDANCE
-        if self.state == ARMED and self.arrival_ms is not None and now_ms - self.arrival_ms >= REQUEST_AFTER_MS:
+        if self.state == ARMED and self.jump_earliest_ms is not None and now_ms >= self.jump_earliest_ms:
             return DISPLAY_REQUEST_READY
         return None
 
     # ------------------------------------------------------------------ time
-    def tick(self, now_ms, generation, scoring_active, paused=False, menu_open=False, jump_available=True):
-        """The request is made once, at BVE-time arrival + 5.0 s, from the arrival time alone (never from the display state). Nothing here looks at a door.
-        `jump_available` False at that moment: nothing is requested, the chain ends in FAILED and the host aborts the scoring (once)."""
-        if self.state != ARMED:
+    def tick(self, now_ms, generation, scoring_active, paused=False, menu_open=False, jump_available=True, moving=None, in_stop_range=None):
+        """The request is made once, at the BVE time jump_earliest_ms (arrival + 5.0 s; after a re-stop: re-stop + 5.0 s), from that time alone (never from the display state). Nothing here looks at a door.
+        `moving` / `in_stop_range` (Stage TB-H) are the host's two facts, already judged strictly (the machine knows no speed value and no position): moving True while the Jump is waiting cancels it (the chain enters
+        RESTOP_WAIT, no Jump); in RESTOP_WAIT moving False AND in_stop_range True is the re-stop (a new 5.0 s). None = not observed: nothing is cancelled and nothing is re-stopped.
+        `jump_available` False at the request moment: nothing is requested, the chain ends in FAILED and the host aborts the scoring (once)."""
+        if self.state not in (ARMED, RESTOP_WAIT):
             return []
         if generation != self.generation or not scoring_active:
             return self._discard("generation" if generation != self.generation else "scoring-ended")
         if paused or menu_open:
             return []
-        if now_ms - self.arrival_ms < REQUEST_AFTER_MS:
+        if self.state == RESTOP_WAIT:
+            if moving is not False or in_stop_range is not True:
+                return []
+            self.state = ARMED
+            self.restop_count += 1
+            self.window_ms = now_ms
+            self.jump_earliest_ms = now_ms + REQUEST_AFTER_MS
+            self.has_special = False
+            self.cancel_ms = None
+            return [("restop_established", {"count": self.restop_count, "window_ms": now_ms})]
+        if moving is True:
+            self.state = RESTOP_WAIT
+            self.cancel_count += 1
+            self.cancel_ms = now_ms
+            return [("cancel_jump", {"count": self.cancel_count, "at_ms": now_ms})]
+        if now_ms < self.jump_earliest_ms:
             return []
         self.issued.add(self.key)
         if not jump_available:
@@ -280,7 +321,40 @@ class TurnbackMachine:
         if self.state == REQUESTED:
             self.state = FAILED
             return [("failed", reason)]
-        return self._discard(reason) if self.state in (RECOGNIZED, ARMED) else []
+        return self._discard(reason) if self.state in WAITING else []
+
+    def on_other_arrival(self, station_index):
+        """Stage TB-H: the host judged a FORMAL arrival (not a Jump landing) at `station_index` while the chain waits. A itself: nothing. B of this pair (the train was driven there): the Jump to B is never sent, the chain
+        is closed as a FAILURE and the host aborts the scoring (fail-closed, SELF_DRIVE_B_REASON; B is not scored as an ordinary arrival). Any other station: the wait state is dropped."""
+        if self.state not in WAITING or self.pair is None:
+            return []
+        if station_index == self.pair.arrival:
+            return []
+        if station_index == self.pair.departure:
+            self.state = FAILED
+            self.failed_reason = SELF_DRIVE_B_REASON
+            return [("abort_scoring_self_drive_b", SELF_DRIVE_B_REASON)]
+        return self._drop("other-station-arrival")
+
+    def drop_if_pair_not_in_run(self):
+        """Stage TB-H: the pair of a waiting chain must still be one of the pairs the Run fixed AND of the published PairSet; otherwise (RunPairSet changed) the wait state is dropped. A section that was
+        never fixed (fixed is None) is judged by the PairSet only."""
+        if self.state not in WAITING or self.pair is None:
+            return []
+        in_set = self.pairset is not None and self.pair in self.pairset.pairs
+        in_run = self.fixed is None or self.pair in self.fixed
+        return [] if (in_set and in_run) else self._drop("run-pairset-changed")
+
+    def _drop(self, reason):
+        """Stage TB-H: a contract drop of the waiting chain (nothing of it stays; the machine is idle again, as after a Retry)."""
+        acts = self._discard(reason)
+        if self.state == DISCARDED:
+            self.state = IDLE
+        return acts
+
+    def drop_waiting(self, reason):
+        """Stage TB-H: the host drops a chain that waits for a re-stop (a START / Retry Jump is in flight). Public wrapper of the contract drop."""
+        return self._drop(reason) if self.state in WAITING else []
 
     def on_b_established(self, now_ms):
         """The host reports: B StationIndex resynchronised, B target established, B start state established. Only now ONE B checkpoint (ContinueScoring)."""
@@ -294,7 +368,7 @@ class TurnbackMachine:
 
     # ------------------------------------------------------------------ discard
     def _discard(self, reason):
-        had = self.state in (RECOGNIZED, ARMED, REQUESTED) or self.awaiting_b
+        had = self.state in LIVE or self.awaiting_b
         self._clear_chain()
         self.state = DISCARDED if had else IDLE
         return [("discard_pending", reason)] if had else []
