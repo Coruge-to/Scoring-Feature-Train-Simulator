@@ -208,5 +208,119 @@ class A_TheFlowEqualsTheStartAtB(Base):
         self.assertEqual([(p["category"], p["text"]) for p in o.popups if (p["category"], p["text"]) not in popups], [])
 
 
+class C_TheLandingAtBScoresCorrectly(Base):
+    """TB-F Stage 1 (OD-CR-A / OD-CR-B, canon G-E33-1..3): DIRECT assertions for the pseudo-turnback landing at B that RF-1..RF-6 only compare against the START-at-B reference (a mutation that damages
+    BOTH flows equally survived the comparison). Test code only; the product is driven through the same real functions as above.
+    G-E33-1  the out-of-range stop flag is never raised from the landing to the arrival at C (close / far x early / late x START / turnback) and the anchor of the landing is supplied AT THE SETTLEMENT
+             (the anchor source; the later confirmation of the establishment must not be the only supply)
+    G-E33-2  the stop position and the basic braking at C are credited after the landing at B (turnback, close / far x early / late), equal to the START-at-B reference
+    G-E33-3  the sign of the speed on the switch tick and around the landing: +0.0, -0.0, reverse (-0.1 -> +0.3) and a roll back at B before the departure give no flag and the same credit"""
+
+    def land_seen(self, purpose, c_dist, late):
+        """land() plus the anchor right after the settlement (before any later tick)."""
+        seen = []
+        original = self.P.Scene.complete
+
+        def complete(scene, **over):
+            original(scene, **over)
+            seen.append(scene.o.prev_actual_stop_loc)
+        self.P.Scene.complete = complete
+        try:
+            s, landed = self.land(purpose, c_dist, late)
+        finally:
+            self.P.Scene.complete = original
+        return s, landed, seen
+
+    def watch(self, s):
+        flags = []
+        original = s.tick
+
+        def tick(*a, **k):
+            original(*a, **k)
+            flags.append(bool(s.o.is_stopped_out_of_range))
+        s.tick = tick
+        return flags
+
+    def run_tail(self, s, switch_speeds=(0.0,), after_switch_speed=1.5, roll_back=False):
+        """B -> C with the product telemetry: [the roll back at B], the switch tick(s), the departure, a stepwise braking (notch 3, 2, 1) and the stop inside C's range, the door-open edge at C, the dwell."""
+        o = s.o
+        b, c = s.sl[2], s.sl[3]
+        cl, bl = c["location"], b["location"]
+        o.bve_time_ms = b["raw_dep"] - 100
+        o.bve_next_time = b["raw_dep"]
+        s.step(2, bve_door=0, bve_speed=0.0)
+        if roll_back:
+            s.step(1, bve_speed=-0.1, bve_location=bl - 6.0)
+            s.step(1, bve_speed=-0.1, bve_location=bl - 7.0)
+            s.step(1, bve_speed=0.3, bve_location=bl - 1.0)
+            s.step(1, bve_speed=0.0, bve_location=bl)
+        for i, v in enumerate(switch_speeds):
+            if i == 0:
+                s.step(1, advance_ms=100, bve_next_loc=cl, bve_tgt_idx=3, bve_speed=v)
+            else:
+                s.step(1, bve_speed=v, bve_location=bl + 0.02 * i)
+        s.step(3, bve_speed=after_switch_speed, bve_location=bl + 3.0)
+        o.bve_is_pass = 0
+        s.step(2, bve_speed=10.0, bve_location=bl + min(5.0, (cl - bl) * 0.1), bve_brk_notch=0)
+        s.step(2, bve_speed=20.0, bve_location=bl + min(15.0, (cl - bl) * 0.3), bve_brk_notch=0)
+        s.step(25, bve_speed=15.0, bve_location=cl - min(25.0, (cl - bl) * 0.5), bve_brk_notch=3)
+        s.step(25, bve_speed=8.0, bve_location=cl - min(8.0, (cl - bl) * 0.2), bve_brk_notch=2)
+        s.step(3, bve_speed=0.0, bve_location=cl - 0.03, bve_brk_notch=1)
+        s.step(1, bve_door=1, bve_arr_idx=3, bve_arr_seq=3)
+        s.step(10)
+
+    def credit(self, s, landed):
+        o = s.o
+        return {k: o.score_details[k] - landed["details"][k] for k in ("stop", "base_brake")}
+
+    def test_GE33_1_no_out_of_range_flag_and_the_anchor_is_supplied_at_the_settlement(self):
+        for c_dist, close in ((self.CLOSE, True), (self.FAR, False)):
+            for late in (False, True):
+                for purpose in ("start", "turnback"):
+                    with self.subTest(close=close, late=late, purpose=purpose):
+                        s, landed, seen = self.land_seen(purpose, c_dist, late)
+                        self.assertEqual(seen, [s.sl[2]["location"]], "the anchor right after the settlement is the ACTUAL landing position of B (the settlement supplies it)")
+                        self.assertFalse(s.o.is_stopped_out_of_range, "no flag at the landing")
+                        flags = self.watch(s)
+                        self.run_tail(s)
+                        self.assertTrue(flags and not any(flags), "the out-of-range stop flag is never raised from the departure of B to the arrival at C")
+                        self.assertFalse(s.o.is_stopped_out_of_range)
+
+    def test_GE33_2_the_stop_position_and_the_basic_braking_of_C_are_credited_after_the_landing_at_B(self):
+        for c_dist, close in ((self.CLOSE, True), (self.FAR, False)):
+            for late in (False, True):
+                got = {}
+                for purpose in ("start", "turnback"):
+                    s, landed = self.land(purpose, c_dist, late)
+                    self.run_tail(s)
+                    got[purpose] = self.credit(s, landed)
+                with self.subTest(close=close, late=late):
+                    self.assertGreater(got["turnback"]["stop"], 0, "the stop position of C is credited after the landing at B")
+                    self.assertGreater(got["turnback"]["base_brake"], 0, "the basic braking of C is credited after the landing at B")
+                    self.assertEqual(got["turnback"], got["start"], "= the START-at-B reference")
+
+    def test_GE33_3_the_sign_of_the_speed_around_the_landing_gives_no_flag_and_the_same_credit(self):
+        cases = (("+0.0", dict(switch_speeds=(0.0,))), ("-0.0", dict(switch_speeds=(-0.0,))), ("reverse -0.1 -> +0.3", dict(switch_speeds=(-0.1, 0.3), after_switch_speed=1.5)),
+                 ("roll back at B before the departure", dict(switch_speeds=(0.0,), roll_back=True)))
+        for c_dist, close in ((self.CLOSE, True), (self.FAR, False)):
+            reference = None
+            for label, kw in cases:
+                with self.subTest(close=close, case=label):
+                    got = {}
+                    for purpose in ("start", "turnback"):
+                        s, landed = self.land(purpose, c_dist, False)
+                        flags = self.watch(s)
+                        self.run_tail(s, **kw)
+                        self.assertTrue(flags and not any(flags), "a zero or a reversing speed is no stop outside C's range: %s (%s)" % (label, purpose))
+                        got[purpose] = (self.credit(s, landed), s.o.score - landed["score"])
+                    self.assertGreater(got["turnback"][0]["stop"], 0, "the stop position of C is credited")
+                    self.assertEqual(got["turnback"], got["start"], "= the START-at-B reference (the roll back at B is penalised by the ordinary roll rules on both)")
+                    if not kw.get("roll_back"):
+                        self.assertGreater(got["turnback"][0]["base_brake"], 0)
+                        if reference is None:
+                            reference = got["turnback"]
+                        self.assertEqual(got["turnback"], reference, "the same credit whatever the sign of the speed around the switch")
+
+
 if __name__ == "__main__":
     unittest.main()
