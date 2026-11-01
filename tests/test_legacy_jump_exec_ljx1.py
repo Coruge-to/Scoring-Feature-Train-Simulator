@@ -96,7 +96,7 @@ TBC_ADDED_REGION_PINS = {
     "turnback_establish_b": ("whole", "7B14B7E48E54B39F6FD6CA9BBEA3EA924B9F8DDDEBB203B392C9ACDE37B78E09", 1),       # OD-TB-33 (was 9C141C45...): the B checkpoint keeps the planned time of the Jump (fail-closed when the record has none)
     "turnback_jump_available": ("whole", "D8BC38CB48D0C62417AED6530AE7CEFF28C645FFBF7D457054FED2FD9418CEEB", 1),
     "turnback_landing_step": ("whole", "9DBEBA400DD7061FEA02BB3A3707AEE841E99B399B9B465DA8472E54A3F6ABA8", 1),
-    "turnback_request": ("whole", "76625C7CED5C0F739546F209A054A0631FB943279D501B4761E6E0309D535A27", 1),       # OD-TB-33 (was FAF4F182...): the Jump to B is planned by Overlay._scoring_start_plan(snapshot, index) - no time formula of its own
+    "turnback_request": ("whole", "C12927B98D42ACA406E6CBD2244CD60E74EBD80A559E9BE50447353B72163F53", 1),       # TB-G C-01 (was 76625C7C...): + self.jump_lock = True right after begin_official_jump (the landing at B belongs to the chain; the Current settlement absorbs the JUMP counter so the jump rule never sets it); OD-TB-33 (was FAF4F182...): the Jump to B is planned by Overlay._scoring_start_plan(snapshot, index) - no time formula of its own
     "turnback_stop_scoring": ("whole", "0163DC2175635020D457F9012E17F3AF02A4D94F6AC1116B568A987BEC8ADD99", 1),
 }
 

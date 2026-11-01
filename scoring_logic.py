@@ -1164,6 +1164,7 @@ def turnback_request(self, request):
     machine.settlement = None
     reset_station_evaluation_state(self)
     begin_official_jump(self, b_location, b_time)
+    self.jump_lock = True       # TB-G C-01: the landing at B belongs to this chain, never to the ordinary arrival rules (as the START / Retry landing); the Current completion absorbs the sender's JUMP counter, so the jump rule alone may never set it. Released by the first departure from B.
     request_id = self.send_jump_command(planned.text)
     self._open_jump_transaction(jump_transaction.JUMP_TURNBACK, planned, request_id)
 

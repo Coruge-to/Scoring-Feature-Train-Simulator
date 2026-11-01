@@ -92,7 +92,7 @@
     {"set": "python", "path": "pseudo_turnback_contract.py", "blob_sha256": "A85E49C4980818DC84FBE68EB73D51877781314C2616DDF1503268D8833E21E4", "blob_size": 4198, "blob_eol": "lf"},
     {"set": "python", "path": "pseudo_turnback_machine.py", "blob_sha256": "BF3B98339E507DE67D0CEB4928E3862EE8E23980624040A81410A11C9CEECF5A", "blob_size": 17380, "blob_eol": "lf"},
     {"set": "python", "path": "route_pairset.py", "blob_sha256": "6CE04A9F7AB33586783158CDAD9A1CE601905F01D47918C5EFBA0745749D110E", "blob_size": 15935, "blob_eol": "lf"},
-    {"set": "python", "path": "scoring_logic.py", "blob_sha256": "9B9CC825568518752BD1BCF26D856D72AB3CBD2D1FA8ABAA8B1F034B915EBA41", "blob_size": 123533, "blob_eol": "lf"},
+    {"set": "python", "path": "scoring_logic.py", "blob_sha256": "41B7C9700155161BDD9FF914586196C0E7B2116025AB68317D207968F19D16C3", "blob_size": 123825, "blob_eol": "lf"},
     {"set": "python", "path": "station_identity.py", "blob_sha256": "4D0E6E5A5AACF93D379735F485AEC66FC48C8F0F0C5B04805DC86CAB230BE3B5", "blob_size": 44027, "blob_eol": "lf"},
     {"set": "python", "path": "station_index_contract.py", "blob_sha256": "E95E0D446D8AD7002EDFC3D7E638AF93D127BBAA473374DA4F1CD29F9053CAAD", "blob_size": 23406, "blob_eol": "lf"},
     {"set": "python", "path": "telemetry_contract.py", "blob_sha256": "1675EE0677AA241706CB2E0219DDD6A24AD7C35B3F78F9751D625DCA56CC6609", "blob_size": 11254, "blob_eol": "lf"},
@@ -133,5 +133,5 @@
     {"set": "shared", "path": "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryContract.cs", "blob_sha256": "ABDBBF4C5BA1567AABC600B28283C87F30BCB4019D82E2A1574B9C847E63B694", "blob_size": 8953, "blob_eol": "lf"},
     {"set": "shared", "path": "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs", "blob_sha256": "9D6C47493457FD840E8CA5186C8E16181F0B5CF85C10721087C9098DD6644680", "blob_size": 6615, "blob_eol": "lf"}
   ],
-  "fingerprint": "0FE2BE3F7E2781A7252D0FEAEB7522EADD0EB190D04F6F0034FBE3D83EFF7BF8"
+  "fingerprint": "C5D40571BB2EF4B11492FEDEE12B56F9A9EBECBF3FD50E5F754E8FB128AA0A8A"
 }
