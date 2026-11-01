@@ -972,6 +972,52 @@ def turnback_fix_section(self):
     machine.fix_section(crossed, getattr(self, 'current_scenario_id', -1))
 
 
+def turnback_crossed_pairs(self, start, explicit_end):
+    """PURE (Stage TB-H): the pairs that the section (start, end) crosses - PairSet and StationIndex only (no name, position, distance, door, indicator lamp or signalFlag). () without a machine / PairSet / station list.
+    It is the SAME decision as turnback_fix_section (which stays byte-identical and writes); the scoring start button fixes exactly this set, the menus (timing screen, theoretical score) read it before the button
+    (tests/test_pt_tbh_pairb_contract.py EQ_*: the two are compared on every section of the scene)."""
+    machine = self.__dict__.get('turnback_machine')
+    station_list = getattr(self, 'station_list', None)
+    if machine is None or machine.pairset is None or station_list is None:
+        return ()
+    if explicit_end == -1:
+        terminal = self.get_actual_terminal_idx() if hasattr(self, 'get_actual_terminal_idx') else len(station_list) - 1
+        resolved = terminal
+        while resolved > start and any(p.departure == resolved for p in machine.pairset.pairs):
+            resolved = resolved - 1
+        if resolved != terminal and resolved > start:
+            explicit_end = resolved
+        else:
+            resolved = terminal
+    else:
+        resolved = explicit_end
+    list_id = getattr(station_list, 'list_id', None) or getattr(self, 'bve_list_id', "")
+    return tuple(p for p in machine.pairset.pairs
+                 if pseudo_turnback_machine.qualifying_pair(machine.pairset, p.arrival, list_id, len(station_list), start, resolved, explicit_end) is not None)
+
+
+UNTIMED_SCORING_START = "UNTIMED_SCORING_START"
+UNTIMED_TURNBACK_B = "UNTIMED_TURNBACK_B"
+
+
+def turnback_b_indexes(self):
+    """The StationIndex of every pair B that the CURRENT scoring section crosses: the Run's snapshot while a Run is active (fixed by the start button), else the section the menu has chosen (settings), read through the same
+    pure function as the button. Names, doors, indicator lamps and signalFlag are no input. frozenset(): no PairSet / no crossing."""
+    snapshot = active_scoring_section(self)
+    pairs = snapshot.pairs if snapshot is not None else turnback_crossed_pairs(self, getattr(self, 'setting_start_idx', 0), getattr(self, 'setting_end_idx', -1))
+    return frozenset(p.departure for p in pairs)
+
+
+def untimed_reason(self, station_index):
+    """Stage TB-H (Owner ruling R2): why a station is untimed by CONTRACT, else None. UNTIMED_SCORING_START: the start station of the Run (no run before it). UNTIMED_TURNBACK_B: the B of a pair that the section crosses
+    (A -> B is an official Jump, not a normal run). The consequence is the same: effective timing = false, the operating time of the station is never scored, the user can not switch it."""
+    if station_index == section_start_index(self):
+        return UNTIMED_SCORING_START
+    if station_index in turnback_b_indexes(self):
+        return UNTIMED_TURNBACK_B
+    return None
+
+
 class ScoringSectionSnapshot(NamedTuple):
     """Stage TB-D (OD-TD-4): the scoring section of ONE Run, fixed by the scoring start button, immutable, held in ONE attribute of the Overlay (_scoring_section). While a Run is active it is the only source of the start
     / end StationIndex that the scoring reads; the settings (setting_start_idx / setting_end_idx) are an input of the menu BEFORE the start. `judge_end` is the StationIndex that the end-station judgement compares

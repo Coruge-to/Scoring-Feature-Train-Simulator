@@ -1707,13 +1707,14 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
 
     def test_scoring_and_ui_modules_are_unchanged_since_e3(self):
         # hud_ui.py: Phase L3, see test_hud_ui_*;  managed_mode.py: the owner-process watch (tests/test_parent_exit_p1.py guards how little of it moved)
-        out = _git("diff", "--name-only", E3_COMMIT, "--", "menu_ui.py", "config.py", "network.py")
+        # Stage TB-H (on purpose): menu_ui.py changed since E3 by the timing screen only (draw_menu: the start and the crossed pair B are drawn untimed and are not clickable, the initial-setting buttons skip them); pinned below by AST
+        out = _git("diff", "--name-only", E3_COMMIT, "--", "config.py", "network.py")
         if out is None:
             self.skipTest("git not available (INCONCLUSIVE)")
         self.assertEqual(out.strip(), "")
         # Phase SI-A (on purpose): scoring_logic.py and utils.py carry exactly ONE change since E3 - the switch of the Desktop debug log (no score, no rule, no constant)
-        old_scoring, old_utils = _git("show", E3_COMMIT + ":scoring_logic.py"), _git("show", E3_COMMIT + ":utils.py")
-        if old_scoring is None or old_utils is None:
+        old_scoring, old_utils, old_menu = _git("show", E3_COMMIT + ":scoring_logic.py"), _git("show", E3_COMMIT + ":utils.py"), _git("show", E3_COMMIT + ":menu_ui.py")
+        if old_scoring is None or old_utils is None or old_menu is None:
             self.skipTest("git not available (INCONCLUSIVE)")
 
         def parts(src):
@@ -1748,11 +1749,17 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
                   "ScoringSectionSnapshot", "build_scoring_section", "active_scoring_section", "section_start_index", "section_end_judge_index", "scoring_section_housekeeping", "ImportFrom(module='typing', names=[alias(name='NamedTuple')], level=0)",
                   # Stage TB-C (on purpose): the section fixed at the scoring start button, the lifecycle guard, the request / completion / establishment of B, the F1 hold, the diagnostics, the landing watch (tests/test_pt_tbc_*.py)
                   "turnback_fix_section", "turnback_session_active", "turnback_lifecycle_guard", "turnback_diag", "turnback_stop_scoring", "official_jump_f1_hold", "note_jump_settlement", "turnback_jump_available", "turnback_request", "turnback_establish_b", "turnback_landing_step", "turnback_drive",
+                  # Stage TB-H (on purpose): pair B untimed by contract (one pure section helper, the set of crossed B, the reason; two reason constants; tests/test_pt_tbh_pairb_contract.py)
+                  "turnback_crossed_pairs", "turnback_b_indexes", "untimed_reason",
+                  "Assign(targets=[Name(id='UNTIMED_SCORING_START', ctx=Store())], value=Constant(value='UNTIMED_SCORING_START'))",
+                  "Assign(targets=[Name(id='UNTIMED_TURNBACK_B', ctx=Store())], value=Constant(value='UNTIMED_TURNBACK_B'))",
                   "Assign(targets=[Name(id='TURNBACK_GUIDANCE_CATEGORY', ctx=Store())], value=Constant(value='疑似折り返し'))",
                   "Assign(targets=[Name(id='TURNBACK_GUIDANCE_TEXT', ctx=Store())], value=Constant(value='次の発車位置へ移動します。'))",
                   "Assign(targets=[Name(id='TURNBACK_SPECIAL_SECONDS', ctx=Store())], value=BinOp(left=Attribute(value=Name(id='pseudo_turnback_machine', ctx=Load()), attr='SPECIAL_DISPLAY_MS', ctx=Load()), op=Div(), right=Constant(value=1000.0)))",
                   "Assign(targets=[Name(id='TURNBACK_TOTAL_SECONDS', ctx=Store())], value=BinOp(left=Attribute(value=Name(id='pseudo_turnback_machine', ctx=Load()), attr='REQUEST_AFTER_MS', ctx=Load()), op=Div(), right=Constant(value=1000.0)))"}),
-                ("utils.py", old_utils, {"write_desktop_log"}, {"set_desktop_log_enabled", "desktop_log_enabled", "desktop_log_requested"})):
+                ("utils.py", old_utils, {"write_desktop_log"}, {"set_desktop_log_enabled", "desktop_log_enabled", "desktop_log_requested"}),
+                # Stage TB-H (on purpose): the timing screen of draw_menu is the ONLY member of menu_ui.py that changed since E3 (nothing removed, nothing added)
+                ("menu_ui.py", old_menu, {"draw_menu"}, set())):
             with open(os.path.join(ROOT, name), encoding="utf-8") as f:
                 new = f.read()
             a, b = parts(old), parts(new)

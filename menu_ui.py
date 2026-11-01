@@ -561,7 +561,7 @@ def draw_menu(self, painter, logical_width):
             
             desc_text = ""
             if self.menu_cursor == 2 and getattr(self, 'menu_cursor_x', 0) == 0:
-                desc_text = "【 運転時分 設定 】\n駅ごとの採時 / 非採時の設定を変更します。\n（※採点開始駅は非採時で固定）"
+                desc_text = "【 運転時分 設定 】\n駅ごとの採時 / 非採時の設定を変更します。\n（※採点開始駅と、区間が跨ぐ疑似折り返しのB駅は非採時で固定）"
             elif self.menu_cursor == 4 and getattr(self, 'menu_cursor_x', 0) == 0:
                 desc_text = "【 基本制動 設定 】\n区間ごとに異なる基本制動のルールを適用したい場合に追加・編集します。\nルールは区間別の数珠繋ぎになります。"
             else:
@@ -791,7 +791,7 @@ def draw_menu(self, painter, logical_width):
                 
                 is_timing = False
                 if hasattr(self, 'is_station_timing'): is_timing = self.is_station_timing(sta_idx)
-                is_start = (sta_idx == getattr(self, 'setting_start_idx', 0))
+                is_start = (self.untimed_reason(sta_idx) is not None) if hasattr(self, 'untimed_reason') else (sta_idx == getattr(self, 'setting_start_idx', 0))     # Stage TB-H: the start and the crossed pair B are drawn untimed and are not clickable
                 
                 if is_start:
                     stat_text = "非採時"
@@ -856,10 +856,12 @@ def draw_menu(self, painter, logical_width):
             self.menu_click_zones.append((btn_x, btn_rect_y, btn_x + btn_w, btn_rect_y + btn_h, len(targets)))
 
         s_idx = getattr(self, 'setting_start_idx', 0)
+        # Stage TB-H: the start station and the crossed pair B are untimed by contract; they are no user setting, so they take no part in the 'initial setting' buttons
+        is_untimed_by_contract = (lambda i: self.untimed_reason(i) is not None) if hasattr(self, 'untimed_reason') else (lambda i: i == s_idx)
         
         default_all_timing = True
         for idx in targets:
-            if idx == s_idx: continue
+            if is_untimed_by_contract(idx): continue
             st = getattr(self, 'station_list', [])[idx]
             if not st.get("is_timing", False):
                 default_all_timing = False
@@ -867,7 +869,7 @@ def draw_menu(self, painter, logical_width):
         
         is_modified_from_default = False
         for idx in targets:
-            if idx == s_idx: continue
+            if is_untimed_by_contract(idx): continue
             st = getattr(self, 'station_list', [])[idx]
             default_timing = st.get("is_timing", False)
             current_timing = self.is_station_timing(idx) if hasattr(self, 'is_station_timing') else False

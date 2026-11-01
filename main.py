@@ -25,6 +25,8 @@ from scoring_logic import (
     close_range_fix_landing_stop,
     turnback_fix_section,
     turnback_machine_of,
+    turnback_b_indexes,
+    untimed_reason,
     build_scoring_section,
     active_scoring_section,
     section_start_index,
@@ -1206,7 +1208,7 @@ class Overlay(QWidget):
         close_range_fix_landing_stop(self, verdict.selected_idx, verdict.actual_location)
 
     def is_station_timing(self, sta_idx):
-        if sta_idx == section_start_index(self):             # Stage TB-D: the start of the scoring Run is the snapshot's while a Run is active, the setting before it
+        if untimed_reason(self, sta_idx) is not None:         # Stage TB-H: the start of the Run (UNTIMED_SCORING_START) and the B of every pair that the section crosses (UNTIMED_TURNBACK_B) are untimed by contract, whatever an override says
             return False
         if sta_idx in self.user_timing_overrides:
             return self.user_timing_overrides[sta_idx] 
@@ -1214,6 +1216,9 @@ class Overlay(QWidget):
             return self.station_list[sta_idx].get("is_timing", False) 
         return False
         
+    def untimed_reason(self, sta_idx):
+        return untimed_reason(self, sta_idx)
+
     def get_timing_target_stas(self):
         if not self.station_list: return []
         snapshot = active_scoring_section(self)            # Stage 2.1: while a scoring Run is active its snapshot is the only source of the range; before the start (no valid snapshot) the settings, as ever
@@ -1374,12 +1379,10 @@ class Overlay(QWidget):
     def toggle_all_timing(self):
         targets = self.get_timing_target_stas() if hasattr(self, 'get_timing_target_stas') else []
         if not targets: return
-        s_idx = getattr(self, 'setting_start_idx', 0)
-
         # 現在の状態が「初期設定から変更されているか」を調べる
         is_modified_from_default = False
         for idx in targets:
-            if idx == s_idx: continue
+            if untimed_reason(self, idx) is not None: continue        # Stage TB-H: the start and the crossed pair B are fixed untimed, never a user change
             st = getattr(self, 'station_list', [])[idx]
             default_timing = st.get("is_timing", False)
             current_timing = self.is_station_timing(idx) if hasattr(self, 'is_station_timing') else False
@@ -1393,7 +1396,7 @@ class Overlay(QWidget):
         else:
             # 初期設定のままなら、全駅を採時にする
             for idx in targets:
-                if idx == s_idx: continue
+                if untimed_reason(self, idx) is not None: continue
                 if not getattr(self, 'station_list', [])[idx].get("is_timing", False):
                     self.user_timing_overrides[idx] = True
 
@@ -1780,7 +1783,10 @@ class Overlay(QWidget):
                 e_idx = min(e_idx, len(self.station_list) - 1)
                 
                 if getattr(self, 'station_list', []):
+                    turnback_b = turnback_b_indexes(self)              # Stage TB-H (R3): the B of every crossed pair is no scored station: no stop position, no basic braking, no operating time in the theoretical score
                     for i in range(s_idx, e_idx + 1):
+                        if i in turnback_b:
+                            continue
                         st = self.station_list[i]
                         is_start_station = (i == s_idx)
                         is_pass = st.get("is_pass", False)
@@ -1879,7 +1885,7 @@ class Overlay(QWidget):
                     self.menu_cursor_x = 0
                 elif 0 <= getattr(self, 'timing_cursor', 0) < len(targets):
                     sta_idx = targets[self.timing_cursor]
-                    if sta_idx != getattr(self, 'setting_start_idx', 0):
+                    if untimed_reason(self, sta_idx) is None:             # Stage TB-H: the start and the crossed pair B can not be switched (and no override is written for them)
                         current_status = self.is_station_timing(sta_idx) if hasattr(self, 'is_station_timing') else False
                         getattr(self, 'user_timing_overrides', {})[sta_idx] = not current_status
         

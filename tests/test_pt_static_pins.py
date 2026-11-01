@@ -59,7 +59,11 @@ class A_ProductFunctions(unittest.TestCase):
 
     def test_the_qualification_has_one_call_in_the_scoring_and_the_machine_uses_the_same_function(self):
         src = source("scoring_logic.py")
-        self.assertEqual(len(re.findall(r"pseudo_turnback_machine\.qualifying_pair\(", src)), 1)
+        # Stage TB-H (on purpose): the scoring has TWO calls now - turnback_fix_section (the start button: writes the fixed section) and turnback_crossed_pairs (PURE, read by the menus before the button: the timing screen and the
+        # theoretical score). turnback_fix_section stays byte-identical (an earlier stage's mutation harness pins it by text); tests/test_pt_tbh_pairb_contract.py EQ_1 / EQ_2 compare the two on every section of the scenes
+        self.assertEqual(len(re.findall(r"pseudo_turnback_machine\.qualifying_pair\(", src)), 2)
+        callers = {fn.name for fn in ast.parse(src).body if isinstance(fn, ast.FunctionDef) and "pseudo_turnback_machine.qualifying_pair(" in (ast.get_source_segment(src, fn) or "")}
+        self.assertEqual(callers, {"turnback_fix_section", "turnback_crossed_pairs"})
         msrc = source("pseudo_turnback_machine.py")
         self.assertEqual(len(re.findall(r"\bqualifying_pair\(", msrc)), 2, "its definition and the one call of on_arrival")
 

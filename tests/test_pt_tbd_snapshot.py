@@ -234,7 +234,8 @@ class A_Snapshot(Base):
         self.press_start(s)
         self.assertIs(self.snap(s).pairs, s.machine.fixed)
         tree = ast.parse(source("scoring_logic.py"))
-        allowed = {"turnback_fix_section", "build_scoring_section", "section_start_index", "section_end_judge_index"}
+        # Stage TB-H (on purpose): turnback_b_indexes is the one reader of the settings BEFORE the start button (the timing screen and the theoretical score read the section the menu has chosen); while a Run is active it returns the snapshot's pairs and never the settings (tests/test_pt_tbh_pairb_contract.py UB_5)
+        allowed = {"turnback_fix_section", "build_scoring_section", "section_start_index", "section_end_judge_index", "turnback_b_indexes"}
         offenders = []
         for fn in (n for n in tree.body if isinstance(n, ast.FunctionDef)):
             if fn.name in allowed:
