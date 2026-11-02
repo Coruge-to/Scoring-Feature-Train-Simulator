@@ -9,8 +9,8 @@ import sys
 
 ROOT = sys.argv[2]
 HU, MN, MM = "hud_ui.py", "main.py", "pseudo_turnback_machine.py"
-NEW_MODULES = ("test_pt_tbj_remaining_time",)
-NEW_CLASSES = ("A_FirstWindow", "B_CancelAndRestop", "C_Discard", "D_Guards", "E_FreeDriving", "F_JumpRequestedAndLanding", "G_AfterLanding", "H_Discard", "I_Rounding", "J_NothingElseMoves")
+NEW_MODULES = ("test_pt_tbj_remaining_time", "test_pt_tbj_discard_gate")
+NEW_CLASSES = ("A_FirstWindow", "B_CancelAndRestop", "C_Discard", "D_Guards", "E_FreeDriving", "F_JumpRequestedAndLanding", "G_AfterLanding", "H_Discard", "I_Rounding", "J_NothingElseMoves", "K_CountdownIsDroppedByTheProductEntries", "L_AfterTheLanding")
 MODS = list(NEW_MODULES) + ["test_pt_tbh_selfdrive_hud", "test_hud_target_wiring_r23"]
 
 
