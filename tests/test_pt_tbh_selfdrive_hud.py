@@ -1,4 +1,4 @@
-"""Stage TB-H 6: (1) the user-facing warning of the unrecoverable failure (B reached by driving) and the one wording of the illegal-movement warning; (2) the TScoring HUD display target is the pair A for the whole life of the chain (until the official Jump succeeded AND B is established).
+"""Stage TB-H 6: (1) the user-facing warning of the unrecoverable failure (B reached by driving) and the one wording of the illegal-movement warning; (2) the ORDINARY TScoring HUD display target is the pair A for the whole life of the chain (until the official Jump succeeded AND B is established); the rule overlay (debug / diagnostic) stays on the raw scoring target.
 
 Owner decisions (2026-11-02):
   * B reached by driving from the pending A (not recovered by a re-stop): fail-closed as before (no Jump, B is not scored, no B checkpoint, no turnback checkpoint, scoring aborted, internal reason
@@ -440,7 +440,7 @@ class B_HudTarget(Base):
         self.assertEqual(after, before)
 
     def test_HD_19_the_hold_has_no_current_or_legacy_branch(self):
-        for fn in (self.S.turnback_held_a_target, self.S.turnback_held_a_station):
+        for fn in (self.S.turnback_held_a_target,):
             words = {n.id for n in ast.walk(ast.parse(inspect.getsource(fn))) if isinstance(n, ast.Name)} | {n.attr for n in ast.walk(ast.parse(inspect.getsource(fn))) if isinstance(n, ast.Attribute)}
             for banned in ("managed", "legacy", "Legacy", "current_host", "host_mode", "is_legacy", "AtsEx"):
                 self.assertNotIn(banned, words)
@@ -451,33 +451,12 @@ class B_HudTarget(Base):
         for module in (hud_ui, self.main):
             self.assertNotIn("あと", inspect.getsource(module), "the application draws no 'あと NN m' bar")
 
-    def test_HD_21_the_next_station_line_of_the_rule_overlay_names_a_while_the_hold_lasts(self):
-        s, t, f = self.waiting()
-        o = s.o
-        held = self.S.turnback_held_a_station(o)
-        self.assertEqual(held[0], s.sl[1]["name"])
-        self.assertIs(held[1], bool(o._hud_machine_target().timing))
-        self.assertEqual(o._hud_rules_station_held(), held)
-        self.halt(s, t + 4000, offset=-1.0)
-        self.assertEqual(o._hud_rules_station_held()[0], s.sl[1]["name"], "not released by the re-stop")
-        self.S.turnback_stop_scoring(o, "test")
-        self.assertIsNone(o._hud_rules_station_held())
-
-    def test_HD_22_the_rule_overlay_line_takes_its_station_from_the_held_a_before_the_label_is_made(self):
-        """STATIC: the next-station line of the application's own rule overlay (draw_hud) asks the held pair A and uses its name and timing label; the values of the rules beside it are not read from it."""
-        import hud_ui
-        source = inspect.getsource(hud_ui.draw_hud)
-        self.assertEqual(source.count("_hud_rules_station_held"), 1)
-        order = [source.index(w) for w in ("n_sta = getattr(self, 'active_next_sta_name'", "_hud_rules_station_held", "n_sta, n_timing = held_station", "n_time = '採時' if n_timing else '非採時'", "[SCORING RULES] 次駅:")]
-        self.assertEqual(order, sorted(order), "the held A replaces the name and the timing BEFORE the line is formatted")
-        self.assertNotIn("held_station", source.split("basic_str")[1].split("dbg_texts.extend")[0], "the rule values (basic braking, init, features) are not taken from the held station")
     def test_HD_23_a_failed_chain_holds_nothing(self):
         s, t, f = self.waiting()
         o = s.o
         s.machine.on_other_arrival(2)                                                   # B reached by driving: the chain is FAILED (the pair and the arrival time are still there)
         self.assertEqual(s.machine.state, self.M.FAILED)
         self.assertIsNone(self.S.turnback_held_a_target(o))
-        self.assertIsNone(self.S.turnback_held_a_station(o))
         self.assertEqual(self.hud(s).next_loc, o.bve_next_loc)
 
     def test_HD_24_the_whole_five_seconds_after_the_second_restop_are_a_and_so_is_the_request(self):
@@ -518,6 +497,109 @@ class B_HudTarget(Base):
         src = inspect.getsource(hud_target_contract.derive)
         self.assertIn("machine = machine_of()", src)
         self.assertNotIn("turnback", src)
+
+
+# ==============================================================================================================================================
+# OV  the rule overlay (debug / diagnostic) is on the RAW scoring target and consistent with itself; only the ordinary HUD holds A
+# ==============================================================================================================================================
+class RecordingPainter(object):
+    """A real QPainter on an image whose drawText calls are recorded (the overlay lines are the strings of drawText)."""
+
+    def __init__(self, painter):
+        self._p = painter
+        self.texts = []
+
+    def drawText(self, *args):
+        self.texts.append(args[-1])
+        return self._p.drawText(*args)
+
+    def __getattr__(self, name):
+        return getattr(self._p, name)
+
+
+class C_RuleOverlay(Base):
+    def waiting_with_rules(self):
+        s, t, f = self.scene()
+        o = s.o
+        # the rule sections are different for A (index 1) and B (index 2): the section of A is '2段', the section of B is '3段'
+        o.brake_rules = [{"end_idx": 1, "apply": "2段", "release": "2段"}, {"end_idx": -1, "apply": "3段", "release": "3段"}]
+        o.penalty_init_rules = [{"apply": "ON②", "release": "ON②"}, {"apply": "ON①", "release": "ON①"}]
+        self.move(s, t + 2000)
+        self.b_target(s, t + 2100, bve_speed=2.0, bve_location=self.P.A_MARK + 9.7, bve_brk_notch=0)
+        s.step(2, bve_speed=2.0)
+        self.assertEqual(s.machine.state, self.M.RESTOP_WAIT)
+        return s, t, f
+
+    def overlay_lines(self, s):
+        from PyQt6.QtGui import QImage, QPainter
+        o = s.o
+        o.show_graph = True
+        image = QImage(1920, 1080, QImage.Format.Format_ARGB32)
+        painter = QPainter(image)
+        recorder = RecordingPainter(painter)
+        try:
+            import hud_ui
+            hud_ui.draw_hud(o, recorder, 1920)
+        finally:
+            painter.end()
+        return recorder.texts
+
+    def test_OV_01_the_overlay_names_the_raw_scoring_target_not_the_held_a(self):
+        s, t, f = self.waiting_with_rules()
+        o = s.o
+        lines = self.overlay_lines(s)
+        rule_line = [x for x in lines if x.startswith("[SCORING RULES]")]
+        self.assertEqual(len(rule_line), 1, lines)
+        raw_name = s.sl[o.bve_tgt_idx]["name"]
+        a_name = s.sl[1]["name"]
+        self.assertNotEqual(raw_name, a_name)
+        self.assertIn(raw_name, rule_line[0], "RED on the Stage 6 commit: the overlay named the held A")
+        self.assertNotIn(a_name, rule_line[0].replace(raw_name, ""))
+        self.assertEqual(self.hud(s).next_loc, self.P.A_MARK, "while the ORDINARY HUD draws A")
+
+    def test_OV_02_the_overlay_timing_label_is_the_raw_scoring_targets(self):
+        s, t, f = self.waiting_with_rules()
+        o = s.o
+        expect = "採時" if o.is_station_timing(o.bve_tgt_idx) else "非採時"
+        rule_line = [x for x in self.overlay_lines(s) if x.startswith("[SCORING RULES]")][0]
+        self.assertTrue(rule_line.endswith("(%s)" % expect), rule_line)
+
+    def test_OV_03_the_station_name_and_the_rule_values_of_the_overlay_are_the_same_station(self):
+        s, t, f = self.waiting_with_rules()
+        o = s.o
+        lines = self.overlay_lines(s)
+        rule_line = [x for x in lines if x.startswith("[SCORING RULES]")][0]
+        basic = [x for x in lines if x.startswith("基本制動:")][0]
+        self.assertIn(s.sl[o.bve_tgt_idx]["name"], rule_line)
+        self.assertIn("3段 / 3段", basic, "the basic-braking rule is the one of the section of B (the raw target), not the '2段' section of A")
+        self.assertIn("初動: ON①", basic)
+        self.assertEqual((o.active_next_sta_name, o.active_rule_basic_apply, o.active_rule_init_apply), (s.sl[o.bve_tgt_idx]["name"], "3段", "ON①"))
+
+    def test_OV_04_the_overlay_does_not_change_with_the_hold_it_is_the_same_before_and_during(self):
+        s, t, f = self.waiting_with_rules()
+        o = s.o
+        during = [x for x in self.overlay_lines(s) if x.startswith(("[SCORING RULES]", "基本制動:"))]
+        o.turnback_machine.discard_all()                                                 # the hold is gone (the chain is dropped); the raw target and the rule values are the same
+        s.step(2, bve_speed=2.0)
+        after = [x for x in self.overlay_lines(s) if x.startswith(("[SCORING RULES]", "基本制動:"))]
+        self.assertEqual(during, after)
+
+    def test_OV_05_the_overlay_code_reads_only_the_scoring_state(self):
+        import hud_ui
+        source = inspect.getsource(hud_ui.draw_hud)
+        for banned in ("hud_target", "_hud_rules_station_held", "turnback", "held_station", "_hud_machine_target"):
+            self.assertNotIn(banned, source.split("# ★ F8デバッグ情報の生成")[0], banned)
+        self.assertIn("getattr(self, 'active_next_sta_name', '---')", source)
+        self.assertIn("getattr(self, 'active_next_sta_timing', False)", source)
+
+    def test_OV_06_the_ordinary_hud_rows_are_a_while_the_overlay_is_raw(self):
+        s, t, f = self.waiting_with_rules()
+        o = s.o
+        h = self.hud(s)
+        self.assertEqual((h.next_loc, h.is_pass), (self.P.A_MARK, 0))
+        self.assertEqual(o.bve_next_loc, s.sl[2]["location"])
+        self.assertEqual(o.hud_target_next_loc, self.P.A_MARK)
+        self.assertIn(s.sl[2]["name"], [x for x in self.overlay_lines(s) if x.startswith("[SCORING RULES]")][0])
 
 
 if __name__ == "__main__":

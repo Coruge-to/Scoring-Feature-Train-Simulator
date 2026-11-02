@@ -12,7 +12,7 @@ import sys
 ROOT = sys.argv[2]
 SL, PM, MAIN = "scoring_logic.py", "pseudo_turnback_machine.py", "main.py"
 NEW_MODULES = ("test_pt_tbh_selfdrive_hud",)
-NEW_CLASSES = ("A_SelfDriveB", "B_HudTarget")
+NEW_CLASSES = ("A_SelfDriveB", "B_HudTarget", "C_RuleOverlay")
 MODS = list(NEW_MODULES) + ["test_pt_tbh_arestop", "test_pt_tbc_request", "test_pt_tbd_retry"]
 
 
@@ -54,9 +54,10 @@ M = [
  ("S6M-19", "the hold is never released by the end of the chain (the state is not tested)", [(SL, HOLD_STATE, "    if machine is None or not turnback_session_active(self):\n        return None\n")]),
  ("S6M-20", "the hold is released when the Jump is requested (only the waiting states are held)", [(SL, HOLD_STATE, "    if machine is None or not (machine.state in pseudo_turnback_machine.WAITING or machine.awaiting_b) or not turnback_session_active(self):\n        return None\n")]),
  ("S6M-21", "the hold is released when the Jump completes, before B is established", [(SL, HOLD_STATE, "    if machine is None or not (machine.state in pseudo_turnback_machine.LIVE) or not turnback_session_active(self):\n        return None\n")]),
- ("S6M-22", "the rule overlay names B (the departure of the pair) instead of A", [(SL, "    return stations[pair.arrival].get('name', '不明な駅'), bool(held.timing)\n", "    return stations[pair.departure].get('name', '不明な駅'), bool(held.timing)\n")]),
- ("S6M-23", "the rule overlay line ignores the held station", [("hud_ui.py", "        if held_station is not None:\n            n_sta, n_timing = held_station\n", "")]),
- ("S6M-24", "the rule overlay shows the held station even without a held target (a stale name)", [(SL, "    if held is None or pair is None or not stations or not (0 <= pair.arrival < len(stations)):\n        return None\n", "    if pair is None or not stations or not (0 <= pair.arrival < len(stations)):\n        return None\n")]),
+ ("S6M-22", "the overlay names the station the train arrived at (the held A) instead of the raw scoring target", [("hud_ui.py", "        n_sta = getattr(self, 'active_next_sta_name', '---')\n", "        n_sta = self.station_list[getattr(self, 'bve_arr_idx', 0)].get('name', '---')\n")]),
+ ("S6M-23", "the overlay timing label follows the ordinary HUD target (held A)", [("hud_ui.py", "        n_time = '採時' if getattr(self, 'active_next_sta_timing', False) else '非採時'\n", "        n_time = '採時' if self.hud_target_timing else '非採時'\n")]),
+ ("S6M-24", "the overlay rule values are taken from the section of A (index of the held target)", [(SL, "        compare_idx = next_idx if next_idx >= 0 else 0\n", "        compare_idx = 1 if next_idx >= 0 else 0\n")]),
+ ("S6M-25", "the overlay station name is taken from the previous station (not the raw target)", [(SL, "            self.active_next_sta_name = self.station_list[next_idx].get(\"name\", \"不明な駅\")\n", "            self.active_next_sta_name = self.station_list[max(next_idx - 1, 0)].get(\"name\", \"不明な駅\")\n")]),
 ]
 
 

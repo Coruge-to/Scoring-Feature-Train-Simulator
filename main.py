@@ -35,7 +35,6 @@ from scoring_logic import (
     turnback_diag,
     add_score_popup,
     turnback_held_a_target,
-    turnback_held_a_station,
 )
 from menu_ui import draw_menu
 from hud_ui import draw_hud
@@ -796,10 +795,6 @@ class Overlay(QWidget):
             return held
         timing = any(self.is_station_timing(sta_idx) for sta_idx in self.get_timing_target_stas()) and bool(getattr(self, 'active_next_sta_timing', self.bve_is_timing == 1))
         return hud_target_contract.MachineTarget(self.bve_next_loc, self.bve_next_time, self.bve_is_pass, self.bve_margin_b, self.bve_margin_f, timing)
-
-    def _hud_rules_station_held(self):
-        """Stage TB-H 6: (name, timing) of the pair A while the pseudo-turnback holds the display target at A, else None (the next-station line of the application's own rule overlay; display only)."""
-        return turnback_held_a_station(self)
 
     def _hud_timing_of_index(self, index):
         """Whether that station of the chosen section is a timing station."""

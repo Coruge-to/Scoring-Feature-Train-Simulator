@@ -1443,17 +1443,6 @@ def turnback_held_a_target(self):
     return kept[1]
 
 
-def turnback_held_a_station(self):
-    """Stage TB-H 6: (name, timing) of the pair A while the display target is held (the next-station line of the application's own rule overlay), else None. Display only; the rules beside it are not changed."""
-    held = turnback_held_a_target(self)
-    machine = self.__dict__.get('turnback_machine')
-    pair = getattr(machine, 'pair', None)
-    stations = getattr(self, 'station_list', None)
-    if held is None or pair is None or not stations or not (0 <= pair.arrival < len(stations)):
-        return None
-    return stations[pair.arrival].get('name', '不明な駅'), bool(held.timing)
-
-
 def turnback_arrival_begin(self, current_time, station_index, stop_position=None):
     """The arrival at `station_index` was judged by evaluate_arrival at the BVE time `current_time`. Starts the chain when the station is the A of a pair. Returns True for a pair A (the caller then does not create
     the A checkpoint). The start time of the 5.0 s is THIS tick's BVE time (never a wall clock, a door or a target change)."""
