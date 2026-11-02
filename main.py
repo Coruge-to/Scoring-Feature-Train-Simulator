@@ -1233,6 +1233,26 @@ class Overlay(QWidget):
             end_idx = len(self.station_list) - 1
         return [i for i in range(len(self.station_list)) if start_idx <= i <= end_idx]
 
+    def _timing_cursor_stops(self):
+        """Stage TB-I: the rows of the timing screen where the cursor may stop - the list positions of the stations that are NOT fixed untimed by contract (the Run start UNTIMED_SCORING_START and the B of every crossed
+        pair UNTIMED_TURNBACK_B, read through untimed_reason, i.e. StationIndex and the pair set only) - and then the done button (the list length). Never empty. A fixed row stays drawn; the cursor only skips it."""
+        targets = self.get_timing_target_stas() if hasattr(self, 'get_timing_target_stas') else []
+        stops = [p for p in range(len(targets)) if untimed_reason(self, targets[p]) is None]
+        stops.append(len(targets))
+        return stops
+
+    def _timing_cursor_show(self):
+        """Keep the cursor row inside the six visible rows (the first stop shows the list from its top, so that the fixed rows above it stay in view)."""
+        targets = self.get_timing_target_stas() if hasattr(self, 'get_timing_target_stas') else []
+        cursor = getattr(self, 'timing_cursor', 0)
+        if cursor == self._timing_cursor_stops()[0]:
+            self.timing_scroll = 0
+        elif cursor < len(targets):
+            if cursor < getattr(self, 'timing_scroll', 0):
+                self.timing_scroll = cursor
+            elif cursor >= getattr(self, 'timing_scroll', 0) + 6:
+                self.timing_scroll = cursor - 6 + 1
+
     def get_raw_terminal_idx(self):
         """The terminal of the route data as the sender names it (the former body of get_actual_terminal_idx). The brake rule screens, the upper bound of the candidates and the brake rule of the scoring read THIS."""
         if not self.station_list:
@@ -1476,14 +1496,13 @@ class Overlay(QWidget):
         if self.menu_state == 8:
             targets = self.get_timing_target_stas() if hasattr(self, 'get_timing_target_stas') else []
             if not targets: return
-            if getattr(self, 'timing_cursor', 0) > 1 or getattr(self, 'timing_scroll', 0) > 0:
-                self.timing_cursor -= 1
-                if getattr(self, 'timing_cursor', 0) == 1 and getattr(self, 'timing_scroll', 0) > 0:
-                    # 始発駅(0)の次は1だが、スクロールして見えなくなっている場合は1を選択しつつスクロールも戻す
-                    self.timing_scroll = 0
-                elif getattr(self, 'timing_cursor', 0) < len(targets) and getattr(self, 'timing_cursor', 0) < getattr(self, 'timing_scroll', 0):
-                    # 上にスクロール
-                    self.timing_scroll = getattr(self, 'timing_cursor', 0)
+            stops = self._timing_cursor_stops()                 # Stage TB-I: the cursor skips the fixed untimed rows (the start, the crossed pair B)
+            before = [p for p in stops if p < getattr(self, 'timing_cursor', 0)]
+            if before:
+                self.timing_cursor = before[-1]
+            elif getattr(self, 'timing_cursor', 0) not in stops:
+                self.timing_cursor = stops[0]
+            self._timing_cursor_show()
             return
 
         # その他のメニュー画面のストッパー
@@ -1571,12 +1590,13 @@ class Overlay(QWidget):
         if self.menu_state == 8:
             targets = self.get_timing_target_stas() if hasattr(self, 'get_timing_target_stas') else []
             if not targets: return
-            max_cursor = len(targets) 
-            if getattr(self, 'timing_cursor', 0) < max_cursor: 
-                self.timing_cursor += 1
-                if getattr(self, 'timing_cursor', 0) < len(targets):
-                    if getattr(self, 'timing_cursor', 0) >= getattr(self, 'timing_scroll', 0) + 6:
-                        self.timing_scroll = getattr(self, 'timing_cursor', 0) - 6 + 1
+            stops = self._timing_cursor_stops()                 # Stage TB-I: the cursor skips the fixed untimed rows (the start, the crossed pair B)
+            after = [p for p in stops if p > getattr(self, 'timing_cursor', 0)]
+            if after:
+                self.timing_cursor = after[0]
+            elif getattr(self, 'timing_cursor', 0) not in stops:
+                self.timing_cursor = stops[-1]
+            self._timing_cursor_show()
             return
 
         # その他のメニュー画面のストッパー
@@ -1731,8 +1751,7 @@ class Overlay(QWidget):
             elif self.menu_cursor == 2 and getattr(self, 'menu_cursor_x', 0) == 0:
                 self.menu_state = 8
                 self.timing_scroll = 0
-                targets = self.get_timing_target_stas() if hasattr(self, 'get_timing_target_stas') else []
-                self.timing_cursor = 1 if (targets and len(targets) > 1) else len(targets)
+                self.timing_cursor = self._timing_cursor_stops()[0]         # Stage TB-I: the first row the cursor may stop on (the done button when no station is changeable)
             
             elif self.menu_cursor == 4 and getattr(self, 'menu_cursor_x', 0) == 0:
                 self.menu_state = 7

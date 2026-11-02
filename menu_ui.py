@@ -817,7 +817,8 @@ def draw_menu(self, painter, logical_width):
                 # 駅名の表示幅に合わせてクリック領域を設定する
                 cx_sta = SUB_X + TIMING_INNER_MARGIN_X
                 actual_w = fm.horizontalAdvance(sta_name)
-                self.menu_click_zones.append((cx_sta - 10, box_y, cx_sta + min(actual_w, TIMING_STA_MAX_W) + 10, box_y + box_h, list_idx, -1))
+                if not is_start:                                                                      # Stage TB-I: a fixed untimed row takes no click at all (the cursor never stops on it)
+                    self.menu_click_zones.append((cx_sta - 10, box_y, cx_sta + min(actual_w, TIMING_STA_MAX_W) + 10, box_y + box_h, list_idx, -1))
 
                 if actual_w > TIMING_STA_MAX_W:
                     sr = TIMING_STA_MAX_W / actual_w

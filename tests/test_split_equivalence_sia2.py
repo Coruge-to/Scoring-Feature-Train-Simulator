@@ -362,6 +362,12 @@ class SiAScopeOfMain(unittest.TestCase):
                                   'use_legacy_jump = False',
                                   'use_legacy_jump = True',
                                   'write_desktop_log(f"[MENU 6] 送信コマンド: {retry_cmd} / 予想時間: {target_time_ms}")',
+                              }
+                              # Stage TB-I (on purpose): the timing screen opens on the first row the cursor may stop on (Overlay._timing_cursor_stops: the fixed untimed rows are skipped) and, with the basic brake
+                              # candidates, the inline station list of the LAST brake rule left handle_menu_enter for Overlay._brake_end_candidates (the A and the B of a crossed pair are no boundary); no score, no rule, no constant.
+                              | {
+                                  'self.timing_cursor = 1 if (targets and len(targets) > 1) else len(targets)',
+                                  "targets = self.get_timing_target_stas() if hasattr(self, 'get_timing_target_stas') else []",
                               },
         # PID-D6 (on purpose): a JUMP_COMPLETE only counts when its RequestId matches the outstanding command (Overlay._jump_complete_acceptable)
         # Phase ST-2a (on purpose): the station list of a STALIST datagram is a station_identity.StationList that carries the list id (new_list = [] became that constructor call)
