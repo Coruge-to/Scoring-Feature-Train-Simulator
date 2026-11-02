@@ -79,7 +79,7 @@
     {"set": "python", "path": "hud_ui.py", "blob_sha256": "23107BF0EAD7791705B961CB498A51678F90B6B6961B7BA4A3E11761636A8EE7", "blob_size": 23629, "blob_eol": "lf"},
     {"set": "python", "path": "jump_transaction.py", "blob_sha256": "BC5DFAE3BA83BDD4E1606D70B1E4960FA939206709C4DAAE357C1EA081B6A954", "blob_size": 17222, "blob_eol": "lf"},
     {"set": "python", "path": "jump_wire.py", "blob_sha256": "3F24A9F733FDD8E2FD8A1BC0FE24DB594916671FE78608B76879538B9B35EA27", "blob_size": 20563, "blob_eol": "lf"},
-    {"set": "python", "path": "main.py", "blob_sha256": "8FA1ADCBDCF508EC451AED0E20AB35D77090ADC322362BC9460317DF3B632D6C", "blob_size": 191031, "blob_eol": "lf"},
+    {"set": "python", "path": "main.py", "blob_sha256": "DA91E1B98219580F7FA71FA0A8311F12686A6D34B2242B0B051759D0555FC395", "blob_size": 194512, "blob_eol": "lf"},
     {"set": "python", "path": "managed_app_directory.py", "blob_sha256": "7B77DA8C4D04B32603AE7BFFAA1A74FCE07253B1BE2084ECB11EBBE5B46DCA8A", "blob_size": 12303, "blob_eol": "lf"},
     {"set": "python", "path": "managed_hud.py", "blob_sha256": "460D2CCDD5291B773D2AD6AEF00440CDE92C287A81D39E710B7E39042E067297", "blob_size": 47442, "blob_eol": "lf"},
     {"set": "python", "path": "managed_input.py", "blob_sha256": "712A4452754375B92289DC5533D101C05A80666913459F279A17604DDE33DB15", "blob_size": 38947, "blob_eol": "lf"},
@@ -133,5 +133,5 @@
     {"set": "shared", "path": "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryContract.cs", "blob_sha256": "ABDBBF4C5BA1567AABC600B28283C87F30BCB4019D82E2A1574B9C847E63B694", "blob_size": 8953, "blob_eol": "lf"},
     {"set": "shared", "path": "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs", "blob_sha256": "9D6C47493457FD840E8CA5186C8E16181F0B5CF85C10721087C9098DD6644680", "blob_size": 6615, "blob_eol": "lf"}
   ],
-  "fingerprint": "29608BA539060FC5FFA786167A1B24C2F59F805D3DC55D384DAF667298834D14"
+  "fingerprint": "508D3213200AFA16694B4485D7CBE7977E6641004044CFF28AFA78C3F20D9869"
 }

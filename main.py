@@ -306,6 +306,7 @@ class Overlay(QWidget):
         # Phase SI-R2.3: the display target the HUD draws (derived, see _hud_target_sync) and the display-only terminal freeze of its remaining time
         self._hud_target = hud_target_contract.NO_TARGET
         self._hud_freeze = None
+        self._free_turnback_a_latch = None          # Stage TB-K: the display-only latch of the free-driving remaining time (see _free_turnback_a_latch_update)
 
         # Phase ST-2a: the identity the application publishes for the station list above (written only by _station_identity_apply / _station_identity_clear;
         # -1 / "" = the sender's station indexes can not be used as the identity of a station)
@@ -779,14 +780,55 @@ class Overlay(QWidget):
     hud_target_reason = _hud_target_property('reason')
 
     def _hud_target_sync(self):
+        host_target = None
         try:
             station_list = getattr(self, 'station_list', None) or []
             scope = (getattr(self, 'current_scenario_id', None), getattr(station_list, 'list_id', None))
+            host_target = hud_target_contract.offtgt_of(self)
             self._hud_target, self._hud_freeze = hud_target_contract.derive(
-                hud_target_contract.owner_is_scoring(self.is_scoring_mode, self.is_scoring_finished), self._hud_machine_target, hud_target_contract.offtgt_of(self), self._hud_timing_of_index,
+                hud_target_contract.owner_is_scoring(self.is_scoring_mode, self.is_scoring_finished), self._hud_machine_target, host_target, self._hud_timing_of_index,
                 station_list, self.bve_location, self.bve_time_ms, self.bve_door, scope, self.__dict__.get('_hud_freeze'))
         except Exception:
             self._hud_target, self._hud_freeze = hud_target_contract.none_target(hud_target_contract.OWNER_BVE, hud_target_contract.R_INTERNAL), None
+        self._free_turnback_a_latch_sync(host_target)          # Stage TB-K: the display latch reads the SAME host target value (no second read); it is no part of the display target
+
+    def _free_turnback_a_latch_sync(self, target):
+        try:
+            self._free_turnback_a_latch_update(target)
+        except Exception:
+            self._free_turnback_a_latch = None
+
+    def _free_turnback_a_latch_update(self, target):
+        """Stage TB-K (Owner decision): the DISPLAY latch that keeps the remaining time field at --:-- in free driving after the train stopped at the A of a static pseudo-turnback pair. It is no arrival, scoring, history,
+        checkpoint, StationIndex, target or turnback state: nothing reads it but free_turnback_a_time_suppressed. Set only when three facts hold at once: the host target is the A of a static pair (PairSet and StationIndex),
+        the speed is exactly 0.0, and the train stands inside the stop range the author defined for that target (its margins and position). Names, doors, indicator lamp and signal flag are no input. Kept while the target is
+        the A or the B of that pair (a speed or a position alone never ends it); ended by a scoring session, a changed scenario scope, a changed or missing PairSet, a vanished pair, or a target beyond the pair."""
+        station_list = getattr(self, 'station_list', None) or []
+        scope = (getattr(self, 'current_scenario_id', None), getattr(station_list, 'list_id', None))
+        latch = self.__dict__.get('_free_turnback_a_latch')
+        pairset = self._static_pairset()
+        if hud_target_contract.owner_is_scoring(self.is_scoring_mode, self.is_scoring_finished) or pairset is None:
+            self._free_turnback_a_latch = None
+            return
+        pair_kept = None
+        if latch is not None:
+            pair_kept = next((p for p in pairset.pairs if p.arrival == latch[1]), None)
+            if latch[0] != scope or pair_kept is None:
+                latch, pair_kept = None, None
+        if target is not None and target.state == hud_target_contract.KNOWN and isinstance(target.index, int) and 0 <= target.index < len(station_list):
+            if latch is not None and not (pair_kept.arrival <= target.index <= pair_kept.departure):
+                latch = None
+            if latch is None:
+                pair_here = next((p for p in pairset.pairs if p.arrival == target.index), None)
+                if pair_here is not None:
+                    dist = target.location - self.bve_location
+                    if self.bve_speed == 0.0 and -target.margin_f <= dist <= target.margin_b:
+                        latch = (scope, pair_here.arrival)
+        self._free_turnback_a_latch = latch
+
+    def free_turnback_a_time_suppressed(self):
+        """Stage TB-K: True while the free-driving remaining time field is held at --:-- after the stop at a pair A (the display latch above). A pure read."""
+        return self.__dict__.get('_free_turnback_a_latch') is not None
 
     def turnback_remaining_view(self):
         """Stage TB-J (Owner contract): what the remaining-time field of the ordinary TScoring HUD shows while a pseudo-turnback of the scoring Run is in flight. A PURE READ MODEL (no state, no timer of its own, no write):
@@ -798,7 +840,7 @@ class Overlay(QWidget):
           None             everything else (no chain, free driving, the Run does not cross the pair, a normal target, the Run ended / aborted / Retry / F5 / generation or RunPairSet change: the chain is gone)
         The completed A departure / B arrival of the C# timeline are never shown. StationIndex, the machine and the Run's fixed pairs only: no name, door, indicator lamp, signal flag, position or host."""
         if not hud_target_contract.owner_is_scoring(self.is_scoring_mode, self.is_scoring_finished):
-            return None
+            return ("dashes", None) if self.free_turnback_a_time_suppressed() else None        # Stage TB-K: free driving after the stop at a pair A
         machine = self.__dict__.get('turnback_machine')
         if machine is not None and turnback_held_a_target(self) is not None:
             deadline = machine.wait_deadline_ms()
@@ -936,6 +978,7 @@ class Overlay(QWidget):
         self._offtgt_since = None
         self._hud_target = hud_target_contract.NO_TARGET            # Phase SI-R2.3: nothing of the previous scenario is displayed, and its terminal freeze ends
         self._hud_freeze = None
+        self._free_turnback_a_latch = None          # Stage TB-K: nothing of the previous scenario instance stays (F5 / a new scenario)
 
     def apply_telemetry_text(self, latest_telemetry):
         """Applies one accepted telemetry datagram to the Overlay state (the part of read_udp_data that always was here; Phase L3 only moved it into
