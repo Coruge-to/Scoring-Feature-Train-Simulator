@@ -788,6 +788,34 @@ class Overlay(QWidget):
         except Exception:
             self._hud_target, self._hud_freeze = hud_target_contract.none_target(hud_target_contract.OWNER_BVE, hud_target_contract.R_INTERNAL), None
 
+    def turnback_remaining_view(self):
+        """Stage TB-J (Owner contract): what the remaining-time field of the ordinary TScoring HUD shows while a pseudo-turnback of the scoring Run is in flight. A PURE READ MODEL (no state, no timer of its own, no write):
+          ("count", ms)   the chain waits for its request (first arrival window, then every re-stop window): ms = the machine's wait deadline - the BVE time; the HUD shows ceil(ms / 1000) s;
+                          the request was made and B is not established yet: ms = 0 (00:00 is kept)
+          ("dashes", None) the planned move was cancelled (the train moved) and the re-stop is awaited: --:--
+          ("time", ms)     B is established and is the scoring target of a crossed pair: the departure time of B (raw_dep, the author's value) - never the arrival of B that the C# state machine completes for it
+          ("dashes", None) the same B has no departure time
+          None             everything else (no chain, free driving, the Run does not cross the pair, a normal target, the Run ended / aborted / Retry / F5 / generation or RunPairSet change: the chain is gone)
+        The completed A departure / B arrival of the C# timeline are never shown. StationIndex, the machine and the Run's fixed pairs only: no name, door, indicator lamp, signal flag, position or host."""
+        if not hud_target_contract.owner_is_scoring(self.is_scoring_mode, self.is_scoring_finished):
+            return None
+        machine = self.__dict__.get('turnback_machine')
+        if machine is not None and turnback_held_a_target(self) is not None:
+            deadline = machine.wait_deadline_ms()
+            if deadline is not None:
+                return ("count", deadline - self.bve_time_ms)
+            if machine.state == pseudo_turnback_machine.RESTOP_WAIT:
+                return ("dashes", None)
+            if machine.state == pseudo_turnback_machine.REQUESTED or machine.awaiting_b:
+                return ("count", 0)
+            return None
+        index = getattr(self, 'bve_tgt_idx', -1)
+        station_list = getattr(self, 'station_list', None) or []
+        if isinstance(index, int) and 0 <= index < len(station_list) and index in turnback_b_indexes(self):
+            departure = station_list[index].get("raw_dep", -1)
+            return ("time", departure) if isinstance(departure, int) and departure > 0 else ("dashes", None)
+        return None
+
     def _hud_machine_target(self):
         """The scoring target the C# state machine holds, as the HUD draws it. The 'timing station' label may blink under the condition draw_hud used before Phase SI-R2.3 (moved here unchanged).
         Stage TB-H 6: while the pseudo-turnback waits for the re-stop at A the HUD draws A (display only; the machine target itself is not changed)."""

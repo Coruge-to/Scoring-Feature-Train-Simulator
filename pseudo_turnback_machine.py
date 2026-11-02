@@ -246,6 +246,13 @@ class TurnbackMachine:
             return "special" if self.has_special else None
         return "guide"
 
+    def wait_deadline_ms(self):
+        """Stage TB-J: the BVE time (ms) at which the waiting chain makes its request, for the remaining-time display: the ONE time that the request tick itself uses (jump_earliest_ms: arrival + 10.0 s, after a re-stop
+        + 5.0 s). None unless the chain is armed for it (RECOGNIZED / ARMED); the cancelled wait (RESTOP_WAIT) has no deadline. A pure read: nothing is stored, nothing is written."""
+        if self.state in (RECOGNIZED, ARMED):
+            return self.jump_earliest_ms
+        return None
+
     def display_state(self, now_ms):
         """The display state of the Owner contract (derived; nothing is stored). None: no chain / nothing to show."""
         if self.state in (REQUESTED, COMPLETED):

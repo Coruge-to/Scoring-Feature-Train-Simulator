@@ -274,9 +274,18 @@ def draw_hud(self, painter, logical_width):
     ui_y += ui_step
     
     if hud_item_visible(self, "time_left"):
-        if self.hud_target_next_time > 0:
+        remaining_view = self.turnback_remaining_view() if hasattr(self, 'turnback_remaining_view') else None        # Stage TB-J: the pseudo-turnback Jump wait / the departure of B (a pure read model)
+        shown_time = self.hud_target_next_time
+        if remaining_view is not None and remaining_view[0] == "time":
+            shown_time = remaining_view[1]
+        if remaining_view is not None and remaining_view[0] == "count":
+            count_s = max(0, -(-int(remaining_view[1]) // 1000))              # ceil: a positive remainder never shows less than it has; 00:00 at the Jump time, never below
+            draw_row_local("", COLOR_WHITE, f"{count_s // 60:02}:{count_s % 60:02}", COLOR_WHITE, ui_y)
+        elif remaining_view is not None and remaining_view[0] == "dashes":
+            draw_row_local("", COLOR_WHITE, "--:--", COLOR_WHITE, ui_y)
+        elif shown_time > 0:
             current_s = self.bve_time_ms // 1000
-            target_s = self.hud_target_next_time // 1000
+            target_s = shown_time // 1000
             diff_s = target_s - current_s
             abs_diff_s = abs(diff_s)
 
