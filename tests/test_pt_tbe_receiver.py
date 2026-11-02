@@ -203,7 +203,7 @@ class B_TheCandidates(Base):
         s.o.setting_end_idx = -1
         self.assertEqual(s.o.get_actual_terminal_idx(), 1)
 
-    def test_the_end_stations_of_the_brake_rules_are_not_changed_by_the_pair_set(self):
+    def test_the_end_stations_of_the_brake_rules_lose_only_the_A_and_the_B_of_a_crossed_pair(self):          # Stage TB-I (on purpose): was ..._are_not_changed_by_the_pair_set
         def brake(s):
             o = s.o
             o.is_scoring_mode = False
@@ -215,7 +215,7 @@ class B_TheCandidates(Base):
         before = brake(self.scene())
         s = self.scene()
         self.feed(s, ptpair="PTPAIR:1:%s:5:1:1-2-0" % LID)
-        self.assertEqual(brake(s), before)
+        self.assertEqual(brake(s), [i for i in before if i not in (1, 2)])          # Stage TB-I (on purpose): the A (1) and the B (2) of the crossed pair are no boundary; was assertEqual(brake(s), before)
 
     def test_a_start_or_end_chosen_before_the_set_arrived_is_normalised_not_refused(self):
         s = self.scene()

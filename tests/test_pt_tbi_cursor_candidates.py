@@ -258,5 +258,131 @@ class A_TimingCursor(CursorBase):
         self.assertEqual((o.__dict__.get("_scoring_section"), o.setting_start_idx, o.setting_end_idx), before)
 
 
+class B_BasicBrakeCandidates(CandBase):
+    """The boundary candidates of the LAST basic brake rule (menu_state 7, column 0). five(): S0 / A 1 / B 2 / C 3 / D 4 (terminal), PTPAIR 1-2; six(): S0 / A1 1 / B1 2 / A2 3 / B2 4 / E 5 (terminal), pairs 1-2 and 3-4."""
+
+    def test_BI_01_RED_the_A_of_a_crossed_pair_is_no_candidate(self):
+        self.assertNotIn(1, self.brake_end(self.five()), "RED on the baseline: [1, 2, 3, 4]")
+
+    def test_BI_02_RED_the_B_of_a_crossed_pair_is_no_candidate(self):
+        self.assertNotIn(2, self.brake_end(self.five()), "RED on the baseline: [1, 2, 3, 4]")
+
+    def test_BI_03_the_ordinary_stations_and_the_terminal_stay(self):
+        self.assertEqual(self.brake_end(self.five()), [3, 4], "RED on the baseline for the A / B; the ordinary C (3) and the terminal D (4) stay")
+
+    def test_BI_04_RED_every_A_of_several_crossed_pairs_is_out(self):
+        got = self.brake_end(self.six())
+        self.assertNotIn(1, got)
+        self.assertNotIn(3, got)
+
+    def test_BI_05_RED_every_B_of_several_crossed_pairs_is_out(self):
+        got = self.brake_end(self.six())
+        self.assertNotIn(2, got)
+        self.assertNotIn(4, got)
+        self.assertEqual(got, [5], "the terminal E is the only candidate left")
+
+    def test_BI_06_the_screen_has_no_separate_start_choice_so_the_boundary_list_is_the_one_place(self):
+        """The start of rule k is the end of rule k-1 (main.py s_idx = rules[sub_c-1].end_idx), so 'B may start a rule' / 'A may end a rule' have no screen: a boundary is both. The list never holds A or B."""
+        text = source("main.py")
+        self.assertIn('s_idx = getattr(self, \'setting_start_idx\', 0) if sub_c == 0 else rules[sub_c-1].get("end_idx", -1)', text)
+        self.assertEqual(text.count('self.dropdown_target = "sub_end_sta"'), 1)
+
+    def test_BI_07_a_pair_that_the_section_does_not_cross_is_not_touched(self):
+        s = self.terminal_b()
+        self.assertEqual(self.brake_end(s), [1, 2], "GUARD (the old C_G5 on its own scene): the section ends at A and crosses nothing; the raw terminal B stays a brake end there")
+
+    def test_BI_16_only_the_pairs_of_the_scoring_section_are_left_out(self):
+        s = self.six()
+        s.o.setting_start_idx, s.o.setting_end_idx = 0, 3
+        self.assertEqual(self.brake_end(s), [3], "the section ends at the A of pair 2 and crosses pair 1 only: A1 / B1 are out, the terminal A2 stays")
+        s2 = self.six()
+        s2.o.setting_start_idx, s2.o.setting_end_idx = 2, 5
+        self.assertEqual(self.brake_end(s2), [5], "the section starts at the B of pair 1 (crosses pair 2 only): A2 / B2 are out, pair 1 is not touched (it is before the start anyway)")
+        s3 = self.six()
+        s3.o.setting_start_idx, s3.o.setting_end_idx = 0, 1
+        self.assertEqual(self.brake_end(s3), [1], "the section ends at A1: nothing is crossed, nothing is left out")
+    def test_BI_08_a_route_without_a_PairSet_is_unchanged(self):
+        s = self.scene(None)
+        self.assertEqual(self.brake_end(s), [1, 2, 3, 4], "GUARD")
+
+    def test_BI_09_RED_the_pairs_are_found_by_StationIndex_not_by_name(self):
+        s = self.five()
+        for st in s.sl:
+            st["name"] = "X"
+        self.assertEqual(self.brake_end(s), [3, 4], "RED on the baseline for the A / B")
+        s2 = self.five()
+        s2.sl[3]["name"] = "B"
+        s2.sl[1]["name"] = "ordinary"
+        self.assertEqual(self.brake_end(s2), [3, 4], "a station called B that is no pair B is not excluded; the real A is")
+
+    def test_BI_10_RED_door_indicator_lamp_and_signal_flag_are_no_input(self):
+        s = self.five()
+        s.o.bve_door, s.o.bve_doordir, s.o.bve_is_pass = 1, 0, 1
+        s.sl[1]["is_pass"] = False
+        s.sl[2]["is_pass"] = False
+        self.assertEqual(self.brake_end(s), [3, 4], "RED on the baseline for the A / B")
+
+    def test_BI_11_the_default_end_station_does_not_point_at_an_excluded_station(self):
+        s = self.five()
+        s.o.setting_end_idx = -1
+        s.o.brake_rules = [{"end_idx": -1, "apply": "階段", "release": "階段"}]
+        self.assertEqual(s.o.brake_rules[-1]["end_idx"], -1, "GUARD: the default is the sentinel, never an A or a B")
+
+    def test_BI_12_RED_picking_a_boundary_never_writes_an_excluded_station(self):
+        s = self.five()
+        o = s.o
+        written = []
+        for idx in self.brake_end(s):
+            o.brake_rules = [{"end_idx": -1, "apply": "階段", "release": "階段"}]
+            o.dropdown_options = [{"idx": i, "name": "n"} for i in self.brake_end(s)]
+            o.dropdown_cursor = [opt["idx"] for opt in o.dropdown_options].index(idx)
+            o.dropdown_target = "sub_end_sta"
+            o.handle_dropdown_enter()
+            written.append(o.brake_rules[0]["end_idx"])
+        self.assertTrue(all(w not in (1, 2) for w in written), written)
+
+    def test_BI_13_changing_the_scoring_section_resets_the_rules_so_no_excluded_value_survives(self):
+        s = self.five()
+        o = s.o
+        o.brake_rules = [{"end_idx": 1, "apply": "2段", "release": "2段"}, {"end_idx": -1, "apply": "階段", "release": "階段"}]
+        o.dropdown_options = [{"idx": 0, "name": "S0"}]
+        o.dropdown_cursor, o.dropdown_target = 0, "start_sta"
+        o.handle_dropdown_enter()
+        self.assertEqual(o.brake_rules, [{"end_idx": -1, "apply": "階段", "release": "階段"}], "GUARD: the existing reset (main.py start_sta / end_sta) stays")
+
+    def test_BI_14_the_dropdown_cursor_walks_only_the_candidates(self):
+        s = self.five()
+        ids = self.brake_end(s)
+        o = s.o
+        walked = []
+        o.dropdown_cursor = 0
+        for _ in range(len(ids)):
+            walked.append(o.dropdown_options[o.dropdown_cursor]["idx"])
+            o.dropdown_cursor = min(o.dropdown_cursor + 1, len(o.dropdown_options) - 1)
+        self.assertEqual(walked, ids)
+        self.assertNotIn(1, walked, "RED on the baseline")
+
+
+class C_InitialAndRelaxationInheritance(CandBase):
+    def test_IR_01_the_initial_and_relaxation_screen_has_no_station_candidates_of_its_own(self):
+        text = source("main.py")
+        self.assertEqual(text.count('"init_sub_end_sta"'), 1, "GUARD: the init target name occurs only in the dropdown-enter handler (a dormant branch); the station drop-down is opened only when menu_state == 7")
+        self.assertIn("if is_last and self.menu_state == 7:", text)
+
+    def test_IR_02_the_initial_rules_follow_the_brake_rule_count(self):
+        s = self.five()
+        o = s.o
+        o.brake_rules = [{"end_idx": 3, "apply": "階段", "release": "階段"}, {"end_idx": -1, "apply": "階段", "release": "階段"}]
+        o.penalty_init_rules = [{"apply": "ON①", "release": "ON①"}]
+        o.menu_state, o.menu_cursor, o.menu_cursor_x = 5, 5, 0
+        o.handle_menu_enter(False)
+        self.assertEqual(len(o.penalty_init_rules), len(o.brake_rules), "GUARD: the screen entry grows the init rules to the brake rules (main.py): the boundaries are the brake rules' ones")
+
+    def test_IR_03_RED_the_candidate_set_is_generated_in_one_place_only(self):
+        text = source("main.py")
+        self.assertEqual(text.count("def _brake_end_candidates"), 1, "RED-API on the baseline: the brake boundary candidates have no generator of their own (an inline list in handle_menu_enter)")
+        self.assertEqual(text.count("valid_stas.append"), 0, "the inline candidate list is gone")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -26,6 +26,7 @@ from scoring_logic import (
     turnback_fix_section,
     turnback_machine_of,
     turnback_b_indexes,
+    turnback_crossed_pairs,
     untimed_reason,
     build_scoring_section,
     active_scoring_section,
@@ -1305,6 +1306,18 @@ class Overlay(QWidget):
                     stations.append({"idx": i, "name": s["name"]})
         return stations
 
+    def _brake_end_candidates(self, s_idx):
+        """Stage TB-I (Owner contract): the boundary stations that the LAST basic brake rule offers. A boundary is the end of this rule AND the start of the next one, so the A of a crossed pair (a rule may not start
+        at A: A -> B is no ordinary run) and the B of a crossed pair (a rule may not end at B) are both left out. Crossed = the pairs of the scoring section (the Run snapshot while a Run is active, else the settings), by
+        StationIndex and the pair set only; a pair that the section does not cross is not touched, and without a pair set nothing is left out. The initial / relaxation rule screen has no candidates of its own: it follows these
+        boundaries (the rule count of brake_rules)."""
+        actual_terminal_idx = self.get_raw_terminal_idx() if hasattr(self, 'get_raw_terminal_idx') else -1
+        e_overall = getattr(self, 'setting_end_idx', -1) if getattr(self, 'setting_end_idx', -1) != -1 else actual_terminal_idx
+        snapshot = active_scoring_section(self)
+        pairs = snapshot.pairs if snapshot is not None else turnback_crossed_pairs(self, getattr(self, 'setting_start_idx', 0), getattr(self, 'setting_end_idx', -1))
+        left_out = {p.arrival for p in pairs} | {p.departure for p in pairs}
+        return [s for s in self._scoring_candidate_stations() if s["idx"] > s_idx and s["idx"] <= e_overall and s["idx"] not in left_out]
+
     def _scoring_start_candidates(self):
         end = getattr(self, 'setting_end_idx', -1)
         e_idx = end if end != -1 else self.get_raw_terminal_idx()
@@ -1867,18 +1880,7 @@ class Overlay(QWidget):
                     if sub_c_x == 0: 
                         self.dropdown_target = "sub_end_sta"
                         s_idx = getattr(self, 'setting_start_idx', 0) if sub_c == 0 else rules[sub_c-1].get("end_idx", -1)
-                        
-                        valid_stas = []
-                        if getattr(self, 'station_list', []):
-                            valid_stas.append({"idx": 0, "name": self.station_list[0]["name"]})
-                            for i, s in enumerate(self.station_list):
-                                if i > 0 and not s.get("is_pass", False):
-                                    valid_stas.append({"idx": i, "name": s["name"]})
-
-                        actual_terminal_idx = self.get_raw_terminal_idx() if hasattr(self, 'get_raw_terminal_idx') else -1
-                        e_overall = getattr(self, 'setting_end_idx', -1) if getattr(self, 'setting_end_idx', -1) != -1 else actual_terminal_idx
-                        
-                        opts = [s for s in valid_stas if s["idx"] > s_idx and s["idx"] <= e_overall]
+                        opts = self._brake_end_candidates(s_idx)                 # Stage TB-I: the A and the B of a crossed pair are no boundary
                         self.dropdown_options = opts if opts else [{"idx": -1, "name": "選択可能駅なし"}]
                     elif sub_c_x == 1:
                         self.dropdown_target = "sub_apply"

@@ -220,12 +220,15 @@ class B_OD_TD_1_Guard(Base):
     def test_C_G4_the_A_stays_an_end_candidate(self):
         self.assertIn(1, self.ends(self.five()))
 
-    def test_C_G5_the_brake_rule_end_candidates_are_unchanged(self):
+    def test_C_G5_the_brake_rule_end_candidates_leave_out_only_the_A_and_the_B_of_a_crossed_pair(self):
+        # Stage TB-I (on purpose, Owner contract): the old guard said the brake rule end candidates are unchanged by the pair set. A boundary of the brake rules is the end of one rule and the start of the next,
+        # so the A and the B of every pair that the scoring section crosses are no boundary now (tests/test_pt_tbi_cursor_candidates.py). A pair that the section does not cross is still not touched.
         with_pairs, without = self.terminal_b(), self.terminal_b(None)
         self.assertEqual(self.brake_end(with_pairs), self.brake_end(without))
-        self.assertEqual(self.brake_end(with_pairs), [1, 2], "the brake rule section may end at the raw terminal even when it is a B")
+        self.assertEqual(self.brake_end(with_pairs), [1, 2], "the section ends at A and crosses nothing: the brake rule section may end at the raw terminal even when it is a B")
         five_with, five_without = self.five(), self.scene(None)
-        self.assertEqual(self.brake_end(five_with), self.brake_end(five_without))
+        self.assertEqual(self.brake_end(five_without), [1, 2, 3, 4])
+        self.assertEqual(self.brake_end(five_with), [3, 4], "the crossed pair (A 1, B 2) is out")
 
     def test_C_G6_the_default_sentinel_and_its_general_meaning_are_unchanged(self):
         self.assertEqual(len(re.findall(r"self\.setting_end_idx = -1\b", source("main.py"))), 2, "the default (init) and the scenario-change reset")

@@ -368,6 +368,8 @@ class SiAScopeOfMain(unittest.TestCase):
                               | {
                                   'self.timing_cursor = 1 if (targets and len(targets) > 1) else len(targets)',
                                   "targets = self.get_timing_target_stas() if hasattr(self, 'get_timing_target_stas') else []",
+                                  "e_overall = getattr(self, 'setting_end_idx', -1) if getattr(self, 'setting_end_idx', -1) != -1 else actual_terminal_idx",
+                                  'opts = [s for s in valid_stas if s["idx"] > s_idx and s["idx"] <= e_overall]',
                               },
         # PID-D6 (on purpose): a JUMP_COMPLETE only counts when its RequestId matches the outstanding command (Overlay._jump_complete_acceptable)
         # Phase ST-2a (on purpose): the station list of a STALIST datagram is a station_identity.StationList that carries the list id (new_list = [] became that constructor call)
