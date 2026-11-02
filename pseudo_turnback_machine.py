@@ -4,9 +4,9 @@ BVE time and acts on the returned actions. It never writes the Overlay and never
 What it decides (PTS-0 Pair contract §11, S22A, Owner OD-PR-1 beta / OD-PR-3 / OD-PR-4, Owner display contract 2026-10-31):
   * the use conditions PU-1..PU-7 are evaluated at EVERY arrival; no 'done'/'not applicable' flag is kept for a pair (the issued key is the only memory: PU-7);
   * A: the arrival scoring of the host comes first; then ONE A operating-time score (only for a pair A that is a timing station); NO A checkpoint, ever;
-  * the Jump is requested ONCE, at the BVE time of the arrival (the tick that ran evaluate_arrival) + 5.0 s, never waiting for or looking at a door, never reading a signal flag;
-  * the 5.0 s are shown as ONE of two timelines (never 3 s + 2 s as a rule): without a special arrival popup (basic braking achieved / 0 cm stop) the guidance is shown for the whole 5.0 s;
-    with one the special popup is shown for 3.0 s (however many special popups there are), then the guidance for 2.0 s. The request time does NOT depend on the display;
+  * the FIRST Jump is requested ONCE, at the BVE time of the arrival (the tick that ran evaluate_arrival) + 10.0 s (Stage TB-H 5b; after a re-stop: the re-stop + 5.0 s, unchanged), never waiting for or looking at a door, never reading a signal flag;
+  * the 10.0 s of the first window are shown the same way with or without an arrival result popup (basic braking achieved / 0 cm stop): 0-5 s the arrival result popups (their normal 5.0 s) or nothing, 5-10 s the guidance.
+    The request time does NOT depend on the display;
   * a Jump that cannot be sent (the sender does not announce the Jump group) is never requested: the chain ends in FAILED and the host aborts the scoring (fail-closed, reason JUMP_UNAVAILABLE_REASON);
   * B: after the official Jump completed, and the host reported that B is established (StationIndex, target, start state), ONE B checkpoint for a ContinueScoring pair, none for a final pair;
   * a final pair (CompleteAfterJump): the finish action is returned from the completion event itself, before anything of B is scored (order protection I-12), and NO checkpoint.
@@ -16,9 +16,9 @@ from typing import NamedTuple
 
 PURPOSE_TURNBACK = "turnback"        # the purpose of the Jump (distinct from retry / start); the formal home is jump_transaction.JUMP_TURNBACK (Stage TB-C)
 
-REQUEST_AFTER_MS = 5000              # the Jump request: BVE time of the arrival + 5.0 s
-SPECIAL_DISPLAY_MS = 3000            # the special arrival popup (basic braking achieved / 0 cm stop), when there is one
-GUIDE_TOTAL_MS = REQUEST_AFTER_MS    # the guidance ends where the request is made
+REQUEST_AFTER_MS = 5000              # the Jump request after a RE-STOP: BVE time of the re-stop + 5.0 s (UNCHANGED by Stage TB-H 5b; the FIRST window is FIRST_REQUEST_AFTER_MS)
+FIRST_REQUEST_AFTER_MS = 2 * REQUEST_AFTER_MS      # Stage TB-H 5b: the Jump request of the FIRST window: BVE time of the arrival + 10.0 s (5.0 s of the arrival result popups or nothing + 5.0 s of guidance), with or without an arrival result popup
+FIRST_GUIDE_FROM_MS = REQUEST_AFTER_MS           # Stage TB-H 5b: the guidance of the first window is shown from the arrival + 5.0 s to the request (0-5 s: the arrival result popups, or nothing)
 
 JUMP_UNAVAILABLE_REASON = "pseudo-turnback-jump-unavailable"
 SELF_DRIVE_B_REASON = "pseudo-turnback-self-drive-b"      # Stage TB-H (A re-stop wait): the train was driven from A to B by itself; the planned Jump to B must never be sent
@@ -27,7 +27,7 @@ B_STATE_FAILED_REASON = "pseudo-turnback-b-state-invariant-failed"
 B_WATCH_LIMIT_MS = 1000              # OD-TB-28: the positive BVE-time advance, counted from the first B-side telemetry time after the Jump, within which B has to be established
 
 # the display states of the Owner contract, DERIVED from the chain state and the BVE time (nothing is stored for them)
-DISPLAY_SPECIAL_3S = "ARRIVAL_SPECIAL_3S"
+DISPLAY_ARRIVAL_RESULT = "ARRIVAL_RESULT"        # Stage TB-H 5b: 0-5 s of the first window with an arrival result popup (it keeps its normal 5.0 s)
 DISPLAY_GUIDANCE = "TURNBACK_GUIDANCE"
 DISPLAY_REQUEST_READY = "JUMP_REQUEST_READY"
 DISPLAY_UNAVAILABLE_ABORT = "JUMP_UNAVAILABLE_ABORT"
@@ -129,7 +129,7 @@ class TurnbackMachine:
         self.has_special = False
         self.awaiting_b = False
         self.failed_reason = None
-        self.jump_earliest_ms = None   # Stage TB-H: the BVE time at or after which the Jump may be requested: arrival + 5.0 s, then re-stop + 5.0 s (arrival_ms itself is never overwritten)
+        self.jump_earliest_ms = None   # Stage TB-H: the BVE time at or after which the Jump may be requested: arrival + 10.0 s (5b), then re-stop + 5.0 s (arrival_ms itself is never overwritten)
         self.window_ms = None          # the start of the CURRENT guidance window: the arrival, then every re-stop
         self.stop_range = None         # (A position, margin_f, margin_b) of the arrival tick: the author-defined stop range of THIS A (never the 330 m scoring range, never the next target's)
         self.cancel_count = 0
@@ -205,7 +205,7 @@ class TurnbackMachine:
         if key in self.issued:                                  # PU-7
             return []
         self.pair, self.key, self.generation, self.arrival_ms = pair, key, generation, now_ms
-        self.jump_earliest_ms = now_ms + REQUEST_AFTER_MS      # Stage TB-H: fixed at the arrival
+        self.jump_earliest_ms = now_ms + FIRST_REQUEST_AFTER_MS      # Stage TB-H 5b: fixed at the arrival: arrival + 10.0 s
         self.window_ms = now_ms
         self.stop_range = stop_range
         self.cancel_count = self.restop_count = 0
@@ -229,15 +229,21 @@ class TurnbackMachine:
             acts.append(("score_a_time", self.pair.arrival))
         return acts
 
+    def first_window_extra_ms(self):
+        """Stage TB-H 5b: how much longer the window that starts at the ARRIVAL is than a window that starts at a re-stop (10.0 s against 5.0 s); 0 after a re-stop. Derived, nothing is stored."""
+        return (FIRST_REQUEST_AFTER_MS - REQUEST_AFTER_MS) if self.restop_count == 0 else 0
+
     def display_phase(self, now_ms):
-        """'special' (0-3 s, only with a special popup), 'guide' (3-5 s with a special popup, 0-5 s without) or None, in BVE time since the arrival."""
+        """The first window (an arrival, 10.0 s): 'special' 0-5 s (only with an arrival result popup: it shows its normal 5.0 s; without one nothing is shown, None), 'guide' 5-10 s. A window that starts at a re-stop (5.0 s): 'guide' the whole window.
+        In BVE time since the window start."""
         if self.state not in (RECOGNIZED, ARMED) or self.window_ms is None:
             return None
         dt = now_ms - self.window_ms
-        if dt < 0 or dt >= GUIDE_TOTAL_MS:
+        if dt < 0 or dt >= REQUEST_AFTER_MS + self.first_window_extra_ms():
             return None
-        if self.has_special and dt < SPECIAL_DISPLAY_MS:
-            return "special"
+        guide_from = FIRST_GUIDE_FROM_MS if self.restop_count == 0 else 0
+        if dt < guide_from:
+            return "special" if self.has_special else None
         return "guide"
 
     def display_state(self, now_ms):
@@ -252,7 +258,7 @@ class TurnbackMachine:
             return DISPLAY_RESTOP_WAIT
         phase = self.display_phase(now_ms)
         if phase == "special":
-            return DISPLAY_SPECIAL_3S
+            return DISPLAY_ARRIVAL_RESULT
         if phase == "guide":
             return DISPLAY_GUIDANCE
         if self.state == ARMED and self.jump_earliest_ms is not None and now_ms >= self.jump_earliest_ms:

@@ -347,7 +347,7 @@ class D_DoorIndependence(Base):
 
     def requests(self, s, t):
         out = []
-        for off in (4999, 5000, 5016, 6000):
+        for off in (9999, 10000, 10016, 11000):          # Stage TB-H 5b (on purpose): the request is at arrival + 10.0 s (it was 5.0 s)
             if s.o.bve_time_ms < t + off:
                 s.tick(advance_ms=t + off - s.o.bve_time_ms)
             out.append((off, [a[0] for a in s.machine.tick(t + off, s.o.current_scenario_id, True)]))
@@ -356,15 +356,15 @@ class D_DoorIndependence(Base):
     def test_TB_DOOR_R1_arrival_with_the_door_open_chain_display_request(self):
         s, t = self.edge_arrival()
         self.assertEqual(s.machine.state, M.ARMED)
-        self.assertEqual(len(self.guides(s)), 1)
-        self.assertEqual(self.requests(s, t), [(4999, []), (5000, ["request_jump"]), (5016, []), (6000, [])])
+        self.assertEqual(len(self.guides(s)), 0, "Stage TB-H 5b (on purpose): the guidance of the first window starts at 5.0 s")
+        self.assertEqual(self.requests(s, t), [(9999, []), (10000, ["request_jump"]), (10016, []), (11000, [])])
 
     def test_TB_DOOR_R2_arrival_without_any_door_opening_chain_display_request(self):
         s, t = self.operational_arrival(door=0)
         self.assertEqual(s.machine.state, M.ARMED)
         self.assertEqual(s.o.bve_door, 0, "the door never opened")
-        self.assertEqual(len(self.guides(s)), 1, "the guidance is shown")
-        self.assertEqual(self.requests(s, t), [(4999, []), (5000, ["request_jump"]), (5016, []), (6000, [])])
+        self.assertEqual(len(self.guides(s)), 0, "Stage TB-H 5b (on purpose): the guidance of the first window starts at 5.0 s")
+        self.assertEqual(self.requests(s, t), [(9999, []), (10000, ["request_jump"]), (10016, []), (11000, [])])
         self.assertEqual([c["station_index"] for c in s.o.save_data], [0], "and still no checkpoint of the A")
 
     def test_TB_DOOR_R3_no_arrival_judgement_no_chain_whatever_the_door_does(self):
@@ -412,10 +412,10 @@ class D_DoorIndependence(Base):
         for door, doordir in ((0, 1), (1, 1), (1, 0), (0, 0)):
             s, t = self.edge_arrival()
             s.o.bve_door, s.o.bve_doordir = door, doordir
-            s.tick(advance_ms=4999)
-            before = s.machine.tick(t + 4999, s.o.current_scenario_id, True)
+            s.tick(advance_ms=9999)                                       # Stage TB-H 5b (on purpose): arrival + 10.0 s
+            before = s.machine.tick(t + 9999, s.o.current_scenario_id, True)
             s.tick(advance_ms=1)
-            at = s.machine.tick(t + 5000, s.o.current_scenario_id, True)
+            at = s.machine.tick(t + 10000, s.o.current_scenario_id, True)
             results.append((before, [a[0] for a in at]))
         self.assertEqual(results, [([], ["request_jump"])] * 4)
 
@@ -424,7 +424,7 @@ class D_DoorIndependence(Base):
         op, t_op = self.operational_arrival()
         for s in (edge, op):
             m = s.machine
-            self.assertEqual((m.state, m.pair, m.has_special, len(s.o.save_data), len(self.guides(s))), (M.ARMED, m.pairset.pairs[0], False, 1, 1))
+            self.assertEqual((m.state, m.pair, m.has_special, len(s.o.save_data), len(self.guides(s))), (M.ARMED, m.pairset.pairs[0], False, 1, 0))          # Stage TB-H 5b (on purpose): no guidance yet (it was 1)
         self.assertEqual(edge.machine.key[2:3], op.machine.key[2:3])
         self.assertTrue(op.o.has_scored_stop_this_station)
 
@@ -437,15 +437,15 @@ class D_DoorIndependence(Base):
         s.step(2, bve_door=0)
         s.step(2, bve_door=1)
         self.assertEqual((s.machine.state, s.machine.key), (M.ARMED, key))
-        self.assertEqual(len(self.guides(s)), 1)
-        self.assertEqual(self.requests(s, t), [(4999, []), (5000, ["request_jump"]), (5016, []), (6000, [])])
+        self.assertEqual(len(self.guides(s)), 0)                       # Stage TB-H 5b (on purpose): no guidance yet (it was 1)
+        self.assertEqual(self.requests(s, t), [(9999, []), (10000, ["request_jump"]), (10016, []), (11000, [])])
         # a chain that started WITH an edge survives the door closing, opening and closing again
         s, t = self.edge_arrival()
         key = s.machine.key
         for door in (0, 1, 0, 1, 0):
             s.step(5, bve_door=door)
         self.assertEqual((s.machine.state, s.machine.key), (M.ARMED, key))
-        self.assertEqual(self.requests(s, t), [(4999, []), (5000, ["request_jump"]), (5016, []), (6000, [])])
+        self.assertEqual(self.requests(s, t), [(9999, []), (10000, ["request_jump"]), (10016, []), (11000, [])])
 
 
 # ==============================================================================================================================================
@@ -633,7 +633,7 @@ class TB_SAVE(Base):
 
     def test_TB_SAVE_R4_no_checkpoint_of_B_before_B_is_established(self):
         s, t = self.arrive("plain", 0.3)
-        for off in (1000, 3000, 5000, 7000):
+        for off in (1000, 3000, 5000, 7000, 10000, 12000):          # Stage TB-H 5b (on purpose): the request is at 10.0 s
             s.tick(advance_ms=t + off - s.o.bve_time_ms)
             s.machine.tick(t + off, s.o.current_scenario_id, True)
         self.assertEqual(s.machine.state, M.REQUESTED)

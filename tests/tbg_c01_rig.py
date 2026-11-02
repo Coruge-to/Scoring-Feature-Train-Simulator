@@ -99,7 +99,7 @@ class Flow(object):
     def to_request(self):
         self.scene.run_to_request(self.t_a)
         self.exp = self.o.jump_expectation
-        self.snap("requested(+5.0s)")
+        self.snap("requested(+10.0s)")
 
     def land(self):
         """The Jump lands at B and is completed. Returns nothing; the product tick that follows is `after(n)`."""

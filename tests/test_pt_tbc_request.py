@@ -77,11 +77,11 @@ class Base(unittest.TestCase):
 
 
 class A_TheRequest(Base):
-    def test_the_request_is_made_once_at_arrival_plus_5_seconds_of_BVE_time(self):
+    def test_the_request_is_made_once_at_arrival_plus_10_seconds_of_BVE_time(self):          # Stage TB-H 5b (on purpose): it was 5 seconds
         s = self.scene()
         o = s.o
         t_a = s.arrive_a()
-        s.tick(advance_ms=t_a + 4900 - o.bve_time_ms)
+        s.tick(advance_ms=t_a + 9900 - o.bve_time_ms)
         self.assertIsNone(o.jump_expectation)
         self.assertEqual(self.sent, [])
         s.tick(advance_ms=100)
@@ -113,10 +113,10 @@ class A_TheRequest(Base):
         self.assertIsNone(o.jump_expectation)
         self.assertEqual(self.sent, [])
         self.assertEqual(s.texts(), before)
-        s.tick(advance_ms=2900)
+        s.tick(advance_ms=7900)                                       # Stage TB-H 5b (on purpose): 10.0 s in total (it was 5.0 s)
         self.assertIsNone(o.jump_expectation)
         s.tick(advance_ms=100)
-        self.assertIsNotNone(o.jump_expectation, "the rest of the BVE time: 5.0 s in total")
+        self.assertIsNotNone(o.jump_expectation, "the rest of the BVE time: 10.0 s in total")
         self.assertEqual(len(self.sent), 1)
 
     def test_an_open_menu_holds_the_request_until_it_is_closed(self):
@@ -124,7 +124,7 @@ class A_TheRequest(Base):
         o = s.o
         t_a = s.arrive_a()
         o.menu_state = 1
-        s.tick(advance_ms=t_a + 6000 - o.bve_time_ms)
+        s.tick(advance_ms=t_a + 11000 - o.bve_time_ms)                 # Stage TB-H 5b (on purpose): past the 10.0 s request time (it was 6000)
         self.assertIsNone(o.jump_expectation)
         o.menu_state = 0
         s.tick(16)

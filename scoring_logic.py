@@ -922,7 +922,6 @@ TURNBACK_RESTOP_GUIDANCE_TEXT = "列車を動かさないでください。"
 TURNBACK_GUIDANCE_CATEGORY = "疑似折り返し"
 TURNBACK_CANCEL_TEXTS = ("発車位置への移動がキャンセルされました。", "許容範囲内に再度列車を停止させてください。")
 TURNBACK_CANCEL_CATEGORY = "疑似折り返し中止"
-TURNBACK_SPECIAL_SECONDS = pseudo_turnback_machine.SPECIAL_DISPLAY_MS / 1000.0
 TURNBACK_TOTAL_SECONDS = pseudo_turnback_machine.REQUEST_AFTER_MS / 1000.0
 
 
@@ -1380,8 +1379,16 @@ def turnback_drop_popups(self, guidance=True, warning=True):
         self.popups = [p for p in self.popups if p.get("category") not in categories]
 
 
+def turnback_drop_arrival_results(self):
+    """Stage TB-H 5b: the Jump was cancelled while the arrival result popups (the basic braking achievement, the 0 cm stop = is_arrival_special_popup) are shown: they end through the same list filter as the chain's own popups,
+    so that the red warning stands alone. Nothing else is touched (the score lines '+500' and the score itself stay)."""
+    if any(is_arrival_special_popup(p) for p in (getattr(self, 'popups', None) or ())):
+        self.popups = [p for p in self.popups if not is_arrival_special_popup(p)]
+
+
 def turnback_cancel_show(self, now_ms):
     """The train moved while the Jump was waiting: the guidance goes AT ONCE and the red two-line warning (the colour of the illegal-Jump warning) is shown for 5.0 s. The machine already holds the wait state."""
+    turnback_drop_arrival_results(self)
     turnback_drop_popups(self)
     for text in TURNBACK_CANCEL_TEXTS:
         add_score_popup(self, 0, text, COLOR_B_EMG, "big", TURNBACK_CANCEL_CATEGORY, now_ms / 1000.0)
@@ -1430,22 +1437,19 @@ def turnback_arrival_begin(self, current_time, station_index, stop_position=None
 
 
 def turnback_arrival_scored(self, current_time, popups_before):
-    """The arrival scoring of A is complete (stop position, basic braking, popups). The special popups this arrival wrote share ONE 3.0 s window from the arrival time (two of them are 3.0 s in total, never 6 s);
-    the guidance is shown from 0 s when there is no special popup, otherwise from 3.0 s (turnback_display_update). The '+500' lines are not touched."""
+    """The arrival scoring of A is complete (stop position, basic braking, popups). Stage TB-H 5b: the arrival result popups (the basic braking achievement, the 0 cm stop) keep their normal 5.0 s like every other popup (the old
+    exception of 3.0 s is gone); the guidance is shown from 5.0 s to 10.0 s with or without them (turnback_display_update). The '+500' lines are not touched."""
     machine = turnback_machine_of(self)
     if machine.state != pseudo_turnback_machine.RECOGNIZED:
         return
     special = [p for p in self.popups[popups_before:] if is_arrival_special_popup(p)]
-    arrival_s = machine.arrival_ms / 1000.0
-    for p in special:
-        p["expire_time"] = arrival_s + TURNBACK_SPECIAL_SECONDS
     machine.a_scoring_complete(machine.arrival_ms, False, bool(special))
     turnback_display_update(self, current_time)
 
 
 def turnback_display_update(self, current_time):
-    """Once per scoring tick: shows the guidance in its window, in BVE time since the arrival (a paused clock does not move it, a repaint or the wall clock never does). The guidance popup ends at arrival + 5.0 s,
-    where the Jump request is made (that time is decided by the machine from the arrival time alone; this display never moves it)."""
+    """Once per scoring tick: shows the guidance in its window, in BVE time since the window start (a paused clock does not move it, a repaint or the wall clock never does). The first window (an arrival) shows it from 5.0 s to 10.0 s,
+    a window that starts at a re-stop from 0 to 5.0 s; the guidance popup ends where the Jump request is made (that time is decided by the machine alone; this display never moves it)."""
     machine = self.__dict__.get('turnback_machine')
     if machine is not None and machine.state not in (pseudo_turnback_machine.RECOGNIZED, pseudo_turnback_machine.ARMED):
         turnback_drop_popups(self, warning=(machine.state != pseudo_turnback_machine.RESTOP_WAIT))
@@ -1460,7 +1464,7 @@ def turnback_display_update(self, current_time):
     # the first window of an arrival: one line; every window that starts at a re-stop: two lines (Stage TB-H). The window ends 5.0 s after its start, where the Jump request is made.
     for text in ((TURNBACK_GUIDANCE_TEXT,) if machine.restop_count == 0 else (TURNBACK_GUIDANCE_TEXT, TURNBACK_RESTOP_GUIDANCE_TEXT)):
         add_score_popup(self, 0, text, COLOR_WHITE, "big", TURNBACK_GUIDANCE_CATEGORY, current_time)
-        self.popups[-1]["expire_time"] = machine.window_ms / 1000.0 + TURNBACK_TOTAL_SECONDS
+        self.popups[-1]["expire_time"] = machine.window_ms / 1000.0 + TURNBACK_TOTAL_SECONDS + machine.first_window_extra_ms() / 1000.0
 
 
 def create_turnback_b_checkpoint(self, station_index, planned_time_ms=None):

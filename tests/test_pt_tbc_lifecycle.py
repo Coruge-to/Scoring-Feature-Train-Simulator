@@ -135,7 +135,7 @@ def _display_update_with_the_scoring_off(self):
     s = self.build("ARMED")
     s.o.is_scoring_mode = False
     s.o.popups.clear()
-    s.o.bve_time_ms = s.machine.arrival_ms + 100
+    s.o.bve_time_ms = s.machine.arrival_ms + 5100                 # Stage TB-H 5b (on purpose): the guidance of the first window is shown from 5.0 s (it was 0.1 s)
     self.S.turnback_display_update(s.o, s.o.bve_time_ms / 1000.0)
 
 

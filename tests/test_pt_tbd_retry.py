@@ -142,10 +142,11 @@ class A_RetryWhileArmed(Base):
         self.assertEqual(s.machine.state, M.ARMED)
         self.assertEqual(s.machine.arrival_ms, t_new, "the new chain belongs to the new arrival")
         s.run_to_request(t_new)
-        self.assertEqual(calls, [(t_new + 5000, 2)], "exactly one request, at the NEW arrival + 5.0 s")
+        self.assertEqual(calls, [(t_new + 10000, 2)], "exactly one request, at the NEW arrival + 10.0 s (Stage TB-H 5b (on purpose); it was 5.0 s)")
 
     def test_RT_4_everything_that_hangs_on_the_old_chain_is_gone(self):
         s, t_a = self.armed()
+        s.tick(advance_ms=6000)                                       # Stage TB-H 5b (on purpose): the guidance of the first window is on from 5.0 s
         self.assertTrue(s.popups("疑似折り返し"), "the guidance of the old chain is on the screen")
         self.assertTrue(self.main.execute_retry(s.o, 0, False).accepted)
         self.settle_retry(s)
@@ -167,7 +168,7 @@ class A_RetryWhileArmed(Base):
         second = self.main.execute_retry(s.o, 0, False)                    # a second request while the first is still in flight (accepted or refused: either way)
         self.assertIn(second.accepted, (True, False))
         self.settle_retry(s)
-        self.run_until(s, t_a + 6000)
+        self.run_until(s, t_a + 11000)                                # Stage TB-H 5b (on purpose): past the old 10.0 s request time
         self.assertEqual(calls, [])
         self.assertEqual(s.machine.state, M.IDLE)
 

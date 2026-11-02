@@ -1,7 +1,7 @@
 """The ARRIVAL DISPLAY contract of the pseudo-turnback A (Owner, 2026-10-31): TB-DISP-R1 .. R12.
 
-  case 1  no special popup (no basic braking achieved, no 0 cm stop):   arrival -> guidance 5.0 s -> Jump request
-  case 2  a special popup (basic braking achieved and / or 0 cm stop):  arrival -> special popup 3.0 s -> guidance 2.0 s -> Jump request     (5.0 s in total; two special popups share the ONE 3.0 s)
+  case 1  no special popup (no basic braking achieved, no 0 cm stop):   arrival -> 5.0 s nothing -> guidance 5.0 s -> Jump request          (10.0 s in total)   [Stage TB-H 5b, on purpose; it was 5.0 s of guidance]
+  case 2  a special popup (basic braking achieved and / or 0 cm stop):  arrival -> result popup 5.0 s (its normal time) -> guidance 5.0 s -> Jump request   (10.0 s in total)   [Stage TB-H 5b, on purpose; it was 3.0 s + 2.0 s]
 
 The base is the BVE time of the tick that ran evaluate_arrival (current_time = bve_time_ms / 1000). The '+500' style score lines are 5.0 s as at every other station and are not part of this contract.
 Scope: the REAL update_physics_and_scoring (the popups) + the pure machine (the request time and the unavailable abort). The wiring of the machine's request to the Overlay's Jump sender is Stage TB-C; here a host stub
@@ -90,84 +90,95 @@ class Base(unittest.TestCase):
 # the Owner's twelve (TB-DISP-R1 .. R12)
 # ==============================================================================================================================================
 class D_Display(Base):
-    def test_TB_DISP_R1_no_special_popup_the_guidance_fills_the_five_seconds_then_one_jump(self):
+    """Stage TB-H 5b (on purpose): the FIRST window is 10.0 s. The arrival result popups (basic braking achieved / 0 cm stop) keep their normal 5.0 s (the old 3.0 s exception is gone); the guidance is shown from 5.0 s to 10.0 s with or
+    without them; the Jump request is at 10.0 s. (The old contract was: no result -> guidance 0-5 s; result -> 3.0 s + guidance 2.0 s; request at 5.0 s.)"""
+
+    def test_TB_DISP_R1_no_special_popup_five_quiet_seconds_then_the_guidance_then_one_jump(self):
         s, t = self.arrived("plain", 0.3)
         self.assertEqual(self.specials(s), [])
-        self.assertEqual(len(self.guides(s)), 1, "the guidance is on at the arrival tick itself")
-        self.assertEqual(self.guides(s)[0]["expire_time"], t / 1000.0 + 5.0)
-        self.assertEqual(s.machine.display_state(t), M.DISPLAY_GUIDANCE)
+        self.assertEqual(self.guides(s), [], "Stage TB-H 5b: no result popup -> nothing is shown for the first 5.0 s")
+        self.assertIsNone(s.machine.display_state(t))
         self.at(s, t, 4999)
-        self.assertEqual(len(self.guides(s)), 1)
-        self.assertEqual(self.request_at(s, t + 4999), [])
+        self.assertEqual(self.guides(s), [])
         self.at(s, t, 5000)
+        self.assertEqual(len(self.guides(s)), 1, "the guidance starts at 5.0 s")
+        self.assertEqual(self.guides(s)[0]["expire_time"], t / 1000.0 + 10.0)
+        self.assertEqual(s.machine.display_state(t + 5000), M.DISPLAY_GUIDANCE)
+        self.at(s, t, 9999)
+        self.assertEqual(len(self.guides(s)), 1)
+        self.assertEqual(self.request_at(s, t + 9999), [])
+        self.at(s, t, 10000)
         self.assertEqual(self.guides(s), [], "the guidance ends where the request is made")
-        acts = self.request_at(s, t + 5000)
+        acts = self.request_at(s, t + 10000)
         self.assertEqual([a[0] for a in acts], ["request_jump"])
 
-    def test_TB_DISP_R2_basic_braking_three_seconds_then_two_seconds_of_guidance(self):
+    def test_TB_DISP_R2_basic_braking_five_seconds_then_five_seconds_of_guidance(self):
         s, t = self.arrived("stepwise", 0.3)
         sp = self.specials(s)
         self.assertEqual([p["category"] for p in sp], ["基本制動"])
-        self.assertEqual(sp[0]["expire_time"], t / 1000.0 + 3.0)
-        self.assertEqual(self.guides(s), [], "the guidance waits for the special popup")
-        self.assertEqual(s.machine.display_state(t), M.DISPLAY_SPECIAL_3S)
+        self.assertEqual(sp[0]["expire_time"], t / 1000.0 + 5.0, "the normal 5.0 s of every popup (no 3.0 s exception)")
+        self.assertEqual(self.guides(s), [], "the guidance waits for the result popup")
+        self.assertEqual(s.machine.display_state(t), M.DISPLAY_ARRIVAL_RESULT)
         self.at(s, t, 3000)
+        self.assertEqual(len(self.specials(s)), 1, "still shown at 3.0 s")
+        self.assertEqual(self.guides(s), [])
+        self.at(s, t, 5000)
         self.assertEqual(self.specials(s), [])
         self.assertEqual(len(self.guides(s)), 1)
-        self.assertEqual(self.guides(s)[0]["expire_time"], t / 1000.0 + 5.0, "2.0 s of guidance, not 5.0 s more")
-        self.at(s, t, 5000)
+        self.assertEqual(self.guides(s)[0]["expire_time"], t / 1000.0 + 10.0, "5.0 s of guidance")
+        self.at(s, t, 10000)
         self.assertEqual(self.guides(s), [])
-        self.assertEqual([a[0] for a in self.request_at(s, t + 5000)], ["request_jump"])
+        self.assertEqual([a[0] for a in self.request_at(s, t + 10000)], ["request_jump"])
 
-    def test_TB_DISP_R3_zero_cm_stop_three_seconds_then_two_seconds_of_guidance(self):
+    def test_TB_DISP_R3_zero_cm_stop_five_seconds_then_five_seconds_of_guidance(self):
         s, t = self.arrived("plain", 0.0)
         sp = self.specials(s)
         self.assertEqual([(p["category"], p["text"]) for p in sp], [("ボーナス", "0cm停車成功!!!")])
-        self.assertEqual(sp[0]["expire_time"], t / 1000.0 + 3.0)
+        self.assertEqual(sp[0]["expire_time"], t / 1000.0 + 5.0)
         self.assertEqual(self.guides(s), [])
-        self.at(s, t, 3000)
-        self.assertEqual((self.specials(s), len(self.guides(s))), ([], 1))
         self.at(s, t, 5000)
-        self.assertEqual([a[0] for a in self.request_at(s, t + 5000)], ["request_jump"])
+        self.assertEqual((self.specials(s), len(self.guides(s))), ([], 1))
+        self.at(s, t, 10000)
+        self.assertEqual([a[0] for a in self.request_at(s, t + 10000)], ["request_jump"])
 
-    def test_TB_DISP_R4_basic_braking_and_zero_cm_together_share_one_three_second_window(self):
+    def test_TB_DISP_R4_basic_braking_and_zero_cm_together_share_one_five_second_window(self):
         s, t = self.arrived("stepwise", 0.0)
         sp = self.specials(s)
         self.assertEqual(sorted(p["category"] for p in sp), ["ボーナス", "基本制動"])
-        self.assertEqual([p["expire_time"] for p in sp], [t / 1000.0 + 3.0] * 2, "3.0 s in total, not 6.0 s")
-        self.at(s, t, 2999)
+        self.assertEqual([p["expire_time"] for p in sp], [t / 1000.0 + 5.0] * 2, "5.0 s in total, not 10.0 s")
+        self.at(s, t, 4999)
         self.assertEqual(len(self.specials(s)), 2)
         self.assertEqual(self.guides(s), [])
-        self.at(s, t, 3000)
+        self.at(s, t, 5000)
         self.assertEqual(self.specials(s), [])
         self.assertEqual(len(self.guides(s)), 1)
-        self.at(s, t, 5000)
-        self.assertEqual(len(self.request_at(s, t + 5000)), 1)
+        self.at(s, t, 10000)
+        self.assertEqual(len(self.request_at(s, t + 10000)), 1)
 
-    def test_TB_DISP_R5_2_999_s_is_special_3_000_s_is_guidance(self):
+    def test_TB_DISP_R5_4_999_s_is_the_result_5_000_s_is_guidance(self):
         for braking, err in (("stepwise", 0.3), ("plain", 0.0), ("stepwise", 0.0)):
             with self.subTest(braking=braking, err=err):
                 s, t = self.arrived(braking, err)
-                self.at(s, t, 2999)
+                self.at(s, t, 4999)
                 self.assertTrue(self.specials(s) and not self.guides(s))
-                self.assertEqual(s.machine.display_state(t + 2999), M.DISPLAY_SPECIAL_3S)
-                self.at(s, t, 3000)
+                self.assertEqual(s.machine.display_state(t + 4999), M.DISPLAY_ARRIVAL_RESULT)
+                self.at(s, t, 5000)
                 self.assertTrue(not self.specials(s) and self.guides(s))
-                self.assertEqual(s.machine.display_state(t + 3000), M.DISPLAY_GUIDANCE)
+                self.assertEqual(s.machine.display_state(t + 5000), M.DISPLAY_GUIDANCE)
 
-    def test_TB_DISP_R6_4_999_s_no_jump_5_000_s_one_jump(self):
+    def test_TB_DISP_R6_9_999_s_no_jump_10_000_s_one_jump(self):
         for braking, err in (("plain", 0.3), ("stepwise", 0.3), ("plain", 0.0), ("stepwise", 0.0)):
             with self.subTest(braking=braking, err=err):
                 s, t = self.arrived(braking, err)
-                self.assertEqual(self.request_at(s, t + 4999), [])
-                self.assertEqual(s.machine.display_state(t + 4999), M.DISPLAY_GUIDANCE)
-                self.assertEqual(s.machine.display_state(t + 5000), M.DISPLAY_REQUEST_READY)
-                acts = self.request_at(s, t + 5000)
+                self.assertEqual(self.request_at(s, t + 9999), [])
+                self.assertEqual(s.machine.display_state(t + 9999), M.DISPLAY_GUIDANCE)
+                self.assertEqual(s.machine.display_state(t + 10000), M.DISPLAY_REQUEST_READY)
+                acts = self.request_at(s, t + 10000)
                 self.assertEqual([a[0] for a in acts], ["request_jump"])
                 self.assertEqual(acts[0][1]["target_index"], 2)
-                self.assertEqual(s.machine.display_state(t + 5000), M.DISPLAY_REQUESTED)
+                self.assertEqual(s.machine.display_state(t + 10000), M.DISPLAY_REQUESTED)
                 for k in range(1, 50):
-                    self.assertEqual(self.request_at(s, t + 5000 + k * 16), [])
+                    self.assertEqual(self.request_at(s, t + 10000 + k * 16), [])
 
     def test_TB_DISP_R7_while_the_bve_clock_stands_still_the_display_does_not_advance(self):
         for braking, err in (("plain", 0.3), ("stepwise", 0.3)):
@@ -178,14 +189,14 @@ class D_Display(Base):
                     s.tick(advance_ms=0, wall_advance=0.1)                      # the clock of BVE stands still (pause / F1 menu)
                 self.assertEqual([(p["category"], p["text"], p["expire_time"]) for p in s.o.popups], before)
                 self.assertEqual(self.request_at(s, t, paused=True), [])
-                self.assertEqual(self.request_at(s, t + 7000, paused=True), [], "a paused tick requests nothing, however late the time reads")
-                self.assertEqual(len(self.request_at(s, t + 7000)), 1, "the request is held, not lost")
+                self.assertEqual(self.request_at(s, t + 12000, paused=True), [], "a paused tick requests nothing, however late the time reads")
+                self.assertEqual(len(self.request_at(s, t + 12000)), 1, "the request is held, not lost")
 
     def test_TB_DISP_R8_the_wall_clock_alone_never_triggers_the_jump(self):
-        s, t = self.arrived("plain", 0.3)
+        s, t = self.arrived("stepwise", 0.3)
         for _ in range(100):
             s.tick(advance_ms=0, wall_advance=60.0)                             # minutes of wall clock, no BVE time
-        self.assertEqual(len(self.guides(s)), 1)
+        self.assertEqual(len(self.specials(s)), 1)
         self.assertEqual(self.request_at(s, s.o.bve_time_ms), [])
         self.assertEqual(s.machine.state, M.ARMED)
 
@@ -193,17 +204,17 @@ class D_Display(Base):
         def run(door_script):
             s, t = self.arrived("stepwise", 0.3)
             seen = []
-            for offset in (500, 1500, 2999, 3000, 4000, 4999, 5000):
+            for offset in (500, 1500, 2999, 3000, 4999, 5000, 7000, 9999, 10000):
                 if offset in door_script:
                     s.o.bve_door, s.o.bve_doordir = door_script[offset]
                 self.at(s, t, offset)
                 seen.append((offset, sorted((p["category"], p["expire_time"] - t / 1000.0) for p in s.o.popups if p["type"] == "big"), bool(self.request_at(s, t + offset))))
             return seen
         baseline = run({})
-        self.assertEqual(run({500: (0, 1), 1500: (1, 1), 4000: (0, 1)}), baseline, "doors closing and opening")
+        self.assertEqual(run({500: (0, 1), 1500: (1, 1), 7000: (0, 1)}), baseline, "doors closing and opening")
         self.assertEqual(run({500: (1, 0)}), baseline, "an operational-stop door direction")
         self.assertEqual(run({500: (1, 1), 1500: (1, 1)}), baseline, "a door that stays open")
-        self.assertEqual([o for o, _p, req in baseline if req], [5000])
+        self.assertEqual([o for o, _p, req in baseline if req], [10000])
 
     def test_TB_DISP_R10_many_display_ticks_still_one_guidance_and_one_jump(self):
         for braking in ("plain", "stepwise"):
@@ -211,7 +222,7 @@ class D_Display(Base):
                 s, t = self.arrived(braking, 0.3)
                 requests = 0
                 max_guides = 0
-                while s.o.bve_time_ms < t + 6000:
+                while s.o.bve_time_ms < t + 11000:
                     s.tick(advance_ms=16)
                     max_guides = max(max_guides, len(self.guides(s)))
                     requests += len(self.request_at(s, s.o.bve_time_ms))
@@ -220,27 +231,28 @@ class D_Display(Base):
 
     def test_TB_DISP_R11_jump_unavailable_sends_nothing_and_aborts_once_with_the_fixed_reason(self):
         s, t = self.arrived("stepwise", 0.3)
-        self.assertEqual(self.request_at(s, t + 4999, jump_available=False), [])
-        acts = self.request_at(s, t + 5000, jump_available=False)
+        self.assertEqual(self.request_at(s, t + 9999, jump_available=False), [])
+        acts = self.request_at(s, t + 10000, jump_available=False)
         self.assertEqual(acts, [("abort_scoring_jump_unavailable", "pseudo-turnback-jump-unavailable")])
         self.assertEqual(M.JUMP_UNAVAILABLE_REASON, "pseudo-turnback-jump-unavailable")
         self.assertEqual(s.machine.state, M.FAILED)
-        self.assertEqual(s.machine.display_state(t + 5000), M.DISPLAY_UNAVAILABLE_ABORT)
+        self.assertEqual(s.machine.display_state(t + 10000), M.DISPLAY_UNAVAILABLE_ABORT)
         for k in range(1, 100):
-            self.assertEqual(self.request_at(s, t + 5000 + k * 16, jump_available=False), [], "no second abort, no request")
-            self.assertEqual(self.request_at(s, t + 5000 + k * 16), [], "and an availability that comes back later does not resurrect the chain")
-        self.assertNotIn("request_jump", [a[0] for a in self.request_at(s, t + 9000)])
+            self.assertEqual(self.request_at(s, t + 10000 + k * 16, jump_available=False), [], "no second abort, no request")
+            self.assertEqual(self.request_at(s, t + 10000 + k * 16), [], "and an availability that comes back later does not resurrect the chain")
+        self.assertNotIn("request_jump", [a[0] for a in self.request_at(s, t + 14000)])
 
-    def test_TB_DISP_R12_the_no_special_route_is_never_split_into_three_plus_two(self):
+    def test_TB_DISP_R12_the_guidance_is_never_split_and_never_re_added(self):
         s, t = self.arrived("plain", 0.3)
+        self.at(s, t, 5000)
         first = self.guides(s)[0]
-        for offset in (1, 1000, 2999, 3000, 3001, 4999):
+        for offset in (5001, 6000, 7500, 9000, 9999):
             self.at(s, t, offset)
             g = self.guides(s)
             self.assertEqual(len(g), 1, offset)
-            self.assertIs(g[0], first, "the same guidance popup runs through the 3.0 s mark: no swap, no re-add")
-            self.assertEqual(g[0]["expire_time"], t / 1000.0 + 5.0)
-        self.assertEqual([p for p in s.o.popups if p["expire_time"] == t / 1000.0 + 3.0], [])
+            self.assertIs(g[0], first, "the same guidance popup runs through the window: no swap, no re-add")
+            self.assertEqual(g[0]["expire_time"], t / 1000.0 + 10.0)
+        self.assertEqual([p for p in s.o.popups if p["expire_time"] in (t / 1000.0 + 3.0,)], [])
 
 
 # ==============================================================================================================================================
@@ -327,16 +339,16 @@ class G_Extra(Base):
                 self.at(s, t, 5000)
                 self.assertEqual([p for p in s.o.popups if p["type"] == "pos" and p["expire_time"] > t / 1000.0 + 5.0], [])
 
-    def test_TB_DISP_R14_two_special_popups_never_make_a_six_second_frame(self):
+    def test_TB_DISP_R14_two_special_popups_never_make_a_ten_second_frame(self):
         s, t = self.arrived("stepwise", 0.0)
         self.assertEqual(len(self.specials(s)), 2)
         longest = 0
-        while s.o.bve_time_ms < t + 7000:
+        while s.o.bve_time_ms < t + 12000:
             if self.specials(s):
                 longest = s.o.bve_time_ms - t
             s.tick(advance_ms=16)
-        self.assertLess(longest, 3000, "the last tick that still shows a special popup is before 3.000 s")
-        self.assertGreaterEqual(longest, 2984 - 16)
+        self.assertLess(longest, 5000, "Stage TB-H 5b (on purpose): the last tick that still shows a result popup is before 5.000 s (it was 3.000 s)")
+        self.assertGreaterEqual(longest, 4984 - 16)
 
     def test_TB_DISP_R15_the_display_switch_and_the_one_time_request_are_separate(self):
         # (a) a display that never happens (the update is a no-op) neither delays, nor skips, nor repeats the request
@@ -350,18 +362,18 @@ class G_Extra(Base):
                 try:
                     t = s.open_door()
                     n = 0
-                    while s.o.bve_time_ms < t + 6000:
+                    while s.o.bve_time_ms < t + 11000:
                         s.tick(advance_ms=16)
                         n += len(self.request_at(s, s.o.bve_time_ms))
                     self.assertEqual(self.guides(s), [], "the guidance never appeared")
-                    self.assertEqual(n, 1, "the request is made once, at 5.0 s, whatever the display did")
+                    self.assertEqual(n, 1, "the request is made once, at 10.0 s (Stage TB-H 5b, on purpose; it was 5.0 s), whatever the display did")
                 finally:
                     self.S.turnback_display_update = original
         # (b) the display alone never requests: the request exists only where the machine's tick is called
         s, t = self.arrived("plain", 0.3)
-        for _ in range(500):
+        for _ in range(800):                                          # Stage TB-H 5b (on purpose): 12.8 s of display ticks (the request is at 10.0 s; it was 500 ticks = 8.0 s for 5.0 s)
             s.tick(advance_ms=16)
-        self.assertEqual(s.machine.state, M.ARMED, "500 display ticks and no machine tick: nothing was requested")
+        self.assertEqual(s.machine.state, M.ARMED, "800 display ticks and no machine tick: nothing was requested")
         self.assertEqual(len(self.request_at(s, s.o.bve_time_ms)), 1)
 
     def test_OD_TB_16_the_guidance_names_none_of_the_internal_words(self):
@@ -372,6 +384,7 @@ class G_Extra(Base):
         self.assertEqual(self.S.TURNBACK_GUIDANCE_TEXT, "発車位置へ移動します。")
         self.assertEqual(self.S.TURNBACK_GUIDANCE_CATEGORY, "疑似折り返し")
         s, t = self.arrived("plain", 0.3)
+        self.at(s, t, 5000)                                          # Stage TB-H 5b (on purpose): the guidance of the first window is shown from 5.0 s
         self.assertEqual([p["text"] for p in self.guides(s)], ["発車位置へ移動します。"])
 
     def test_TB_STYLE_the_guidance_ends_with_one_full_stop_and_has_the_colour_of_the_farewell(self):
@@ -384,6 +397,7 @@ class G_Extra(Base):
         self.assertEqual(text.count("。"), 1)
         self.assertTrue(text.endswith("。"))
         s, t = self.arrived("plain", 0.3)
+        self.at(s, t, 5000)                                          # Stage TB-H 5b (on purpose): the guidance of the first window is shown from 5.0 s
         guides = self.guides(s)
         self.assertEqual(len(guides), 1)
         self.assertEqual(guides[0]["color"], config.COLOR_WHITE)

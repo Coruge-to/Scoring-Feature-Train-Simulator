@@ -160,9 +160,9 @@ class Scene(object):
         return self.open_door()
 
     def run_to_request(self, t_a):
-        """BVE time up to arrival + 5.0 s: the driver makes the request on the tick that reaches it."""
+        """BVE time up to arrival + 10.0 s (Stage TB-H 5b; it was 5.0 s): the driver makes the request on the tick that reaches it."""
         o = self.o
-        self.tick(advance_ms=t_a + 5000 - o.bve_time_ms)
+        self.tick(advance_ms=t_a + 10000 - o.bve_time_ms)
         return o.jump_expectation
 
     def jump_tick(self, late_target=False):

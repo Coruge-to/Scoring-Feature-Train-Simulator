@@ -197,7 +197,7 @@ class B_LockOwnership(Base):
                 f.to_request()
                 self.assertFalse(self.row(f, "A-arrived")[LOCK], "the arrival at A is an ordinary arrival (no lock)")
                 self.assertEqual(self.row(f, "A-arrived")[SCORE], 550, "A is scored in the ordinary way")
-                self.assertTrue(self.row(f, "requested(+5.0s)")[LOCK], "taken with the request of the Jump")
+                self.assertTrue(self.row(f, "requested(+10.0s)")[LOCK], "taken with the request of the Jump")
                 self.assertEqual(len(f.sent), 1)
 
     def test_TBG_10_the_lock_holds_through_the_landing_and_only_the_first_departure_from_B_releases_it(self):

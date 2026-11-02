@@ -112,19 +112,21 @@ class Base(unittest.TestCase):
 # AR-01 .. AR-12  the wait, the cancellation, the re-stop
 # ==============================================================================================================================================
 class A_WaitAndCancel(Base):
-    def test_AR_01_first_arrival_five_seconds_of_stopped_train_one_jump_and_the_exact_guidance_line(self):
+    def test_AR_01_first_arrival_ten_seconds_of_stopped_train_one_jump_and_the_exact_guidance_line(self):          # Stage TB-H 5b (on purpose): the first window is 10.0 s (it was 5.0 s)
         s, t, f = self.scene()
+        self.assertEqual(self.guide_texts(s), [], "the first 5.0 s are quiet")
+        self.tick_to(s, t + 5000)
         self.assertEqual([p["text"] for p in self.popup_rows(s, (G1, OLD_G1))], [G1], "RED on the baseline: the guidance line is still the old 'next departure position' text")
         row = self.popup_rows(s, (G1,))[0]
-        self.assertEqual((row["color"], row["type"], row["expire_time"]), (self.cfg.COLOR_WHITE, "big", t / 1000.0 + 5.0))
+        self.assertEqual((row["color"], row["type"], row["expire_time"]), (self.cfg.COLOR_WHITE, "big", t / 1000.0 + 10.0))
         self.assertEqual(self.guide_texts(s), [G1], "exactly ONE line (no second line at the first arrival)")
-        self.tick_to(s, t + 4999)
+        self.tick_to(s, t + 9999)
         self.assertEqual(self.jumps(f), [])
-        self.tick_to(s, t + 5000)
+        self.tick_to(s, t + 10000)
         self.assertEqual(len(self.jumps(f)), 1)
         self.assertEqual(self.state(s), self.M.REQUESTED)
         for k in range(1, 200):
-            self.tick_to(s, t + 5000 + 16 * k)
+            self.tick_to(s, t + 10000 + 16 * k)
         self.assertEqual(len(self.jumps(f)), 1, "one Jump however long the train stands")
 
     def test_AR_02_speed_not_zero_inside_the_first_wait_cancels_the_jump(self):
@@ -137,8 +139,9 @@ class A_WaitAndCancel(Base):
 
     def test_AR_03_the_first_guidance_is_removed_at_the_tick_that_sees_the_movement(self):
         s, t, f = self.scene()
+        self.tick_to(s, t + 6000)                                       # Stage TB-H 5b (on purpose): the guidance of the first window is on from 5.0 s
         self.assertEqual(len(self.guide_texts(s)), 1, "the guidance is on before the movement")
-        self.move(s, t + 2000)
+        self.move(s, t + 7000)
         self.assertEqual(self.guide_texts(s), [], "RED on the baseline: the guidance stays on until arrival + 5.0 s")
 
     def test_AR_04_a_red_two_line_warning_for_five_seconds_in_the_colour_of_the_illegal_jump_warning(self):
@@ -670,7 +673,7 @@ class F_Machine(Base):
     def test_AR_30_jump_earliest_time_is_fixed_at_the_arrival(self):
         m = self.machine()
         self.arm(m)
-        self.assertEqual(getattr(m, "jump_earliest_ms", None), 105000, "RED on the baseline: derived on the fly, never kept")
+        self.assertEqual(getattr(m, "jump_earliest_ms", None), 110000, "RED on the baseline: derived on the fly, never kept (Stage TB-H 5b (on purpose): arrival + 10.0 s)")
 
     def test_AR_31_strict_zero_a_tiny_or_negative_speed_is_movement_and_an_unknown_speed_is_unknown(self):
         for v in (0.001, -0.001, 0.5, -3.0, 120):
@@ -774,8 +777,8 @@ class F_Machine(Base):
     def test_AR_42_GUARD_a_machine_that_is_given_no_speed_and_no_position_requests_at_the_old_time(self):
         m = self.machine()
         self.arm(m, with_range=False)          # the machine of the baseline API: no range, no facts
-        self.assertEqual(m.tick(104999, 7, True), [])
-        acts = m.tick(105000, 7, True)
+        self.assertEqual(m.tick(109999, 7, True), [])                   # Stage TB-H 5b (on purpose): arrival + 10.0 s
+        acts = m.tick(110000, 7, True)
         self.assertEqual([a[0] for a in acts], ["request_jump"], "speed / position unknown = nothing observed = nothing cancelled")
 
     def test_AR_38_the_wait_field_set_is_minimal_and_new_state_is_one_name(self):

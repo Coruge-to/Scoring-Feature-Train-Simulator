@@ -64,10 +64,10 @@ class StartConditions(unittest.TestCase):
         self.assertEqual(h.tick(100000 + 60000), [])           # a minute passes, the A scoring is not complete
         self.assertEqual(h.m.state, M.RECOGNIZED)
 
-    def test_R7_request_exactly_at_arrival_plus_five_seconds_with_no_door_input(self):
+    def test_R7_request_exactly_at_arrival_plus_ten_seconds_with_no_door_input(self):          # Stage TB-H 5b (on purpose): the first window is 10.0 s (it was 5.0 s)
         h = Host(); h.arrive(); h.scored()
-        self.assertEqual(h.tick(100000 + 4999), [])
-        acts = h.tick(100000 + 5000)
+        self.assertEqual(h.tick(100000 + 9999), [])
+        acts = h.tick(100000 + 10000)
         self.assertEqual([a[0] for a in acts], ["request_jump"])
         self.assertEqual(acts[0][1]["target_index"], 6)
         for name in ("on_arrival", "a_scoring_complete", "tick", "on_jump_complete", "on_b_established", "on_jump_failed"):
@@ -79,12 +79,12 @@ class StartConditions(unittest.TestCase):
         for k in range(100):
             h.arrive(now=100000 + k)                            # the same arrival seen on many ticks
         for k in range(200):
-            h.tick(100000 + 5000 + k)
+            h.tick(100000 + 10000 + k)
         self.assertEqual(len(h.requests()), 1)
 
     def test_R10_purpose_is_turnback_and_distinct(self):
         import jump_transaction as J
-        h = Host(); h.arrive(); h.scored(); h.tick(105000)
+        h = Host(); h.arrive(); h.scored(); h.tick(110000)
         self.assertEqual(h.requests()[0][1]["purpose"], "turnback")
         self.assertIn(M.PURPOSE_TURNBACK, J.JUMPS)          # Stage TB-C: the formal purpose exists (jump_transaction.JUMP_TURNBACK)
 
@@ -95,19 +95,20 @@ class StartConditions(unittest.TestCase):
         self.assertEqual(len(h.tick(110000)), 1)
 
     def test_display_phases_in_bve_time(self):
-        # Owner display contract (2026-10-31): WITHOUT a special arrival popup the guidance is shown for the whole 5.0 s (never split 3 s + 2 s)
+        # Stage TB-H 5b (on purpose) (Owner contract after the C-06 live run): WITHOUT an arrival result popup nothing is shown for the first 5.0 s, then the guidance until 10.0 s
         h = Host(); h.arrive(); h.scored()
-        self.assertEqual(h.m.display_phase(100000 + 100), "guide")
-        self.assertEqual(h.m.display_phase(100000 + 3000), "guide")
-        self.assertEqual(h.m.display_phase(100000 + 4999), "guide")
-        self.assertIsNone(h.m.display_phase(100000 + 5000))
-        # WITH one the special popup is shown for 3.0 s, then the guidance for 2.0 s
+        self.assertIsNone(h.m.display_phase(100000 + 100))
+        self.assertIsNone(h.m.display_phase(100000 + 4999))
+        self.assertEqual(h.m.display_phase(100000 + 5000), "guide")
+        self.assertEqual(h.m.display_phase(100000 + 9999), "guide")
+        self.assertIsNone(h.m.display_phase(100000 + 10000))
+        # WITH one the result popup owns 0-5 s (its normal 5.0 s), then the guidance 5-10 s
         h = Host(); h.arrive(); h.run(h.m.a_scoring_complete(100000, True, True))
         self.assertEqual(h.m.display_phase(100000 + 100), "special")
-        self.assertEqual(h.m.display_phase(100000 + 2999), "special")
-        self.assertEqual(h.m.display_phase(100000 + 3000), "guide")
-        self.assertEqual(h.m.display_phase(100000 + 4999), "guide")
-        self.assertIsNone(h.m.display_phase(100000 + 5000))
+        self.assertEqual(h.m.display_phase(100000 + 4999), "special")
+        self.assertEqual(h.m.display_phase(100000 + 5000), "guide")
+        self.assertEqual(h.m.display_phase(100000 + 9999), "guide")
+        self.assertIsNone(h.m.display_phase(100000 + 10000))
 
 
 class UseConditions(unittest.TestCase):
@@ -147,7 +148,7 @@ class AOperatingTime(unittest.TestCase):
     def test_OD_PR4_A_time_scored_once_only_for_a_timing_pair_A(self):
         h = Host(); h.arrive()
         h.scored(timing=True); h.scored(timing=True); h.scored(timing=True)
-        h.tick(105000)
+        h.tick(110000)
         h.m.on_jump_complete(True, 6, GEN); h.m.on_b_established(106000)
         self.assertEqual(h.kinds().count("score_a_time"), 1)
 
@@ -160,14 +161,14 @@ class AOperatingTime(unittest.TestCase):
         self.assertEqual(h.kinds(), [])
 
     def test_B_landing_does_not_add_the_A_score_again(self):
-        h = Host(); h.arrive(); h.scored(); h.tick(105000)
+        h = Host(); h.arrive(); h.scored(); h.tick(110000)
         h.run(h.m.on_jump_complete(True, 6, GEN)); h.run(h.m.on_b_established(106000))
         self.assertEqual(h.kinds().count("score_a_time"), 1)
 
 
 class CheckpointBeta(unittest.TestCase):
     def full(self, h):
-        h.arrive(); h.scored(); h.tick(105000)
+        h.arrive(); h.scored(); h.tick(110000)
         h.run(h.m.on_jump_complete(True, 6, GEN))
         h.run(h.m.on_b_established(106000))
 
@@ -184,12 +185,12 @@ class CheckpointBeta(unittest.TestCase):
                 self.assertNotEqual(a[1]["station_index"], 5)
 
     def test_no_B_checkpoint_before_the_Jump_completed(self):
-        h = Host(); h.arrive(); h.scored(); h.tick(105000)
+        h = Host(); h.arrive(); h.scored(); h.tick(110000)
         self.assertEqual(h.run(h.m.on_b_established(105001)), [])          # established is reported too early
         self.assertEqual(h.kinds().count("create_b_checkpoint"), 0)
 
     def test_B_checkpoint_waits_for_B_established(self):
-        h = Host(); h.arrive(); h.scored(); h.tick(105000)
+        h = Host(); h.arrive(); h.scored(); h.tick(110000)
         self.assertEqual(h.run(h.m.on_jump_complete(True, 6, GEN)), [])
         self.assertEqual(h.kinds().count("create_b_checkpoint"), 0)
         self.assertEqual(len(h.run(h.m.on_b_established(106000))), 1)
@@ -197,7 +198,7 @@ class CheckpointBeta(unittest.TestCase):
 
     def test_R11_failure_never_creates_a_checkpoint_or_finishes(self):
         for how in ("timeout", "mismatch"):
-            h = Host(); h.arrive(); h.scored(); h.tick(105000)
+            h = Host(); h.arrive(); h.scored(); h.tick(110000)
             if how == "timeout":
                 h.run(h.m.on_jump_failed("timeout"))
             else:
@@ -209,7 +210,7 @@ class CheckpointBeta(unittest.TestCase):
     def test_duplicate_and_unsolicited_completions_change_nothing(self):
         h = Host()
         self.assertEqual(h.run(h.m.on_jump_complete(True, 6, GEN)), [])     # unsolicited
-        h.arrive(); h.scored(); h.tick(105000)
+        h.arrive(); h.scored(); h.tick(110000)
         h.run(h.m.on_jump_complete(True, 6, GEN))
         self.assertEqual(h.run(h.m.on_jump_complete(True, 6, GEN)), [])     # duplicate
         h.run(h.m.on_b_established(106000))
@@ -220,7 +221,7 @@ class CheckpointBeta(unittest.TestCase):
         h.arrive(now=200000)                                                # the same ARRSEQ seen again
         h.scored(now=200000); h.tick(300000)
         self.assertEqual(len(h.requests()), 1)
-        h.arrive(now=400000, seq=2); h.scored(now=400000); h.tick(405000)    # a NEW arrival of A (e.g. after a retry) is a new chain
+        h.arrive(now=400000, seq=2); h.scored(now=400000); h.tick(410000)    # a NEW arrival of A (e.g. after a retry) is a new chain
         self.assertEqual(len(h.requests()), 2)
 
 
@@ -229,7 +230,7 @@ class FinalPair(unittest.TestCase):
         h = Host("PTPAIR:1:%s:12:1:10-11-1" % LID, 12)
         h.arrive(a=10, end=11, explicit_end=-1)
         self.assertEqual(h.m.state, M.RECOGNIZED)
-        h.scored(timing=True); h.tick(105000)
+        h.scored(timing=True); h.tick(110000)
         acts = h.run(h.m.on_jump_complete(True, 11, GEN))
         self.assertEqual([a[0] for a in acts], ["finish_scoring_after_jump"])
         self.assertEqual(h.run(h.m.on_b_established(106000)), [])
@@ -242,24 +243,24 @@ class DiscardAndReset(unittest.TestCase):
         for stage in ("recognized", "armed", "requested"):
             h = Host(); h.arrive()
             if stage != "recognized": h.scored()
-            if stage == "requested": h.tick(105000)
+            if stage == "requested": h.tick(110000)
             acts = h.run(h.m.on_retry())
             self.assertEqual(acts, [("discard_pending", "retry")], stage)
             self.assertEqual(h.m.state, M.IDLE)
             self.assertEqual(h.tick(10 ** 7), [])
 
     def test_R20_f5_drops_everything_and_forgets_the_issued_keys(self):
-        h = Host(); h.arrive(); h.scored(); h.tick(105000)
+        h = Host(); h.arrive(); h.scored(); h.tick(110000)
         self.assertEqual(h.run(h.m.on_f5()), [("discard_pending", "world-reset")])
         self.assertEqual(h.m.issued, set())
         self.assertEqual(h.run(h.m.on_jump_complete(True, 6, GEN)), [])     # the old completion is stale
-        h.arrive(seq=1); h.scored(); h.tick(205000)                         # the new world may use the same ARRSEQ
+        h.arrive(seq=1); h.scored(); h.tick(210000)                         # the new world may use the same ARRSEQ
         self.assertEqual(len(h.requests()), 2)
 
     def test_R21_generation_change_never_executes_the_old_request(self):
         h = Host(); h.arrive(); h.scored()
-        self.assertEqual(h.tick(105000, gen=GEN + 1), [("discard_pending", "generation")])
-        h = Host(); h.arrive(); h.scored(); h.tick(105000)
+        self.assertEqual(h.tick(110000, gen=GEN + 1), [("discard_pending", "generation")])
+        h = Host(); h.arrive(); h.scored(); h.tick(110000)
         self.assertEqual(h.run(h.m.on_jump_complete(True, 6, GEN + 1)), [("discard_pending", "generation")])
         self.assertEqual(h.run(h.m.on_b_established(106000)), [])
 
@@ -271,10 +272,10 @@ class DiscardAndReset(unittest.TestCase):
 
     def test_scoring_ended_discards_the_armed_chain(self):
         h = Host(); h.arrive(); h.scored()
-        self.assertEqual(h.tick(105000, active=False), [("discard_pending", "scoring-ended")])
+        self.assertEqual(h.tick(110000, active=False), [("discard_pending", "scoring-ended")])
 
     def test_B_resync_pending_is_dropped_by_f5(self):
-        h = Host(); h.arrive(); h.scored(); h.tick(105000); h.run(h.m.on_jump_complete(True, 6, GEN))
+        h = Host(); h.arrive(); h.scored(); h.tick(110000); h.run(h.m.on_jump_complete(True, 6, GEN))
         self.assertEqual(h.run(h.m.on_f5()), [("discard_pending", "world-reset")])
         self.assertEqual(h.run(h.m.on_b_established(106000)), [])
 
