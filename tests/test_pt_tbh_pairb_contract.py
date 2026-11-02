@@ -539,7 +539,11 @@ class E_TimingScreenRender(SnapshotBase):
         s = self.scene(start=0, end=4)
         calls, _ = self.draw(s)
         self.assertNotIn("初期設定に戻す : A", calls, "RED on the baseline: B (default timing, now untimed) read as a user change")
-        self.assertNotIn("始発駅以外を採時駅にする : A", calls)
+        self.assertNotIn("変更可能な非採時駅を全て採時駅にする : A", calls, "Stage TB-H 5a (on purpose): the old text 始発駅以外を採時駅にする : A became the one label below; no changeable untimed station here")
+        s_pos = self.scene(start=0, end=4)
+        s_pos.sl[3]["is_timing"] = False                                       # an ordinary changeable station that is untimed by the data
+        calls_pos, _ = self.draw(s_pos)
+        self.assertIn("変更可能な非採時駅を全て採時駅にする : A", calls_pos, "Stage TB-H 5a: a POSITIVE assert (the label is drawn when a changeable untimed station exists); the old text is gone")
         o = s.o
         o.menu_state, o.timing_cursor = 8, o.get_timing_target_stas().index(1)
         o.handle_menu_enter(False)                                            # a real user change (A)

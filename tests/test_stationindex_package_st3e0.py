@@ -74,7 +74,7 @@ BASE_BLOBS = {
     "managed_input.py": "64b3f5fcf1c8c0a95fc146e8717f88ddc8593047",       # SI-R5.2-C: the generation default prev_tgt_idx and its clear in discard_scoring_session (was e1b79288... after the close-range departure reset)
     "managed_mode.py": "60413e37938808b1f15c52c3b81db9353fd7a84a",
     "managed_state.py": "d8b75db1e870f3f01f825961ec37e7471244d2bc",
-    "menu_ui.py": "d0c8aebb0f101f4b3fe15b1e2e0dd38c67f438a4",  # Stage TB-H (C1): was 412e722f...
+    "menu_ui.py": "a065d9cf60e4f90fbfb785f9a5da62404219def7",  # Stage TB-H (C1): was 412e722f...  # Stage TB-H (5a): was d0c8aebb...
     "pause_recovery.py": "6c01fd0ebe2ca6fae3c501129381046b5e645a95",
     # Time Fix B3 changed scoring_logic.py on purpose (the speed limit guidance gate is speed != 0.0; the operational stop is neither formed nor completed on the telemetry of an outstanding official jump and leaves no record at the scoring finish, tests/test_timefix_b3_zero_speed_contract.py): the blob moved from db5145a0... (Time Fix B2)
     # Close-range departure reset changed scoring_logic.py on purpose (the previous actual stop position and the pending state, the departure reset of the early-stop and basic-braking state, the waiting gate, tests/test_close_range_contract.py): the blob moved from e8d1a3d0... (Time Fix B3)

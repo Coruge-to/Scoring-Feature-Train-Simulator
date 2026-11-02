@@ -885,7 +885,7 @@ def draw_menu(self, painter, logical_width):
             btn_a_text = "初期設定に戻す : A"
         elif not default_all_timing:
             show_btn = True
-            btn_a_text = "始発駅以外を採時駅にする : A"
+            btn_a_text = "変更可能な非採時駅を全て採時駅にする : A"
             
         if show_btn:
             fm_btn = QFontMetrics(self.font_desc)
