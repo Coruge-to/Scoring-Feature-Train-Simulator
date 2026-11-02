@@ -83,7 +83,12 @@ def draw_hud(self, painter, logical_width):
     # =================================================================
     if getattr(self, 'is_scoring_mode', False):
         n_sta = getattr(self, 'active_next_sta_name', '---')
-        n_time = '採時' if getattr(self, 'active_next_sta_timing', False) else '非採時'
+        n_timing = getattr(self, 'active_next_sta_timing', False)
+        held_station = getattr(self, '_hud_rules_station_held', None)          # Stage TB-H 6: while the pseudo-turnback holds the display target at A, A is the next station of this line (display only)
+        held_station = held_station() if held_station is not None else None
+        if held_station is not None:
+            n_sta, n_timing = held_station
+        n_time = '採時' if n_timing else '非採時'
         b_app = getattr(self, 'active_rule_basic_apply', '階段')
         b_rel = getattr(self, 'active_rule_basic_release', '階段')
         basic_str = "OFF" if b_app == "OFF" else f"{b_app} / {b_rel}"

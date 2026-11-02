@@ -1183,7 +1183,7 @@ class F_Jump(Base):
         self.scoring()
         self.jump(1)
         self.assertFalse(self.o.is_scoring_mode)
-        self.assertEqual(popup_texts(self.o), ["不正なジャンプを検知しました。", "採点を中断します。"])
+        self.assertEqual(popup_texts(self.o), ["不正な移動が検知されました。", "採点を中止します。"])   # Stage TB-H 6 (on purpose): the one wording of the illegal-movement warning (tests/test_pt_tbh_selfdrive_hud.py SD-04/05)
         self.assertFalse(self.o.is_official_jumping)
         self.assertTrue(self.o.jump_lock)
 

@@ -466,6 +466,7 @@ class C_Lifecycle(Base):
         self.tick_to(s, t + 4000, bve_next_loc=b["location"], bve_tgt_idx=2, bve_speed=2.0, bve_location=b["location"] - 100.0, bve_brk_notch=0)
         self.tick_to(s, t + 5000, bve_speed=0.0, bve_location=b["location"] - 0.3, bve_brk_notch=8)
         self.tick_to(s, t + 6000, bve_door=1, bve_arr_idx=2, bve_arr_seq=o.bve_arr_seq + 1)
+        shown = [p["text"] for p in o.popups if p.get("category") == "警告"]            # Stage TB-H 6 (on purpose): the red warning is on the screen right after the abort
         for k in range(1, 30):
             self.tick_to(s, t + 6000 + 500 * k)
         self.assertEqual(self.jumps(f), [], "no Jump to B after the train reached B by itself")
@@ -476,7 +477,8 @@ class C_Lifecycle(Base):
         self.assertEqual(len(o.save_data), history_before, "no B checkpoint")
         reasons = [e[1].get("reason") for e in f.events if e[0] == "diag:turnback-fail"]
         self.assertEqual(reasons, [SELF_DRIVE_B_REASON], "a clear reason is left in the product diagnostics (no popup)")
-        self.assertEqual([p for p in o.popups if p.get("category") == "警告"], [], "an internal failure is diagnostics only (OD-TB-30)")
+        self.assertEqual(shown, ["不正な移動が検知されました。", "採点を中止します。"],
+                         "Stage TB-H 6 (on purpose): B reached by driving is an unrecoverable illegal movement: the red two-line user warning (the cause stays in the diagnostics; every OTHER internal failure is still diagnostics only, OD-TB-30)")
 
 
 # ==============================================================================================================================================

@@ -1752,7 +1752,7 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
                   # Stage TB-H (on purpose): pair B untimed by contract (one pure section helper, the set of crossed B, the reason; two reason constants; tests/test_pt_tbh_pairb_contract.py)
                   "turnback_crossed_pairs", "turnback_b_indexes", "untimed_reason",
                   # Stage TB-H (A re-stop wait; on purpose): the strict facts of the re-stop wait (speed != 0 / inside the author range of A), the range kept at the arrival, the removal of the chain's own popups, the two displays of the wait, the arrival at another station (tests/test_pt_tbh_arestop.py)
-                  "turnback_train_state", "turnback_stop_range_capture", "turnback_drop_popups", "turnback_drop_arrival_results", "turnback_cancel_show", "turnback_restop_show", "turnback_other_arrival",   # Stage TB-H 5b (on purpose): turnback_drop_arrival_results ends the arrival result popups when the Jump is cancelled (tests/test_pt_tbh_first_jump_10s.py),
+                  "turnback_train_state", "turnback_stop_range_capture", "turnback_drop_popups", "turnback_drop_arrival_results", "turnback_cancel_show", "turnback_restop_show", "turnback_other_arrival", "turnback_illegal_move_show", "turnback_held_a_target", "turnback_held_a_station",   # Stage TB-H 5b (on purpose): turnback_drop_arrival_results ends the arrival result popups when the Jump is cancelled (tests/test_pt_tbh_first_jump_10s.py),
                   "Assign(targets=[Name(id='UNTIMED_SCORING_START', ctx=Store())], value=Constant(value='UNTIMED_SCORING_START'))",
                   "Assign(targets=[Name(id='UNTIMED_TURNBACK_B', ctx=Store())], value=Constant(value='UNTIMED_TURNBACK_B'))",
                   "Assign(targets=[Name(id='TURNBACK_GUIDANCE_CATEGORY', ctx=Store())], value=Constant(value='疑似折り返し'))",
@@ -1761,6 +1761,8 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
                   "Assign(targets=[Name(id='TURNBACK_RESTOP_GUIDANCE_TEXT', ctx=Store())], value=Constant(value='列車を動かさないでください。'))",
                   "Assign(targets=[Name(id='TURNBACK_CANCEL_TEXTS', ctx=Store())], value=Tuple(elts=[Constant(value='発車位置への移動がキャンセルされました。'), Constant(value='許容範囲内に再度列車を停止させてください。')], ctx=Load()))",
                   "Assign(targets=[Name(id='TURNBACK_CANCEL_CATEGORY', ctx=Store())], value=Constant(value='疑似折り返し中止'))",
+                  # Stage TB-H 6 (on purpose): the ONE wording constant of the illegal-movement warning (illegal Jump and B reached by driving; tests/test_pt_tbh_selfdrive_hud.py SD-04/05)
+                  "Assign(targets=[Name(id='ILLEGAL_MOVE_TEXTS', ctx=Store())], value=Tuple(elts=[Constant(value='不正な移動が検知されました。'), Constant(value='採点を中止します。')], ctx=Load()))",
                   # Stage TB-H 5b (on purpose): TURNBACK_SPECIAL_SECONDS (the 3.0 s exception of the arrival result popups) is gone (tests/test_pt_tbh_first_jump_10s.py JM-02)
                   "Assign(targets=[Name(id='TURNBACK_TOTAL_SECONDS', ctx=Store())], value=BinOp(left=Attribute(value=Name(id='pseudo_turnback_machine', ctx=Load()), attr='REQUEST_AFTER_MS', ctx=Load()), op=Div(), right=Constant(value=1000.0)))"}),
                 ("utils.py", old_utils, {"write_desktop_log"}, {"set_desktop_log_enabled", "desktop_log_enabled", "desktop_log_requested"}),

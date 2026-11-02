@@ -975,7 +975,7 @@ class G_StationListAndJumpReference(ManagedCase):
         r.send(self.MR.tele(1, JUMP=6))
         r.tick(2)
         self.assertFalse(o.is_scoring_mode)
-        self.assertEqual([p["text"] for p in o.popups], ["不正なジャンプを検知しました。", "採点を中断します。"])
+        self.assertEqual([p["text"] for p in o.popups], ["不正な移動が検知されました。", "採点を中止します。"])   # Stage TB-H 6 (on purpose): the one wording of the illegal-movement warning (tests/test_pt_tbh_selfdrive_hud.py SD-04/05)
         self.assertTrue(any("reason=jump" in e for e in r.events("scoring-abort")))
         self.assertEqual(self.held(), [])
 
@@ -1777,10 +1777,15 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
             "is_scoring_end_station_op = (curr_sta_idx == getattr(self, 'setting_end_idx', -1)) or (getattr(self, 'prev_term', 0) == 1)",
             "curr_sta_idx == getattr(self, 'setting_end_idx', -1)",
         )
+        # Stage TB-H 6 (on purpose): the two stripped lines of the old illegal-Jump wording (不正なジャンプを検知しました。／採点を中断します。) are replaced by one loop over the ONE wording constant; no score, no rule, no constant of the scoring.
+        stage_tbh6_illegal_move_wording = (
+            'add_score_popup(self, 0, "不正なジャンプを検知しました。", COLOR_B_EMG, "big", "警告", current_time, force=True)',
+            'add_score_popup(self, 0, "採点を中断します。", COLOR_B_EMG, "big", "警告", current_time, force=True)',
+        )
         self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport) + tbd_running_end_judgement + pseudo_turnback_a_seam + st2a_checkpoint_identity + st2b_retry_by_saved_index
                                    + st3d_request_by_the_one_builder + st2c_first_station_distance + timefix_b_departure_margins + timefix_b3_zero_speed_and_jump_boundary
                                    + close_range_shared_basic_braking_init + si_r5_2a_p03_target_index + si_r5_2b_arrival_target_index + si_r5_2c_departure_prev_target_index
-                                   + lc3b_same_time_history_replace], removed)
+                                   + lc3b_same_time_history_replace + stage_tbh6_illegal_move_wording], removed)
 
     def test_the_scoring_function_bodies_are_ast_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":scoring_logic.py")
@@ -1807,7 +1812,7 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
                                    # Stage TB-H (on purpose): pair B untimed by contract - one PURE helper of the section (turnback_crossed_pairs; turnback_fix_section itself is untouched), the set of the crossed B (turnback_b_indexes) and the reason (untimed_reason); the points, the rules and the constants of the scoring are not among them (tests/test_pt_tbh_pairb_contract.py)
                                    "turnback_crossed_pairs", "turnback_b_indexes", "untimed_reason",
                                    # Stage TB-H (A re-stop wait; on purpose): the strict facts of the wait, the kept range, the removal of the chain's own popups, the two displays, the arrival at another station; no score, no rule, no constant of the scoring (tests/test_pt_tbh_arestop.py)
-                                   "turnback_train_state", "turnback_stop_range_capture", "turnback_drop_popups", "turnback_drop_arrival_results", "turnback_cancel_show", "turnback_restop_show", "turnback_other_arrival"},   # Stage TB-H 5b (on purpose): turnback_drop_arrival_results (the popup list filter of the cancellation); no score, no rule, no constant of the scoring (tests/test_pt_tbh_first_jump_10s.py)
+                                   "turnback_train_state", "turnback_stop_range_capture", "turnback_drop_popups", "turnback_drop_arrival_results", "turnback_cancel_show", "turnback_restop_show", "turnback_other_arrival", "turnback_illegal_move_show", "turnback_held_a_target", "turnback_held_a_station"},   # Stage TB-H 5b (on purpose): turnback_drop_arrival_results (the popup list filter of the cancellation); no score, no rule, no constant of the scoring (tests/test_pt_tbh_first_jump_10s.py)
                                    set(b))
         changed = sorted(n for n in a if a[n] != b[n])
         # only the diagnostic writer got the switch and (PID-D6) execute_retry's one transport line; no score, no rule, no constant

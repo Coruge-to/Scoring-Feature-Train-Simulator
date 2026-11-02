@@ -921,6 +921,7 @@ TURNBACK_GUIDANCE_TEXT = "発車位置へ移動します。"
 TURNBACK_RESTOP_GUIDANCE_TEXT = "列車を動かさないでください。"
 TURNBACK_GUIDANCE_CATEGORY = "疑似折り返し"
 TURNBACK_CANCEL_TEXTS = ("発車位置への移動がキャンセルされました。", "許容範囲内に再度列車を停止させてください。")
+ILLEGAL_MOVE_TEXTS = ("不正な移動が検知されました。", "採点を中止します。")        # Stage TB-H 6: the user-facing wording of an unrecoverable illegal movement (an illegal Jump, B reached by driving); the internal reasons stay different
 TURNBACK_CANCEL_CATEGORY = "疑似折り返し中止"
 TURNBACK_TOTAL_SECONDS = pseudo_turnback_machine.REQUEST_AFTER_MS / 1000.0
 
@@ -1402,6 +1403,14 @@ def turnback_restop_show(self, now_ms):
     turnback_diag(self, "turnback-restop", count=turnback_machine_of(self).restop_count)
 
 
+def turnback_illegal_move_show(self):
+    """Stage TB-H 6: the unrecoverable failure of the re-stop wait (B reached by driving) is shown to the user as the red two-line illegal-movement warning (the same wording and colour as the illegal-Jump
+    warning, the same 5.0 s). Display only: the cause stays in the diagnostics (turnback-fail reason=pseudo-turnback-self-drive-b)."""
+    now = getattr(self, 'bve_time_ms', 0) / 1000.0
+    for text in ILLEGAL_MOVE_TEXTS:
+        add_score_popup(self, 0, text, COLOR_B_EMG, "big", "警告", now, force=True)
+
+
 def turnback_other_arrival(self, station_index):
     """Stage TB-H: a FORMAL arrival (never the landing of a Jump) at `station_index` while the chain waits. True = the scoring was aborted (the train was driven from A to B by itself): the caller stops judging this
     arrival, so B is not scored as an ordinary arrival. Any other station only drops the wait state."""
@@ -1415,8 +1424,34 @@ def turnback_other_arrival(self, station_index):
         turnback_drop_popups(self)
         if act[0] == "abort_scoring_self_drive_b":
             turnback_stop_scoring(self, act[1])
+            turnback_illegal_move_show(self)
             aborted = True
     return aborted
+
+
+def turnback_held_a_target(self):
+    """Stage TB-H 6 (Owner contract): the target of the TScoring HUD display = the pair A (the target the HUD drew at the arrival at A) for the WHOLE life of the chain: the first 10 s, the cancellation, the stops outside
+    the range, the re-stop wait, the 5.0 s after EVERY re-stop (however many times), the request and the Jump in flight, until the official Jump has succeeded AND B is established (on_b_established); the scoring abort,
+    the end of the scoring, Retry, F5, a generation change and a RunPairSet change end the chain. Pure read model: None otherwise; it reads no door, indicator, signal, speed or position and assigns nothing. The caller
+    (the display target derivation of the application) uses it instead of the sender's machine target, which has already advanced to B. The BVE's own station display is not the application's and is not touched."""
+    machine = self.__dict__.get('turnback_machine')
+    if machine is None or not (machine.state in pseudo_turnback_machine.LIVE or machine.awaiting_b) or not turnback_session_active(self):
+        return None
+    kept = self.__dict__.get('_turnback_a_view')
+    if not kept or kept[0] != machine.arrival_ms:
+        return None
+    return kept[1]
+
+
+def turnback_held_a_station(self):
+    """Stage TB-H 6: (name, timing) of the pair A while the display target is held (the next-station line of the application's own rule overlay), else None. Display only; the rules beside it are not changed."""
+    held = turnback_held_a_target(self)
+    machine = self.__dict__.get('turnback_machine')
+    pair = getattr(machine, 'pair', None)
+    stations = getattr(self, 'station_list', None)
+    if held is None or pair is None or not stations or not (0 <= pair.arrival < len(stations)):
+        return None
+    return stations[pair.arrival].get('name', '不明な駅'), bool(held.timing)
 
 
 def turnback_arrival_begin(self, current_time, station_index, stop_position=None):
@@ -1433,6 +1468,11 @@ def turnback_arrival_begin(self, current_time, station_index, stop_position=None
     list_id = getattr(station_list, 'list_id', None) or getattr(self, 'bve_list_id', "")
     machine.on_arrival(int(round(current_time * 1000.0)), station_index, getattr(self, 'bve_arr_seq', -1), getattr(self, 'current_scenario_id', -1), list_id, len(station_list),
                        section_start_index(self), resolved_end, explicit_end, True, stop_range=turnback_stop_range_capture(self, stop_position))
+    getter = getattr(self, '_hud_machine_target', None)             # Stage TB-H 6: the display target of THIS arrival (A), kept for the display for the life of the chain (a later judging of the same arrival while the chain lives gets the held A back from the derivation itself)
+    try:
+        self._turnback_a_view = (machine.arrival_ms, getter() if getter is not None else None)
+    except Exception:
+        self._turnback_a_view = None
     return True                                         # a pair A never has a checkpoint, however many times the same arrival is judged (the machine itself starts one chain per arrival)
 
 
@@ -1996,8 +2036,8 @@ def update_physics_and_scoring(self, current_time, dt):
 
         if not is_valid_jump and getattr(self, 'is_scoring_mode', False) and not getattr(self, 'is_scoring_finished', False):
             self.is_scoring_mode = False
-            add_score_popup(self, 0, "不正なジャンプを検知しました。", COLOR_B_EMG, "big", "警告", current_time, force=True)
-            add_score_popup(self, 0, "採点を中断します。", COLOR_B_EMG, "big", "警告", current_time, force=True)
+            for text in ILLEGAL_MOVE_TEXTS:
+                add_score_popup(self, 0, text, COLOR_B_EMG, "big", "警告", current_time, force=True)
             self.is_official_jumping = False
 
         self.jump_lock = True

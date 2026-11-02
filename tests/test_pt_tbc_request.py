@@ -358,7 +358,7 @@ class D_NoUserFacingPopupForInternalFailures(Base):
         s.arrive_a(end=4)
         s.step(2, bve_jump_count=7)                  # a JUMP count change that is no official Jump (a timetable jump)
         self.assertFalse(o.is_scoring_mode)
-        self.assertEqual(self.warnings(s), ["不正なジャンプを検知しました。", "採点を中断します。"])
+        self.assertEqual(self.warnings(s), ["不正な移動が検知されました。", "採点を中止します。"])   # Stage TB-H 6 (on purpose): the one wording of the illegal-movement warning (tests/test_pt_tbh_selfdrive_hud.py SD-04/05)
 
     def test_no_new_warning_text_exists_in_the_turnback_code(self):
         text = src("scoring_logic.py")
