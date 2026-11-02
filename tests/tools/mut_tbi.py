@@ -1,4 +1,4 @@
-"""TB-I Stage 8 mutation harness: the timing screen cursor skips the fixed untimed rows; the basic brake rule boundary candidates leave out the A and the B of a crossed pair (new file; the existing harness files mut_tbf.py / mut_tbg.py / mut_tbh*.py are NOT modified).
+"""TB-I mutation harness: the timing screen cursor skips the fixed untimed rows; the basic brake rule boundary candidates keep the A and leave out the B of a crossed pair, and the A as a boundary starts the next rule at its B (Owner contract 3; new file; the existing harness files mut_tbf.py / mut_tbg.py / mut_tbh*.py are NOT modified).
 usage: python mut_tbi.py <harness dir with run_red.py> <byte copy root> [id prefixes]
 One mutant at a time on a THROW-AWAY byte copy of the FINAL tree (every file is restored after every mutant). A mutant is KILLED when at least one test of MODS fails.
 Contract under test: tests/test_pt_tbi_cursor_candidates.py (CU / BI / IR) plus the existing candidate, timing and receiver groups.
@@ -9,8 +9,8 @@ import sys
 
 ROOT = sys.argv[2]
 MU, MN = "menu_ui.py", "main.py"
-NEW_MODULES = ("test_pt_tbi_cursor_candidates",)
-NEW_CLASSES = ("A_TimingCursor", "B_BasicBrakeCandidates", "C_InitialAndRelaxationInheritance")
+NEW_MODULES = ("test_pt_tbi_cursor_candidates", "test_pt_tbi_brake_chain")
+NEW_CLASSES = ("A_TimingCursor", "B_BasicBrakeCandidates", "C_InitialAndRelaxationInheritance", "A_Candidates", "B_EffectiveRanges", "C_RuntimeAndScore")
 MODS = list(NEW_MODULES) + ["test_pt_tbd_candidates", "test_pt_tbh_pairb_contract", "test_pt_tbh_bulk_timing_button", "test_pt_tbd_timing_targets", "test_pt_tbe_receiver"]
 
 
@@ -26,8 +26,13 @@ UP = "                self.timing_cursor = before[-1]\n"
 DOWN = "                self.timing_cursor = after[0]\n"
 OPEN = "                self.timing_cursor = self._timing_cursor_stops()[0]         # Stage TB-I: the first row the cursor may stop on (the done button when no station is changeable)\n"
 ZONE = "                if not is_start:                                                                      # Stage TB-I: a fixed untimed row takes no click at all (the cursor never stops on it)\n"
-LEFT = "        left_out = {p.arrival for p in pairs} | {p.departure for p in pairs}\n"
-CROSSED = "turnback_crossed_pairs(self, getattr(self, 'setting_start_idx', 0), getattr(self, 'setting_end_idx', -1))"
+LEFT = "        left_out = {p.departure for p in self.brake_chain_pairs()}        # the B of a crossed pair is no boundary; the A stays (the next rule then starts at its B)\n"
+CHAIN_RET = "        return snapshot.pairs if snapshot is not None else turnback_crossed_pairs(self, getattr(self, 'setting_start_idx', 0), getattr(self, 'setting_end_idx', -1))\n"
+MAPRET = "            if pair.arrival == boundary_idx:\n                return pair.departure\n"
+RSTART = "                start = self.brake_boundary_next_start(stop)\n"
+SIDX = "                        s_idx = getattr(self, 'setting_start_idx', 0) if sub_c == 0 else self.brake_boundary_next_start(rules[sub_c-1].get(\"end_idx\", -1))\n"
+HELPER = "        return fn(r_idx)\n"
+SITE9 = "r_start = sta_start if r_idx == 0 else get_sta_name(_brake_rule_start(self, r_idx))"
 RET = '        return [s for s in self._scoring_candidate_stations() if s["idx"] > s_idx and s["idx"] <= e_overall and s["idx"] not in left_out]\n'
 CALL = "                        opts = self._brake_end_candidates(s_idx)                 # Stage TB-I: the A and the B of a crossed pair are no boundary\n"
 
@@ -42,16 +47,24 @@ M = [
  ("TI-07", "the done button is no stop (no changeable station: the list is empty)", [(MN, STOPS, "        stops = [p for p in range(len(targets)) if untimed_reason(self, targets[p]) is None]\n")]),
  ("TI-08", "the station-name click zone is also made for the fixed rows", [(MU, ZONE, "                if True:                                                                      # Stage TB-I: a fixed untimed row takes no click at all (the cursor never stops on it)\n")]),
  ("TI-09", "the stops are chosen by the timing state instead of the fixed reason", [(MN, STOPS, "        stops = [p for p in range(len(targets)) if self.is_station_timing(targets[p]) or untimed_reason(self, targets[p]) is None]\n        stops = [p for p in stops if untimed_reason(self, targets[p]) is None and p != 1]\n        stops.append(len(targets))\n")]),
- ("TB-01", "the A of a crossed pair stays a boundary candidate", [(MN, LEFT, "        left_out = {p.departure for p in pairs}\n")]),
- ("TB-02", "the B of a crossed pair stays a boundary candidate", [(MN, LEFT, "        left_out = {p.arrival for p in pairs}\n")]),
- ("TB-03", "every pair of the route is left out, not only the pairs of the section", [(MN, CROSSED, "turnback_crossed_pairs(self, 0, len(self.station_list) - 1)")]),
+ ("TB-01", "the A of a crossed pair is left out again (the first reading)", [(MN, LEFT, "        left_out = {p.arrival for p in self.brake_chain_pairs()} | {p.departure for p in self.brake_chain_pairs()}\n")]),
+ ("TB-02", "the B of a crossed pair stays a boundary candidate", [(MN, LEFT, "        left_out = set()\n")]),
  ("TB-04", "a station named B is left out (a name decides)", [(MN, RET, RET.replace('s["idx"] not in left_out]', 's["idx"] not in left_out and s["name"] != "B"]'))]),
  ("TB-05", "an open door leaves every station out (the door state decides)", [(MN, RET, RET.replace('s["idx"] not in left_out]', 's["idx"] not in left_out and not getattr(self, "bve_door", 0)]'))]),
  ("TB-06", "the terminal of the section is no candidate any more", [(MN, RET, RET.replace('s["idx"] <= e_overall', 's["idx"] < e_overall'))]),
  ("TB-07", "the first station after the section start is dropped from the window", [(MN, RET, RET.replace('s["idx"] > s_idx', 's["idx"] > s_idx + 1'))]),
  ("TB-08", "the boundary candidates are built inline again (a second generator)", [(MN, CALL, "                        valid_stas = []; valid_stas.append({\"idx\": 0})\n" + CALL)]),
  ("TB-09", "the initial / relaxation screen builds its own station candidates", [(MN, "if is_last and self.menu_state == 7:", "if is_last and self.menu_state in (7, 9):")]),
- ("TB-10", "the left-out set is built only from the Run snapshot (the settings are ignored)", [(MN, "pairs = snapshot.pairs if snapshot is not None else " + CROSSED, "pairs = snapshot.pairs if snapshot is not None else ()")]),
+ ("TB-10", "the pairs of the settings are ignored (only the Run snapshot is read)", [(MN, CHAIN_RET, CHAIN_RET.replace("else turnback_crossed_pairs(self, getattr(self, 'setting_start_idx', 0), getattr(self, 'setting_end_idx', -1))", "else ()"))]),
+ ("TC-01", "the A as a boundary starts the next rule at the A itself (no mapping)", [(MN, MAPRET, "            if pair.arrival == boundary_idx:\n                return boundary_idx\n")]),
+ ("TC-02", "the A is mapped to a wrong station (arrival + 2)", [(MN, MAPRET, "            if pair.arrival == boundary_idx:\n                return pair.arrival + 2\n")]),
+ ("TC-03", "the effective range ignores the mapping (start = the boundary)", [(MN, RSTART, "                start = stop\n")]),
+ ("TC-04", "the next boundary candidates start at the plain boundary (the old s_idx)", [(MN, SIDX, "                        s_idx = getattr(self, 'setting_start_idx', 0) if sub_c == 0 else rules[sub_c-1].get(\"end_idx\", -1)\n")]),
+ ("TC-05", "the screens draw the plain boundary of the previous rule (all four screens)", [(MU, HELPER, "        return getattr(self, 'brake_rules', [])[r_idx - 1][\"end_idx\"]\n")]),
+ ("TC-06", "the initial / relaxation screen draws the plain boundary", [(MU, SITE9, "r_start = sta_start if r_idx == 0 else get_sta_name(getattr(self, 'brake_rules', [])[r_idx-1][\"end_idx\"])")]),
+ ("TC-07", "a name decides which station is an A (the mapping reads the name)", [(MN, MAPRET, "            if pair.arrival == boundary_idx or self.station_list[boundary_idx].get('name') == 'A':\n                return pair.departure\n")]),
+ ("TC-08", "the pairs of the chain are read from the settings only (the Run snapshot is ignored)", [(MN, CHAIN_RET, "        return turnback_crossed_pairs(self, getattr(self, 'setting_start_idx', 0), getattr(self, 'setting_end_idx', -1))\n")]),
+ ("TC-09", "the ranges end with the sentinel instead of the section end", [(MN, "            out.append((start, end if stop == -1 else stop))\n", "            out.append((start, stop))\n")]),
 ]
 
 

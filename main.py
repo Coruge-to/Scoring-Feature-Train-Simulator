@@ -1306,6 +1306,37 @@ class Overlay(QWidget):
                     stations.append({"idx": i, "name": s["name"]})
         return stations
 
+    def brake_chain_pairs(self):
+        """The pairs that the basic brake rule chain reads: the Run snapshot while a Run is active, else the pairs that the section of the settings crosses. StationIndex and PairSet only; () without a PairSet."""
+        snapshot = active_scoring_section(self)
+        return snapshot.pairs if snapshot is not None else turnback_crossed_pairs(self, getattr(self, 'setting_start_idx', 0), getattr(self, 'setting_end_idx', -1))
+
+    def brake_boundary_next_start(self, boundary_idx):
+        """Stage TB-I (Owner contract 3): the start of the rule that follows `boundary_idx`. An ordinary boundary starts it; the A of a crossed pair does not (A -> B is no ordinary run): its corresponding B does."""
+        for pair in self.brake_chain_pairs():
+            if pair.arrival == boundary_idx:
+                return pair.departure
+        return boundary_idx
+
+    def brake_rule_ranges(self):
+        """The effective ranges (start, end) of the basic brake rules, as the screens draw them. The stored data is the boundary list (end_idx) only; the start of rule k is derived from the boundary k-1. The initial / relaxation rules mirror it."""
+        end = getattr(self, 'setting_end_idx', -1)
+        if end == -1:
+            end = self.get_actual_terminal_idx()
+        out = []
+        start = getattr(self, 'setting_start_idx', 0)
+        for rule in getattr(self, 'brake_rules', []):
+            stop = rule.get("end_idx", -1)
+            out.append((start, end if stop == -1 else stop))
+            if stop != -1:
+                start = self.brake_boundary_next_start(stop)
+        return out
+
+    def brake_rule_start(self, r_idx):
+        """The effective start StationIndex of basic brake rule r_idx (what the screens draw)."""
+        ranges = self.brake_rule_ranges()
+        return ranges[r_idx][0] if 0 <= r_idx < len(ranges) else getattr(self, 'setting_start_idx', 0)
+
     def _brake_end_candidates(self, s_idx):
         """Stage TB-I (Owner contract): the boundary stations that the LAST basic brake rule offers. A boundary is the end of this rule AND the start of the next one, so the A of a crossed pair (a rule may not start
         at A: A -> B is no ordinary run) and the B of a crossed pair (a rule may not end at B) are both left out. Crossed = the pairs of the scoring section (the Run snapshot while a Run is active, else the settings), by
@@ -1313,9 +1344,7 @@ class Overlay(QWidget):
         boundaries (the rule count of brake_rules)."""
         actual_terminal_idx = self.get_raw_terminal_idx() if hasattr(self, 'get_raw_terminal_idx') else -1
         e_overall = getattr(self, 'setting_end_idx', -1) if getattr(self, 'setting_end_idx', -1) != -1 else actual_terminal_idx
-        snapshot = active_scoring_section(self)
-        pairs = snapshot.pairs if snapshot is not None else turnback_crossed_pairs(self, getattr(self, 'setting_start_idx', 0), getattr(self, 'setting_end_idx', -1))
-        left_out = {p.arrival for p in pairs} | {p.departure for p in pairs}
+        left_out = {p.departure for p in self.brake_chain_pairs()}        # the B of a crossed pair is no boundary; the A stays (the next rule then starts at its B)
         return [s for s in self._scoring_candidate_stations() if s["idx"] > s_idx and s["idx"] <= e_overall and s["idx"] not in left_out]
 
     def _scoring_start_candidates(self):
@@ -1879,7 +1908,7 @@ class Overlay(QWidget):
                 if is_last and self.menu_state == 7:
                     if sub_c_x == 0: 
                         self.dropdown_target = "sub_end_sta"
-                        s_idx = getattr(self, 'setting_start_idx', 0) if sub_c == 0 else rules[sub_c-1].get("end_idx", -1)
+                        s_idx = getattr(self, 'setting_start_idx', 0) if sub_c == 0 else self.brake_boundary_next_start(rules[sub_c-1].get("end_idx", -1))
                         opts = self._brake_end_candidates(s_idx)                 # Stage TB-I: the A and the B of a crossed pair are no boundary
                         self.dropdown_options = opts if opts else [{"idx": -1, "name": "選択可能駅なし"}]
                     elif sub_c_x == 1:

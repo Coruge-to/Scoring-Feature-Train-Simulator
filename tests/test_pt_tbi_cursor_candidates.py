@@ -4,8 +4,8 @@ pair out of its station candidates (the initial / relaxation rule screen is a mi
 Owner contract (2026-11-02):
   * timing screen: the keyboard cursor does not stop on a fixed untimed station (UNTIMED_SCORING_START / UNTIMED_TURNBACK_B). The row stays drawn, red 'untimed' stays, the mouse can not switch it, the A key bulk
     button leaves it alone. X -> A -> B -> Y: Down on A goes to Y, Up on Y goes to A. A pseudo-turnback A is an ordinary changeable station.
-  * basic brake rules: a boundary station of the rule list is BOTH the end of one rule and the start of the next. The A of a crossed pair can not start a rule (A -> B is no ordinary run) and the B can not end one.
-    The one boundary candidate list therefore holds neither (the screen has no separate start choice). Pairs that the scoring section does not cross are not touched.
+  * basic brake rules (Owner contract 3, 2026-11-02, replaces the first reading 'A and B are both out'): the boundary candidate list holds the A of a crossed pair (selectable; the NEXT rule then starts at its B) and
+    not the B (a rule may not end at B). Pairs that the scoring section does not cross are not touched. The effective ranges and the screens: tests/test_pt_tbi_brake_chain.py.
 RED = fails on the baseline 41b3652 for the contract reason (RED-API: the pure helper does not exist yet). GUARD = passes on the baseline and must keep passing. The REAL handlers and the REAL menu_ui.draw_menu are driven."""
 import os
 import sys
@@ -259,32 +259,32 @@ class A_TimingCursor(CursorBase):
 
 
 class B_BasicBrakeCandidates(CandBase):
-    """The boundary candidates of the LAST basic brake rule (menu_state 7, column 0). five(): S0 / A 1 / B 2 / C 3 / D 4 (terminal), PTPAIR 1-2; six(): S0 / A1 1 / B1 2 / A2 3 / B2 4 / E 5 (terminal), pairs 1-2 and 3-4."""
+    """The boundary candidates of the LAST basic brake rule (menu_state 7, column 0): the A of a crossed pair stays, the B is out. five(): S0 / A 1 / B 2 / C 3 / D 4 (terminal), PTPAIR 1-2; six(): S0 / A1 1 / B1 2 / A2 3 / B2 4 / E 5 (terminal), pairs 1-2 and 3-4."""
 
-    def test_BI_01_RED_the_A_of_a_crossed_pair_is_no_candidate(self):
-        self.assertNotIn(1, self.brake_end(self.five()), "RED on the baseline: [1, 2, 3, 4]")
+    def test_BI_01_the_A_of_a_crossed_pair_is_a_boundary_candidate(self):
+        self.assertIn(1, self.brake_end(self.five()), "Owner contract 3: the A stays (the next rule then starts at its B)")
 
     def test_BI_02_RED_the_B_of_a_crossed_pair_is_no_candidate(self):
         self.assertNotIn(2, self.brake_end(self.five()), "RED on the baseline: [1, 2, 3, 4]")
 
     def test_BI_03_the_ordinary_stations_and_the_terminal_stay(self):
-        self.assertEqual(self.brake_end(self.five()), [3, 4], "RED on the baseline for the A / B; the ordinary C (3) and the terminal D (4) stay")
+        self.assertEqual(self.brake_end(self.five()), [1, 3, 4], "the A (1), the ordinary C (3) and the terminal D (4) stay; the B (2) is out")
 
-    def test_BI_04_RED_every_A_of_several_crossed_pairs_is_out(self):
+    def test_BI_04_every_A_of_several_crossed_pairs_stays(self):
         got = self.brake_end(self.six())
-        self.assertNotIn(1, got)
-        self.assertNotIn(3, got)
+        self.assertIn(1, got)
+        self.assertIn(3, got)
 
     def test_BI_05_RED_every_B_of_several_crossed_pairs_is_out(self):
         got = self.brake_end(self.six())
         self.assertNotIn(2, got)
         self.assertNotIn(4, got)
-        self.assertEqual(got, [5], "the terminal E is the only candidate left")
+        self.assertEqual(got, [1, 3, 5], "the A1 / A2 and the terminal E are left; both B are out")
 
-    def test_BI_06_the_screen_has_no_separate_start_choice_so_the_boundary_list_is_the_one_place(self):
-        """The start of rule k is the end of rule k-1 (main.py s_idx = rules[sub_c-1].end_idx), so 'B may start a rule' / 'A may end a rule' have no screen: a boundary is both. The list never holds A or B."""
+    def test_BI_06_the_screen_has_no_separate_start_choice_the_start_is_derived_from_the_previous_boundary(self):
+        """The start of rule k is derived from the end of rule k-1 (main.py s_idx = brake_boundary_next_start(...)): the A of a crossed pair as a boundary starts the next rule at its B (tests/test_pt_tbi_brake_chain.py)."""
         text = source("main.py")
-        self.assertIn('s_idx = getattr(self, \'setting_start_idx\', 0) if sub_c == 0 else rules[sub_c-1].get("end_idx", -1)', text)
+        self.assertIn('s_idx = getattr(self, \'setting_start_idx\', 0) if sub_c == 0 else self.brake_boundary_next_start(rules[sub_c-1].get("end_idx", -1))', text)
         self.assertEqual(text.count('self.dropdown_target = "sub_end_sta"'), 1)
 
     def test_BI_07_a_pair_that_the_section_does_not_cross_is_not_touched(self):
@@ -294,10 +294,10 @@ class B_BasicBrakeCandidates(CandBase):
     def test_BI_16_only_the_pairs_of_the_scoring_section_are_left_out(self):
         s = self.six()
         s.o.setting_start_idx, s.o.setting_end_idx = 0, 3
-        self.assertEqual(self.brake_end(s), [3], "the section ends at the A of pair 2 and crosses pair 1 only: A1 / B1 are out, the terminal A2 stays")
+        self.assertEqual(self.brake_end(s), [1, 3], "the section ends at the A of pair 2 and crosses pair 1 only: B1 is out, A1 and the terminal A2 stay")
         s2 = self.six()
         s2.o.setting_start_idx, s2.o.setting_end_idx = 2, 5
-        self.assertEqual(self.brake_end(s2), [5], "the section starts at the B of pair 1 (crosses pair 2 only): A2 / B2 are out, pair 1 is not touched (it is before the start anyway)")
+        self.assertEqual(self.brake_end(s2), [3, 5], "the section starts at the B of pair 1 (crosses pair 2 only): B2 is out, A2 and the terminal E stay, pair 1 is not touched (it is before the start anyway)")
         s3 = self.six()
         s3.o.setting_start_idx, s3.o.setting_end_idx = 0, 1
         self.assertEqual(self.brake_end(s3), [1], "the section ends at A1: nothing is crossed, nothing is left out")
@@ -305,22 +305,22 @@ class B_BasicBrakeCandidates(CandBase):
         s = self.scene(None)
         self.assertEqual(self.brake_end(s), [1, 2, 3, 4], "GUARD")
 
-    def test_BI_09_RED_the_pairs_are_found_by_StationIndex_not_by_name(self):
+    def test_BI_09_the_pairs_are_found_by_StationIndex_not_by_name(self):
         s = self.five()
         for st in s.sl:
             st["name"] = "X"
-        self.assertEqual(self.brake_end(s), [3, 4], "RED on the baseline for the A / B")
+        self.assertEqual(self.brake_end(s), [1, 3, 4], "the B (2) is out whatever the names are")
         s2 = self.five()
         s2.sl[3]["name"] = "B"
-        s2.sl[1]["name"] = "ordinary"
-        self.assertEqual(self.brake_end(s2), [3, 4], "a station called B that is no pair B is not excluded; the real A is")
+        s2.sl[2]["name"] = "ordinary"
+        self.assertEqual(self.brake_end(s2), [1, 3, 4], "a station called B that is no pair B is not excluded (3); the real B (2) is, although it is called ordinary")
 
-    def test_BI_10_RED_door_indicator_lamp_and_signal_flag_are_no_input(self):
+    def test_BI_10_door_indicator_lamp_and_signal_flag_are_no_input(self):
         s = self.five()
         s.o.bve_door, s.o.bve_doordir, s.o.bve_is_pass = 1, 0, 1
         s.sl[1]["is_pass"] = False
         s.sl[2]["is_pass"] = False
-        self.assertEqual(self.brake_end(s), [3, 4], "RED on the baseline for the A / B")
+        self.assertEqual(self.brake_end(s), [1, 3, 4])
 
     def test_BI_11_the_default_end_station_does_not_point_at_an_excluded_station(self):
         s = self.five()
@@ -328,7 +328,7 @@ class B_BasicBrakeCandidates(CandBase):
         s.o.brake_rules = [{"end_idx": -1, "apply": "階段", "release": "階段"}]
         self.assertEqual(s.o.brake_rules[-1]["end_idx"], -1, "GUARD: the default is the sentinel, never an A or a B")
 
-    def test_BI_12_RED_picking_a_boundary_never_writes_an_excluded_station(self):
+    def test_BI_12_picking_a_boundary_never_writes_the_excluded_B(self):
         s = self.five()
         o = s.o
         written = []
@@ -339,7 +339,7 @@ class B_BasicBrakeCandidates(CandBase):
             o.dropdown_target = "sub_end_sta"
             o.handle_dropdown_enter()
             written.append(o.brake_rules[0]["end_idx"])
-        self.assertTrue(all(w not in (1, 2) for w in written), written)
+        self.assertTrue(all(w != 2 for w in written), written)
 
     def test_BI_13_changing_the_scoring_section_resets_the_rules_so_no_excluded_value_survives(self):
         s = self.five()
@@ -360,7 +360,7 @@ class B_BasicBrakeCandidates(CandBase):
             walked.append(o.dropdown_options[o.dropdown_cursor]["idx"])
             o.dropdown_cursor = min(o.dropdown_cursor + 1, len(o.dropdown_options) - 1)
         self.assertEqual(walked, ids)
-        self.assertNotIn(1, walked, "RED on the baseline")
+        self.assertNotIn(2, walked, "the B is never walked")
 
 
 class C_InitialAndRelaxationInheritance(CandBase):

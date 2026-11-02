@@ -13,6 +13,14 @@ from config import *
 from utils import draw_text_with_outline
 import time
 
+def _brake_rule_start(self, r_idx):
+    """The effective start StationIndex of basic brake rule r_idx (an owner without the method keeps the plain boundary of the previous rule)."""
+    fn = getattr(self, 'brake_rule_start', None)
+    if fn is not None:
+        return fn(r_idx)
+    return getattr(self, 'brake_rules', [])[r_idx - 1]["end_idx"]
+
+
 def draw_menu(self, painter, logical_width):
     # メインメニューの枠位置を調整するパラメータ
     GLOBAL_BOX_X_OFFSET = -3
@@ -470,7 +478,7 @@ def draw_menu(self, painter, logical_width):
                 if r_idx >= len(self.brake_rules): break
                 r_y = list_y_start + row_h * (4 + i) 
                 rule = getattr(self, 'brake_rules', [])[r_idx]
-                r_start = get_sta_name(getattr(self, 'setting_start_idx', 0)) if r_idx == 0 else get_sta_name(getattr(self, 'brake_rules', [])[r_idx-1]["end_idx"])
+                r_start = get_sta_name(getattr(self, 'setting_start_idx', 0)) if r_idx == 0 else get_sta_name(_brake_rule_start(self, r_idx))
                 r_end = (
                     get_sta_name(getattr(self, 'setting_end_idx', -1))
                     if rule.get("end_idx", -1) == -1
@@ -610,7 +618,7 @@ def draw_menu(self, painter, logical_width):
                 r_idx = getattr(self, 'sub_scroll', 0) + i
                 if r_idx >= len(getattr(self, 'brake_rules', [])): break
                 rule = getattr(self, 'brake_rules', [])[r_idx]
-                r_start = get_sta_name(getattr(self, 'setting_start_idx', 0)) if r_idx == 0 else get_sta_name(getattr(self, 'brake_rules', [])[r_idx-1]["end_idx"])
+                r_start = get_sta_name(getattr(self, 'setting_start_idx', 0)) if r_idx == 0 else get_sta_name(_brake_rule_start(self, r_idx))
                 r_end = (
                     get_sta_name(getattr(self, 'setting_end_idx', -1))
                     if rule.get("end_idx", -1) == -1
@@ -1015,7 +1023,7 @@ def draw_menu(self, painter, logical_width):
             b_rule = getattr(self, 'brake_rules', [])[r_idx]
             p_rule = init_rules[r_idx] if r_idx < len(init_rules) else {"apply": "ON①", "release": "ON①"}
             
-            r_start = get_sta_name(getattr(self, 'setting_start_idx', 0)) if r_idx == 0 else get_sta_name(getattr(self, 'brake_rules', [])[r_idx-1]["end_idx"])
+            r_start = get_sta_name(getattr(self, 'setting_start_idx', 0)) if r_idx == 0 else get_sta_name(_brake_rule_start(self, r_idx))
             r_end = get_sta_name(getattr(self, 'setting_end_idx', -1)) if b_rule.get("end_idx", -1) == -1 else get_sta_name(b_rule["end_idx"])
             
             cx = list_cx_start
@@ -1156,7 +1164,7 @@ def draw_menu(self, painter, logical_width):
             b_rule = getattr(self, 'brake_rules', [])[r_idx]
             p_rule = init_rules[r_idx] if r_idx < len(init_rules) else {"apply": "ON①", "release": "ON①"}
             
-            r_start = sta_start if r_idx == 0 else get_sta_name(getattr(self, 'brake_rules', [])[r_idx-1]["end_idx"])
+            r_start = sta_start if r_idx == 0 else get_sta_name(_brake_rule_start(self, r_idx))
             r_end = sta_end if b_rule.get("end_idx", -1) == -1 else get_sta_name(b_rule["end_idx"])
             
             r_y = sub_list_y_start + (i * 70) 
