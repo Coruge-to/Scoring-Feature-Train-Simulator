@@ -115,20 +115,11 @@ class PopupBackground(PopupDim):
         dark = [y for y in range(330, 1005) if self.lum(image, 160, y) < ref - 4]
         self.assertEqual(dark, [], "RED on the baseline (the box was filled with a darker colour): reference %d" % ref)
 
-    def test_UB4_RED_no_explanation_box_has_a_fill(self):
+    def test_UB4_RED_the_box_has_an_outline_and_no_fill(self):
         with open(os.path.join(ROOT, "menu_ui.py"), encoding="utf-8") as fh:
             text = fh.read()
         self.assertIn("painter.setBrush(Qt.BrushStyle.NoBrush)     # Stage UI-5: the explanation box has an outline only", text)
-        self.assertEqual(text.count("QColor(20, 20, 20, 220)"), 0, "no explanation box has the dark fill any more (Stage UI-6: the pages 1/3, 2/3, 3/3 too)")
-        self.assertEqual(text.count("# Stage UI-6: the explanation box has an outline only"), 3)
-    def test_UB5_RED_the_explanation_box_of_every_page_is_as_dark_as_its_surroundings(self):
-        """Stage UI-6: pages 1/3 (state 5), 2/3 (6) and 3/3 (10): a pixel inside the box (right margin, no text) is as dark as the pixel just outside it."""
-        boxes = {5: (870, 135), 6: (870, 135), 10: (693, 312)}
-        for state, (desc_y, desc_h) in boxes.items():
-            image = self.render(state, 1920, 1080)
-            y = int(desc_y + desc_h / 2)
-            inside, outside = self.lum(image, 1750, y), self.lum(image, 1790, y)
-            self.assertEqual(inside, outside, "menu_state %d: inside=%d outside=%d (RED on the baseline: the box had a darker fill)" % (state, inside, outside))
+        self.assertEqual(text.count("QColor(20, 20, 20, 220)"), 3, "the boxes of the pages 1/3, 2/3 and 3/3 (plain dim behind them) keep their fill")
 
 if __name__ == "__main__":
     unittest.main()

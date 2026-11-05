@@ -554,7 +554,7 @@ def draw_menu(self, painter, logical_width):
             desc_y = 870 
             desc_h = 135 
             painter.setPen(QPen(QColor(150, 150, 150), 2))
-            painter.setBrush(Qt.BrushStyle.NoBrush)     # Stage UI-6: the explanation box has an outline only (the Owner wants to see how it reads without the dark fill)
+            painter.setBrush(QColor(20, 20, 20, 220))
             painter.drawRoundedRect(150, int(desc_y), 1620, int(desc_h), 10, 10)
 
             actual_margin = getattr(self, 'setting_stop_distance', -1)
@@ -1089,7 +1089,7 @@ def draw_menu(self, painter, logical_width):
         desc_y = 870 
         desc_h = 135 
         painter.setPen(QPen(QColor(150, 150, 150), 2))
-        painter.setBrush(Qt.BrushStyle.NoBrush)     # Stage UI-6: the explanation box has an outline only (the Owner wants to see how it reads without the dark fill)
+        painter.setBrush(QColor(20, 20, 20, 220))
         painter.drawRoundedRect(150, int(desc_y), 1620, int(desc_h), 10, 10)
 
         desc_dict = {
@@ -1434,7 +1434,7 @@ def draw_menu(self, painter, logical_width):
         desc_y = 693 
         desc_h = 312 
         painter.setPen(QPen(QColor(150, 150, 150), 2))
-        painter.setBrush(Qt.BrushStyle.NoBrush)     # Stage UI-6: the explanation box has an outline only (the Owner wants to see how it reads without the dark fill)
+        painter.setBrush(QColor(20, 20, 20, 220))
         painter.drawRoundedRect(150, int(desc_y), 1620, int(desc_h), 10, 10)
 
         desc_lines = [
