@@ -579,10 +579,7 @@ def draw_menu(self, painter, logical_width):
                 draw_text_with_outline(painter, line, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, 180, desc_y + 40 + (j * 40), "left", passes=8)
 
         if self.menu_state == 7:
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(0,0,0, 180))
-            painter.drawRect(0,0, int(BASE_SCREEN_W), int(BASE_SCREEN_H))
-            
+            # Stage UI-4: no second dim layer here (the common one at the top of draw_menu already covers the whole window; a second one drawn inside the 16:9 area left a darker band in a window that is not 16:9)
             sub_w, sub_h = 1700, 850
             sub_x, sub_y = 110, (BASE_SCREEN_H - sub_h) / 2
 
@@ -755,10 +752,7 @@ def draw_menu(self, painter, logical_width):
         TIMING_HIGHLIGHT_OFFSET_X = 0       
         TIMING_HIGHLIGHT_OFFSET_Y = 0       
         
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(0, 0, 0, 180))
-        painter.drawRect(0, 0, int(BASE_SCREEN_W), int(BASE_SCREEN_H))
-        
+        # Stage UI-4: no second dim layer here (the common one at the top of draw_menu already covers the whole window; a second one drawn inside the 16:9 area left a darker band in a window that is not 16:9)
         SUB_X = (BASE_SCREEN_W - TIMING_SUB_W) / 2
         SUB_Y = (BASE_SCREEN_H - TIMING_SUB_H) / 2
         
@@ -1117,10 +1111,7 @@ def draw_menu(self, painter, logical_width):
             draw_text_with_outline(painter, line, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, 180, desc_y + 40 + (j * 40), "left", passes=8)
 
     elif self.menu_state == 9:
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(0,0,0, 180))
-        painter.drawRect(0,0, int(BASE_SCREEN_W), int(BASE_SCREEN_H))
-        
+        # Stage UI-4: no second dim layer here (the common one at the top of draw_menu already covers the whole window; a second one drawn inside the 16:9 area left a darker band in a window that is not 16:9)
         sub_w, sub_h = 1700, 940
         sub_x, sub_y = 110, (BASE_SCREEN_H - sub_h) / 2
         SHIFT_Y = 30
