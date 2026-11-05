@@ -3,7 +3,7 @@ frame and touched the centred done button ('設定完了'), found on the live ru
 
   * the frame stays centred on the 1920 x 1080 base screen (UI-C): 940 high, y 70 .. 1010,
   * every other element - the title, the arrows, the rows and their click zones, the done button - keeps its place INSIDE the frame (the distance to the frame's top edge is the one of the baseline 81b4f41, so the whole group is 20 px higher on the screen than on the baseline; UI-P, the zones are the baseline values minus 20 px), the corner button stays at its screen position,
-  * the bulk / reset button keeps its 20 px distance from the bottom edge of the frame, so its gap to the done button grew by the 40 px: 24 px (UI-G), and it stays inside the frame (UI-I).
+  * the bulk / reset button keeps its 20 px distance from the bottom edge of the frame, so its gap to the done button grew by the extra height: EXTRA_H - 16 px (UI-G), and it stays inside the frame (UI-I).
 The REAL screen (menu_ui.draw_menu on an offscreen QImage) is driven. RED = fails on the baseline 81b4f41 (the overlap, the panel size); GUARD = passes on the baseline and must keep passing."""
 import os
 import sys
@@ -21,20 +21,35 @@ NEW_LABEL = "変更可能な非採時駅を全て採時駅にする : A"
 RESET_LABEL = "初期設定に戻す : A"
 ACTION_BULK = 998
 ACTION_CLOSE = 999
-GAP_MIN = 24.0
-SHIFT_UP = 20.0
+EXTRA_H = 36.0                      # the value of menu_ui TIMING_EXTRA_H (Stage UI-3; the Owner lowers it step by step: 40 -> 36 -> ...)
+BASE_H = 900.0
+BASELINE_OVERLAP = 16.0              # the bulk button overlapped the done button by this on the baseline 81b4f41
+GAP = EXTRA_H - BASELINE_OVERLAP     # the gap that the extra height gives
+GAP_MIN = GAP
+SHIFT_UP = EXTRA_H / 2.0             # the whole screen is re-centred: it is this much higher than on the baseline
 
 # the baseline 81b4f41 (measured on the real screen, the scene of test_pt_tbh_bulk_timing_button: start 0, end 4): every click zone except the bulk button (998)
 BASELINE_ZONES_EXCEPT_BULK = [
-    (410.0, 383.0, 1510.0, 453.0, 1, -1),
-    (425.0, 383.0, 469.0, 453.0, 1, -1),
-    (410.0, 533.0, 1510.0, 603.0, 3, -1),
-    (425.0, 533.0, 469.0, 603.0, 3, -1),
-    (410.0, 608.0, 1510.0, 678.0, 4, -1),
-    (425.0, 608.0, 469.0, 678.0, 4, -1),
-    (846.0, 848.0, 1059.0, 918.0, 5),
+    (410.0, 403.0, 1510.0, 473.0, 1, -1),
+    (425.0, 403.0, 469.0, 473.0, 1, -1),
+    (410.0, 553.0, 1510.0, 623.0, 3, -1),
+    (425.0, 553.0, 469.0, 623.0, 3, -1),
+    (410.0, 628.0, 1510.0, 698.0, 4, -1),
+    (425.0, 628.0, 469.0, 698.0, 4, -1),
+    (846.0, 868.0, 1059.0, 938.0, 5),
     (1680.0, 1022.0, 1910.0, 1070.0, 999),
 ]
+
+
+def expected_zones():
+    """the baseline zones: every row and the done button are SHIFT_UP higher, the corner button (999) is fixed on the screen"""
+    out = []
+    for z in BASELINE_ZONES_EXCEPT_BULK:
+        if z[4] == ACTION_CLOSE:
+            out.append(z)
+        else:
+            out.append((z[0], z[1] - SHIFT_UP, z[2], z[3] - SHIFT_UP) + tuple(z[4:]))
+    return out
 
 
 def zone_of(zones, action):
@@ -90,10 +105,10 @@ class Layout(Base):
         s, _, _ = self.drawn(True)
         x0, y0, x1, y1 = s.o.active_panel_rect
         self.assertEqual((x1 - x0), 1300.0)
-        self.assertEqual((y1 - y0), 940.0, "RED on the baseline: 900; on UI-1: 980")
+        self.assertEqual((y1 - y0), BASE_H + EXTRA_H, "RED on the baseline: 900; on UI-1: 980")
         self.assertEqual((x0 + x1) / 2.0, 960.0, "centred horizontally")
         self.assertEqual((y0 + y1) / 2.0, 540.0, "centred vertically")
-        self.assertEqual((y0, y1), (70.0, 1010.0))
+        self.assertEqual((y0, y1), ((1080.0 - (BASE_H + EXTRA_H)) / 2.0, (1080.0 + (BASE_H + EXTRA_H)) / 2.0))
         self.assertGreaterEqual(y0, 20.0)
         self.assertLessEqual(y1, 1060.0, "the taller frame fits the 1080 high base screen")
 
@@ -101,12 +116,12 @@ class Layout(Base):
         for bulk in (True, False):
             _, _, zones = self.drawn(bulk)
             others = [tuple(z) for z in zones if not (len(z) == 5 and z[4] == ACTION_BULK)]
-            self.assertEqual(others, BASELINE_ZONES_EXCEPT_BULK, "the rows and the done button are the baseline minus 20 px, the corner button does not move (bulk=%s)" % bulk)
+            self.assertEqual(others, expected_zones(), "the rows and the done button are the baseline minus SHIFT_UP, the corner button does not move (bulk=%s)" % bulk)
 
     def test_UI_P2_RED_the_content_hangs_from_the_top_edge_and_the_extra_height_is_only_below(self):
         text = open(os.path.join(ROOT, "menu_ui.py"), encoding="utf-8").read()
         self.assertIn("TIMING_BASE_H = 900", text)
-        self.assertIn("TIMING_EXTRA_H = 40", text)
+        self.assertIn("TIMING_EXTRA_H = %d " % int(EXTRA_H), text)
         self.assertIn("TIMING_SUB_H = TIMING_BASE_H + TIMING_EXTRA_H", text)
         self.assertIn("CONTENT_Y = SUB_Y  ", text)
         for line in ("TITLE_Y = CONTENT_Y + TIMING_TITLE_Y_OFFSET", "ARROW_UP_Y = CONTENT_Y + TIMING_ARROW_UP_Y_OFFSET", "LIST_Y = CONTENT_Y + TIMING_LIST_Y_OFFSET", "BTN_Y = CONTENT_Y + TIMING_BASE_H - TIMING_BTN_Y_OFFSET"):
@@ -133,7 +148,7 @@ class Layout(Base):
             b = zone_of(zones, ACTION_BULK)
             done = zone_of(zones, self.targets_len(s))
             self.assertEqual(y1 - b[3], 20.0, "the bulk button keeps its 20 px from the frame bottom (bulk=%s)" % bulk)
-            self.assertEqual(b[1] - done[3], 24.0, "the gap grew by the 40 px that were added below (bulk=%s)" % bulk)
+            self.assertEqual(b[1] - done[3], GAP, "the gap grew by the extra height that was added below (bulk=%s)" % bulk)
 
     def test_UI_P3_GUARD_the_label_texts_and_the_branch_are_unchanged(self):
         text = open(os.path.join(ROOT, "menu_ui.py"), encoding="utf-8").read()

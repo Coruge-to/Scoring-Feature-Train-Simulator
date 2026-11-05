@@ -739,7 +739,7 @@ def draw_menu(self, painter, logical_width):
     elif self.menu_state == 8:
         TIMING_SUB_W = 1300
         TIMING_BASE_H = 900                 # the frame height the content offsets below are measured in (before Stage UI-1)
-        TIMING_EXTRA_H = 40                 # Stage UI-3: the frame is taller by this, DOWNWARD only (the content keeps its place inside the frame, the bulk button keeps its 20 px from the bottom edge, so the gap to the done button grows by this); the whole screen is then re-centred (it moves up by half of this)
+        TIMING_EXTRA_H = 36                 # Stage UI-3: the frame is taller by this, DOWNWARD only (the content keeps its place inside the frame, the bulk button keeps its 20 px from the bottom edge, so the gap to the done button grows by this); the whole screen is then re-centred (it moves up by half of this)
         TIMING_SUB_H = TIMING_BASE_H + TIMING_EXTRA_H
         TIMING_TITLE_Y_OFFSET = 125         
         TIMING_ARROW_UP_Y_OFFSET = 215      
