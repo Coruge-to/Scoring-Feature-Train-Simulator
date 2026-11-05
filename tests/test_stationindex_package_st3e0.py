@@ -59,7 +59,7 @@ BASE_BLOBS = {
     "current_jump_client.py": "bfcee44c0a0f79a76a8a6e950c738084523f1cf9",
     "dataplane_contract.py": "56da8579207ae7f6d866f17ce4aafe6d0553c23f",
     # SI-R2.3 (C4b) changed hud_ui.py on purpose (the distance row, the time-left row and the timing label read the display target of the main.py sync - hud_target_* - and no longer the machine target; tests/test_hud_target_wiring_r23.py): the blob moved from a581b87c... (0b8e511)
-    "hud_ui.py": "fc29e3319a6ef7414929995d141d54122dd65f06",  # Stage P1 (the remaining-time row reads the effective station state, effective_station_state.py, not hud_target_next_time / turnback_remaining_view): was 5b5fd255...  # Stage TB-J (the remaining-time field draws the pseudo-turnback Jump wait / the B departure from Overlay.turnback_remaining_view): was 15ebccbb...
+    "hud_ui.py": "471ec4d9d723ce200b268d9d73858b2542480486",  # Stage UI-2 (the F2 telemetry GRAPH is not drawn: hud_ui.G_GRAPH_ENABLED = False, a provisional Owner setting; the F2 diagnostic text is unchanged): was fc29e331...  # Stage P1 (the remaining-time row reads the effective station state, effective_station_state.py, not hud_target_next_time / turnback_remaining_view): was 5b5fd255...  # Stage TB-J (the remaining-time field draws the pseudo-turnback Jump wait / the B departure from Overlay.turnback_remaining_view): was 15ebccbb...
     "jump_transaction.py": "81996db3fa243cc0bc5412142c6035f8a6fb9648",
     "jump_wire.py": "00579f8031221333f2f6e471d7e30ab3f8b1a365",
     "managed_app_directory.py": "77bf8671ef364b05fb6a6524858ce2ffc2930060",

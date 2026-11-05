@@ -3,6 +3,10 @@ from PyQt6.QtGui import QColor, QFontMetrics, QPainterPath, QPen, QLinearGradien
 from config import *
 from utils import draw_text_with_stroke, get_outline_color
 
+# Stage UI-2 (Owner, 2026-11-05, a PROVISIONAL setting): the Decel G / Notch telemetry GRAPH of the F2 diagnostics (the bottom-left chart) is not drawn: it covered the cab desk and the door pilot lamp in the live photos.
+# The F2 diagnostic TEXT (the lines above it) and the F2 toggle (debug_all_penalties and show_graph change together) are unchanged. Set this to True to bring the chart back.
+G_GRAPH_ENABLED = False
+
 def hud_item_available(overlay, key):
     """Can the sender provide the data of this HUD item? (telemetry_contract AVAIL; a sender without AVAIL provides everything.)"""
     gate = getattr(overlay, 'telemetry_gate', None)
@@ -148,7 +152,7 @@ def draw_hud(self, painter, logical_width):
             painter.drawText(20, dbg_y, text)
             dbg_y += 20
 
-    if self.show_graph and len(self.g_history) > 1:
+    if G_GRAPH_ENABLED and self.show_graph and len(self.g_history) > 1:
         graph_w = 800
         graph_h = 250
         graph_x = 5
