@@ -76,6 +76,50 @@ class PopupDim(Base):
         self.assertNotIn("drawRect(0, 0, int(BASE_SCREEN_W), int(BASE_SCREEN_H))", text)
         self.assertEqual(text.count("# Stage UI-4: no second dim layer here"), 3)
 
+class PopupBackground(PopupDim):
+    """Stage UI-5 (Owner, 2026-11-05, screenshot 221512): the initial / relaxation screen's explanation box was darker than the panel, the title of the page behind the pop-up (1/3, 2/3) showed through / above the panel of the basic brake and the
+    initial / relaxation screens (the timing screen never drew it): all three pop-ups are now alike (nothing of the page behind them)."""
+
+    def texts(self, state, width=1920, height=1080):
+        import menu_ui
+        calls = []
+        original = menu_ui.draw_text_with_outline
+
+        def record(painter, text, *args, **kwargs):
+            calls.append(text)
+            return original(painter, text, *args, **kwargs)
+        menu_ui.draw_text_with_outline = record
+        try:
+            self.render(state, width, height)
+        finally:
+            menu_ui.draw_text_with_outline = original
+        return calls
+
+    def test_UB1_RED_the_title_of_the_page_behind_is_not_drawn_in_the_three_pop_ups(self):
+        for state in (7, 8, 9):
+            calls = self.texts(state)
+            self.assertNotIn("=== 採点設定 (1/3) ===", calls, "menu_state %d" % state)
+            self.assertNotIn("=== 採点設定 (2/3) ===", calls, "menu_state %d" % state)
+
+    def test_UB2_GUARD_the_pages_themselves_and_each_pop_up_keep_their_own_title(self):
+        self.assertIn("=== 採点設定 (1/3) ===", self.texts(5))
+        self.assertIn("=== 採点設定 (2/3) ===", self.texts(6))
+        self.assertIn("=== 採点設定 (3/3) ===", self.texts(10))
+        self.assertIn("=== 基本制動 設定 ===", self.texts(7))
+        self.assertIn("=== 運転時分 設定 ===", self.texts(8))
+        self.assertIn("=== 初動・緩和ブレーキ 設定 ===", self.texts(9))
+
+    def test_UB3_RED_the_explanation_box_of_the_initial_relaxation_screen_is_not_darker_than_the_panel(self):
+        image = self.render(9, 1920, 1080)
+        ref = self.lum(image, 160, 220)                   # inside the panel, left of every row, no text
+        dark = [y for y in range(330, 1005) if self.lum(image, 160, y) < ref - 4]
+        self.assertEqual(dark, [], "RED on the baseline (the box was filled with a darker colour): reference %d" % ref)
+
+    def test_UB4_RED_the_box_has_an_outline_and_no_fill(self):
+        with open(os.path.join(ROOT, "menu_ui.py"), encoding="utf-8") as fh:
+            text = fh.read()
+        self.assertIn("painter.setBrush(Qt.BrushStyle.NoBrush)     # Stage UI-5: the explanation box has an outline only", text)
+        self.assertEqual(text.count("QColor(20, 20, 20, 220)"), 3, "the boxes of the pages 1/3, 2/3 and 3/3 (plain dim behind them) keep their fill")
 
 if __name__ == "__main__":
     unittest.main()

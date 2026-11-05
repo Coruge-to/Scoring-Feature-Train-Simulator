@@ -114,7 +114,8 @@ def draw_menu(self, painter, logical_width):
         title_text = "=== 採点設定 (2/3) ==="
         title_y = 112 + MAIN_SHIFT_Y
 
-    if title_text and self.menu_state not in [3, 8]:
+    # Stage UI-5: the pop-up screens (the basic brake 7, the timing 8, the initial / relaxation 9) draw their own title; the title of the page behind them (1/3, 2/3) is not drawn through them (it showed above / through the panel)
+    if title_text and self.menu_state not in [3, 7, 8, 9]:
         draw_text_with_outline(painter, title_text, self.font_big, MENU_TEXT, MENU_OUTLINE, center_x, title_y, "center", passes=8)
 
     def get_sta_name(idx):
@@ -1251,7 +1252,7 @@ def draw_menu(self, painter, logical_width):
         desc_y = btn_base_y + 120
         desc_h = 175 
         painter.setPen(QPen(QColor(150, 150, 150), 2))
-        painter.setBrush(QColor(20, 20, 20, 220))
+        painter.setBrush(Qt.BrushStyle.NoBrush)     # Stage UI-5: the explanation box has an outline only (its dark fill made it darker than the panel)
         painter.drawRoundedRect(150, int(desc_y), 1620, int(desc_h), 10, 10)
         desc_text = "ON① : 全区間で採点を行います。\nON② : 停車駅採点範囲内（停止位置目標の付近）での操作は減点免除となります。\nOFF  : 採点を行いません。\n※残圧停車を行う路線では、緩和をON②またはOFFにしてください。"
         for j, line in enumerate(desc_text.split('\n')):
