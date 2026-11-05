@@ -737,8 +737,10 @@ def draw_menu(self, painter, logical_width):
             draw_menu_item("設定完了", btn_base_y + 80, (getattr(self, 'sub_cursor', 0) == row_done), row_done, "center")
 
     elif self.menu_state == 8:
-        TIMING_SUB_W = 1300                 
-        TIMING_SUB_H = 900                  
+        TIMING_SUB_W = 1300
+        TIMING_BASE_H = 900                 # the frame height the content offsets below are measured in (before Stage UI-1)
+        TIMING_EXTRA_H = 80                 # Stage UI-1: the frame is taller by this (split top and bottom: it stays centred; the content keeps its screen position) so that the long bulk button label never touches the done button
+        TIMING_SUB_H = TIMING_BASE_H + TIMING_EXTRA_H
         TIMING_TITLE_Y_OFFSET = 125         
         TIMING_ARROW_UP_Y_OFFSET = 215      
         TIMING_LIST_Y_OFFSET = 290          
@@ -762,11 +764,12 @@ def draw_menu(self, painter, logical_width):
         
         self.active_panel_rect = (SUB_X, SUB_Y, SUB_X + TIMING_SUB_W, SUB_Y + TIMING_SUB_H)
 
-        TITLE_Y = SUB_Y + TIMING_TITLE_Y_OFFSET
-        ARROW_UP_Y = SUB_Y + TIMING_ARROW_UP_Y_OFFSET
-        LIST_Y = SUB_Y + TIMING_LIST_Y_OFFSET
+        CONTENT_Y = SUB_Y + TIMING_EXTRA_H / 2      # the top of the base frame: the same screen position as before Stage UI-1
+        TITLE_Y = CONTENT_Y + TIMING_TITLE_Y_OFFSET
+        ARROW_UP_Y = CONTENT_Y + TIMING_ARROW_UP_Y_OFFSET
+        LIST_Y = CONTENT_Y + TIMING_LIST_Y_OFFSET
         ARROW_DOWN_Y = LIST_Y + (TIMING_VISIBLE_COUNT * TIMING_ROW_H) + TIMING_ARROW_DOWN_Y_OFFSET
-        BTN_Y = SUB_Y + TIMING_SUB_H - TIMING_BTN_Y_OFFSET
+        BTN_Y = CONTENT_Y + TIMING_BASE_H - TIMING_BTN_Y_OFFSET
         
         painter.setBrush(QColor(30, 30, 30, 240))
         painter.setPen(QPen(QColor(150, 150, 150), 3))
