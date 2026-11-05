@@ -216,7 +216,7 @@ class D_Guards(RtBase):
 # ==============================================================================================================================================
 class E_FreeDriving(RtBase):
     def free(self, s, index, door=1):
-        """Free driving: no scoring session; the HUD shows the OFFICIAL target (the sender's index) with the sender's final timetable (raw_arr / raw_dep: never the C# completed times)."""
+        """Free driving: no scoring session; the HUD shows the OFFICIAL target (the sender's index); the EFFECTIVE timetable (Stage P1) undefines the pair A departure and the pair B arrival, whatever the sender completed (tests/test_pt_effective_state.py, tests/test_pt_tbk_free_driving.py: the wire-faithful fixtures)."""
         from official_target_contract import KNOWN
         o = s.o
         o.is_scoring_mode = False
@@ -234,7 +234,7 @@ class E_FreeDriving(RtBase):
 
     def test_RT_04_free_driving_never_shows_a_completed_arrival_of_B(self):
         s, t, f = self.scene()
-        self.assertEqual(self.free(s, 2, door=0), "--:--", "the B has no arrival time (the C# completed one is never in the Python station list)")
+        self.assertEqual(self.free(s, 2, door=0), "--:--", "the B has no arrival time in the effective timetable (the sender's completed one is only a raw value)")
 
     def test_RT_03_04_control_an_ordinary_station_with_a_time_shows_it(self):
         s, t, f = self.scene()
@@ -298,10 +298,13 @@ class G_AfterLanding(RtBase):
         self.assertEqual(shown, ("%02d:%02d" % (mm, ss)) if diff_s >= 0 else ("-%02d:%02d" % (mm, ss)))
         self.assertNotEqual(shown, "00:07")
 
-    def test_RT_21_B_without_a_departure_time_shows_dashes(self):
+    def test_RT_21_B_without_a_departure_time_is_a_contract_violation_not_an_ordinary_dashes(self):
+        """A certified pair B always has a departure time (the C# Qualifier, and the PairSet READY check of Stage P1: tests/test_pt_tbk_free_driving.py WR_03). If it is missing anyway the state says so (contract_violation)
+        instead of presenting an ordinary --:--; the HUD still draws --:-- (nothing to count down to)."""
         s, flow = self.landed()
         s.sl[2]["raw_dep"] = -1
         self.assertEqual(s.o.turnback_remaining_view(), ("dashes", None))
+        self.assertEqual(s.o.effective_station_state.contract_violation, "pair-b-departure-missing")
         self.assertEqual(self.left(s), "--:--")
 
     def test_RT_21_the_ordinary_display_returns_when_the_target_moves_on(self):

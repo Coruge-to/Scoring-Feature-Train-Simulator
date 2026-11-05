@@ -57,6 +57,7 @@ import current_jump_client
 import telemetry_gate
 from official_target_contract import advance as offtgt_advance, capture as offtgt_capture, initial_state as offtgt_initial_state, timer_after_scenario as offtgt_timer_after_scenario
 import hud_target_contract
+import effective_station_state as ess
 import telemetry_receiver_directory
 import utils
 
@@ -306,7 +307,6 @@ class Overlay(QWidget):
         # Phase SI-R2.3: the display target the HUD draws (derived, see _hud_target_sync) and the display-only terminal freeze of its remaining time
         self._hud_target = hud_target_contract.NO_TARGET
         self._hud_freeze = None
-        self._free_turnback_a_latch = None          # Stage TB-K: the display-only latch of the free-driving remaining time (see _free_turnback_a_latch_update)
 
         # Phase ST-2a: the identity the application publishes for the station list above (written only by _station_identity_apply / _station_identity_clear;
         # -1 / "" = the sender's station indexes can not be used as the identity of a station)
@@ -758,7 +758,7 @@ class Overlay(QWidget):
     # station list of the line is adopted (like the two syncs above). Any failure is fail closed: the state is dropped (UNAVAILABLE) and no managed scoring start is allowed on an unfiltered list.
     def _route_pairset_sync(self):
         try:
-            route_pairset.sync(self, turnback_machine_of)
+            route_pairset.sync(self, turnback_machine_of, self._pair_time_check)
         except Exception:
             try:
                 route_pairset.clear(self, "internal-error")
@@ -790,72 +790,58 @@ class Overlay(QWidget):
                 station_list, self.bve_location, self.bve_time_ms, self.bve_door, scope, self.__dict__.get('_hud_freeze'))
         except Exception:
             self._hud_target, self._hud_freeze = hud_target_contract.none_target(hud_target_contract.OWNER_BVE, hud_target_contract.R_INTERNAL), None
-        self._free_turnback_a_latch_sync(host_target)          # Stage TB-K: the display latch reads the SAME host target value (no second read); it is no part of the display target
 
-    def _free_turnback_a_latch_sync(self, target):
-        try:
-            self._free_turnback_a_latch_update(target)
-        except Exception:
-            self._free_turnback_a_latch = None
-
-    def _free_turnback_a_latch_update(self, target):
-        """Stage TB-K (Owner decision): the DISPLAY latch that keeps the remaining time field at --:-- in free driving after the train stopped at the A of a static pseudo-turnback pair. It is no arrival, scoring, history,
-        checkpoint, StationIndex, target or turnback state: nothing reads it but free_turnback_a_time_suppressed. Set only when three facts hold at once: the host target is the A of a static pair (PairSet and StationIndex),
-        the speed is exactly 0.0, and the train stands inside the stop range the author defined for that target (its margins and position). Names, doors, indicator lamp and signal flag are no input. Kept while the target is
-        the A or the B of that pair (a speed or a position alone never ends it); ended by a scoring session, a changed scenario scope, a changed or missing PairSet, a vanished pair, or a target beyond the pair."""
+    def _effective_rows(self):
+        """The station list as the effective station state reads it: the times exactly as RECEIVED (the sender's final times; the application cannot tell a completed time from an authored one)."""
         station_list = getattr(self, 'station_list', None) or []
-        scope = (getattr(self, 'current_scenario_id', None), getattr(station_list, 'list_id', None))
-        latch = self.__dict__.get('_free_turnback_a_latch')
-        pairset = self._static_pairset()
-        if hud_target_contract.owner_is_scoring(self.is_scoring_mode, self.is_scoring_finished) or pairset is None:
-            self._free_turnback_a_latch = None
-            return
-        pair_kept = None
-        if latch is not None:
-            pair_kept = next((p for p in pairset.pairs if p.arrival == latch[1]), None)
-            if latch[0] != scope or pair_kept is None:
-                latch, pair_kept = None, None
-        if target is not None and target.state == hud_target_contract.KNOWN and isinstance(target.index, int) and 0 <= target.index < len(station_list):
-            if latch is not None and not (pair_kept.arrival <= target.index <= pair_kept.departure):
-                latch = None
-            if latch is None:
-                pair_here = next((p for p in pairset.pairs if p.arrival == target.index), None)
-                if pair_here is not None:
-                    dist = target.location - self.bve_location
-                    if self.bve_speed == 0.0 and -target.margin_f <= dist <= target.margin_b:
-                        latch = (scope, pair_here.arrival)
-        self._free_turnback_a_latch = latch
+        return tuple(ess.StationRow(i, st.get("raw_arr", -1), st.get("raw_dep", -1), bool(st.get("is_pass", False)), bool(st.get("is_terminal", False))) for i, st in enumerate(station_list))
 
-    def free_turnback_a_time_suppressed(self):
-        """Stage TB-K: True while the free-driving remaining time field is held at --:-- after the stop at a pair A (the display latch above). A pure read."""
-        return self.__dict__.get('_free_turnback_a_latch') is not None
+    def _pair_time_check(self, decoded):
+        """Stage P1: the READY check of a pair set (route_pairset.offer): the required times of every pair (A arrival, B departure). The reason word of a violation, else None."""
+        return ess.pair_time_violation(tuple((p.arrival, p.departure) for p in decoded.pairs), self._effective_rows())
+
+    def _effective_inputs(self):
+        """Stage P1: the inputs of the effective station state - plain snapshots of values the application already holds (read only; nothing is written, nothing is judged here). The three branches of the
+        contract are decided by effective_station_state.derive from these: free driving (the official target), a scoring Run that crosses a pseudo-turnback pair (the machine), any other scoring Run (the
+        current scoring target)."""
+        rows = self._effective_rows()
+        pairset = self._static_pairset()
+        pairs = tuple((p.arrival, p.departure) for p in pairset.pairs) if pairset is not None else ()
+        cursor = hud_target_contract.cursor_of(self)
+        scoring = hud_target_contract.owner_is_scoring(self.is_scoring_mode, self.is_scoring_finished)
+        scoring_view = ess.ScoringView()
+        if scoring:
+            machine = self.__dict__.get('turnback_machine')
+            machine_view = None
+            if machine is not None:
+                alive = turnback_held_a_target(self) is not None
+                machine_view = ess.MachineView(machine.state, machine.restop_count, machine.wait_deadline_ms(), bool(machine.awaiting_b), alive,
+                                               machine.pair.arrival if (alive and machine.pair is not None) else None)
+            crossed = turnback_b_indexes(self)
+            scoring_view = ess.ScoringView(True, bool(crossed), frozenset(crossed), getattr(self, 'bve_tgt_idx', -1), machine_view, getattr(self, 'active_rule_basic_apply', None))
+        return ess.EffectiveInputs(rows, pairs, pairset is not None, ess.Cursor(cursor.state, cursor.index), hud_target_contract.select_time_kind(self.bve_door, cursor.location, self.bve_location),
+                                   self.bve_time_ms, self.hud_target_next_time, bool(self.hud_target_timing), scoring_view)
+
+    @property
+    def effective_station_state(self):
+        """Stage P1: the EFFECTIVE STATION STATE of this moment (effective_station_state.py): a pure function of the current values, derived on every read. The HUD time row reads it; it is no authority and has no
+        storage (nothing is cached, nothing can go stale)."""
+        return ess.derive(self._effective_inputs())
 
     def turnback_remaining_view(self):
-        """Stage TB-J (Owner contract): what the remaining-time field of the ordinary TScoring HUD shows while a pseudo-turnback of the scoring Run is in flight. A PURE READ MODEL (no state, no timer of its own, no write):
-          ("count", ms)   the chain waits for its request (first arrival window, then every re-stop window): ms = the machine's wait deadline - the BVE time; the HUD shows ceil(ms / 1000) s;
-                          the request was made and B is not established yet: ms = 0 (00:00 is kept)
-          ("dashes", None) the planned move was cancelled (the train moved) and the re-stop is awaited: --:--
-          ("time", ms)     B is established and is the scoring target of a crossed pair: the departure time of B (raw_dep, the author's value) - never the arrival of B that the C# state machine completes for it
-          ("dashes", None) the same B has no departure time
-          None             everything else (no chain, free driving, the Run does not cross the pair, a normal target, the Run ended / aborted / Retry / F5 / generation or RunPairSet change: the chain is gone)
-        The completed A departure / B arrival of the C# timeline are never shown. StationIndex, the machine and the Run's fixed pairs only: no name, door, indicator lamp, signal flag, position or host."""
-        if not hud_target_contract.owner_is_scoring(self.is_scoring_mode, self.is_scoring_finished):
-            return ("dashes", None) if self.free_turnback_a_time_suppressed() else None        # Stage TB-K: free driving after the stop at a pair A
-        machine = self.__dict__.get('turnback_machine')
-        if machine is not None and turnback_held_a_target(self) is not None:
-            deadline = machine.wait_deadline_ms()
-            if deadline is not None:
-                return ("count", deadline - self.bve_time_ms)
-            if machine.state == pseudo_turnback_machine.RESTOP_WAIT:
-                return ("dashes", None)
-            if machine.state == pseudo_turnback_machine.REQUESTED or machine.awaiting_b:
-                return ("count", 0)
-            return None
-        index = getattr(self, 'bve_tgt_idx', -1)
-        station_list = getattr(self, 'station_list', None) or []
-        if isinstance(index, int) and 0 <= index < len(station_list) and index in turnback_b_indexes(self):
-            departure = station_list[index].get("raw_dep", -1)
-            return ("time", departure) if isinstance(departure, int) and departure > 0 else ("dashes", None)
+        """Compatibility accessor (Stage TB-J shape) over the effective station state, SCORING ONLY: ("count", ms) the Jump wait (first window, re-stop window; ms = deadline - now) or the request made and B not
+        established (ms = 0); ("dashes", None) the planned move was cancelled and the re-stop is awaited; ("time", ms) B is established: the departure of B, the author's value (never B's completed arrival);
+        ("dashes", None) the same B has no departure time (a contract violation, flagged in the state); None everything else, free driving included. The meaning lives in effective_station_state.derive."""
+        state = self.effective_station_state
+        mode = state.remaining_time_mode
+        if mode in (ess.RemainingMode.TURNBACK_INITIAL_COUNTDOWN, ess.RemainingMode.TURNBACK_RESTOP_COUNTDOWN):
+            return ("count", state.countdown_ms)
+        if mode == ess.RemainingMode.TURNBACK_CANCELLED:
+            return ("dashes", None)
+        if mode == ess.RemainingMode.TURNBACK_REQUESTED:
+            return ("count", 0)
+        if state.scoring_target_index is not None and state.selected_time_kind == ess.TimeKind.DEPARTURE:
+            return ("time", state.selected_time_ms) if state.selected_time_ms is not None else ("dashes", None)
         return None
 
     def _hud_machine_target(self):
@@ -978,7 +964,6 @@ class Overlay(QWidget):
         self._offtgt_since = None
         self._hud_target = hud_target_contract.NO_TARGET            # Phase SI-R2.3: nothing of the previous scenario is displayed, and its terminal freeze ends
         self._hud_freeze = None
-        self._free_turnback_a_latch = None          # Stage TB-K: nothing of the previous scenario instance stays (F5 / a new scenario)
 
     def apply_telemetry_text(self, latest_telemetry):
         """Applies one accepted telemetry datagram to the Overlay state (the part of read_udp_data that always was here; Phase L3 only moved it into

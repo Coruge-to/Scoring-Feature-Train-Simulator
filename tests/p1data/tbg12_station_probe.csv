@@ -1,0 +1,13 @@
+﻿recorded_at,bve_time,index,key,name,location,arrival_ms,departure_ms,default_ms,stoppage_ms,pass,is_terminal,runtime_type
+2026-11-05T12:27:53.0913762+09:00,"28740000",0,"<null>","W","20","-1","28800000","28740000","20000","False","False","BveTypes.ClassWrappers.Station"
+2026-11-05T12:27:53.0913762+09:00,"28740000",1,"<null>","X","120","28850000","28870000","28850000","30000","False","False","BveTypes.ClassWrappers.Station"
+2026-11-05T12:27:53.0913762+09:00,"28740000",2,"<null>","閉閉-A","220","28910000","-1","28910000","30000","False","False","BveTypes.ClassWrappers.Station"
+2026-11-05T12:27:53.0913762+09:00,"28740000",3,"<null>","閉閉-B","270","-1","29090000","29060000","30000","False","False","BveTypes.ClassWrappers.Station"
+2026-11-05T12:27:53.0913762+09:00,"28740000",4,"<null>","閉開-A","320","29130000","-1","29130000","30000","False","False","BveTypes.ClassWrappers.Station"
+2026-11-05T12:27:53.0913762+09:00,"28740000",5,"<null>","閉開-B","370","-1","29310000","29280000","30000","False","False","BveTypes.ClassWrappers.Station"
+2026-11-05T12:27:53.0913762+09:00,"28740000",6,"<null>","開閉-A","770","29440000","-1","29440000","30000","False","False","BveTypes.ClassWrappers.Station"
+2026-11-05T12:27:53.0913762+09:00,"28740000",7,"<null>","開閉-B","820","-1","29620000","29590000","30000","False","False","BveTypes.ClassWrappers.Station"
+2026-11-05T12:27:53.0913762+09:00,"28740000",8,"<null>","開開-A","1220","29750000","-1","29750000","30000","False","False","BveTypes.ClassWrappers.Station"
+2026-11-05T12:27:53.0913762+09:00,"28740000",9,"<null>","開開-B","1270","-1","29930000","29900000","30000","False","False","BveTypes.ClassWrappers.Station"
+2026-11-05T12:27:53.0913762+09:00,"28740000",10,"<null>","Y","1320","29970000","29990000","29970000","30000","False","False","BveTypes.ClassWrappers.Station"
+2026-11-05T12:27:53.0913762+09:00,"28740000",11,"<null>","Z","1420","30040000","2147483647","30040000","20000","False","True","BveTypes.ClassWrappers.Station"

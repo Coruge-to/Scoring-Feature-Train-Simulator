@@ -399,7 +399,9 @@ class E_Boundary(unittest.TestCase):
 
     def test_E08C_the_season2_files_are_byte_identical_to_the_base(self):
         base = os.environ.get("LC_BASE", BASE_HEAD)
-        x_paths = ("station_identity.py", "official_target_contract.py", "hud_target_contract.py", "station_index_contract.py",
+        # Stage P1 (an intended change, not a drift): hud_target_contract.py is NOT in this list any more: it gained select_time_kind (the SI-R2.3 arrival / departure selector as ONE function, official_time unchanged in behaviour)
+        # and cursor_of (an alias of offtgt_of for the effective station state); tests/test_pt_effective_state.py (PS_04) and tests/test_hud_target_contract_r23.py pin its behaviour
+        x_paths = ("station_identity.py", "official_target_contract.py", "station_index_contract.py",
                    "TsScoringPlugin/Handshake/Shared/ObservationLog.cs", "TsScoringPlugin/Handshake/Telemetry/Shared/StationListIdentity.cs",
                    "TsScoringPlugin/Handshake/Bridge/Legacy/src/TsScoringLegacyBridge.cs", "TsScoringPlugin/Handshake/Bridge/src/ScenarioObserver.cs",
                    "TsScoringPlugin/Handshake/Bridge/src/ScenarioReadyTracker.cs")

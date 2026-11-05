@@ -50,6 +50,21 @@ def offtgt_of(source):
     return OfficialTarget(*[getattr(source, name) for name in OFFTGT_ATTRS])
 
 
+def cursor_of(source):
+    """Stage P1: the official target as the EFFECTIVE STATE reads it - the very same OfficialTarget (the same six published values) as offtgt_of; the application module that builds the inputs of the
+    effective state names none of the published attributes either."""
+    return offtgt_of(source)
+
+
+KIND_ARRIVAL, KIND_DEPARTURE = "ARRIVAL", "DEPARTURE"
+
+
+def select_time_kind(door, official_location, location):
+    """The ONE SI-R2.3 selector: which timetable time of the official target the display looks at. The departure while the doors are open within NEAR_M of the target, otherwise the arrival. The OFFTGT wire
+    carries no arrival / departure kind, so this selector can not be dropped. The door is used for THIS choice only: never for an arrival, a stop, a pair, an effective target, a Jump or a score."""
+    return KIND_DEPARTURE if (door != 0 and abs(official_location - location) < NEAR_M) else KIND_ARRIVAL
+
+
 def owner_is_scoring(is_scoring_mode, is_scoring_finished):
     """True = the scoring session owns the target (TS); False = BVE does. Derived every time, never latched."""
     return bool(is_scoring_mode) and not bool(is_scoring_finished)
@@ -80,7 +95,7 @@ def official_time(entry, index, official_location, location, time_ms, door, scop
     if freeze is not None and (freeze.scope != scope or freeze.index != index):
         freeze = None
     arrival, departure = _defined_time(entry.get("raw_arr")), _defined_time(entry.get("raw_dep"))
-    doors_open_here = door != 0 and abs(official_location - location) < NEAR_M
+    doors_open_here = select_time_kind(door, official_location, location) == KIND_DEPARTURE
     if entry.get("is_terminal"):
         if freeze is None and doors_open_here and arrival != NO_TIME:
             freeze = TerminalFreeze(scope, index, _truncated_seconds(arrival - time_ms))

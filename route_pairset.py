@@ -179,7 +179,7 @@ class RoutePairSetHolder(object):
         self._note(received, current, why, text, list_id, station_count, verdict)
         return verdict, why
 
-    def offer(self, received_generation, current_generation, text, list_id, station_count):
+    def offer(self, received_generation, current_generation, text, list_id, station_count, pair_check=None):
         """Judges one line's key. Returns (verdict, reason word). `text` None = the line carries no key (nothing is judged and nothing is dropped: one line without the key does not end a ready state)."""
         def result(verdict, why):
             return self._result(verdict, why, received_generation, current_generation, text, list_id, station_count)
@@ -207,6 +207,12 @@ class RoutePairSetHolder(object):
             return result(REJECTED, why)
         if decoded.list_id != str(list_id).upper():
             return result(REJECTED, R_LIST_ID)
+        if pair_check is not None:
+            # Stage P1 (Owner contract): the REQUIRED times of a certified pair (A arrival, B departure) are judged by the caller's check (this module still reads no station): a violation is the fixed reason word of the
+            # check and the set is NOT adopted (fail closed: no managed scoring start on it)
+            violation = pair_check(decoded)
+            if violation is not None:
+                return result(REJECTED, violation)
         self.state = READY_NONEMPTY if decoded.pairs else READY_EMPTY
         self.generation = received_generation
         self.list_id = str(list_id)
@@ -267,7 +273,7 @@ def clear(overlay, reason):
         _emit(overlay, holder)
 
 
-def sync(overlay, machine_of):
+def sync(overlay, machine_of, pair_check=None):
     """After a telemetry line was applied and its station list adopted: judges the key of that line (`overlay._ptpair_raw`, set by apply_telemetry_text) against the adopted list and the current generation, and
     hands a NEW non-empty set to the machine. `machine_of` creates the machine on first use (scoring_logic.turnback_machine_of); an empty or unavailable state never creates one."""
     holder = holder_of(overlay)
@@ -283,7 +289,7 @@ def sync(overlay, machine_of):
     if raw is None:
         verdict, why = holder.offer(None, current, None, list_id, count)
     else:
-        verdict, why = holder.offer(raw[0], current, raw[1], list_id, count)
+        verdict, why = holder.offer(raw[0], current, raw[1], list_id, count, pair_check)
     if verdict == ACCEPTED:
         if holder.state == READY_NONEMPTY:
             machine_of(overlay).set_pairset(holder.pairset)

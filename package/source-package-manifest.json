@@ -75,11 +75,12 @@
     {"set": "python", "path": "config.py", "blob_sha256": "301C91028879C0B510F75AD2439F7534CC24949616BC85FC84D4B8C2D28184EA", "blob_size": 1728, "blob_eol": "lf"},
     {"set": "python", "path": "current_jump_client.py", "blob_sha256": "C2E41A1DFA47274E527A41926D7FEBC52D070A380124BCC05C2536CA0C1F10EC", "blob_size": 18302, "blob_eol": "lf"},
     {"set": "python", "path": "dataplane_contract.py", "blob_sha256": "53D23EA683DE8C6344932DEF5D550C0646B3B95ECC5561A3CDAF66F46D9EF27D", "blob_size": 7696, "blob_eol": "lf"},
-    {"set": "python", "path": "hud_target_contract.py", "blob_sha256": "4E43BA2C616B8114735F3D39DE855113B9CBCF086B03C2F8B013832044AE0212", "blob_size": 7810, "blob_eol": "lf"},
-    {"set": "python", "path": "hud_ui.py", "blob_sha256": "23107BF0EAD7791705B961CB498A51678F90B6B6961B7BA4A3E11761636A8EE7", "blob_size": 23629, "blob_eol": "lf"},
+    {"set": "python", "path": "effective_station_state.py", "blob_sha256": "09407973D3AAF103863FD58C9C18D06828A498AE4EECA7EA8A48C8DEC6F1F261", "blob_size": 14980, "blob_eol": "lf"},
+    {"set": "python", "path": "hud_target_contract.py", "blob_sha256": "416D98DC76C7F247B07AE53AEE2A90E332939FCF0261F0969B244F96E86C9E99", "blob_size": 8771, "blob_eol": "lf"},
+    {"set": "python", "path": "hud_ui.py", "blob_sha256": "1C641B73232CCABF6BB5DFA17A8D7C2AA97BDE4B4F4A851A7A4A0FA4333D4FD3", "blob_size": 23640, "blob_eol": "lf"},
     {"set": "python", "path": "jump_transaction.py", "blob_sha256": "BC5DFAE3BA83BDD4E1606D70B1E4960FA939206709C4DAAE357C1EA081B6A954", "blob_size": 17222, "blob_eol": "lf"},
     {"set": "python", "path": "jump_wire.py", "blob_sha256": "3F24A9F733FDD8E2FD8A1BC0FE24DB594916671FE78608B76879538B9B35EA27", "blob_size": 20563, "blob_eol": "lf"},
-    {"set": "python", "path": "main.py", "blob_sha256": "DA91E1B98219580F7FA71FA0A8311F12686A6D34B2242B0B051759D0555FC395", "blob_size": 194512, "blob_eol": "lf"},
+    {"set": "python", "path": "main.py", "blob_sha256": "A8F4168698D1EF0C08AF5F3B7E5D396C3EB4B4269972A08C7A98D600638234A0", "blob_size": 193146, "blob_eol": "lf"},
     {"set": "python", "path": "managed_app_directory.py", "blob_sha256": "7B77DA8C4D04B32603AE7BFFAA1A74FCE07253B1BE2084ECB11EBBE5B46DCA8A", "blob_size": 12303, "blob_eol": "lf"},
     {"set": "python", "path": "managed_hud.py", "blob_sha256": "460D2CCDD5291B773D2AD6AEF00440CDE92C287A81D39E710B7E39042E067297", "blob_size": 47442, "blob_eol": "lf"},
     {"set": "python", "path": "managed_input.py", "blob_sha256": "712A4452754375B92289DC5533D101C05A80666913459F279A17604DDE33DB15", "blob_size": 38947, "blob_eol": "lf"},
@@ -91,7 +92,7 @@
     {"set": "python", "path": "pause_recovery.py", "blob_sha256": "C60EFBB89AC0337616931B8A967AAA4ABC5738D79FB7853B2B133DCBCD1F6B79", "blob_size": 26718, "blob_eol": "lf"},
     {"set": "python", "path": "pseudo_turnback_contract.py", "blob_sha256": "A85E49C4980818DC84FBE68EB73D51877781314C2616DDF1503268D8833E21E4", "blob_size": 4198, "blob_eol": "lf"},
     {"set": "python", "path": "pseudo_turnback_machine.py", "blob_sha256": "D3440A69BC83BA5FB27F4EB4029C2712796B66E8B4EECF3647E5748151EB8CC1", "blob_size": 24005, "blob_eol": "lf"},
-    {"set": "python", "path": "route_pairset.py", "blob_sha256": "6CE04A9F7AB33586783158CDAD9A1CE601905F01D47918C5EFBA0745749D110E", "blob_size": 15935, "blob_eol": "lf"},
+    {"set": "python", "path": "route_pairset.py", "blob_sha256": "B3BDDEA71BDEA7850CE785DF13D42A8FABB29FE4B5B373A5089CA57547D8C695", "blob_size": 16462, "blob_eol": "lf"},
     {"set": "python", "path": "scoring_logic.py", "blob_sha256": "DA50AF58D54ED1EF6C2D5379F1CFA42250A79CEDC5D229FB633E8D1C2AB94D39", "blob_size": 136863, "blob_eol": "lf"},
     {"set": "python", "path": "station_identity.py", "blob_sha256": "4D0E6E5A5AACF93D379735F485AEC66FC48C8F0F0C5B04805DC86CAB230BE3B5", "blob_size": 44027, "blob_eol": "lf"},
     {"set": "python", "path": "station_index_contract.py", "blob_sha256": "E95E0D446D8AD7002EDFC3D7E638AF93D127BBAA473374DA4F1CD29F9053CAAD", "blob_size": 23406, "blob_eol": "lf"},
@@ -133,5 +134,5 @@
     {"set": "shared", "path": "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryContract.cs", "blob_sha256": "ABDBBF4C5BA1567AABC600B28283C87F30BCB4019D82E2A1574B9C847E63B694", "blob_size": 8953, "blob_eol": "lf"},
     {"set": "shared", "path": "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs", "blob_sha256": "9D6C47493457FD840E8CA5186C8E16181F0B5CF85C10721087C9098DD6644680", "blob_size": 6615, "blob_eol": "lf"}
   ],
-  "fingerprint": "508D3213200AFA16694B4485D7CBE7977E6641004044CFF28AFA78C3F20D9869"
+  "fingerprint": "33E6F2B86CAB8F39EC5C62B6875C69FD57C72FE97C86FD413F983F8CAEAC3092"
 }

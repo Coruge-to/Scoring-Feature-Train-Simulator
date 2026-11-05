@@ -143,7 +143,9 @@ class A_Wiring(unittest.TestCase):
     def test_hud_ui_reads_the_display_target_and_not_the_machine_target(self):
         draw = next(n for n in self.hud_tree.body if isinstance(n, ast.FunctionDef) and n.name == "draw_hud")
         reads = {n.attr for n in ast.walk(draw) if isinstance(n, ast.Attribute) and isinstance(n.ctx, ast.Load) and isinstance(n.value, ast.Name) and n.value.id == "self" and n.attr.startswith("hud_target_")}
-        self.assertEqual(reads, {"hud_target_next_loc", "hud_target_next_time", "hud_target_is_pass", "hud_target_margin_b", "hud_target_margin_f", "hud_target_timing"})
+        # Stage P1: the remaining-time row reads the EFFECTIVE STATION STATE (effective_station_state.py), no longer hud_target_next_time; the distance row and the label still read the display target
+        self.assertEqual(reads, {"hud_target_next_loc", "hud_target_is_pass", "hud_target_margin_b", "hud_target_margin_f", "hud_target_timing"})
+        self.assertIn("self.effective_station_state", ast.unparse(draw))
         text = read_source("hud_ui.py")
         for word in ("bve_next_loc", "bve_next_time", "bve_is_pass", "bve_margin_b", "bve_margin_f", "get_timing_target_stas", "is_station_timing", "_hud_target", "_hud_freeze", "hud_target_contract"):
             self.assertNotIn(word, text, word)
