@@ -739,7 +739,7 @@ def draw_menu(self, painter, logical_width):
     elif self.menu_state == 8:
         TIMING_SUB_W = 1300
         TIMING_BASE_H = 900                 # the frame height the content offsets below are measured in (before Stage UI-1)
-        TIMING_EXTRA_H = 80                 # Stage UI-1: the frame is taller by this (split top and bottom: it stays centred; the content keeps its screen position) so that the long bulk button label never touches the done button
+        TIMING_EXTRA_H = 40                 # Stage UI-3: the frame is taller by this, DOWNWARD only (the content keeps its place inside the frame, the bulk button keeps its 20 px from the bottom edge, so the gap to the done button grows by this); the whole screen is then re-centred (it moves up by half of this)
         TIMING_SUB_H = TIMING_BASE_H + TIMING_EXTRA_H
         TIMING_TITLE_Y_OFFSET = 125         
         TIMING_ARROW_UP_Y_OFFSET = 215      
@@ -764,7 +764,7 @@ def draw_menu(self, painter, logical_width):
         
         self.active_panel_rect = (SUB_X, SUB_Y, SUB_X + TIMING_SUB_W, SUB_Y + TIMING_SUB_H)
 
-        CONTENT_Y = SUB_Y + TIMING_EXTRA_H / 2      # the top of the base frame: the same screen position as before Stage UI-1
+        CONTENT_Y = SUB_Y                           # the content hangs from the TOP edge of the frame (the extra height is only below it)
         TITLE_Y = CONTENT_Y + TIMING_TITLE_Y_OFFSET
         ARROW_UP_Y = CONTENT_Y + TIMING_ARROW_UP_Y_OFFSET
         LIST_Y = CONTENT_Y + TIMING_LIST_Y_OFFSET
