@@ -146,8 +146,9 @@ def discard_scoring_session(overlay):
     """The scoring SESSION is over (soft OFF, Session OFF, a generation boundary): scoring inactive, its state discarded. Nothing of the scenario
     itself (station list, the chosen stations and rules, the latest telemetry values, the user's settings) is touched, so the user can start again.
     The menu is closed WITHOUT pressing anything in BVE."""
-    from scoring_logic import reset_result_display_state, reset_roll_state, reset_speed_penalty_state, reset_station_evaluation_state
+    from scoring_logic import reset_result_display_state, reset_roll_state, reset_speed_penalty_state, reset_station_evaluation_state, sway_shadow_boundary
     _cancel_outstanding_jump(overlay, "session-ended")
+    sway_shadow_boundary(overlay, "session-end")                # Shadow (sway): an open stop window is cut, its display value and its replica go with the session
     d = generation_defaults()
     for name in (
         "popups", "score", "score_details", "is_scoring_mode", "is_scoring_finished", "is_result_saved", "saved_file_path", "end_message_time", "result_screen_time",
@@ -183,6 +184,8 @@ def discard_generation_state(overlay):
     kick start state - and the reference of the sender's JUMP counter is taken again from the FIRST accepted telemetry of the generation. The user's
     settings, the infrastructure and the window state are kept. The latest telemetry VALUES are reset by Overlay.reset_telemetry_state."""
     _cancel_outstanding_jump(overlay, "generation")
+    from scoring_logic import sway_shadow_boundary
+    sway_shadow_boundary(overlay, "generation")                 # Shadow (sway): the open stop window of the previous scenario instance is cut
     for name, value in generation_defaults().items():
         setattr(overlay, name, value)
     for name in GENERATION_DROP:

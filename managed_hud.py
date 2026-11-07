@@ -228,7 +228,7 @@ class ManagedHudController(object):
 
     def emit_event(self, event, **fields):
         """The diagnostic line writer for the telemetry gate and the HUD item report: one `[MANAGED] event=...` line per state change, in a COMPACT
-        form (no instance id, no owner): the Caller transcribes at most 160 characters of an application line, and these lines carry lists."""
+        form (no instance id, no owner): the Caller transcribes at most 192 characters of an application line, and these lines carry lists."""
         text = "[MANAGED] event=%s pid=%d" % (event, self._args.bve_pid)
         for key in sorted(fields):
             text += " %s=%s" % (key, fields[key])

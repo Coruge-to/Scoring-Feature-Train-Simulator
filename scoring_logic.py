@@ -8,6 +8,7 @@ import jump_transaction
 import jump_wire
 import pseudo_turnback_machine
 import station_identity
+import sway_shadow
 from utils import (
     calculate_apex_speed,
     calculate_warning_distance,
@@ -66,6 +67,48 @@ def shadow_stop_jerk_record(self, current_time, calcg_samples, abs_stop_g_calc, 
         self.last_stop_g_bve = None
 
 
+# ---- Shadow sway diagnostics: the BVE passenger-sway figure as DIAGNOSTIC-ONLY values. These functions READ the overlay and write only the overlay's own `sway_shadow` state and the desktop log;
+# ---- they never change the score, the history, the checkpoints, the popups or the result. Every one of them swallows its own failure.
+def sway_shadow_log(message):
+    """One diagnostic line, only with TS_SCORING_DESKTOP_LOG=1."""
+    if desktop_log_enabled():
+        write_desktop_log(message)
+
+
+def sway_shadow_tick(self, current_time):
+    """Every tick: the public-API replica follows, an open stop window is judged for its end and takes the sample of this tick."""
+    try:
+        sway_shadow.state_of(self).tick(self, current_time, sway_shadow_log)
+    except Exception:
+        pass
+
+
+def sway_shadow_stop(self, current_time, abs_stop_g_calc):
+    """The stop instant T: opens the sway stop window (the penalties of the same stop are copied into it for the log only)."""
+    try:
+        calc_pen = (-200 if abs_stop_g_calc >= 0.10 else (-100 if abs_stop_g_calc >= 0.065 else 0)) if getattr(self, "pen_jerk", True) else 0
+        bveg = getattr(self, "last_stop_g_bve", None)
+        sway_shadow.state_of(self).start(self, current_time, {"calcg": calc_pen, "bveg": "not-evaluated" if bveg is None else stop_jerk_points(bveg)})
+    except Exception:
+        pass
+
+
+def sway_shadow_boundary(self, reason):
+    """A formal boundary (the formal discard, F5 / session end, a new generation): an open window is cut and nothing of the old world is carried over."""
+    try:
+        sway_shadow.state_of(self).boundary(self, reason, sway_shadow_log)
+    except Exception:
+        pass
+
+
+def sway_shadow_resolution(self, res):
+    """The resolution diagnostic of the reflection reader (SWAYR), logged once per change."""
+    try:
+        sway_shadow.state_of(self).note_resolution(res, sway_shadow_log)
+    except Exception:
+        pass
+
+
 def reset_transient_scoring_state(self):
     """
     ジャンプや時刻巻き戻りによって継続不能になった、
@@ -77,6 +120,7 @@ def reset_transient_scoring_state(self):
     self.g_history.clear()
     self.accel_z_history = []              # Shadow (BveG): its own buffer, discarded at the same boundaries
     self.last_stop_g_bve = None
+    sway_shadow_boundary(self, "discard")  # Shadow (sway): an open stop window is cut here, the replica starts again
 
     # 停車時衝動判定
     # 境界の前の「走行中だった」記録と停止時の加速度は、境界の後へ持ち越さない
@@ -435,6 +479,7 @@ def update_stop_jerk_penalty(self, current_time, decel_g):
                 elif abs_stop_g >= 0.065:
                     add_score_popup(self, -100, "停車時衝動 -100", COLOR_B_EMG, "neg", "停車時衝動", current_time)
             shadow_stop_jerk_record(self, current_time, len(recent_g), abs_stop_g, "is_official_jumping=%s" % bool(getattr(self, 'is_official_jumping', False)))       # Shadow (BveG): reads only, never changes the score
+            sway_shadow_stop(self, current_time, abs_stop_g)       # Shadow (sway): opens the stop window of this stop (T); reads only
             self.is_stopping_zone = False
 
     elif 0.0 < abs(self.bve_speed): #<= 1.5
@@ -2062,6 +2107,8 @@ def update_physics_and_scoring(self, current_time, dt):
         else:
             accel_z_history.append((current_time, accel_z))
         self.accel_z_history = [h for h in accel_z_history if h[0] > cutoff_time]
+
+    sway_shadow_tick(self, current_time)       # Shadow (sway): the replica follows, an open stop window ends or takes this tick's sample; reads only
 
     if self.bve_jump_count != getattr(self, 'last_jump_count', 0):
         write_desktop_log(f"[JUMP DETECT] BVEジャンプ検知！ カウント: {getattr(self, 'last_jump_count', 0)} -> {self.bve_jump_count}")

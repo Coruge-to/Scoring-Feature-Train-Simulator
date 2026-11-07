@@ -88,7 +88,7 @@ namespace TSScoringPlugin.Handshake
         public const int MaxStderrLogLines = 200;
 
         /// <summary>Longest copied stderr line (printable ASCII only).</summary>
-        public const int MaxStderrLineChars = 160;
+        public const int MaxStderrLineChars = 192;
     }
 
     internal sealed class AppProcessOptions

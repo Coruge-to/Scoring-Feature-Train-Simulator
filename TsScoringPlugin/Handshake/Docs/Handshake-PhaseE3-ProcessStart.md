@@ -68,7 +68,7 @@ E1 の `APP_START_REQUEST`／`APP_START_SUPPRESSED`／`APP_STOP_REQUEST`／`APP_
 stderr／stdout:
 
 * 両方をリダイレクトして非同期に読む（`main.py` は stdout を使わないが、ハンドル継承とパイプ詰まりを避けるため読み捨てる。バイト数だけ数える）。`pythonw.exe` は使わない。
-* stderr のうち E2 の `[MANAGED] …` 行（状態変化・ASCII・パスなし）だけを、1 プロセスあたり最大 20 行・1 行 160 文字（印字可能 ASCII のみ）まで共有ログへ転記し、残りは件数だけ記録する。トレースバック等（パスを含み得る）は転記せず、直近の例外の**型名だけ**を `APP_STREAMS lastErrorType=` に残す。
+* stderr のうち E2 の `[MANAGED] …` 行（状態変化・ASCII・パスなし）だけを、1 プロセスあたり最大 20 行・1 行 192 文字（印字可能 ASCII のみ。SWY-D1 で 160 から変更）まで共有ログへ転記し、残りは件数だけ記録する。トレースバック等（パスを含み得る）は転記せず、直近の例外の**型名だけ**を `APP_STREAMS lastErrorType=` に残す。
 * Desktop 固定の `debug.log` には書かない。
 
 ## 時間定数（`AppProcessTiming`、1 か所）

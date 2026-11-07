@@ -390,7 +390,8 @@ class F_Projects(unittest.TestCase):
         ("..\\Shared\\JumpWire.cs", "Shared\\JumpWire.cs"),
         ("..\\Shared\\PackageContract.cs", "Shared\\PackageContract.cs"),                                    # Phase ST-3e0 (pin moved): the package contract (TSJUMP2, constants only) is the one more link
         ("..\\Shared\\PseudoTurnbackQualifier.cs", "Shared\\PseudoTurnbackQualifier.cs"),                    # Stage TB-E (pin moved, an intended change): the qualifier moved from PseudoTurnbackStaging to Shared and is linked
-        ("..\\Shared\\PseudoTurnbackPairCodec.cs", "Shared\\PseudoTurnbackPairCodec.cs")], key=lambda t: t[0])   # Stage TB-E (pin moved, an intended change): the PTPAIR codec, the same move and link
+        ("..\\Shared\\PseudoTurnbackPairCodec.cs", "Shared\\PseudoTurnbackPairCodec.cs"),   # Stage TB-E (pin moved, an intended change): the PTPAIR codec, the same move and link
+        ("..\\Shared\\SwayStateReader.cs", "Shared\\SwayStateReader.cs")], key=lambda t: t[0])   # Shadow sway diagnostics (pin moved, an intended change): the shared read-only reflection reader of the sway figure
 
     @red("G-PC-1", "legacy-jumpwire-link-missing")
     def test_GPC1_the_legacy_project_gets_one_compile_only_link_of_jumpwire_and_nothing_else_changes(self):

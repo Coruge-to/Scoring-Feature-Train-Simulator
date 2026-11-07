@@ -555,8 +555,15 @@ class S_CSharp(unittest.TestCase):
         changed = out.stdout.decode().split()
         # Shadow comparison (Stage 1, an intended change, not a drift): LegacyTelemetryExtension.cs gained the read-only AccelerationZ getter (AtsExLegacyApi implements ILegacyVibrationApi: one method + one interface name);
         # Dispose, shutdown and withdraw are not touched. LegacyTelemetrySession.cs stays under the structural guard of tests/pt_tbe_c7_structure.py (now with the formal ACCELZ block).
-        self.assertEqual([c for c in changed if c not in (self.SES, self.EXT)], [])
-        if changed:
+        # Shadow sway diagnostics, SWY-D1 (Owner ruling 2026-11-07, an intended change, diagnostic path only): the process manager gained NOTHING but the number of characters of an application line the Caller
+        # copies to the log (MaxStderrLineChars 160 -> 192). The stop sequence, the kill, the residual check and every other line are those of cbebfd3: after the number is neutralised the text must be identical.
+        if self.APM in changed:
+            base_apm = subprocess.run(["git", "-C", ROOT, "show", "cbebfd3:" + self.APM], capture_output=True, timeout=60).stdout.decode("utf-8", "replace").replace("\r\n", "\n")
+            neutral = lambda text: re.sub(r"(MaxStderrLineChars = )\d+;", r"\g<1>N;", text.replace("\r\n", "\n"))
+            self.assertEqual(neutral(read(self.APM)), neutral(base_apm), "the process manager may differ from LC-4b in the diagnostic cap number only")
+            self.assertIn("MaxStderrLineChars = 192;", read(self.APM))
+        self.assertEqual([c for c in changed if c not in (self.SES, self.EXT, self.APM)], [])
+        if self.SES in changed or self.EXT in changed:
             import pt_tbe_c7_structure
             base = subprocess.run(["git", "-C", ROOT, "show", "cbebfd3:" + self.SES], capture_output=True, timeout=60).stdout.decode("utf-8", "replace")
             self.assertEqual(pt_tbe_c7_structure.session_violations(base, read(self.SES)), [])

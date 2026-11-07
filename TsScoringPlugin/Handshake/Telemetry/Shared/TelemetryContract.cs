@@ -43,6 +43,9 @@ namespace TSScoringPlugin.Telemetry
         internal const string TokPRates = "prates";
         internal const string TokCalcG = "calcg";
         internal const string TokAccelZ = "accelz";          // Shadow comparison (Stage 1): ACCELZ, the official AccelerationZ in m/s^2 exactly as the host reports it
+        internal const string TokAccelX = "accelx";          // Shadow sway diagnostics: ACCELX, the official FrontAccelerationX in m/s^2 exactly as the host reports it (the left-right input of the figure)
+        internal const string TokSway = "sway";              // Shadow sway diagnostics: SWAY, the four RAW states of the BVE passenger-sway figure (front-back x, v, left-right x, v), read by SwayStateReader
+        internal const string KeySwayR = "SWAYR";            // the resolution diagnostic of that reader (result:version:entry[:detail]): a diagnostic part, NOT a token (never in AVAIL)
         internal const string TokMeta = "meta";
         internal const string TokJump = "jump";              // Phase LJX-1: JUMP (the counter of the official jumps); announced only while the Legacy Jump execution contract is open
 

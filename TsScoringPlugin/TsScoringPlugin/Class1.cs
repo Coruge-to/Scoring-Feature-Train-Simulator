@@ -106,6 +106,9 @@ namespace TsScoringPlugin
         private string metaAuthor = "";
         private string metaComment = "";
         private string lastMetaPacket = "";
+        // Shadow sway diagnostics: the read-only reflection reader of the BVE passenger-sway figure (one per scenario instance; null = not created yet)
+        private TSScoringPlugin.Telemetry.SwayStateReader swayReader;
+        private int swayPendingTicks;
         // BVE5/6ではdepartureTime="t"の内部表現が1ms異なる
         private const long TerminalDepartureTimeBve6Ms =
             int.MaxValue;
@@ -482,6 +485,7 @@ namespace TsScoringPlugin
                 {
                     currentScenario = BveHacker.Scenario;
                     scenarioId = (int)(DateTime.Now.Ticks % 100000000);
+                    swayReader = null;       // Shadow sway diagnostics: the figure object belongs to one scenario instance; it is looked up and resolved again
                     stidxArrivalIndex = -1;
                     stidxArrivalSeq = 0;
                     stidxListId = TSScoringPlugin.Telemetry.StationListIdentity.EmptyId;
@@ -1407,6 +1411,65 @@ namespace TsScoringPlugin
                 }
                 catch { }
 
+                // Shadow sway diagnostics: the public FrontAccelerationX (ACCELX, m/s^2 exactly as the host reports it) and the four RAW states of the BVE passenger-sway figure (SWAY, only when all four
+                // are finite; read by the shared SwayStateReader, read only). Nothing is derived here (n, the colour and the thresholds are the Python side's). SWAYR is the resolution diagnostic, a part
+                // of its own that is not an AVAIL token. Nothing is written when it cannot be read; CALCG is never substituted and no 0.0 is invented.
+                string accelXPart = "";
+                try
+                {
+                    if (vehicle != null)
+                    {
+                        double accelX = Convert.ToDouble(vehicle.Vibration.FrontAccelerationX);
+                        if (!double.IsNaN(accelX) && !double.IsInfinity(accelX))
+                        {
+                            accelXPart = ",ACCELX:" + accelX.ToString("F6", System.Globalization.CultureInfo.InvariantCulture);
+                        }
+                    }
+                }
+                catch { }
+
+                string swayPart = "";
+                string swayrPart = "";
+                try
+                {
+                    if (swayReader == null)
+                    {
+                        swayReader = new TSScoringPlugin.Telemetry.SwayStateReader(TSScoringPlugin.Telemetry.SwayStateReader.HostFileVersion(), "current");
+                        swayPendingTicks = 0;
+                    }
+
+                    if (swayReader.Status == TSScoringPlugin.Telemetry.SwayStatus.Pending)
+                    {
+                        // the figure is not in the list before the scenario is ready: look again every 30th Tick only (and never throw)
+                        if (swayPendingTicks % 30 == 0)
+                        {
+                            object swayFigure = null;
+                            try
+                            {
+                                foreach (BveTypes.ClassWrappers.AssistantBase assistant in BveHacker.MainForm.Assistants.Items)
+                                {
+                                    BveTypes.ClassWrappers.SwayGauge gauge = assistant as BveTypes.ClassWrappers.SwayGauge;
+                                    if (gauge != null) { swayFigure = gauge.Src; break; }
+                                }
+                            }
+                            catch { swayFigure = null; }
+
+                            swayReader.Resolve(swayFigure);
+                        }
+
+                        swayPendingTicks++;
+                    }
+
+                    swayrPart = ",SWAYR:" + swayReader.ResolutionText();
+                    double swayXc, swayVc, swayXd, swayVd;
+                    if (swayReader.TryRead(out swayXc, out swayVc, out swayXd, out swayVd))
+                    {
+                        System.Globalization.CultureInfo inv = System.Globalization.CultureInfo.InvariantCulture;
+                        swayPart = ",SWAY:" + swayXc.ToString("F6", inv) + ":" + swayVc.ToString("F6", inv) + ":" + swayXd.ToString("F6", inv) + ":" + swayVd.ToString("F6", inv);
+                    }
+                }
+                catch { }
+
                 try
                 {
                     double currentSpeedMps = speed / 3.6;
@@ -1582,7 +1645,7 @@ namespace TsScoringPlugin
                         terminalFlag = 1;
                     }
 
-                    string data = $"SCENARIO_ID:{scenarioId},SPEED:{speed},TIME:{timeMs},LOCATION:{location},GRADIENT:{finalGradient},NEXTLOC:{nextStationLoc},NEXTTIME:{nextStationTime},ISPASS:{isPass},ISTIMING:{isTiming},MARGINB:{marginBack},MARGINF:{marginFront},REV:{revText}:{revPos},POW:{powText}:{powNotch},BRK:{brkText}:{brkNotch}:{brkMax},HTYPE:{handleType},ALLTXT:{allRevTexts}:{allPowTexts}:{allBrkTexts}:{allHldTexts},DREV:{defaultRevText}:{revPos},DPOW:{defaultPowText}:{powNotch},DBRK:{defaultBrkText}:{brkNotch}:{brkMax},DALLTXT:{defaultAllRevTexts}:{defaultAllPowTexts}:{defaultAllBrkTexts}:{defaultAllHldTexts},SIGLIMIT:{signalLimit},TRAINLEN:{trainLength},MAPLIMITS:{mapLimitsStr},FWDSIGLIMIT:{fwdSigLimit},FWDSIGLOC:{nextSigLoc},DOOR:{(areDoorsClosed ? 0 : 1)},DOORDIR:{currentDoorDir},TERM:{terminalFlag},MAPHEAD:{manualMapHead},MAPTAIL:{manualMapTail},CLEARDIST:{distToClear},CALCG:{currentG:F5}{accelZPart},BTYPE:{bType},JUMP:{jumpCounter},CAB:{cabBrakeNotches}:{holds},BCP:{bcPressure:F1},PRATES:{pRatesStr}:{maxPressure:F1},BPP:{bpPressure:F1}:{bpInitialPressure:F1},STATNAME:{currentStationName},DOORTIME:{doorCloseTimeMs}";
+                    string data = $"SCENARIO_ID:{scenarioId},SPEED:{speed},TIME:{timeMs},LOCATION:{location},GRADIENT:{finalGradient},NEXTLOC:{nextStationLoc},NEXTTIME:{nextStationTime},ISPASS:{isPass},ISTIMING:{isTiming},MARGINB:{marginBack},MARGINF:{marginFront},REV:{revText}:{revPos},POW:{powText}:{powNotch},BRK:{brkText}:{brkNotch}:{brkMax},HTYPE:{handleType},ALLTXT:{allRevTexts}:{allPowTexts}:{allBrkTexts}:{allHldTexts},DREV:{defaultRevText}:{revPos},DPOW:{defaultPowText}:{powNotch},DBRK:{defaultBrkText}:{brkNotch}:{brkMax},DALLTXT:{defaultAllRevTexts}:{defaultAllPowTexts}:{defaultAllBrkTexts}:{defaultAllHldTexts},SIGLIMIT:{signalLimit},TRAINLEN:{trainLength},MAPLIMITS:{mapLimitsStr},FWDSIGLIMIT:{fwdSigLimit},FWDSIGLOC:{nextSigLoc},DOOR:{(areDoorsClosed ? 0 : 1)},DOORDIR:{currentDoorDir},TERM:{terminalFlag},MAPHEAD:{manualMapHead},MAPTAIL:{manualMapTail},CLEARDIST:{distToClear},CALCG:{currentG:F5}{accelZPart}{accelXPart}{swayPart}{swayrPart},BTYPE:{bType},JUMP:{jumpCounter},CAB:{cabBrakeNotches}:{holds},BCP:{bcPressure:F1},PRATES:{pRatesStr}:{maxPressure:F1},BPP:{bpPressure:F1}:{bpInitialPressure:F1},STATNAME:{currentStationName},DOORTIME:{doorCloseTimeMs}";
                     // Phase ST-1A: the STIDX part, appended as a part of its own (every part above is unchanged). The Legacy sender writes the same part through the same
                     // shared helper (StationIndexWire). It is written only while the list of this Tick has been described by a STALIST text of this scenario instance.
                     if (isInitialized && stidxListReady && stidxListCount == stationList.Count)

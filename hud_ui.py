@@ -1,6 +1,7 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFontMetrics, QPainterPath, QPen, QLinearGradient, QFont
 from config import *
+import sway_shadow
 from utils import draw_text_with_stroke, get_outline_color
 
 # Stage UI-2 (Owner, 2026-11-05, a PROVISIONAL setting): the Decel G / Notch telemetry GRAPH of the F2 diagnostics (the bottom-left chart) is not drawn: it covered the cab desk and the door pilot lamp in the live photos.
@@ -148,7 +149,11 @@ def draw_hud(self, painter, logical_width):
             last_bve_text = f"LastStop BveG: {self.last_stop_g_bve:.3f} G"
     dbg_texts.append(f"{calc_text}    {bve_text}")
     dbg_texts.append(f"{last_calc_text}    {last_bve_text}")
-    
+    # Shadow sway diagnostics: the third Shadow line. 前後 = the n of the BVE figure's longitudinal state now, 前後最大 = the largest such n of the latest stop window (T .. T+1.0 s), 合成 = the combined
+    # n (REFERENCE ONLY, never a colour name). A value that is not available is "--" (never 0). One short form, no width-dependent switch. The seven levels are TScoring's approximation (sway_shadow.SEVEN_LEVEL_NOTE).
+    sway_now, sway_peak, sway_combined = sway_shadow.f2_values(self, hud_data_available(self, "sway"))
+    dbg_texts.append(f"前後{sway_now}    前後最大{sway_peak}    合成{sway_combined}[参考]")
+
     if self.show_graph:
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(0, 0, 0, 150))

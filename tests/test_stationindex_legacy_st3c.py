@@ -54,7 +54,7 @@ UNTOUCHED = {
     # SI-R2.2-S2b (C3b) changed Class1.cs on purpose (the OFFTGT part after STIDX in its own try / catch and the read only CreateOfficialTargetHost; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 4aa4aac5... (the commit before S2b)
     # SI-R2.4 (C5b) changed Class1.cs on purpose (a re-initialisation that carries no StationIndex leaves the target UNSET: SelectTargetByPosition became SelectUnsetTarget and its one call site, no position is searched; tests/test_stationindex_current_st3b.py / tests/test_jf1_current_csharp_source_pins.py / Handshake\Tests\Test-TimeFixB3.ps1): the blob moved from e3f55d15... (SI-R2.2-S2b C3b)
     # Stage TB-E (an intended change, not a drift) changed Class1.cs on purpose (the PTPAIR part between the STIDX part and the OFFTGT part; tests/test_pt_tbe_adapter_static.py): the blob moved from afc404e7... (SI-R2.4)
-    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "23da9dce40a22bfa1f77d96347244a7819eae1fc",
+    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "425b99b8f92b1108b100ada208a845328da1e8fd",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs": "3e0d3bffbb74e4a2ecc6d10d378a8b6e2788ae6f",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs": "8a54d6a14100e0021ca248d28369c335f965fafe",
     "TsScoringPlugin/TsScoringPlugin/CurrentDataPlane.cs": "71b0ebaa6f52871ceb2a59456a2b527041241c46",
@@ -69,7 +69,7 @@ UNTOUCHED = {
     "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs": "cde81d8f5411df680cb17b10288a3c8d9b01f561",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/AssemblyInfo.cs": "d601dec6a3a0feff0e7e6ed54c610ecb0d53bd51",
     # SI-R2.2-S2b (C3a) changed LegacyTelemetryExtension.cs on purpose (the read only adapter ILegacyOfficialTargetApi.ReadOfficialTarget and the E-9 rule text of the header; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 12a0f84a... (the commit before S2b)
-    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "8be3889a01a1dc028837f09287e749635d097ddb",
+    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "0ec763703723c6f5f116f7ef470e5afd6281e5f4",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpCommandQueue.cs": "c9517db9074f45ef447991cd52280ef512047070",
     # SI-R5.2-A added the pure missing-index classifier, the run tracker and the managed diagnostic glue to station_identity.py on purpose (no wire, no codec, no Legacy product change; tests/test_si_r5_2a_stage_a.py): the blob moved from 93ce7abc... (ST-3b)
     "station_identity.py": "2c971098059a6b8948cd842ed84af8ece9a054b9",
@@ -352,7 +352,7 @@ class F_Untouched(unittest.TestCase):
         names = [i for i, _ in compile_items(LEGACY_CSPROJ)]
         # Phase ST-3e0 adds exactly one compile item (..\Shared\PackageContract.cs, the package contract, constants only): the 23 sources of ST-3c are all still there
         # Stage TB-E (an intended change, not a drift): two more compile items, the Shared PseudoTurnbackQualifier.cs and PseudoTurnbackPairCodec.cs (were 23)
-        self.assertEqual(len([n for n in names if not n.endswith("PackageContract.cs")]), 25)         # 22 AtsEx free sources + LegacyTelemetryExtension.cs + the two Shared pseudo-turnback sources of Stage TB-E
+        self.assertEqual(len([n for n in names if not n.endswith("PackageContract.cs")]), 26)         # 22 AtsEx free sources + LegacyTelemetryExtension.cs + the two Shared pseudo-turnback sources of Stage TB-E + the Shared SwayStateReader.cs of the Shadow sway diagnostics (an intended change, not a drift)
         self.assertEqual(names.count("..\\Shared\\PackageContract.cs"), 1)
         self.assertNotIn("src\\LegacyJumpJudge.cs", names)                                           # the judgement lives in LegacyJumpExecutor.cs: no new product file
         self.assertTrue(all(n in names for n in ("src\\LegacyJumpExecutor.cs", "src\\LegacyJumpControlPlane.cs", "src\\LegacyStationTimeline.cs", "..\\Shared\\JumpWire.cs")))

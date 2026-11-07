@@ -863,6 +863,38 @@ namespace TSScoringPlugin.Telemetry
             {
             }
 
+            // Shadow sway diagnostics: the public FrontAccelerationX (ACCELX, m/s^2 exactly as read) and the four RAW states of the BVE passenger-sway figure (SWAY, written only when all four are
+            // finite). Nothing is derived here (n, the colour and the thresholds are the Python side's). SWAYR is the resolution diagnostic, a part of its own that is NEVER an AVAIL token.
+            // A value that cannot be read is not written and its token is not in AVAIL; no 0.0 is invented and nothing stands in its place.
+            try
+            {
+                ILegacySwayApi sway = api as ILegacySwayApi;
+                if (sway != null)
+                {
+                    double accelX;
+                    if (sway.TryFrontAccelerationX(out accelX) && !double.IsNaN(accelX) && !double.IsInfinity(accelX))
+                    {
+                        lb.Group(TelemetryContract.TokAccelX, "ACCELX", TelemetryContract.F(accelX, "F6"));
+                    }
+
+                    double swayXc, swayVc, swayXd, swayVd;
+                    string swayDiagnostic;
+                    bool swayRead = sway.TrySwayState(out swayXc, out swayVc, out swayXd, out swayVd, out swayDiagnostic);
+                    if (swayRead && AllFinite(new double[] { swayXc, swayVc, swayXd, swayVd }))
+                    {
+                        lb.Group(TelemetryContract.TokSway, "SWAY", TelemetryContract.F(swayXc, "F6") + ":" + TelemetryContract.F(swayVc, "F6") + ":" + TelemetryContract.F(swayXd, "F6") + ":" + TelemetryContract.F(swayVd, "F6"));
+                    }
+
+                    if (!string.IsNullOrEmpty(swayDiagnostic))
+                    {
+                        lb.Part(TelemetryContract.KeySwayR, swayDiagnostic);
+                    }
+                }
+            }
+            catch
+            {
+            }
+
             // acceleration from two samples of THIS scenario instance; the first sample has no reference and says nothing
             if (haveLastSample)
             {
@@ -1124,6 +1156,12 @@ namespace TSScoringPlugin.Telemetry
 
             /// <summary>One more key of the group added last (its token is already announced).</summary>
             internal void Key(string key, string value)
+            {
+                body.Append(',').Append(key).Append(':').Append(value);
+            }
+
+            /// <summary>A diagnostic part of its own: it belongs to no group and announces no token (Shadow sway diagnostics: SWAYR).</summary>
+            internal void Part(string key, string value)
             {
                 body.Append(',').Append(key).Append(':').Append(value);
             }

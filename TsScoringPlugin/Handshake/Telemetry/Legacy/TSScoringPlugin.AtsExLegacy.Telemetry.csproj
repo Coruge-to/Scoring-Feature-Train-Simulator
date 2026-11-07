@@ -120,6 +120,9 @@
     <Compile Include="..\Shared\PseudoTurnbackPairCodec.cs">
       <Link>Shared\PseudoTurnbackPairCodec.cs</Link>
     </Compile>
+    <Compile Include="..\Shared\SwayStateReader.cs">
+      <Link>Shared\SwayStateReader.cs</Link>
+    </Compile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

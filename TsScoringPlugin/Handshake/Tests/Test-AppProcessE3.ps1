@@ -190,6 +190,14 @@ if mode == "chatter":
     sys.stderr.flush()
     sys.stdout.write("hello stdout\n" * 5)
     sys.stdout.flush()
+if mode == "longlines":
+    for n in (100, 160, 161, 176, 191, 192, 193, 200, 300):
+        head = "[MANAGED] event=len L=%03d " % n
+        sys.stderr.write(head + "x" * (n - len(head) - 4) + "|END\n")
+    pre = "[MANAGED] event=telemetry-avail pid=960350 avail=explicit changes=3 gen=2 groups=24 missing="
+    sys.stderr.write(pre + "brake_cab+brake_type+calcg+handle+jump+maplimit+maplimit_ahead+prates+speed+time\n")
+    sys.stderr.write(pre + "accelx+bcp+brake_type+calcg+jump+maplimit_ahead+siglimit+speed+trainlen\n")
+    sys.stderr.flush()
 if mode == "exit-now":
     sys.exit(code)
 stop = k.OpenEventW(0x00100000, 0, base + "Stop")
@@ -428,7 +436,7 @@ $nm = $namesT
 Check 'P06 contract names mirror managed_mode.py: Local\TSScoringPlugin.v1.<PID>.App.<INST>.{Lock,Stop,Ready}' (($nm.GetMethod('Lock').Invoke($null, @(77, $inst0)) -ceq ('Local\TSScoringPlugin.v1.77.App.' + $inst0 + '.Lock')) -and ($nm.GetMethod('Stop').Invoke($null, @(77, $inst0)) -ceq ('Local\TSScoringPlugin.v1.77.App.' + $inst0 + '.Stop')) -and ($nm.GetMethod('Ready').Invoke($null, @(77, $inst0)) -ceq ('Local\TSScoringPlugin.v1.77.App.' + $inst0 + '.Ready')))
 $pyNames = & $py -c "import sys; sys.path.insert(0, r'$repoRoot'); import managed_mode as m; a, why = m.parse_managed_args(['--managed','--owner','caller','--bve-pid','77','--instance','$inst0']); print(a.lock_name, a.stop_name, a.ready_name)" 2>$null
 Check 'P07 the Python side (managed_mode.py) builds the same three names for the same PID and instance' (($pyNames -is [string]) -and ($pyNames -ceq (($nm.GetMethod('Lock').Invoke($null, @(77, $inst0))) + ' ' + ($nm.GetMethod('Stop').Invoke($null, @(77, $inst0))) + ' ' + ($nm.GetMethod('Ready').Invoke($null, @(77, $inst0))))))
-Check 'P08 timing constants are in ONE place: ready 15000, poll 25, exit poll 100, grace 3000, kill wait 2000, drain 500, margin 1500; owner "caller"; stderr cap 200 lines (Phase E4: raised from 20) of 160 characters' ((((@('ReadyTimeoutMs', 'ReadyPollMs', 'ExitPollMs', 'StopGraceMs', 'KillWaitMs', 'StreamDrainMs', 'ShutdownMarginMs') | ForEach-Object { [int]$timingT.GetField($_).GetRawConstantValue() }) -join ',') -ceq '15000,25,100,3000,2000,500,1500') -and ([string]$timingT.GetField('Owner').GetRawConstantValue() -ceq 'caller') -and ([int]$timingT.GetField('MaxStderrLogLines').GetRawConstantValue() -eq 200) -and ([int]$timingT.GetField('MaxStderrLineChars').GetRawConstantValue() -eq 160))
+Check 'P08 timing constants are in ONE place: ready 15000, poll 25, exit poll 100, grace 3000, kill wait 2000, drain 500, margin 1500; owner "caller"; stderr cap 200 lines (Phase E4: raised from 20) of 192 characters (Phase SWY-D1: raised from 160)' ((((@('ReadyTimeoutMs', 'ReadyPollMs', 'ExitPollMs', 'StopGraceMs', 'KillWaitMs', 'StreamDrainMs', 'ShutdownMarginMs') | ForEach-Object { [int]$timingT.GetField($_).GetRawConstantValue() }) -join ',') -ceq '15000,25,100,3000,2000,500,1500') -and ([string]$timingT.GetField('Owner').GetRawConstantValue() -ceq 'caller') -and ([int]$timingT.GetField('MaxStderrLogLines').GetRawConstantValue() -eq 200) -and ([int]$timingT.GetField('MaxStderrLineChars').GetRawConstantValue() -eq 192))
 $o = [Activator]::CreateInstance($optT)
 Check 'P09 the default options equal the constants; the Dispose join bound is grace + kill wait + drain + margin' (([int]$optT.GetField('ReadyTimeoutMs').GetValue($o) -eq 15000) -and ([int]$optT.GetProperty('ShutdownJoinMs').GetValue($o) -eq 7000))
 
@@ -635,7 +643,25 @@ Down $h
 $errLines = EventLines $h.Sink 'APP_STDERR'
 Check ('Q80 stderr policy: 230 E2 diagnostic lines + a traceback were written; at most 200 [MANAGED] lines (Phase E4 cap) are copied to the log (' + $errLines.Count + '), the rest is only counted, the traceback (it holds a path) is NEVER copied - only its exception TYPE is kept') (($errLines.Count -eq 200) -and (@($errLines | Where-Object { $_ -notmatch '^APP_STDERR line=\[MANAGED\] ' }).Count -eq 0) -and ((EventLines $h.Sink 'APP_STREAMS')[0] -match 'stderrLines=233 stderrLogged=200 stderrDropped=30') -and ((EventLines $h.Sink 'APP_STREAMS')[0] -match 'lastErrorType=ModuleNotFoundError') -and (@($h.Sink.Snapshot() | Where-Object { $_ -match 'secret|place|x\.py|Traceback' }).Count -eq 0))
 Check 'Q81 stdout is drained and only counted (5 lines of 14 characters written -> 70 counted), never copied; nothing deadlocked' (([long](Mg $h 'StdoutByteCount') -gt 0) -and (@($h.Sink.Snapshot() | Where-Object { $_ -match 'hello stdout' }).Count -eq 0))
-Check 'Q82 every copied line is printable ASCII and at most 160 characters long' (@($errLines | Where-Object { ($_.Length - 'APP_STDERR line='.Length) -gt 160 -or $_ -match '[^\x20-\x7e]' }).Count -eq 0)
+Check 'Q82 every copied line is printable ASCII and at most 192 characters long' (@($errLines | Where-Object { ($_.Length - 'APP_STDERR line='.Length) -gt 192 -or $_ -match '[^\x20-\x7e]' }).Count -eq 0)
+
+# --- Phase SWY-D1: the Caller keeps 192 characters of a line (diagnostic path only): whole up to 192, cut at exactly 192 above, nothing dropped
+SetMode 'longlines'
+$h = NewMgr 960390 (NewOpts)
+[void](Req $h 1 1)
+[void](WaitFor { [string](Mg $h 'State') -eq 'Ready' } 15000)
+Track $h
+Down $h
+$ll = EventLines $h.Sink 'APP_STDERR'
+$llText = @($ll | ForEach-Object { $_.Substring('APP_STDERR line='.Length) })
+$expectAvail80 = '[MANAGED] event=telemetry-avail pid=960350 avail=explicit changes=3 gen=2 groups=24 missing=brake_cab+brake_type+calcg+handle+jump+maplimit+maplimit_ahead+prates+speed+time'
+$expectAvail71 = '[MANAGED] event=telemetry-avail pid=960350 avail=explicit changes=3 gen=2 groups=24 missing=accelx+bcp+brake_type+calcg+jump+maplimit_ahead+siglimit+speed+trainlen'
+$wholeOk = $true; foreach ($n in 100, 160, 161, 176, 191, 192) { $t = @($llText | Where-Object { $_ -match ('^\[MANAGED\] event=len L=' + $n.ToString('000') + ' ') }); if (($t.Count -ne 1) -or ($t[0].Length -ne $n) -or (-not $t[0].EndsWith('|END'))) { $wholeOk = $false } }
+$cutOk = $true; foreach ($n in 193, 200, 300) { $t = @($llText | Where-Object { $_ -match ('^\[MANAGED\] event=len L=' + $n.ToString('000') + ' ') }); if (($t.Count -ne 1) -or ($t[0].Length -ne 192) -or ($t[0].EndsWith('|END'))) { $cutOk = $false } }
+Check ('Q83 Phase SWY-D1: a line of 100 / 160 / 161 / 176 / 191 / 192 characters is copied WHOLE (its end marker is there; lines copied=' + $llText.Count + ')') $wholeOk
+Check 'Q84 Phase SWY-D1: a line of 193 / 200 / 300 characters is cut at exactly 192 characters (the default behaviour above the cap; the end marker is gone)' $cutOk
+Check 'Q85 Phase SWY-D1: the telemetry-avail line with an 80 character list (172 characters) and the one with a 71 character list (163 characters) are copied whole, character for character' ((@($llText | Where-Object { $_ -ceq $expectAvail80 }).Count -eq 1) -and (@($llText | Where-Object { $_ -ceq $expectAvail71 }).Count -eq 1) -and ($expectAvail80.Length -eq 172) -and ($expectAvail71.Length -eq 163))
+Check 'Q86 Phase SWY-D1: nothing was dropped (11 lines written, 11 copied, stderrDropped=0) and every copied line is printable ASCII' (($llText.Count -eq 11) -and ((EventLines $h.Sink 'APP_STREAMS')[0] -match 'stderrLines=11 stderrLogged=11 stderrDropped=0') -and (@($ll | Where-Object { $_ -match '[^\x20-\x7e]' }).Count -eq 0))
 
 # ================================================================================================================ R: HandshakeSession wiring
 Write-Host '--- R: session wiring (start request -> process, Dispose -> Stop)'

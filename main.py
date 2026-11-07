@@ -36,6 +36,7 @@ from scoring_logic import (
     turnback_diag,
     add_score_popup,
     turnback_held_a_target,
+    sway_shadow_resolution,
 )
 from menu_ui import draw_menu
 from hud_ui import draw_hud
@@ -395,6 +396,9 @@ class Overlay(QWidget):
         self.bve_clear_dist = 0.0
         self.bve_calc_g = 0.0
         self.bve_accel_z = None                    # Shadow (BveG): the official AccelerationZ (m/s^2) of the latest line, None = not provided
+        self.bve_accel_x = None                    # Shadow (sway): the public FrontAccelerationX (m/s^2) of the latest line, None = not provided
+        self.bve_sway = None                       # Shadow (sway): the four RAW states of the BVE passenger-sway figure of the latest line (a tuple), None = not provided
+        self.bve_sway_res = None                   # Shadow (sway): the resolution diagnostic of the reflection reader (SWAYR) of the latest line, None = none
         self.accel_z_history = []
         self.last_stop_g_bve = None
         self.is_stopping_zone = False
@@ -976,6 +980,10 @@ class Overlay(QWidget):
             parts = latest_telemetry.split(',')
             self._offtgt_raw = offtgt_capture(parts)
             self.bve_accel_z = telemetry_contract.accelz_capture(parts)    # Shadow (BveG): kept out of the part chain below on purpose
+            self.bve_accel_x = telemetry_contract.accelx_capture(parts)    # Shadow (sway): the same, for the public FrontAccelerationX
+            self.bve_sway = telemetry_contract.sway_capture(parts)         # Shadow (sway): the four raw states (None when any is missing / not finite)
+            self.bve_sway_res = telemetry_contract.swayr_capture(parts)    # Shadow (sway): the resolution diagnostic (a reason, never a value)
+            sway_shadow_resolution(self, self.bve_sway_res)                # logged once per change
             self._ptpair_raw = route_pairset.capture(parts)             # Stage TB-E: the PTPAIR part of THIS line with the SCENARIO_ID of the same line; judged by _route_pairset_sync after the line is applied
             for part in parts:
                 try:

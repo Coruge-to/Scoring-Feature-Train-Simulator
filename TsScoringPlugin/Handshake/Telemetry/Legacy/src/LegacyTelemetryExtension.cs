@@ -418,7 +418,7 @@ namespace TSScoringPlugin.Telemetry
     }
 
     /// <summary>The Legacy API read into ILegacyApi. Every Try method catches everything: an unreadable value is "not available", never a default.</summary>
-    internal sealed class AtsExLegacyApi : ILegacyApi, ILegacyInputApi, ILegacyScoringApi, ILegacyGroundApi, ILegacyOfficialTargetApi, ILegacyVibrationApi
+    internal sealed class AtsExLegacyApi : ILegacyApi, ILegacyInputApi, ILegacyScoringApi, ILegacyGroundApi, ILegacyOfficialTargetApi, ILegacyVibrationApi, ILegacySwayApi
     {
         private IBveHacker hacker;
         private INative nativeHost;
@@ -500,6 +500,71 @@ namespace TSScoringPlugin.Telemetry
                 return true;
             }
             catch { return false; }
+        }
+
+        // -- Shadow sway diagnostics: ILegacySwayApi. Tick thread only; READ ONLY. The public FrontAccelerationX is a getter. The raw states of the BVE passenger-sway figure come from the shared
+        // reflection reader; the figure object is looked up once per scenario instance (MainForm.AssistantDrawer.Items) and the result, a failure too, is cached. Nothing is written or called in the host.
+        private SwayStateReader swayReader;
+        private object swayScenarioSource;
+        private int swayPendingTicks;
+
+        public bool TryFrontAccelerationX(out double metersPerSecondSquared)
+        {
+            metersPerSecondSquared = 0;
+            try
+            {
+                double value = current.Vehicle.VibrationManager.FrontAccelerationX;
+                if (double.IsNaN(value) || double.IsInfinity(value)) return false;
+                metersPerSecondSquared = value;
+                return true;
+            }
+            catch { return false; }
+        }
+
+        public bool TrySwayState(out double longitudinalX, out double longitudinalV, out double lateralX, out double lateralV, out string diagnostic)
+        {
+            longitudinalX = 0; longitudinalV = 0; lateralX = 0; lateralV = 0; diagnostic = null;
+            try
+            {
+                if (swayReader == null) { swayReader = new SwayStateReader(SwayStateReader.HostFileVersion(), "legacy"); }
+                object scenarioSource = current.Src;
+                if (!object.ReferenceEquals(scenarioSource, swayScenarioSource))
+                {
+                    swayScenarioSource = scenarioSource;
+                    swayReader.Reset();
+                    swayPendingTicks = 0;
+                }
+
+                if (swayReader.Status == SwayStatus.Pending)
+                {
+                    // the figure is not in the list before the scenario is ready: look again every 30th Tick only (and never throw)
+                    if (swayPendingTicks % 30 == 0)
+                    {
+                        object figure = null;
+                        try
+                        {
+                            foreach (AssistantBase item in hacker.MainForm.AssistantDrawer.Items)
+                            {
+                                SwayGauge gauge = item as SwayGauge;
+                                if (gauge != null) { figure = gauge.Src; break; }
+                            }
+                        }
+                        catch { figure = null; }
+
+                        swayReader.Resolve(figure);
+                    }
+
+                    swayPendingTicks++;
+                }
+
+                diagnostic = swayReader.ResolutionText();
+                return swayReader.TryRead(out longitudinalX, out longitudinalV, out lateralX, out lateralV);
+            }
+            catch
+            {
+                diagnostic = null;
+                return false;
+            }
         }
 
         public bool TryDoorsClosed(out bool allClosed)

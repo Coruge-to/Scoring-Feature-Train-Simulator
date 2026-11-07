@@ -76,7 +76,7 @@ FROZEN = {
     # Phase ST-3e0 changes both projects on purpose (exactly one Compile item of Shared\PackageContract.cs each; the blobs moved from defbe148... / 61092229...): their rows are gone; they are held by
     # tests/test_stationindex_package_st3e0.py (E0-25: each differs from the blob of 0b8e511 by that one item only)
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/AssemblyInfo.cs": "d601dec6a3a0feff0e7e6ed54c610ecb0d53bd51",
-    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyApi.cs": "b0783815d9c0c420879ed51093462b924bcf26a8",
+    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyApi.cs": "0a9a9b333598bbdf9cb7bf1d59f52aed660ef812",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyDataPlaneSink.cs": "f5e11a9579ea5ba12544b9f00c0a48693f638819",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyGroundLimits.cs": "b6cf818399ca8ed83499f2cbf1f40669b40c487f",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyHandleContract.cs": "86596694a6dfd14124acc61514f8f70ff018dca9",
@@ -95,16 +95,16 @@ FROZEN = {
     # Stage TB-E (an intended change, not a drift) changed LegacyStationTimeline.cs on purpose (the PtPairText member that carries the PTPAIR part; tests/test_pt_tbe_adapter_static.py): the blob moved from 83db89f9... (SI-R2.4)
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs": "d26a444b73d478a7e9cb56558d16cdf49bc85956",
     # SI-R2.2-S2b (C3a) changed LegacyTelemetryExtension.cs on purpose (the read only adapter ILegacyOfficialTargetApi.ReadOfficialTarget and the E-9 rule text of the header; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 12a0f84a... (the commit before S2b)
-    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "8be3889a01a1dc028837f09287e749635d097ddb",
+    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "0ec763703723c6f5f116f7ef470e5afd6281e5f4",
     # SI-R2.2-S2b (C3a) changed LegacyTelemetrySession.cs on purpose (the ILegacyOfficialTargetApi port, the official field, the ten-argument constructor and the OFFTGT key after STIDX; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 5dd33902... (the commit before S2b)
     # Stage TB-E (an intended change, not a drift) changed LegacyTelemetrySession.cs on purpose (the PTPAIR key directly after the STIDX group, before the OFFTGT key; tests/test_pt_tbe_adapter_static.py): the blob moved from c5bc298a... (S2b)
-    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetrySession.cs": "f9e88050eac91415a847388d63b57d1722b609ba",
+    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetrySession.cs": "11f3193d88e52275c3991c8fd04e07f18964e432",
     "TsScoringPlugin/Handshake/Telemetry/Shared/DataPlaneProtocol.cs": "bed2ed8585b502578d4d4e17f64307206d0920fc",
     "TsScoringPlugin/Handshake/Telemetry/Shared/GenericHandleTextContract.cs": "94746abf0d4395b0ddbfa351df3adadb1aa70132",
     "TsScoringPlugin/Handshake/Telemetry/Shared/JumpWire.cs": "dff2a85a25ff22f76892b3d19209b1da9c089387",
     # SI-R2.2-S2b (C3a) changed StationListIdentity.cs on purpose (the official next-station target: OfficialTargetReading / Station / Host / Reader / Wire, the shared reader core and wire helper of both senders; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from bfa15b21... (the commit before S2b)
     "TsScoringPlugin/Handshake/Telemetry/Shared/StationListIdentity.cs": "b670065e031b77fe2fa2c820548a04bdc020f1ea",
-    "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryContract.cs": "2cf1f8c6be540fa8a31450f109c1154194f4e9ac",
+    "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryContract.cs": "3258d8288af919b1ff0be77df2fe8741fe640994",
     "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs": "cde81d8f5411df680cb17b10288a3c8d9b01f561",
     "TsScoringPlugin/TsScoringPlugin/AtsLoggerPlugin.cs": "22209df3e50762dd17c68c9bb788af6f8faf98b7",
     # Phase U10 changed Class1.cs on purpose (tests\test_stationindex_station_range_u10.py): the blob moved from a1c34ae7... (ST-3b); ST-3d itself still does not touch it
@@ -114,7 +114,7 @@ FROZEN = {
     # SI-R2.2-S2b (C3b) changed Class1.cs on purpose (the OFFTGT part after STIDX in its own try / catch and the read only CreateOfficialTargetHost; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 4aa4aac5... (the commit before S2b)
     # SI-R2.4 (C5b) changed Class1.cs on purpose (a re-initialisation that carries no StationIndex leaves the target UNSET: SelectTargetByPosition became SelectUnsetTarget and its one call site, no position is searched; tests/test_stationindex_current_st3b.py / tests/test_jf1_current_csharp_source_pins.py / Handshake\Tests\Test-TimeFixB3.ps1): the blob moved from e3f55d15... (SI-R2.2-S2b C3b)
     # Stage TB-E (an intended change, not a drift) changed Class1.cs on purpose (the PTPAIR part between the STIDX part and the OFFTGT part; tests/test_pt_tbe_adapter_static.py): the blob moved from afc404e7... (SI-R2.4)
-    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "23da9dce40a22bfa1f77d96347244a7819eae1fc",
+    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "425b99b8f92b1108b100ada208a845328da1e8fd",
     "TsScoringPlugin/TsScoringPlugin/CurrentDataPlane.cs": "71b0ebaa6f52871ceb2a59456a2b527041241c46",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs": "3e0d3bffbb74e4a2ecc6d10d378a8b6e2788ae6f",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs": "8a54d6a14100e0021ca248d28369c335f965fafe",

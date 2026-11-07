@@ -70,7 +70,7 @@ CURRENT_CSPROJ = os.path.join(PLUGIN, "TsScoringPlugin", "TsScoringPlugin.csproj
 # their reset at the two places where the list is reset, the five raw values per station read in the list build (RawArrTime > 0, RawDepTime > 0, IsTerminal, IsPass), the PseudoTurnbackPairCodec.Publish call where the STIDX text is made, and
 # ONE append (if (ptpairText != null) data += ...) between the STIDX append and the OFFTGT try / catch. No existing statement changed; every shape pin of this file stays in force; tests\test_pt_tbe_adapter_static.py and
 # tests\test_stationindex_supply_st1a.py (class D) hold the new shape.
-CLASS1_AUDITED_NORMALISED_SHA256 = "98953BD04CEEC9AE05FF5FC2F6DE1D7D534FB410D8C461313112D8F04AD00E34"
+CLASS1_AUDITED_NORMALISED_SHA256 = "5C0AE0E6C27F9D61D5012F1B2BC383DF012A9941472150863497D37210BA17C2"
 # Phase U10 (the stop range of the station list builder): the value moved from 4D8FF9CB... after the changed lines were re-audited (ReadStationRange, RejectStationList, the latch stationRangeRejected and its gate; the 5.0 / 5.0
 # fallback of an unreadable range is gone). Every shape pin of this file still passes unchanged; tests\\test_stationindex_station_range_u10.py holds the contract of the new shape.
 # Phase ST-3b (the Current jump wiring): the value moved from 009BA364... after the changed lines were re-audited (the jump transaction, the one-shot StationIndex re-initialisation, the canonical numbers; every shape pin of this
@@ -381,14 +381,15 @@ class Pins(unittest.TestCase):
         ("..\\Shared\\JumpWire.cs", "Shared\\JumpWire.cs"),                                          # Phase ST-3b / G-PC-1 (pin moved): the compile-only link of the wire codec (nothing of Legacy calls it before ST-3c)
         ("..\\Shared\\PackageContract.cs", "Shared\\PackageContract.cs"),                             # Phase ST-3e0 (pin moved): the package contract (TSJUMP2, constants only), the one file both projects compile
         ("..\\Shared\\PseudoTurnbackQualifier.cs", "Shared\\PseudoTurnbackQualifier.cs"),             # Stage TB-E (pin moved, an intended change): the pseudo-turnback qualifier moved from PseudoTurnbackStaging to Shared and is linked
-        ("..\\Shared\\PseudoTurnbackPairCodec.cs", "Shared\\PseudoTurnbackPairCodec.cs")], key=lambda t: t[0])       # Stage TB-E (pin moved, an intended change): the PTPAIR codec, the same move and link
+        ("..\\Shared\\PseudoTurnbackPairCodec.cs", "Shared\\PseudoTurnbackPairCodec.cs"),       # Stage TB-E (pin moved, an intended change): the PTPAIR codec, the same move and link
+        ("..\\Shared\\SwayStateReader.cs", "Shared\\SwayStateReader.cs")], key=lambda t: t[0])       # Shadow sway diagnostics (pin moved, an intended change): the shared read-only reflection reader of the sway figure
 
     @jf0("F32", "CURRENT")
     def test_CURRENT_F32_the_legacy_project_links_exactly_this_set_of_sources_with_the_one_shared_current_jump_endpoint_link_and_the_current_project_keeps_its_own(self):
         # (1) the Legacy project: the exact (Include, Link) pairs, 26 of them (24 before Stage TB-E, 23 before Phase ST-3e0, 22 before Phase ST-3b, 21 before Phase ST-1A, 20 before Phase LJX-1)
         legacy = compile_items(LEGACY_CSPROJ)
         self.assertEqual(sorted(legacy, key=lambda t: t[0]), self.LEGACY_EXPECTED_ITEMS)
-        self.assertEqual(len(legacy), 26)       # Stage TB-E (an intended change): was 24
+        self.assertEqual(len(legacy), 27)       # Shadow sway diagnostics (an intended change): the shared SwayStateReader.cs link; Stage TB-E: was 24
         # (2) the shared link: exactly one element, exactly this Include and this Link; nothing else of the Current plugin folder besides CurrentDataPlane.cs
         endpoint_links = [t for t in legacy if t[0].endswith("CurrentJumpEndpoint.cs")]
         self.assertEqual(endpoint_links, [self.LEGACY_SHARED_LINK])

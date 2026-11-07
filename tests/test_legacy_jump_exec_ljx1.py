@@ -54,7 +54,7 @@ PYTHON_PINS = {
     # telemetry_state_defaults() (+ comments). It does not touch the jump contract; the regions of main.py that name the jump contract are unchanged (tests\test_official_target_supply_s2a.py, class F).
     # Stage TB-E (the pin moved, an intended change, was 87A3CAA6...): telemetry_contract.py gained the word PTPAIR in TOKEN_KEYS["station"] (+ a comment). It does not touch the jump contract;
     # tests\test_pt_tbe_receiver.py holds the receiver of the new key.
-    "telemetry_contract.py": "88D021F3350920618840DB4134EA4C476CE7B6440471418698306BB98BA8D078",
+    "telemetry_contract.py": "50F6B82C17FADECB8AFEF3F5E8C4AFFFAA5DE3FE183810D75F3DD5B6C848783B",
     "dataplane_contract.py": "53D23EA683DE8C6344932DEF5D550C0646B3B95ECC5561A3CDAF66F46D9EF27D",
     "telemetry_dataplane_receiver.py": "7E651F9E2523F035C9A15ED1AF7A23EC8D373BDAB99B7085A8E9BA26521A44E9",
     "managed_app_directory.py": "7B77DA8C4D04B32603AE7BFFAA1A74FCE07253B1BE2084ECB11EBBE5B46DCA8A",
