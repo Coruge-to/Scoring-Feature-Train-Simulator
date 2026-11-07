@@ -70,7 +70,7 @@ CURRENT_CSPROJ = os.path.join(PLUGIN, "TsScoringPlugin", "TsScoringPlugin.csproj
 # their reset at the two places where the list is reset, the five raw values per station read in the list build (RawArrTime > 0, RawDepTime > 0, IsTerminal, IsPass), the PseudoTurnbackPairCodec.Publish call where the STIDX text is made, and
 # ONE append (if (ptpairText != null) data += ...) between the STIDX append and the OFFTGT try / catch. No existing statement changed; every shape pin of this file stays in force; tests\test_pt_tbe_adapter_static.py and
 # tests\test_stationindex_supply_st1a.py (class D) hold the new shape.
-CLASS1_AUDITED_NORMALISED_SHA256 = "974A59B35CA32B3A485DD32A9F6E0BE9082240D9EAE6AE4E8609C69261FF62A3"
+CLASS1_AUDITED_NORMALISED_SHA256 = "98953BD04CEEC9AE05FF5FC2F6DE1D7D534FB410D8C461313112D8F04AD00E34"
 # Phase U10 (the stop range of the station list builder): the value moved from 4D8FF9CB... after the changed lines were re-audited (ReadStationRange, RejectStationList, the latch stationRangeRejected and its gate; the 5.0 / 5.0
 # fallback of an unreadable range is gone). Every shape pin of this file still passes unchanged; tests\\test_stationindex_station_range_u10.py holds the contract of the new shape.
 # Phase ST-3b (the Current jump wiring): the value moved from 009BA364... after the changed lines were re-audited (the jump transaction, the one-shot StationIndex re-initialisation, the canonical numbers; every shape pin of this

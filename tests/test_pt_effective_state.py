@@ -324,7 +324,7 @@ class D_PureAndStructure(unittest.TestCase):
             with open(os.path.join(ROOT, rel), "rb") as fh:
                 data = fh.read().replace(b"\r\n", b"\n")
             return hashlib.sha1(b"blob %d\x00" % len(data) + data).hexdigest()
-        self.assertEqual(blob("scoring_logic.py"), "d7b96882f06762219119701eef5692246b7b2bae")
+        self.assertEqual(blob("scoring_logic.py"), "a821129a07797dfb7cca6e832cc6085eaa13b81f")
         self.assertEqual(blob("pseudo_turnback_machine.py"), PINNED_MACHINE_BLOB)
 
     def test_PS_07_hud_ui_reads_the_effective_state_for_the_time_row(self):

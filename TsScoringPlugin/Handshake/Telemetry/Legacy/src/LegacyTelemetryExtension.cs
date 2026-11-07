@@ -418,7 +418,7 @@ namespace TSScoringPlugin.Telemetry
     }
 
     /// <summary>The Legacy API read into ILegacyApi. Every Try method catches everything: an unreadable value is "not available", never a default.</summary>
-    internal sealed class AtsExLegacyApi : ILegacyApi, ILegacyInputApi, ILegacyScoringApi, ILegacyGroundApi, ILegacyOfficialTargetApi
+    internal sealed class AtsExLegacyApi : ILegacyApi, ILegacyInputApi, ILegacyScoringApi, ILegacyGroundApi, ILegacyOfficialTargetApi, ILegacyVibrationApi
     {
         private IBveHacker hacker;
         private INative nativeHost;
@@ -485,6 +485,20 @@ namespace TSScoringPlugin.Telemetry
         {
             metersPerSecond = 0;
             try { metersPerSecond = current.LocationManager.SpeedMeterPerSecond; return true; }
+            catch { return false; }
+        }
+
+        // -- Shadow comparison (Stage 1): ILegacyVibrationApi. Tick thread only; READ ONLY (a getter); an exception or a non-finite value is "not available".
+        public bool TryAccelerationZ(out double metersPerSecondSquared)
+        {
+            metersPerSecondSquared = 0;
+            try
+            {
+                double value = current.Vehicle.VibrationManager.AccelerationZ;
+                if (double.IsNaN(value) || double.IsInfinity(value)) return false;
+                metersPerSecondSquared = value;
+                return true;
+            }
             catch { return false; }
         }
 

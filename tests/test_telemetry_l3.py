@@ -1004,7 +1004,7 @@ class E_StaticGuards(unittest.TestCase):
 
         self.assertEqual(set(visible_keys), set(tc.HUD_ITEM_REQUIRES))
         self.assertEqual(len(visible_keys), len(tc.HUD_ITEM_REQUIRES))
-        self.assertEqual(set(diagnostic_guards), {"bcp", "bpp", "calcg"})
+        self.assertEqual(set(diagnostic_guards), {"bcp", "bpp", "calcg", "accelz"})        # Shadow comparison (Stage 1, on purpose): the F2 BveG values are a diagnostic group of their own (token accelz)
         self.assertIn("BCP", diagnostic_guards["bcp"])
         self.assertIn("BPP", diagnostic_guards["bpp"])
         self.assertIn("Virtual_EB", diagnostic_guards["bpp"])

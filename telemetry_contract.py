@@ -52,6 +52,7 @@ TOKEN_KEYS = {
     "trainlen": ("TRAINLEN",),
     "doortime": ("DOORTIME",),
     "calcg": ("CALCG",),
+    "accelz": ("ACCELZ",),
     "meta": ("META",),
     "jump": ("JUMP", "JUMP_COMPLETE"),
 }
@@ -84,7 +85,7 @@ def telemetry_state_defaults():
         "default_handle_text_available": False,
         "bve_signal_limit": 1000.0, "bve_train_length": 20.0, "bve_map_limits": [],
         "bve_fwd_sig_limit": 1000.0, "bve_fwd_sig_loc": -1.0,
-        "map_head_limit": 1000.0, "map_tail_limit": 1000.0, "bve_clear_dist": 0.0, "bve_calc_g": 0.0,
+        "map_head_limit": 1000.0, "map_tail_limit": 1000.0, "bve_clear_dist": 0.0, "bve_calc_g": 0.0, "bve_accel_z": None,
         "bve_btype": "Ecb", "bcPressure": 0.0, "bpPressure": 0.0, "bve_bp_initial": 490.0,
         "bve_pressure_rates": [], "bve_max_pressure": 440.0,
         "cab_brk_count": 8, "has_holding_brake": False, "svc_brk_count": 8,
@@ -101,7 +102,7 @@ AVAIL_UNSUPPORTED = "unsupported-version"
 AVAIL_MALFORMED = "avail-malformed"
 
 
-DIAGNOSTIC_LIST_BUDGET = 60
+DIAGNOSTIC_LIST_BUDGET = 70
 
 
 def compact_groups(availability, budget=DIAGNOSTIC_LIST_BUDGET):
@@ -245,3 +246,19 @@ def parse_telemetry(text):
         return line
     line.valid = True
     return line
+
+
+def accelz_capture(parts):
+    """Shadow comparison (BveG): the official AccelerationZ of THIS telemetry line, in m/s^2, exactly as the sender wrote it (no unit change, no abs, no clamp).
+    None when the line has no ACCELZ part or the value is not a finite number: a value is never invented (no CALCG substitute, no 0.0) and an old value is never kept."""
+    value = None
+    for part in parts:
+        if part.startswith("ACCELZ:"):
+            try:
+                number = float(part.split(":")[1])
+            except (ValueError, IndexError):
+                return None
+            if number != number or number in (float("inf"), float("-inf")):
+                return None
+            value = number
+    return value

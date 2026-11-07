@@ -42,6 +42,7 @@ namespace TSScoringPlugin.Telemetry
         internal const string TokBrakeCab = "brake_cab";
         internal const string TokPRates = "prates";
         internal const string TokCalcG = "calcg";
+        internal const string TokAccelZ = "accelz";          // Shadow comparison (Stage 1): ACCELZ, the official AccelerationZ in m/s^2 exactly as the host reports it
         internal const string TokMeta = "meta";
         internal const string TokJump = "jump";              // Phase LJX-1: JUMP (the counter of the official jumps); announced only while the Legacy Jump execution contract is open
 

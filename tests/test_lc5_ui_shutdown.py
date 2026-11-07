@@ -553,7 +553,9 @@ class S_CSharp(unittest.TestCase):
         # Stage TB-E 1.1 (OD-TE2-3): the check is STRUCTURAL (tests/pt_tbe_c7_structure.py), not "an added line mentions PTPAIR": an unknown line, a malformed / duplicate / misplaced PTPAIR or an
         # unrelated line that merely contains the word is a violation. The contrasting mutants are test_pt_tbe_c7_guard.
         changed = out.stdout.decode().split()
-        self.assertEqual([c for c in changed if c != self.SES], [])
+        # Shadow comparison (Stage 1, an intended change, not a drift): LegacyTelemetryExtension.cs gained the read-only AccelerationZ getter (AtsExLegacyApi implements ILegacyVibrationApi: one method + one interface name);
+        # Dispose, shutdown and withdraw are not touched. LegacyTelemetrySession.cs stays under the structural guard of tests/pt_tbe_c7_structure.py (now with the formal ACCELZ block).
+        self.assertEqual([c for c in changed if c not in (self.SES, self.EXT)], [])
         if changed:
             import pt_tbe_c7_structure
             base = subprocess.run(["git", "-C", ROOT, "show", "cbebfd3:" + self.SES], capture_output=True, timeout=60).stdout.decode("utf-8", "replace")

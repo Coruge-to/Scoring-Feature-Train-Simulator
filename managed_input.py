@@ -71,13 +71,13 @@ def generation_defaults():
         "station_list": [], "pending_station_list": None,
         # Phase ST-2a: the identity published for that station list (-1 / "" = the sender's indexes are not usable); written by Overlay._station_identity_sync only
         "bve_tgt_idx": -1, "bve_arr_idx": -1, "bve_arr_seq": -1, "bve_list_id": "",
-        "last_update_time": 0.0, "prev_frame_loc": 0.0, "g_history": [], "last_bve_time_ms": 0,
+        "last_update_time": 0.0, "prev_frame_loc": 0.0, "g_history": [], "accel_z_history": [], "last_bve_time_ms": 0,
         "meta_title": "", "meta_route": "", "meta_vehicle": "", "meta_author": "", "meta_comment": "",
         "prev_base_limit": 1000.0, "prev_diff_s": 0, "prev_door": 0, "prev_doordir": 1, "prev_is_pass": 0, "prev_is_timing": 0, "prev_next_loc": -1.0,
         "prev_term": 0, "prev_tgt_idx": -1,
         # the evaluation of the current station
         "is_first_udp": True, "is_first_station": True, "is_approaching": False, "is_stopped_out_of_range": False, "has_scored_time_this_station": False,
-        "has_scored_stop_this_station": False, "has_departed": False, "close_range_departure_reset_pending": False, "prev_actual_stop_loc": -1.0, "is_stopping_zone": False, "max_stop_g": 0.0, "last_stop_g": 0.0,
+        "has_scored_stop_this_station": False, "has_departed": False, "close_range_departure_reset_pending": False, "prev_actual_stop_loc": -1.0, "is_stopping_zone": False, "last_stop_g": 0.0, "last_stop_g_bve": None,
         "stop_notch_state": "IDLE",
         # the speed limit guidance (blink / candidates of the previous scenario)
         "disp_limit": 1000.0, "limit_color": COLOR_WHITE, "effective_limit": 1000.0, "current_base_limit": 1000.0, "limit_changed_loc": -1.0,
@@ -164,6 +164,8 @@ def discard_scoring_session(overlay):
         setattr(overlay, name, d[name])
     overlay.retry_pending = d["retry_pending"]                  # Phase ST-2b: a retry that waits for its jump belongs to the scoring session (kept out of the tuple above: that header is a pinned jump-contract region)
     overlay.jump_expectation = d["jump_expectation"]            # Phase ST-3d: so does the expectation of the open official jump
+    overlay.accel_z_history = d["accel_z_history"]              # Shadow (BveG): its buffer and its last value end with the session (kept out of the pinned tuple above)
+    overlay.last_stop_g_bve = d["last_stop_g_bve"]
     overlay.prev_tgt_idx = d["prev_tgt_idx"]                    # Phase SI-R5.2-C: the departure station kept for evaluate_departure belongs to the session too
     reset_result_display_state(overlay)
     reset_speed_penalty_state(overlay)

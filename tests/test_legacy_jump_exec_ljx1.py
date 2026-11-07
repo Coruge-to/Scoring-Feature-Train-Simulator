@@ -54,7 +54,7 @@ PYTHON_PINS = {
     # telemetry_state_defaults() (+ comments). It does not touch the jump contract; the regions of main.py that name the jump contract are unchanged (tests\test_official_target_supply_s2a.py, class F).
     # Stage TB-E (the pin moved, an intended change, was 87A3CAA6...): telemetry_contract.py gained the word PTPAIR in TOKEN_KEYS["station"] (+ a comment). It does not touch the jump contract;
     # tests\test_pt_tbe_receiver.py holds the receiver of the new key.
-    "telemetry_contract.py": "1675EE0677AA241706CB2E0219DDD6A24AD7C35B3F78F9751D625DCA56CC6609",
+    "telemetry_contract.py": "88D021F3350920618840DB4134EA4C476CE7B6440471418698306BB98BA8D078",
     "dataplane_contract.py": "53D23EA683DE8C6344932DEF5D550C0646B3B95ECC5561A3CDAF66F46D9EF27D",
     "telemetry_dataplane_receiver.py": "7E651F9E2523F035C9A15ED1AF7A23EC8D373BDAB99B7085A8E9BA26521A44E9",
     "managed_app_directory.py": "7B77DA8C4D04B32603AE7BFFAA1A74FCE07253B1BE2084ECB11EBBE5B46DCA8A",
@@ -206,7 +206,8 @@ LC4B_EXECUTE_RETRY_PIN = ("whole", "9CEEFF77BE70F07889ECD1D30EA0889C155BB3CA1F97
 # Legacy scoring LC-3A (an INTENDED change of the stop jerk judgement, not of the jump contract): update_stop_jerk_penalty returns without judging while `is_official_jumping` is set (a sample taken while the world is about to be
 # replaced is not a stop). At the LJX-1 commit the function names no jump word (an EMPTY slice, 0 records: the SHA-256 of the empty text); now it names `is_official_jumping` once (1 record) and is declared.
 EMPTY_SLICE_PIN = ("slice", "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855", 0)
-LC3A_UPDATE_STOP_JERK_PIN = ("slice", "D43FFB9C0D190C9E0574CD41C08754A1AFCA7C3EC830742C4B14CFFAD9FA8387", 1)
+# Shadow comparison (Stage 1, an intended change): update_stop_jerk_penalty hands the text of is_official_jumping to the shadow recorder (the second mention); the old value was ("slice", "D43FFB9C...", 1)
+LC3A_UPDATE_STOP_JERK_PIN = ("slice", "C01E8271A0DB1E0CFF89E550F6A91E4E6F2BC1AF933A44A3BC32E8C8AE6AB2CC", 2)
 
 # Time Fix B (an INTENDED change of a scoring region, not of the jump contract): the departure range check of evaluate_departure names `is_official_retry` in its condition, and that one condition
 # now reads the local margin_f / margin_b (the range kept at the arrival of an operational stop; the telemetry margin of the new target for every other stop) instead of self.bve_margin_f / _b.

@@ -848,6 +848,21 @@ namespace TSScoringPlugin.Telemetry
             {
             }
 
+            // Shadow comparison (Stage 1): the official AccelerationZ of this Tick, m/s^2 exactly as read (no unit change, no abs, no clamp, no smoothing). It needs no previous sample.
+            // A value that cannot be read is not written and its token is not in AVAIL; CALCG is never put in its place.
+            try
+            {
+                ILegacyVibrationApi vibration = api as ILegacyVibrationApi;
+                double accelZ;
+                if (vibration != null && vibration.TryAccelerationZ(out accelZ) && !double.IsNaN(accelZ) && !double.IsInfinity(accelZ))
+                {
+                    lb.Group(TelemetryContract.TokAccelZ, "ACCELZ", TelemetryContract.F(accelZ, "F6"));
+                }
+            }
+            catch
+            {
+            }
+
             // acceleration from two samples of THIS scenario instance; the first sample has no reference and says nothing
             if (haveLastSample)
             {

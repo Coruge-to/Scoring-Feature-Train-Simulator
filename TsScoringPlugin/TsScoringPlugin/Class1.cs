@@ -1391,6 +1391,22 @@ namespace TsScoringPlugin
                 }
                 catch { }
 
+                // Shadow comparison (Stage 1): the official AccelerationZ of this Tick (m/s^2, exactly as the host reports it). Nothing is written when it cannot be read or is not finite;
+                // CALCG is never substituted and no 0.0 is invented.
+                string accelZPart = "";
+                try
+                {
+                    if (vehicle != null)
+                    {
+                        double accelZ = Convert.ToDouble(vehicle.Vibration.AccelerationZ);
+                        if (!double.IsNaN(accelZ) && !double.IsInfinity(accelZ))
+                        {
+                            accelZPart = ",ACCELZ:" + accelZ.ToString("F6", System.Globalization.CultureInfo.InvariantCulture);
+                        }
+                    }
+                }
+                catch { }
+
                 try
                 {
                     double currentSpeedMps = speed / 3.6;
@@ -1566,7 +1582,7 @@ namespace TsScoringPlugin
                         terminalFlag = 1;
                     }
 
-                    string data = $"SCENARIO_ID:{scenarioId},SPEED:{speed},TIME:{timeMs},LOCATION:{location},GRADIENT:{finalGradient},NEXTLOC:{nextStationLoc},NEXTTIME:{nextStationTime},ISPASS:{isPass},ISTIMING:{isTiming},MARGINB:{marginBack},MARGINF:{marginFront},REV:{revText}:{revPos},POW:{powText}:{powNotch},BRK:{brkText}:{brkNotch}:{brkMax},HTYPE:{handleType},ALLTXT:{allRevTexts}:{allPowTexts}:{allBrkTexts}:{allHldTexts},DREV:{defaultRevText}:{revPos},DPOW:{defaultPowText}:{powNotch},DBRK:{defaultBrkText}:{brkNotch}:{brkMax},DALLTXT:{defaultAllRevTexts}:{defaultAllPowTexts}:{defaultAllBrkTexts}:{defaultAllHldTexts},SIGLIMIT:{signalLimit},TRAINLEN:{trainLength},MAPLIMITS:{mapLimitsStr},FWDSIGLIMIT:{fwdSigLimit},FWDSIGLOC:{nextSigLoc},DOOR:{(areDoorsClosed ? 0 : 1)},DOORDIR:{currentDoorDir},TERM:{terminalFlag},MAPHEAD:{manualMapHead},MAPTAIL:{manualMapTail},CLEARDIST:{distToClear},CALCG:{currentG:F5},BTYPE:{bType},JUMP:{jumpCounter},CAB:{cabBrakeNotches}:{holds},BCP:{bcPressure:F1},PRATES:{pRatesStr}:{maxPressure:F1},BPP:{bpPressure:F1}:{bpInitialPressure:F1},STATNAME:{currentStationName},DOORTIME:{doorCloseTimeMs}";
+                    string data = $"SCENARIO_ID:{scenarioId},SPEED:{speed},TIME:{timeMs},LOCATION:{location},GRADIENT:{finalGradient},NEXTLOC:{nextStationLoc},NEXTTIME:{nextStationTime},ISPASS:{isPass},ISTIMING:{isTiming},MARGINB:{marginBack},MARGINF:{marginFront},REV:{revText}:{revPos},POW:{powText}:{powNotch},BRK:{brkText}:{brkNotch}:{brkMax},HTYPE:{handleType},ALLTXT:{allRevTexts}:{allPowTexts}:{allBrkTexts}:{allHldTexts},DREV:{defaultRevText}:{revPos},DPOW:{defaultPowText}:{powNotch},DBRK:{defaultBrkText}:{brkNotch}:{brkMax},DALLTXT:{defaultAllRevTexts}:{defaultAllPowTexts}:{defaultAllBrkTexts}:{defaultAllHldTexts},SIGLIMIT:{signalLimit},TRAINLEN:{trainLength},MAPLIMITS:{mapLimitsStr},FWDSIGLIMIT:{fwdSigLimit},FWDSIGLOC:{nextSigLoc},DOOR:{(areDoorsClosed ? 0 : 1)},DOORDIR:{currentDoorDir},TERM:{terminalFlag},MAPHEAD:{manualMapHead},MAPTAIL:{manualMapTail},CLEARDIST:{distToClear},CALCG:{currentG:F5}{accelZPart},BTYPE:{bType},JUMP:{jumpCounter},CAB:{cabBrakeNotches}:{holds},BCP:{bcPressure:F1},PRATES:{pRatesStr}:{maxPressure:F1},BPP:{bpPressure:F1}:{bpInitialPressure:F1},STATNAME:{currentStationName},DOORTIME:{doorCloseTimeMs}";
                     // Phase ST-1A: the STIDX part, appended as a part of its own (every part above is unchanged). The Legacy sender writes the same part through the same
                     // shared helper (StationIndexWire). It is written only while the list of this Tick has been described by a STALIST text of this scenario instance.
                     if (isInitialized && stidxListReady && stidxListCount == stationList.Count)

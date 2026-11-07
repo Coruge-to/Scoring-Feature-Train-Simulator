@@ -127,4 +127,11 @@ namespace TSScoringPlugin.Telemetry
 
         bool TryScenarioMeta(out LegacyScenarioMeta meta);
     }
+
+    /// <summary>Shadow comparison (Stage 1): the official AccelerationZ (Scenario.Vehicle.VibrationManager.AccelerationZ, m/s^2). A SEPARATE interface so that ILegacyApi and every
+    /// implementation of it stay as they are. false = not available (an exception or a non-finite value): nothing is written, nothing is defaulted.</summary>
+    internal interface ILegacyVibrationApi
+    {
+        bool TryAccelerationZ(out double metersPerSecondSquared);
+    }
 }

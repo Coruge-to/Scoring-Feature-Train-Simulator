@@ -207,6 +207,14 @@ namespace TsScoringLegacyTelemetryTests
         }
     }
 
+    /// <summary>Shadow comparison: the FakeApi plus the optional vibration reading (ILegacyVibrationApi). FakeApi itself stays byte-identical (its block is pinned by the official-target supply RED runner).</summary>
+    public class FakeApiVib : FakeApi, ILegacyVibrationApi
+    {
+        public bool HasAccelZ = false;            // false = the vibration reading cannot be read (the earlier tests)
+        public double AccelZ = 0.0;               // the official AccelerationZ in m/s^2 as the host would report it
+        bool ILegacyVibrationApi.TryAccelerationZ(out double v) { v = 0; if (!HasAccelZ) { return false; } if (ThrowIn == "TryAccelerationZ") { throw new InvalidOperationException("fake failure in TryAccelerationZ"); } if (Fail.Contains("TryAccelerationZ")) { return false; } v = AccelZ; return true; }
+    }
+
     public class CollectDiag : ITelemetryDiag
     {
         public List<string> Events = new List<string>();
@@ -518,7 +526,7 @@ namespace TsScoringLegacyTelemetryTests
     /// <summary>Drives the core the way the host adapter does: events, Ticks, the heartbeat, Dispose. Time is a number the test moves.</summary>
     public class Harness
     {
-        public FakeApi Api = new FakeApi();
+        public FakeApi Api = new FakeApiVib();
         public CollectSink Sink = new CollectSink();
         public CollectDiag Diag = new CollectDiag();
         public FakeScoringApi Scoring = null;     // Phase SI-0: null = no scoring-integration observation wired
@@ -637,7 +645,7 @@ namespace TsScoringLegacyTelemetryTests
     /// </summary>
     public class LiveHarness
     {
-        public FakeApi Api = new FakeApi();
+        public FakeApi Api = new FakeApiVib();
         internal LegacyDataPlaneSink Sink;
         public long Now = 1000;
         public long Seed = 7000000000L;

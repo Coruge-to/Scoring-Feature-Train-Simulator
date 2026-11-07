@@ -134,8 +134,20 @@ def draw_hud(self, painter, logical_width):
     if pressure_parts:
         dbg_texts.append(" | ".join(pressure_parts))
     dbg_texts.append(f"Target_Cap_Val: {round(self.dbg_target_cap, 1)} | ActiveBlue: {round(float(self.dbg_blue), 1) if self.dbg_blue != 'None' else 'None'}  |  ActiveRed: {round(float(self.dbg_red), 1) if self.dbg_red != 'None' else 'None'}")
+    # Shadow comparison (Stage 1): CalcG / BveG are signed instants, the two LastStop values are absolute values of a signed window mean. An unavailable value is "--"
+    # (never the other system's value and never a 0.0). The score still follows the CalcG path only.
+    calc_text, bve_text = "CalcG: --", "BveG: --"
+    last_calc_text, last_bve_text = "LastStop CalcG: --", "LastStop BveG: --"
     if hud_data_available(self, "calcg"):
-        dbg_texts.append(f"CalcG: {self.bve_calc_g:.4f} G | MaxG: {self.max_stop_g:.4f} G | LastStop: {self.last_stop_g:.4f} G")
+        calc_text = f"CalcG: {self.bve_calc_g:+.3f} G"
+        last_calc_text = f"LastStop CalcG: {abs(self.last_stop_g):.3f} G"
+    if hud_data_available(self, "accelz"):
+        if getattr(self, "bve_accel_z", None) is not None:
+            bve_text = f"BveG: {self.bve_accel_z / 9.80665:+.3f} G"
+        if getattr(self, "last_stop_g_bve", None) is not None:
+            last_bve_text = f"LastStop BveG: {self.last_stop_g_bve:.3f} G"
+    dbg_texts.append(f"{calc_text}    {bve_text}")
+    dbg_texts.append(f"{last_calc_text}    {last_bve_text}")
     
     if self.show_graph:
         painter.setPen(Qt.PenStyle.NoPen)

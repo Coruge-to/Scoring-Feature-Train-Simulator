@@ -75,6 +75,8 @@ SESSION_COMMENT = "// Phase TB-E: the PTPAIR key, right after STIDX (the Current
 SESSION_KEY = 'if (timeline.PtPairText != null) lb.Key("PTPAIR", timeline.PtPairText.Substring("PTPAIR:".Length));'
 SESSION_PREV = '"STIDX", StationIndexWire.Value(sv.Index, timeline.ArrivalIndex, timeline.ArrivalSeq, timeline.Count, timeline.ListId));'
 SESSION_NEXT = "if (official != null)"
+# Shadow comparison (Stage 1, on purpose): the ACCELZ group of the official AccelerationZ, one formal block (its own try / catch) before the CALCG block; the lines are listed as they are in the file
+SESSION_FORMAL_ADDED = ['// Phase TB-E: the PTPAIR key, right after STIDX (the Current sender writes the same part in the same place); absent when the list could not be qualified (fail closed)', 'if (timeline.PtPairText != null) lb.Key("PTPAIR", timeline.PtPairText.Substring("PTPAIR:".Length));', '}', '}', 'catch', '{', '}', '', '// Shadow comparison (Stage 1): the official AccelerationZ of this Tick, m/s^2 exactly as read (no unit change, no abs, no clamp, no smoothing). It needs no previous sample.', '// A value that cannot be read is not written and its token is not in AVAIL; CALCG is never put in its place.', 'try', '{', 'ILegacyVibrationApi vibration = api as ILegacyVibrationApi;', 'double accelZ;', 'if (vibration != null && vibration.TryAccelerationZ(out accelZ) && !double.IsNaN(accelZ) && !double.IsInfinity(accelZ))', '{', 'lb.Group(TelemetryContract.TokAccelZ, "ACCELZ", TelemetryContract.F(accelZ, "F6"));']
 
 
 def session_violations(base_text, current_text):
@@ -92,8 +94,8 @@ def session_violations(base_text, current_text):
                 added += cl[b1:b2]
         if removed:
             v.append("lines removed or changed: %r" % removed[:3])
-        if added != [SESSION_COMMENT, SESSION_KEY]:
-            v.append("added lines are not exactly the formal two: %r" % added[:4])
+        if added != SESSION_FORMAL_ADDED:
+            v.append("added lines are not exactly the formal ones (PTPAIR key + Shadow ACCELZ block): %r" % added[:4])
     keys = [i for i, l in enumerate(cl) if l == SESSION_KEY]
     if len(keys) != 1:
         v.append("the formal PTPAIR key line occurs %d times (must be 1)" % len(keys))

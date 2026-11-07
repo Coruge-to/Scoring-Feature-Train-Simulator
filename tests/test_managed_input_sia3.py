@@ -1549,8 +1549,8 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
                                                                            or (isinstance(n.func, ast.Attribute) and n.func.attr == "write_desktop_log"))]
             if calls:
                 counts[name] = len(calls)
-        self.assertEqual(counts, {"main.py": 12, "scoring_logic.py": 23})            # 23: Stage TB-C turnback_diag (fixed words only)
-        self.assertEqual(sum(counts.values()), 35)
+        self.assertEqual(counts, {"main.py": 12, "scoring_logic.py": 24})            # 23: Stage TB-C turnback_diag (fixed words only)
+        self.assertEqual(sum(counts.values()), 36)            # 24 / 36: Shadow comparison (Stage 1, on purpose) shadow_stop_jerk_record writes ONE diagnostic line per judged stop, behind desktop_log_enabled()
         openers = {}
         for name in ("main.py", "scoring_logic.py", "hud_ui.py", "menu_ui.py", "utils.py", "managed_hud.py", "managed_input.py", "managed_mode.py",
                      "managed_state.py", "telemetry_contract.py", "telemetry_gate.py", "config.py"):
@@ -1811,6 +1811,8 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
                                "turnback_fix_section", "turnback_session_active", "turnback_lifecycle_guard", "turnback_diag", "turnback_stop_scoring", "official_jump_f1_hold", "note_jump_settlement", "turnback_jump_available", "turnback_request", "turnback_establish_b", "turnback_landing_step", "turnback_drive",
                                    # Stage TB-H (on purpose): pair B untimed by contract - one PURE helper of the section (turnback_crossed_pairs; turnback_fix_section itself is untouched), the set of the crossed B (turnback_b_indexes) and the reason (untimed_reason); the points, the rules and the constants of the scoring are not among them (tests/test_pt_tbh_pairb_contract.py)
                                    "turnback_crossed_pairs", "turnback_b_indexes", "untimed_reason",
+                                   # Shadow comparison (Stage 1, on purpose): the BveG stop-jerk beside the CalcG one - three PURE helpers and one recorder that only reads (no score, no rule, no constant; tests/test_shadow_stop_jerk.py RS38)
+                                   "stop_jerk_window_mean", "stop_jerk_g_from_accel_z", "stop_jerk_points", "shadow_stop_jerk_record",
                                    # Stage TB-H (A re-stop wait; on purpose): the strict facts of the wait, the kept range, the removal of the chain's own popups, the two displays, the arrival at another station; no score, no rule, no constant of the scoring (tests/test_pt_tbh_arestop.py)
                                    "turnback_train_state", "turnback_stop_range_capture", "turnback_drop_popups", "turnback_drop_arrival_results", "turnback_cancel_show", "turnback_restop_show", "turnback_other_arrival", "turnback_illegal_move_show", "turnback_held_a_target"},   # Stage TB-H 5b (on purpose): turnback_drop_arrival_results (the popup list filter of the cancellation); no score, no rule, no constant of the scoring (tests/test_pt_tbh_first_jump_10s.py)
                                    set(b))

@@ -15,6 +15,57 @@ from utils import (
     write_desktop_log,
 )
 
+# ---- Shadow comparison (Stage 1): the stop-jerk value of the OFFICIAL AccelerationZ, evaluated NEXT TO the CalcG one and never used for the score ----
+def stop_jerk_window_mean(history, current_time, window=0.5):
+    """The signed simple mean of the samples (time, value) with current_time - window <= time <= current_time (both ends included, tolerance 1e-9).
+    Returns (mean, count); (None, 0) when the window holds no sample - the caller then judges nothing (no substitute value)."""
+    values = [entry[1] for entry in history if -1e-9 <= current_time - entry[0] <= window + 1e-9]
+    if not values:
+        return None, 0
+    return sum(values) / len(values), len(values)
+
+
+def stop_jerk_g_from_accel_z(mean_mps2):
+    """m/s^2 -> G. The absolute value is taken AFTER the signed mean."""
+    return abs(mean_mps2) / 9.80665
+
+
+def stop_jerk_points(g):
+    """The candidate step of a stop-jerk value in G: >= 0.100 -> -200, >= 0.065 -> -100, never -300 (one step only)."""
+    if g >= 0.100 - 1e-9:
+        return -200
+    if g >= 0.065 - 1e-9:
+        return -100
+    return 0
+
+
+def shadow_stop_jerk_record(self, current_time, calcg_samples, abs_stop_g_calc, pending_text):
+    """Stage 1 (Shadow): the BveG stop-jerk of the same stop, a diagnostic log line, NO effect on the score, the history, the popups or the result."""
+    try:
+        mean, count = stop_jerk_window_mean(getattr(self, "accel_z_history", ()), current_time)
+        if count == 0:
+            self.last_stop_g_bve = None
+            bve_text, bve_pen_text = "unavailable", "not-evaluated"
+        else:
+            g_bve = stop_jerk_g_from_accel_z(mean)
+            self.last_stop_g_bve = g_bve
+            bve_text, bve_pen_text = "%.5f" % g_bve, str(stop_jerk_points(g_bve))
+        self.accel_z_history = []                  # the samples of a judged stop are consumed: the next stop never reuses them
+        if desktop_log_enabled():
+            if getattr(self, "pen_jerk", True):
+                calc_pen = -200 if abs_stop_g_calc >= 0.10 else (-100 if abs_stop_g_calc >= 0.065 else 0)
+            else:
+                calc_pen = 0
+            write_desktop_log(
+                "[SHADOW STOP] station_index=%s target_station_index=%s host_time=%.3f window_start=%.3f window_end=%.3f calcg_samples=%d bveg_samples=%d "
+                "last_stop_calcg=%.5f last_stop_bveg=%s calcg_penalty=%d bveg_shadow_penalty=%s %s scenario_generation=%s" % (
+                    getattr(self, "bve_arr_idx", -1), getattr(self, "bve_tgt_idx", -1), current_time, current_time - 0.5, current_time,
+                    calcg_samples, count, abs_stop_g_calc, bve_text, calc_pen, bve_pen_text, pending_text,
+                    getattr(self, "current_scenario_id", -1)))
+    except Exception:
+        self.last_stop_g_bve = None
+
+
 def reset_transient_scoring_state(self):
     """
     ジャンプや時刻巻き戻りによって継続不能になった、
@@ -24,6 +75,8 @@ def reset_transient_scoring_state(self):
     駅単位の採点済み状態は変更しない。
     """
     self.g_history.clear()
+    self.accel_z_history = []              # Shadow (BveG): its own buffer, discarded at the same boundaries
+    self.last_stop_g_bve = None
 
     # 停車時衝動判定
     # 境界の前の「走行中だった」記録と停止時の加速度は、境界の後へ持ち越さない
@@ -381,6 +434,7 @@ def update_stop_jerk_penalty(self, current_time, decel_g):
                     add_score_popup(self, -200, "停車時衝動 -200", COLOR_B_EMG, "neg", "停車時衝動", current_time)
                 elif abs_stop_g >= 0.065:
                     add_score_popup(self, -100, "停車時衝動 -100", COLOR_B_EMG, "neg", "停車時衝動", current_time)
+            shadow_stop_jerk_record(self, current_time, len(recent_g), abs_stop_g, "is_official_jumping=%s" % bool(getattr(self, 'is_official_jumping', False)))       # Shadow (BveG): reads only, never changes the score
             self.is_stopping_zone = False
 
     elif 0.0 < abs(self.bve_speed): #<= 1.5
@@ -1996,6 +2050,18 @@ def update_physics_and_scoring(self, current_time, dt):
         self.g_history.append(g_entry)
     cutoff_time = current_time - 10.0
     self.g_history = [h for h in self.g_history if h[0] > cutoff_time]
+
+    # Shadow (BveG): the official AccelerationZ sample (m/s^2) of this tick in its OWN buffer; the same host time keeps only the newest sample; a tick without a sample adds nothing
+    accel_z = getattr(self, "bve_accel_z", None)
+    if accel_z is not None:
+        accel_z_history = getattr(self, "accel_z_history", None)
+        if accel_z_history is None:
+            accel_z_history = self.accel_z_history = []
+        if accel_z_history and accel_z_history[-1][0] == current_time:
+            accel_z_history[-1] = (current_time, accel_z)
+        else:
+            accel_z_history.append((current_time, accel_z))
+        self.accel_z_history = [h for h in accel_z_history if h[0] > cutoff_time]
 
     if self.bve_jump_count != getattr(self, 'last_jump_count', 0):
         write_desktop_log(f"[JUMP DETECT] BVEジャンプ検知！ カウント: {getattr(self, 'last_jump_count', 0)} -> {self.bve_jump_count}")

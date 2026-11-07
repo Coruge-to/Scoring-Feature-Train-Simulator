@@ -684,6 +684,27 @@ $qd = P $qa[1]
 Check 'Q20 the other values of the line are unchanged (speed 36 km/h of 10 m/s, location, time, signal limit 90)' ((Near ([double]$qd['SPEED']) 36.0) -and (Near ([double]$qd['LOCATION']) 1000.0) -and (Near ([double]$qd['SIGLIMIT']) 90.0))
 
 # ---------------------------------------------------------------------------------------------------------------------------------------------
+# SH - Shadow comparison (Stage 1): the official AccelerationZ (ACCELZ) is written as it is, needs no reference sample, and never stands in for CALCG
+# ---------------------------------------------------------------------------------------------------------------------------------------------
+$h = NewH; $h.Api.HasAccelZ = $true; $h.Api.AccelZ = -0.5; $h.Tick()
+$sh1 = P (Last $h)
+Check 'SH01 the FIRST line already carries ACCELZ (no reference sample is needed): the raw m/s2 value with 6 decimals, and no CALCG yet' (($sh1['ACCELZ'] -eq '-0.500000') -and (-not $sh1.ContainsKey('CALCG')))
+Check 'SH02 AVAIL announces accelz on that line (and still no calcg)' (((Tokens (Last $h)) -contains 'accelz') -and (-not ((Tokens (Last $h)) -contains 'calcg')))
+$h.Api.AccelZ = 9.80665; $h.Run(1, 16)
+Check 'SH03 the value is not converted to G, not made absolute and not clamped (9.80665 stays 9.806650; the sign of the first line was kept)' (((P (Last $h))['ACCELZ'] -eq '9.806650') -and ($sh1['ACCELZ'].StartsWith('-')))
+Check 'SH04 CALCG is independent: the second line has both CALCG and ACCELZ' (((P (Last $h)).ContainsKey('CALCG')) -and ((Tokens (Last $h)) -contains 'accelz') -and ((Tokens (Last $h)) -contains 'calcg'))
+$h.Api.AccelZ = [double]::NaN; $h.Run(1, 16)
+Check 'SH05 a NaN value writes no ACCELZ part and announces no accelz token (nothing is invented, no 0.0)' ((-not ((P (Last $h)).ContainsKey('ACCELZ'))) -and (-not ((Tokens (Last $h)) -contains 'accelz')))
+$h.Api.AccelZ = [double]::PositiveInfinity; $h.Run(1, 16)
+Check 'SH06 an Infinity value writes no ACCELZ part either' ((-not ((P (Last $h)).ContainsKey('ACCELZ'))) -and (-not ((Tokens (Last $h)) -contains 'accelz')))
+$h.Api.HasAccelZ = $false; $h.Run(1, 16)
+Check 'SH07 when the reading is not available there is no ACCELZ and no accelz, and CALCG is NOT put in its place' ((-not ((P (Last $h)).ContainsKey('ACCELZ'))) -and (-not ((Tokens (Last $h)) -contains 'accelz')) -and ((P (Last $h)).ContainsKey('CALCG')))
+$h = NewH; $h.Api.HasAccelZ = $true; $h.Api.AccelZ = 0.8; $h.Tick(); $h.Api.AccelZ = 0.9; $h.Api.SpeedMps = 11.0; $h.Run(1, 100)
+Check 'SH08 the other values of the line are unchanged by the ACCELZ part (speed 39.6 km/h of 11 m/s, CALCG from 1 m/s over 0.1 s)' ((Near ([double](P (Last $h))['SPEED']) 39.6) -and (Near ([double](P (Last $h))['CALCG']) (10.0 / 9.80665) 0.0001) -and ((P (Last $h))['ACCELZ'] -eq '0.900000'))
+$h = NewH; $h.Tick(); $h.Run(1, 16)
+Check 'SH09 a sender without the vibration reading is exactly as before (the V02 token list, no ACCELZ part)' ((((Tokens (Last $h)) -join ',') -eq 'brake_cab,brake_type,calcg,door,grad,loc,maplimit,meta,prates,siglimit,siglimit_ahead,speed,station,time') -and (-not ((P (Last $h)).ContainsKey('ACCELZ'))))
+
+# ---------------------------------------------------------------------------------------------------------------------------------------------
 $fail = @($results | Where-Object { -not $_.Ok }).Count
 $pass = @($results | Where-Object { $_.Ok }).Count
 "TELEMETRY-L3 PASS=$pass FAIL=$fail"

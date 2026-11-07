@@ -394,8 +394,10 @@ class Overlay(QWidget):
         self.map_tail_limit = 1000.0
         self.bve_clear_dist = 0.0
         self.bve_calc_g = 0.0
+        self.bve_accel_z = None                    # Shadow (BveG): the official AccelerationZ (m/s^2) of the latest line, None = not provided
+        self.accel_z_history = []
+        self.last_stop_g_bve = None
         self.is_stopping_zone = False
-        self.max_stop_g = 0.0
         self.last_stop_g = 0.0
         self.stop_notch_state = "IDLE"
 
@@ -973,6 +975,7 @@ class Overlay(QWidget):
         if latest_telemetry:
             parts = latest_telemetry.split(',')
             self._offtgt_raw = offtgt_capture(parts)
+            self.bve_accel_z = telemetry_contract.accelz_capture(parts)    # Shadow (BveG): kept out of the part chain below on purpose
             self._ptpair_raw = route_pairset.capture(parts)             # Stage TB-E: the PTPAIR part of THIS line with the SCENARIO_ID of the same line; judged by _route_pairset_sync after the line is applied
             for part in parts:
                 try:
