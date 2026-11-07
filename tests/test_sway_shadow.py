@@ -880,16 +880,16 @@ class T_Tracker(Direct):
         self.assertEqual(last["n_peak"], ref_n(0.07), "NO-TRACKER: stop_sway_longitudinal_n_peak = int(12.5*0.07*64.0)")
         self.assertEqual(last["n_peak"], 56)
 
-    def test_SW_T03_the_simple_absolute_maximum_is_recorded_beside_it(self):
+    def test_SW_T03_the_main_value_is_the_absolute_maximum_of_either_sign(self):      # intended change (Owner ruling 2026-11-08, SHD-L-02 backward stop): was "the simple absolute maximum is recorded beside it"
         self.scene()
         self.run_in()
         self.stop_at((-0.01, 0.0, 0.0, 0.0))
         self.after([(-0.04, 0.0, 0.0, 0.0), (0.09, 0.0, 0.0, 0.0)])
         self.step(dt=1.0, speed=0.0, calc_g=0.0, az=0.0, sway=(0.0, 0.0, 0.0, 0.0))
         last = self.last()
-        self.assertAlmostEqual(last["state_peak"], 0.04, places=9, msg="NO-TRACKER: the main value ignores the positive side")
+        self.assertAlmostEqual(last["state_peak"], 0.09, places=9, msg="NO-TRACKER: the main value is the largest |state| of either sign (a backward stop answers on the positive side)")
         self.assertAlmostEqual(last["abs_peak"], 0.09, places=9, msg="NO-TRACKER: stop_sway_longitudinal_abs_peak = max |state|")
-        self.assertEqual(last["n_peak"], ref_n(0.04), "NO-TRACKER: the main n comes from the minimum state (0.04 -> 32), not from the larger positive excursion (0.09 -> 72)")
+        self.assertEqual(last["n_peak"], ref_n(0.09), "NO-TRACKER: the main n comes from the largest |state| (0.09 -> 72)")
 
     def test_SW_T04_the_221_ms_pulse_fixture(self):
         self.scene()

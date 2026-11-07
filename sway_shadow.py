@@ -217,21 +217,26 @@ class _Window(object):
         self.t_start = t_start
         self.ctx = ctx
         self.samples = 0
-        self.z_min = None
-        self.t_zmin = None
-        self.abs_peak = None
+        self.z_min = None           # the signed minimum / maximum of the longitudinal value (kept for the log: they tell the direction of the stop)
+        self.z_max = None
+        self.abs_peak = None        # THE PEAK: the largest |z| of the window, whatever its sign (a forward stop answers on the negative side, a backward stop on the positive side)
+        self.abs_peak_z = None      # the signed z at that peak
+        self.t_abs_peak = None
         self.combined_n_peak = None
-        self.peak = None            # the derived values (and the replica's) at the tick of the minimum
+        self.peak = None            # the derived values (and the replica's) at the tick of the absolute peak
 
     def add(self, t, derived, replica_snapshot):
         self.samples += 1
         z = derived["z"]
         if self.z_min is None or z < self.z_min:
             self.z_min = z
-            self.t_zmin = t
-            self.peak = dict(derived, replica=replica_snapshot)
-        if self.abs_peak is None or abs(z) > self.abs_peak:
+        if self.z_max is None or z > self.z_max:
+            self.z_max = z
+        if self.abs_peak is None or abs(z) > self.abs_peak:        # strictly greater: of two equal |z| the EARLIER sample stays the peak (deterministic)
             self.abs_peak = abs(z)
+            self.abs_peak_z = z
+            self.t_abs_peak = t
+            self.peak = dict(derived, replica=replica_snapshot)
         if self.combined_n_peak is None or derived["n"] > self.combined_n_peak:
             self.combined_n_peak = derived["n"]
 
@@ -246,9 +251,13 @@ class SwayShadowState(object):
         self.display_n = None       # what F2 shows as "前後最大": the n of the latest VALID window (None = nothing to show)
         self.last_t = None
         self.res_key = None
+        self.last_moving_speed = None    # the last NON-ZERO signed speed seen on a tick: the direction the train came in from (None = never seen)
 
     # -- the replica follows every tick -------------------------------------------------------------------------------------------------------------------
     def _follow(self, overlay, t):
+        speed = getattr(overlay, "bve_speed", None)
+        if _number(speed) and speed != 0.0:
+            self.last_moving_speed = float(speed)
         az = getattr(overlay, "bve_accel_z", None)
         ax = getattr(overlay, "bve_accel_x", None)
         if self.last_t is not None and t < self.last_t - 1e-9:
@@ -301,7 +310,8 @@ class SwayShadowState(object):
             self.close(overlay, t, "new-stop", True, None)
         ctx = {"station_index": getattr(overlay, "bve_arr_idx", -1), "target_station_index": getattr(overlay, "bve_tgt_idx", -1),
                "official_jumping": bool(getattr(overlay, "is_official_jumping", False)), "generation": getattr(overlay, "current_scenario_id", -1),
-               "penalties": penalties}
+               "penalties": penalties, "speed_at_stop": self.last_moving_speed,
+               "approach_direction": "unknown" if self.last_moving_speed is None else ("forward" if self.last_moving_speed > 0.0 else "backward")}
         self.window = _Window(t, ctx)
         self._add_sample(overlay, t)                  # the sample of T itself belongs to the window
 
@@ -323,11 +333,13 @@ class SwayShadowState(object):
         if w is None:
             return None
         unavailable = w.samples == 0
-        n_peak = None if unavailable else sway_n(w.z_min)
+        n_peak = None if unavailable else sway_n(w.abs_peak_z)             # n = int(|12.5 * peak state| * 64.0): the figure's own order of operations (sway_n is unchanged)
         record = {
             "end_reason": reason, "valid": bool(valid), "unavailable": unavailable, "t_start": w.t_start, "t_end": t_end, "samples": w.samples,
-            "state_peak": None if unavailable else abs(w.z_min), "abs_peak": w.abs_peak, "n_peak": n_peak,
-            "delay_ms": None if unavailable else (w.t_zmin - w.t_start) * 1000.0, "combined_n_peak": w.combined_n_peak,
+            "state_peak": None if unavailable else w.abs_peak, "abs_peak": w.abs_peak, "n_peak": n_peak,
+            "delay_ms": None if unavailable else (w.t_abs_peak - w.t_start) * 1000.0, "combined_n_peak": w.combined_n_peak,
+            "state_min": None if unavailable else w.z_min, "state_max": None if unavailable else w.z_max,
+            "abs_peak_sign": None if unavailable else ("positive" if w.abs_peak_z > 0.0 else ("negative" if w.abs_peak_z < 0.0 else "zero")),
             "penalty_sway": sway_penalty_candidate(n_peak), "z_min_nonneg": (not unavailable) and w.z_min >= 0.0,
             "peak": w.peak, "ctx": w.ctx,
         }
@@ -355,7 +367,7 @@ class SwayShadowState(object):
     def display_peak_n(self):
         w = self.window
         if w is not None and w.samples > 0:
-            return sway_n(w.z_min)
+            return sway_n(w.abs_peak_z)
         return self.display_n
 
 
@@ -423,6 +435,19 @@ def format_log(record, res, now_snapshot, replica):
         ("stop_sway_combined_n_peak", _i(record["combined_n_peak"])),
         ("stop_sway_peak_delay_ms", _f(record["delay_ms"], 1)),
         ("z_min_nonneg", "1" if record["z_min_nonneg"] else "0"),
+        ("longitudinal_state_min", _f(record["state_min"])),
+        ("longitudinal_state_max", _f(record["state_max"])),
+        ("longitudinal_state_abs_peak", _f(record["state_peak"])),
+        ("longitudinal_abs_peak_sign", record["abs_peak_sign"] or "unavailable"),
+        ("longitudinal_abs_peak_n", _i(record["n_peak"])),
+        ("longitudinal_abs_peak_delay_ms", _f(record["delay_ms"], 1)),
+        ("speed_at_stop", "unavailable" if ctx.get("speed_at_stop") is None else "%.3f" % ctx["speed_at_stop"]),
+        ("approach_direction", ctx.get("approach_direction", "unknown")),
+        ("window_start_reason", "stop"),
+        ("window_end_reason", record["end_reason"]),
+        ("restart_detected", "1" if record["end_reason"] == "restart" else "0"),
+        ("station_index_change_time", "%.3f" % record["t_end"] if (record["end_reason"] == "station-index-change" and record["t_end"] is not None) else "none"),
+        ("reset_reason", record["end_reason"] if record["end_reason"] in ("jump", "session-end", "generation", "discard") else "none"),
         ("n_peak_red_display", "1" if sway_red_display(record["n_peak"]) else "0"),
         ("n_peak_saturated", "1" if sway_saturated(record["n_peak"]) else "0"),
         ("shadow_penalty_calcg", str(pen.get("calcg", "not-evaluated"))),
