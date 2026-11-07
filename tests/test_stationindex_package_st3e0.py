@@ -115,7 +115,7 @@ BASE_BLOBS = {
     # Stage TB-E (an intended change, not a drift) changed LegacyStationTimeline.cs on purpose (the PtPairText member, the read of the five raw values per station in the Build and the PTPAIR text made where the list identity is made; tests/test_pt_tbe_adapter_static.py): the blob moved from 83db89f9... (SI-R2.4); the package manifest is regenerated for it
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs": "d26a444b73d478a7e9cb56558d16cdf49bc85956",
     # SI-R2.2-S2b (C3a) changed LegacyTelemetryExtension.cs on purpose (the read only adapter ILegacyOfficialTargetApi.ReadOfficialTarget and the E-9 rule text of the header; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 12a0f84a... (the commit before S2b)
-    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "0ec763703723c6f5f116f7ef470e5afd6281e5f4",
+    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "589e137f28a6d645c82eecc5628cd6b6eda4ecb0",
     # SI-R2.2-S2b (C3a) changed LegacyTelemetrySession.cs on purpose (the ILegacyOfficialTargetApi port, the official field, the ten-argument constructor and the OFFTGT key after STIDX; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 5dd33902... (the commit before S2b)
     # Stage TB-E (an intended change, not a drift) changed LegacyTelemetrySession.cs on purpose (the PTPAIR key directly after the STIDX group, before the OFFTGT key; tests/test_pt_tbe_adapter_static.py): the blob moved from c5bc298a... (S2b); the package manifest is regenerated for it
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetrySession.cs": "11f3193d88e52275c3991c8fd04e07f18964e432",
@@ -431,8 +431,8 @@ class B_SourceSets(unittest.TestCase):
     def test_RED_E0_09_the_legacy_source_set(self):
         items = ref_compile(LEGACY_PROJECT, read_text(os.path.join(ROOT, LEGACY_PROJECT.replace("/", os.sep))))
         before = [i for i in items if not i.endswith("PackageContract.cs")]
-        self.assertEqual(len(before), 26, "the Shadow sway diagnostics add the shared SwayStateReader.cs (an intended change, not a drift); the 23 compile inputs of 0b8e511 plus the two Shared pseudo-turnback sources of Stage TB-E (an intended change, not a drift; was 23)")
-        contract(len(items) == 27, "E0-09", "LEGACY-SOURCE-SET-NOT-FIXED", "%d compile inputs" % len(items))       # Stage TB-E: was 24; Shadow sway diagnostics: 27 (+ SwayStateReader.cs)
+        self.assertEqual(len(before), 27, "the Legacy sway source lookup adds src\LegacySwaySource.cs (an intended change, not a drift); the Shadow sway diagnostics add the shared SwayStateReader.cs (an intended change, not a drift); the 23 compile inputs of 0b8e511 plus the two Shared pseudo-turnback sources of Stage TB-E (an intended change, not a drift; was 23)")
+        contract(len(items) == 28, "E0-09", "LEGACY-SOURCE-SET-NOT-FIXED", "%d compile inputs" % len(items))       # Stage TB-E: was 24; Shadow sway diagnostics: 27 (+ SwayStateReader.cs)
         self.assertEqual(len(items), len(set(items)))
         current = ref_compile(CURRENT_PROJECT, read_text(os.path.join(ROOT, CURRENT_PROJECT.replace("/", os.sep))))
         self.assertIn(SHARED_DIR + "/TelemetryContract.cs", items)
@@ -493,7 +493,7 @@ class C_Manifest(unittest.TestCase):
         got = {s: sorted(e["path"] for e in m["files"] if e["set"] == s) for s in want}
         for s in want:
             contract(got[s] == want[s], "E0-12", "MANIFEST-ENTRIES-NOT-THE-RUNTIME-SETS", "%s: %s" % (s, sorted(set(got[s]) ^ set(want[s]))))
-        self.assertEqual({s: len(v) for s, v in got.items()}, {"python": 30, "current": 7, "legacy": 16, "shared": 10})       # Stage TB-E (an intended change): python 26 -> 28, shared 7 -> 9; Shadow sway diagnostics (an intended change): python 29 -> 30 (sway_shadow.py), shared 9 -> 10 (SwayStateReader.cs)
+        self.assertEqual({s: len(v) for s, v in got.items()}, {"python": 30, "current": 7, "legacy": 17, "shared": 10})       # Legacy sway source lookup (an intended change): legacy 16 -> 17 (src\LegacySwaySource.cs); Stage TB-E (an intended change): python 26 -> 28, shared 7 -> 9; Shadow sway diagnostics (an intended change): python 29 -> 30 (sway_shadow.py), shared 9 -> 10 (SwayStateReader.cs)
         paths = [e["path"] for e in m["files"]]
         self.assertEqual(len(paths), len(set(paths)))
         self.assertEqual(len(paths), len({p.lower() for p in paths}), "no path collision")
@@ -1040,6 +1040,8 @@ class F_NonRegression(unittest.TestCase):
             # Stage TB-E (an intended change, not a drift): the two Shared pseudo-turnback compile items (PseudoTurnbackQualifier.cs, PseudoTurnbackPairCodec.cs) are stripped like the contract item
             stripped = re.sub(r'[ \t]*<Compile Include="[^"]*(?:PackageContract|PseudoTurnbackQualifier|PseudoTurnbackPairCodec|SwayStateReader)\.cs">\s*<Link>[^<]*</Link>\s*</Compile>[ \t]*\n', "", text)
             stripped = re.sub(r'[ \t]*<Compile Include="[^"]*(?:PackageContract|PseudoTurnbackQualifier|PseudoTurnbackPairCodec|SwayStateReader)\.cs"><Link>[^<]*</Link></Compile>[ \t]*\n', "", stripped)
+            # Legacy sway source lookup (an intended change, not a drift): the Legacy-only finder compile item is stripped too
+            stripped = re.sub(r'[ \t]*<Compile Include="src\\LegacySwaySource\.cs" />[ \t]*\n', "", stripped)
             self.assertEqual(blob_id(stripped.encode("utf-8")), want, proj + " differs from 0b8e511 by the contract and the pseudo-turnback compile items only")
         self.assertEqual(len(re.findall(r"^import (?!package_contract)", main.decode("utf-8"), re.M)) >= 1, True)
 

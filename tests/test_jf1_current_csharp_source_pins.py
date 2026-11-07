@@ -382,14 +382,15 @@ class Pins(unittest.TestCase):
         ("..\\Shared\\PackageContract.cs", "Shared\\PackageContract.cs"),                             # Phase ST-3e0 (pin moved): the package contract (TSJUMP2, constants only), the one file both projects compile
         ("..\\Shared\\PseudoTurnbackQualifier.cs", "Shared\\PseudoTurnbackQualifier.cs"),             # Stage TB-E (pin moved, an intended change): the pseudo-turnback qualifier moved from PseudoTurnbackStaging to Shared and is linked
         ("..\\Shared\\PseudoTurnbackPairCodec.cs", "Shared\\PseudoTurnbackPairCodec.cs"),       # Stage TB-E (pin moved, an intended change): the PTPAIR codec, the same move and link
-        ("..\\Shared\\SwayStateReader.cs", "Shared\\SwayStateReader.cs")], key=lambda t: t[0])       # Shadow sway diagnostics (pin moved, an intended change): the shared read-only reflection reader of the sway figure
+        ("..\\Shared\\SwayStateReader.cs", "Shared\\SwayStateReader.cs"),
+        ("src\\LegacySwaySource.cs", None)], key=lambda t: t[0])       # Legacy sway source lookup (pin moved, an intended change): the Legacy-only finder of the figure object       # Shadow sway diagnostics (pin moved, an intended change): the shared read-only reflection reader of the sway figure
 
     @jf0("F32", "CURRENT")
     def test_CURRENT_F32_the_legacy_project_links_exactly_this_set_of_sources_with_the_one_shared_current_jump_endpoint_link_and_the_current_project_keeps_its_own(self):
         # (1) the Legacy project: the exact (Include, Link) pairs, 26 of them (24 before Stage TB-E, 23 before Phase ST-3e0, 22 before Phase ST-3b, 21 before Phase ST-1A, 20 before Phase LJX-1)
         legacy = compile_items(LEGACY_CSPROJ)
         self.assertEqual(sorted(legacy, key=lambda t: t[0]), self.LEGACY_EXPECTED_ITEMS)
-        self.assertEqual(len(legacy), 27)       # Shadow sway diagnostics (an intended change): the shared SwayStateReader.cs link; Stage TB-E: was 24
+        self.assertEqual(len(legacy), 28)       # Legacy sway source lookup (an intended change): src\LegacySwaySource.cs; Shadow sway diagnostics (an intended change): the shared SwayStateReader.cs link; Stage TB-E: was 24
         # (2) the shared link: exactly one element, exactly this Include and this Link; nothing else of the Current plugin folder besides CurrentDataPlane.cs
         endpoint_links = [t for t in legacy if t[0].endswith("CurrentJumpEndpoint.cs")]
         self.assertEqual(endpoint_links, [self.LEGACY_SHARED_LINK])

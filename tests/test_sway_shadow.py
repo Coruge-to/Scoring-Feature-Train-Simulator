@@ -249,7 +249,8 @@ class A_Sources(unittest.TestCase):
             self.fail("NO-WIRE: no separate ILegacySwayApi interface")
         if "current.Vehicle.VibrationManager.FrontAccelerationX" not in ext:
             self.fail("NO-WIRE: the Legacy extension does not read VibrationManager.FrontAccelerationX")
-        if "MainForm.AssistantDrawer" not in ext:
+        # Legacy sway source lookup (an intended change): the entry is still hacker.MainForm -> AssistantDrawer -> Items, now in AtsExSwayHostAccess and read by LegacySwayProvider
+        if "hacker.MainForm" not in ext or ".AssistantDrawer" not in ext or "LegacySwayProvider" not in ext:
             self.fail("NO-WIRE: the Legacy entry is MainForm.AssistantDrawer.Items")
         for needle in ("TokSway", "TokAccelX", '"SWAY"', '"ACCELX"', "KeySwayR"):
             if needle not in ses:

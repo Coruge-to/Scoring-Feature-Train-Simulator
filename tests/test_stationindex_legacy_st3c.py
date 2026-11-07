@@ -69,7 +69,7 @@ UNTOUCHED = {
     "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs": "cde81d8f5411df680cb17b10288a3c8d9b01f561",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/AssemblyInfo.cs": "d601dec6a3a0feff0e7e6ed54c610ecb0d53bd51",
     # SI-R2.2-S2b (C3a) changed LegacyTelemetryExtension.cs on purpose (the read only adapter ILegacyOfficialTargetApi.ReadOfficialTarget and the E-9 rule text of the header; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 12a0f84a... (the commit before S2b)
-    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "0ec763703723c6f5f116f7ef470e5afd6281e5f4",
+    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "589e137f28a6d645c82eecc5628cd6b6eda4ecb0",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpCommandQueue.cs": "c9517db9074f45ef447991cd52280ef512047070",
     # SI-R5.2-A added the pure missing-index classifier, the run tracker and the managed diagnostic glue to station_identity.py on purpose (no wire, no codec, no Legacy product change; tests/test_si_r5_2a_stage_a.py): the blob moved from 93ce7abc... (ST-3b)
     "station_identity.py": "2c971098059a6b8948cd842ed84af8ece9a054b9",
@@ -352,7 +352,7 @@ class F_Untouched(unittest.TestCase):
         names = [i for i, _ in compile_items(LEGACY_CSPROJ)]
         # Phase ST-3e0 adds exactly one compile item (..\Shared\PackageContract.cs, the package contract, constants only): the 23 sources of ST-3c are all still there
         # Stage TB-E (an intended change, not a drift): two more compile items, the Shared PseudoTurnbackQualifier.cs and PseudoTurnbackPairCodec.cs (were 23)
-        self.assertEqual(len([n for n in names if not n.endswith("PackageContract.cs")]), 26)         # 22 AtsEx free sources + LegacyTelemetryExtension.cs + the two Shared pseudo-turnback sources of Stage TB-E + the Shared SwayStateReader.cs of the Shadow sway diagnostics (an intended change, not a drift)
+        self.assertEqual(len([n for n in names if not n.endswith("PackageContract.cs")]), 27)         # Legacy sway source lookup (an intended change): + src\LegacySwaySource.cs; 22 AtsEx free sources + LegacyTelemetryExtension.cs + the two Shared pseudo-turnback sources of Stage TB-E + the Shared SwayStateReader.cs of the Shadow sway diagnostics (an intended change, not a drift)
         self.assertEqual(names.count("..\\Shared\\PackageContract.cs"), 1)
         self.assertNotIn("src\\LegacyJumpJudge.cs", names)                                           # the judgement lives in LegacyJumpExecutor.cs: no new product file
         self.assertTrue(all(n in names for n in ("src\\LegacyJumpExecutor.cs", "src\\LegacyJumpControlPlane.cs", "src\\LegacyStationTimeline.cs", "..\\Shared\\JumpWire.cs")))

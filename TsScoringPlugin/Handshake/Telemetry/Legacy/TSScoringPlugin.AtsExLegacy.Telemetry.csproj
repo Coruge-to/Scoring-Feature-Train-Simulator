@@ -100,6 +100,7 @@
     <Compile Include="src\LegacyJumpExecutor.cs" />
     <Compile Include="src\LegacyScoringProbe.cs" />
     <Compile Include="src\LegacyStationTimeline.cs" />
+    <Compile Include="src\LegacySwaySource.cs" />
     <Compile Include="src\LegacyTelemetrySession.cs" />
     <Compile Include="src\LegacyTelemetryExtension.cs" />
     <Compile Include="..\Shared\TelemetryContract.cs">
