@@ -71,7 +71,8 @@ class PopupDim(Base):
     def test_UD4_RED_the_three_screens_have_no_dim_rectangle_of_their_own(self):
         with open(os.path.join(ROOT, "menu_ui.py"), encoding="utf-8") as fh:
             text = fh.read()
-        self.assertEqual(text.count("drawRect(0, 0, int(logical_width), int(BASE_SCREEN_H))"), 1, "the common layer")
+        # Stage UI-D3 (on purpose): the common F1 layer is drawn by the one dim function (the colour MENU_DIM_RGBA, drawn first only while a page is in front)
+        self.assertEqual(text.count("_draw_menu_dim(painter, (0, 0, int(logical_width), int(BASE_SCREEN_H)), None)"), 1, "the common layer")
         self.assertNotIn("drawRect(0,0, int(BASE_SCREEN_W), int(BASE_SCREEN_H))", text)
         self.assertNotIn("drawRect(0, 0, int(BASE_SCREEN_W), int(BASE_SCREEN_H))", text)
         self.assertEqual(text.count("# Stage UI-4: no second dim layer here"), 3)
@@ -96,10 +97,12 @@ class PopupBackground(PopupDim):
         return calls
 
     def test_UB1_RED_the_title_of_the_page_behind_is_not_drawn_in_the_three_pop_ups(self):
-        for state in (7, 8, 9):
+        # Stage UI-D3 (an Owner ruling, 2026-11-08, after the live Run CUI-C-01; it supersedes the Stage UI-5 rule): the page BEHIND a pop-up IS drawn (dimmed, outside the panel only) - the scoring page 1/3
+        # behind the basic brake and the timing panels, the page 2/3 behind the initial / relaxation panel (the page of its button); the panel itself still draws no title of the page.
+        for state, behind, other in ((7, "=== 採点設定 (1/3) ===", "=== 採点設定 (2/3) ==="), (8, "=== 採点設定 (1/3) ===", "=== 採点設定 (2/3) ==="), (9, "=== 採点設定 (2/3) ===", "=== 採点設定 (1/3) ===")):
             calls = self.texts(state)
-            self.assertNotIn("=== 採点設定 (1/3) ===", calls, "menu_state %d" % state)
-            self.assertNotIn("=== 採点設定 (2/3) ===", calls, "menu_state %d" % state)
+            self.assertIn(behind, calls, "menu_state %d: the page behind the panel is drawn" % state)
+            self.assertNotIn(other, calls, "menu_state %d" % state)
 
     def test_UB2_GUARD_the_pages_themselves_and_each_pop_up_keep_their_own_title(self):
         self.assertIn("=== 採点設定 (1/3) ===", self.texts(5))

@@ -53,6 +53,8 @@ class Base(SnapshotBase):
         finally:
             painter.end()
             menu_ui.draw_text_with_outline = original
+        # Stage UI-D3 (on purpose): the scoring page 1/3 is drawn behind the panel (dimmed): the texts of the TIMING PANEL are the ones after its title
+        calls = calls[calls.index("=== 運転時分 設定 ==="):]
         return calls, list(o.menu_click_zones)
 
     @staticmethod

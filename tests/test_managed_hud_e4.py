@@ -1780,11 +1780,13 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
                 ("utils.py", old_utils, {"write_desktop_log"}, {"set_desktop_log_enabled", "desktop_log_enabled", "desktop_log_requested"}),
                 # Stage TB-H (on purpose): the timing screen of draw_menu is the ONLY member of menu_ui.py that changed since E3 (nothing removed, nothing added)
                 # Stage TB-I (brake chain, on purpose): the ONE new member is the pure helper _brake_rule_start (the effective start of a basic brake rule that the screens draw); draw_menu calls it at four places
-                # Stage UI-D2 (on purpose): the ONE dim of the F1 screens - three new helpers (the rectangles of the dim = the window minus the front region, the one dim drawing, the slots of a list with the rows outside its frame)
-                # and one module constant (the colour of the dim = the help layer); draw_menu calls them (tests/test_ui_single_dim.py)
+                # Stage UI-D3 (on purpose; follow-up of the live Run CUI-C-01): the ONE dim of the F1 screens at the end of the frame - helpers for the dim rectangles (the window minus the union of the bright rectangles), the one dim drawing, the
+                # panel rectangle, the preview rows of a drop-down (none by contract) and three module constants (the colour = the help layer, the page behind each pop-up panel, the preview row count); draw_menu calls them (tests/test_ui_single_dim.py)
                 ("menu_ui.py", old_menu, {"draw_menu"}, {"_brake_rule_start", "Import(names=[alias(name='stop_jerk_text')])",   # 2026-11-08: the stop-jerk text module is imported (formal LastStop BveG wording, coloured spans)
-                                                         "menu_dim_rects", "_draw_menu_dim", "_list_row_slots",
-                                                         "Assign(targets=[Name(id='MENU_DIM_RGBA', ctx=Store())], value=Tuple(elts=[Constant(value=0), Constant(value=0), Constant(value=0), Constant(value=180)], ctx=Load()))"})):
+                                                         "menu_dim_rects", "_draw_menu_dim", "_subtract", "menu_panel_rect", "dropdown_preview_slots",
+                                                         "Assign(targets=[Name(id='MENU_DIM_RGBA', ctx=Store())], value=Tuple(elts=[Constant(value=0), Constant(value=0), Constant(value=0), Constant(value=180)], ctx=Load()))",
+                                                         "Assign(targets=[Name(id='MENU_PARENT_PAGE', ctx=Store())], value=Dict(keys=[Constant(value=7), Constant(value=8), Constant(value=9)], values=[Constant(value=5), Constant(value=5), Constant(value=6)]))",
+                                                         "Assign(targets=[Name(id='DROPDOWN_PREVIEW_ROWS', ctx=Store())], value=Constant(value=0))"})):
             with open(os.path.join(ROOT, name), encoding="utf-8") as f:
                 new = f.read()
             a, b = parts(old), parts(new)
