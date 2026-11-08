@@ -14,6 +14,73 @@ from utils import draw_text_with_outline
 import stop_jerk_text
 import time
 
+# Stage UI-D2 (Owner ruling 2026-11-08, replaces the cumulative layers): the F1 screens have exactly ONE dim. At any moment ONE region is bright - the front operating region (a pop-up panel, a drop-down, or the operation help) -
+# and everything else of the window is covered ONCE by the dim of the operation help (the colour and alpha below are the ones of that help layer: there is no other). The depth of the screens changes nothing: there is no second layer,
+# no per-depth alpha, no accumulated alpha. The common layer at the top of draw_menu (alpha 220) is the F1 background and stays as it is.
+MENU_DIM_RGBA = (0, 0, 0, 180)
+
+
+def menu_dim_rects(view, active, inner=()):
+    """The rectangles (x, y, w, h) of the ONE dim. view = (x, y, w, h) of the window in menu coordinates; active = (x0, y0, x1, y1) of the bright region (None: no bright region, the whole view is dimmed).
+    The dim is the view minus the active region: four disjoint rectangles (above, below, left, right of it), each clamped to the view, none with a width or height of 0 or less. inner = rectangles INSIDE the active region
+    that are dimmed too (the rows of a list outside the frame of the list, which lie in a panel): disjoint from the four, so every pixel is dimmed at most once."""
+    vx0, vy0 = int(math.floor(view[0])), int(math.floor(view[1]))
+    vx1, vy1 = int(math.ceil(view[0] + view[2])), int(math.ceil(view[1] + view[3]))
+    if active is None:
+        return [(vx0, vy0, vx1 - vx0, vy1 - vy0)] if vx1 > vx0 and vy1 > vy0 else []
+    ax0, ay0 = max(vx0, int(math.floor(active[0]))), max(vy0, int(math.floor(active[1])))
+    ax1, ay1 = min(vx1, int(math.ceil(active[2]))), min(vy1, int(math.ceil(active[3])))
+    if ax1 <= ax0 or ay1 <= ay0:
+        return [(vx0, vy0, vx1 - vx0, vy1 - vy0)] if vx1 > vx0 and vy1 > vy0 else []
+    rects = [(vx0, vy0, vx1 - vx0, ay0 - vy0), (vx0, ay1, vx1 - vx0, vy1 - ay1), (vx0, ay0, ax0 - vx0, ay1 - ay0), (ax1, ay0, vx1 - ax1, ay1 - ay0)]
+    for x, y, w, h in inner:
+        x0, y0, x1, y1 = max(ax0, int(x)), max(ay0, int(y)), min(ax1, int(x + w)), min(ay1, int(y + h))
+        rects.append((x0, y0, x1 - x0, y1 - y0))
+    return [r for r in rects if r[2] > 0 and r[3] > 0]
+
+
+def _draw_menu_dim(painter, view, active, inner=()):
+    """THE dim of the F1 screens: the colour and alpha of the operation help, drawn once over everything but the active region."""
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(*MENU_DIM_RGBA))
+    for x, y, w, h in menu_dim_rects(view, active, inner):
+        painter.drawRect(x, y, w, h)
+
+
+def _list_row_slots(self, painter, scroll, total, visible, slot_rect, band, dim_rects):
+    """The slots of one scrolling list, in drawing order. 0 .. visible-1 are the rows inside the frame (as before). The slots before and after the frame are the rows OUTSIDE the frame: each is drawn whole when it fits in the free band
+    (band = (top, bottom) in menu coordinates: between the title and the first row, between the last row and the buttons), takes no input (its click zones go to a scratch list) and its rectangle is added to dim_rects, so the one dim of the
+    screen covers it. slot_rect(i) = (x, y, w, h)."""
+    above = []
+    i = -1
+    while scroll + i >= 0:
+        x, y, w, h = slot_rect(i)
+        if y < band[0] or y + h > band[1]:
+            break
+        above.append(i)
+        i -= 1
+    below = []
+    i = visible
+    while scroll + i < total:
+        x, y, w, h = slot_rect(i)
+        if y < band[0] or y + h > band[1]:
+            break
+        below.append(i)
+        i += 1
+    inside = [i for i in range(visible) if scroll + i < total]
+    zones = self.menu_click_zones
+    for i in list(reversed(above)) + inside + below:
+        outside = i < 0 or i >= visible
+        if outside:
+            self.menu_click_zones = []
+        try:
+            yield i
+        finally:
+            if outside:
+                self.menu_click_zones = zones
+                dim_rects.append(slot_rect(i))
+
+
 def _brake_rule_start(self, r_idx):
     """The effective start StationIndex of basic brake rule r_idx (an owner without the method keeps the plain boundary of the previous rule)."""
     fn = getattr(self, 'brake_rule_start', None)
@@ -50,6 +117,13 @@ def draw_menu(self, painter, logical_width):
     
     center_x = BASE_SCREEN_W / 2
     self.menu_click_zones.clear()
+
+    # Stage UI-D2: the one dim. front_rect = the bright region (a pop-up panel or a drop-down, set where it is drawn; None on the F1 top and the pages: nothing is dimmed), dim_inner = the rows outside the frame of the lists of a panel,
+    # late_draws = the scroll arrows (they stay bright above the dimmed rows: drawn after the dim).
+    view = (-offset_x / menu_scale, -offset_y / menu_scale, self.width() / menu_scale, self.height() / menu_scale)
+    front_rect = None
+    dim_inner = []
+    late_draws = []
 
     def draw_menu_item(text, y, is_selected, action_idx, align="center", x_offset=0):
         fm = QFontMetrics(self.font_normal)
@@ -586,11 +660,12 @@ def draw_menu(self, painter, logical_width):
             sub_x, sub_y = 110, (BASE_SCREEN_H - sub_h) / 2
 
             self.active_panel_rect = (sub_x, sub_y, sub_x + sub_w, sub_y + sub_h)
-            
+            front_rect = (sub_x - 2, sub_y - 2, sub_x + sub_w + 2, sub_y + sub_h + 2)
+
             painter.setBrush(QColor(30, 30, 30, 240))
             painter.setPen(QPen(QColor(150, 150, 150), 3))
             painter.drawRoundedRect(int(sub_x), int(sub_y), int(sub_w), int(sub_h), 12, 12)
-            
+
             draw_text_with_outline(painter, "=== 基本制動 設定 ===", self.font_big, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, sub_y + 130, "center", passes=8)
             
             vis_rules = min(5, len(getattr(self, 'brake_rules', []))) 
@@ -607,15 +682,17 @@ def draw_menu(self, painter, logical_width):
             colon_x = sub_val_x_start + SUB_FIXED_STA_W + gap_tilde + fm.horizontalAdvance("～") + gap_sta2 + SUB_FIXED_STA_W + gap_colon
             sub_col_summary_x = colon_x + (fm.horizontalAdvance(":") // 2)
 
-            if getattr(self, 'sub_scroll', 0) > 0:
-                draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, sub_col_summary_x, sub_y + 200, "center", passes=8)
-                self.menu_click_zones.append((sub_col_summary_x - 20, sub_y + 200 - 35, sub_col_summary_x + 20, sub_y + 200 + 10, 996))
-            
-            sub_list_y_start = sub_y + 275 
-            
-            for i in range(vis_rules):
+            sub_list_y_start = sub_y + 275
+
+            # Stage UI-D1: the rows outside the frame (the 5 rows) are drawn too, in the free band between the title and the buttons, each under one dim layer, without any input
+            fm_btn7 = QFontMetrics(self.font_normal)
+            slots7 = _list_row_slots(
+                self, painter, getattr(self, 'sub_scroll', 0), len(getattr(self, 'brake_rules', [])), 5,
+                lambda i: (sub_x + 20, sub_list_y_start + i * 70 - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET, sub_w - 40, fm.height() + 12),
+                (sub_y + 130 + QFontMetrics(self.font_big).descent(), sub_list_y_start + (5 * 70) + 90 - fm_btn7.ascent() - 6 - (fm_btn7.descent() // 2) + 1), dim_inner)
+            for i in slots7:
                 r_idx = getattr(self, 'sub_scroll', 0) + i
-                if r_idx >= len(getattr(self, 'brake_rules', [])): break
+                if r_idx >= len(getattr(self, 'brake_rules', [])): continue
                 rule = getattr(self, 'brake_rules', [])[r_idx]
                 r_start = get_sta_name(getattr(self, 'setting_start_idx', 0)) if r_idx == 0 else get_sta_name(_brake_rule_start(self, r_idx))
                 r_end = (
@@ -723,8 +800,12 @@ def draw_menu(self, painter, logical_width):
                     cx += fixed_apply_w + 15
                     draw_text_with_outline(painter, "緩め", self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, cx, r_y, "left", passes=8)
 
+            if getattr(self, 'sub_scroll', 0) > 0:                         # (drawn after the rows: the arrow stays above the dimmed rows outside the frame)
+                late_draws.append(lambda x=sub_col_summary_x, y=sub_y + 200: draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, x, y, "center", passes=8))
+                self.menu_click_zones.append((sub_col_summary_x - 20, sub_y + 200 - 35, sub_col_summary_x + 20, sub_y + 200 + 10, 996))
+
             if getattr(self, 'sub_scroll', 0) + 5 < len(getattr(self, 'brake_rules', [])):
-                draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, sub_col_summary_x, sub_list_y_start + (5 * 70) + 10, "center", passes=8)
+                late_draws.append(lambda x=sub_col_summary_x, y=sub_list_y_start + (5 * 70) + 10: draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, x, y, "center", passes=8))
                 self.menu_click_zones.append((sub_col_summary_x - 20, sub_list_y_start + (5 * 70) + 10 - 35, sub_col_summary_x + 20, sub_list_y_start + (5 * 70) + 10 + 10, 995))
             
             row_undo = len(getattr(self, 'brake_rules', [])) if len(getattr(self, 'brake_rules', [])) > 1 else -1
@@ -759,6 +840,7 @@ def draw_menu(self, painter, logical_width):
         SUB_Y = (BASE_SCREEN_H - TIMING_SUB_H) / 2
         
         self.active_panel_rect = (SUB_X, SUB_Y, SUB_X + TIMING_SUB_W, SUB_Y + TIMING_SUB_H)
+        front_rect = (SUB_X - 2, SUB_Y - 2, SUB_X + TIMING_SUB_W + 2, SUB_Y + TIMING_SUB_H + 2)
 
         CONTENT_Y = SUB_Y                           # the content hangs from the TOP edge of the frame (the extra height is only below it)
         TITLE_Y = CONTENT_Y + TIMING_TITLE_Y_OFFSET
@@ -781,17 +863,18 @@ def draw_menu(self, painter, logical_width):
         if not targets:
             draw_text_with_outline(painter, "設定可能な駅がありません", self.font_normal, COLOR_B_EMG, COLOR_OUTLINE_BLACK, center_x, LIST_Y + 50, "center", passes=8)
         else:
-            if getattr(self, 'timing_scroll', 0) > 0:
-                draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, ARROW_UP_Y, "center", passes=8)
-                self.menu_click_zones.append((center_x - 20, ARROW_UP_Y - 35, center_x + 20, ARROW_UP_Y + 10, 996))
-            
             fm = QFontMetrics(self.font_normal)
             box_x_base = center_x - (TIMING_BOX_W / 2) + TIMING_BOX_X_OFFSET
 
-            for i in range(TIMING_VISIBLE_COUNT):
+            # Stage UI-D1: the rows outside the frame (the 6 rows) are drawn too, in the free band between the title and the done button, each under one dim layer, without any input
+            slots8 = _list_row_slots(
+                self, painter, getattr(self, 'timing_scroll', 0), len(targets), TIMING_VISIBLE_COUNT,
+                lambda i: (box_x_base, LIST_Y + i * TIMING_ROW_H - fm.ascent() - 6 - (fm.descent() // 2) + 1, TIMING_BOX_W, fm.height() + 16),
+                (TITLE_Y + QFontMetrics(self.font_big).descent(), BTN_Y - fm.ascent() - 6 - (fm.descent() // 2) + 1), dim_inner)
+            for i in slots8:
                 list_idx = getattr(self, 'timing_scroll', 0) + i
-                if list_idx >= len(targets): break
-                
+                if list_idx >= len(targets): continue
+
                 sta_idx = targets[list_idx]
                 st = getattr(self, 'station_list', [])[sta_idx]
                 sta_name = st.get("name", "不明な駅")
@@ -842,8 +925,12 @@ def draw_menu(self, painter, logical_width):
                 cx_stat = SUB_X + TIMING_SUB_W - TIMING_INNER_MARGIN_X
                 draw_text_with_outline(painter, stat_text, self.font_normal, stat_color, stat_outline, cx_stat, y, "right", passes=8)
 
+            if getattr(self, 'timing_scroll', 0) > 0:                       # (drawn after the rows: the arrow stays above the dimmed rows outside the frame)
+                late_draws.append(lambda x=center_x, y=ARROW_UP_Y: draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, x, y, "center", passes=8))
+                self.menu_click_zones.append((center_x - 20, ARROW_UP_Y - 35, center_x + 20, ARROW_UP_Y + 10, 996))
+
             if getattr(self, 'timing_scroll', 0) + TIMING_VISIBLE_COUNT < len(targets):
-                draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, center_x, ARROW_DOWN_Y, "center", passes=8)
+                late_draws.append(lambda x=center_x, y=ARROW_DOWN_Y: draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, x, y, "center", passes=8))
                 self.menu_click_zones.append((center_x - 20, ARROW_DOWN_Y - 35, center_x + 20, ARROW_DOWN_Y + 10, 995))
                 
             btn_text = "設定完了"
@@ -1119,6 +1206,7 @@ def draw_menu(self, painter, logical_width):
         SHIFT_Y = 30
 
         self.active_panel_rect = (sub_x, sub_y, sub_x + sub_w, sub_y + sub_h)
+        front_rect = (sub_x - 2, sub_y - 2, sub_x + sub_w + 2, sub_y + sub_h + 2)
         
         painter.setBrush(QColor(30, 30, 30, 240))
         painter.setPen(QPen(QColor(150, 150, 150), 3))
@@ -1145,18 +1233,20 @@ def draw_menu(self, painter, logical_width):
         sub_cursor = getattr(self, 'init_sub_cursor', 0)
         sub_cursor_x = getattr(self, 'init_sub_cursor_x', 0)
 
-        if sub_scroll > 0:
-            draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, sub_col_summary_x, sub_y + 170 + SHIFT_Y, "center", passes=8)
-            self.menu_click_zones.append((sub_col_summary_x - 20, sub_y + 170 + SHIFT_Y - 35, sub_col_summary_x + 20, sub_y + 170 + SHIFT_Y + 10, 996))
-        
         sub_list_y_start = sub_y + 240 + SHIFT_Y
         sta_start = get_sta_name(getattr(self, 'setting_start_idx', 0))
         sta_end = get_sta_name(getattr(self, 'setting_end_idx', -1))
 
-        for i in range(vis_rules):
+        # Stage UI-D1: the rows outside the frame (the 5 rows) are drawn too, in the free band between the title and the done button, each under one dim layer, without any input
+        fm_btn9 = QFontMetrics(self.font_normal)
+        slots9 = _list_row_slots(
+            self, painter, sub_scroll, len(getattr(self, 'brake_rules', [])), 5,
+            lambda i: (sub_x + 20, sub_list_y_start + i * 70 - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET, sub_w - 40, fm.height() + 12),
+            (sub_y + 110 + SHIFT_Y + QFontMetrics(self.font_big).descent(), sub_list_y_start + (5 * 70) + 80 - fm_btn9.ascent() - 6 - (fm_btn9.descent() // 2) + 1), dim_inner)
+        for i in slots9:
             r_idx = sub_scroll + i
-            if r_idx >= len(getattr(self, 'brake_rules', [])): break
-            
+            if r_idx >= len(getattr(self, 'brake_rules', [])): continue
+
             b_rule = getattr(self, 'brake_rules', [])[r_idx]
             p_rule = init_rules[r_idx] if r_idx < len(init_rules) else {"apply": "ON①", "release": "ON①"}
             
@@ -1242,8 +1332,12 @@ def draw_menu(self, painter, logical_width):
             r_col = COLOR_P if "ON" in rel_val else COLOR_B_EMG
             draw_text_with_outline(painter, rel_val, self.font_menu, r_col, COLOR_WHITE, cx, r_y, "left", passes=8)
 
+        if sub_scroll > 0:                                             # (drawn after the rows: the arrow stays above the dimmed rows outside the frame)
+            late_draws.append(lambda x=sub_col_summary_x, y=sub_y + 170 + SHIFT_Y: draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, x, y, "center", passes=8))
+            self.menu_click_zones.append((sub_col_summary_x - 20, sub_y + 170 + SHIFT_Y - 35, sub_col_summary_x + 20, sub_y + 170 + SHIFT_Y + 10, 996))
+
         if sub_scroll + 5 < len(getattr(self, 'brake_rules', [])):
-            draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, sub_col_summary_x, sub_list_y_start + (5 * 70) + 10, "center", passes=8)
+            late_draws.append(lambda x=sub_col_summary_x, y=sub_list_y_start + (5 * 70) + 10: draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, x, y, "center", passes=8))
             self.menu_click_zones.append((sub_col_summary_x - 20, sub_list_y_start + (5 * 70) + 10 - 35, sub_col_summary_x + 20, sub_list_y_start + (5 * 70) + 10 + 10, 995))
         
         row_done = len(getattr(self, 'brake_rules', []))
@@ -1466,15 +1560,39 @@ def draw_menu(self, painter, logical_width):
         start_y = (BASE_SCREEN_H / 2) - (box_h / 2)
         
         self.active_dropdown_rect = (start_x, start_y, start_x + box_w, start_y + box_h)
+        front_rect = (start_x - 2, start_y - 2, start_x + box_w + 2, start_y + box_h + 2)      # Stage UI-D2: the drop-down is the bright region; everything else, the parent and the rows outside its frame, is under the one dim
+        dim_inner.clear()                      # (the rows outside the frame of the PARENT list lie in the dimmed outer region now: they add no rectangle of their own)
+        late_draws.clear()                     # (and the scroll arrows of the PARENT are under the dim with it; the drop-down adds its own bright arrows below)
         # ドロップダウン表示中は背後のクリック領域を無効化する
         self.menu_click_zones.clear()
-        
+
+        # Stage UI-D2: the options outside the frame of the drop-down are drawn too, above and below the frame in the same rows, each whole inside the screen, on the colour of the list, without any input (the one dim covers them)
+        # (no click zone is registered for them: the zone list above was cleared and only the visible options add theirs below)
+        drop_scroll = getattr(self, 'dropdown_scroll', 0)
+        drop_total = len(self.dropdown_options)
+        outside = []
+        i = -1
+        while drop_scroll + i >= 0 and start_y + 10 + i * row_h >= 0:
+            outside.append(i)
+            i -= 1
+        i = len(visible_opts)
+        while drop_scroll + i < drop_total and start_y + 10 + (i + 1) * row_h + 10 <= BASE_SCREEN_H:
+            outside.append(i)
+            i += 1
+        for i in outside:
+            ghost_y = start_y + 10 + i * row_h
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(20, 20, 20, 240))
+            painter.drawRect(int(start_x), int(ghost_y), int(box_w), int(row_h))
+            ghost_name = str(self.dropdown_options[drop_scroll + i].get("name", "不明"))
+            draw_text_with_outline(painter, ghost_name, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, BASE_SCREEN_W / 2, ghost_y + fm.ascent() + 8, "center", passes=8)
+
         painter.setPen(QPen(QColor(100, 100, 100), 4))
         painter.setBrush(QColor(20, 20, 20, 240))
         painter.drawRoundedRect(int(start_x), int(start_y), int(box_w), int(box_h), 8, 8)
-        
+
         if getattr(self, 'dropdown_scroll', 0) > 0:
-            draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, BASE_SCREEN_W / 2, start_y - 10, "center", passes=8)
+            late_draws.append(lambda x=BASE_SCREEN_W / 2, y=start_y - 10: draw_text_with_outline(painter, "▲", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, x, y, "center", passes=8))
             self.menu_click_zones.append((BASE_SCREEN_W / 2 - 20, start_y - 10 - 35, BASE_SCREEN_W / 2 + 20, start_y - 10 + 10, 996))
             
         for i, opt in enumerate(visible_opts):
@@ -1494,7 +1612,7 @@ def draw_menu(self, painter, logical_width):
             draw_text_with_outline(painter, name_str, self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, BASE_SCREEN_W / 2, text_y_base, "center", passes=8)
             
         if getattr(self, 'dropdown_scroll', 0) + 7 < len(getattr(self, 'dropdown_options', [])):
-            draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, BASE_SCREEN_W / 2, start_y + box_h + 47, "center", passes=8)
+            late_draws.append(lambda x=BASE_SCREEN_W / 2, y=start_y + box_h + 47: draw_text_with_outline(painter, "▼", self.font_normal, COLOR_WHITE, COLOR_OUTLINE_BLACK, x, y, "center", passes=8))
             self.menu_click_zones.append((BASE_SCREEN_W / 2 - 20, start_y + box_h + 47 - 35, BASE_SCREEN_W / 2 + 20, start_y + box_h + 47 + 10, 995))
             
         for i, opt in enumerate(visible_opts):
@@ -1767,6 +1885,12 @@ def draw_menu(self, painter, logical_width):
             self.menu_click_zones.append((box_x, box_y, box_x + fixed_box_w, box_y + fixed_box_h, i))
 
 
+    # Stage UI-D2: THE dim, once: over everything but the front region. While the operation help is shown the dim belongs to the help (below), the normal one is not drawn: they never add up.
+    if not getattr(self, 'show_help', False) and front_rect is not None:
+        _draw_menu_dim(painter, view, front_rect, dim_inner)
+    for late_draw in late_draws:
+        late_draw()
+
     # 操作説明を開くヘルプボタンを描画する
     if self.menu_state != 0 and not getattr(self, 'is_capturing_screenshot', False):
         # 画面右下にヘルプボタンを描画
@@ -1788,10 +1912,6 @@ def draw_menu(self, painter, logical_width):
 
     # 項目数に応じて高さを調整した操作説明オーバーレイを描画する
     if getattr(self, 'show_help', False):
-        # 画面全体を暗転
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(0, 0, 0, 180))
-        painter.drawRect(-2000, -2000, 6000, 6000)
 
         # 状態に応じたリストを先に作る
         help_items = []
@@ -1818,6 +1938,9 @@ def draw_menu(self, painter, logical_width):
         win_y = (BASE_SCREEN_H - win_h) / 2
         
         self.active_help_rect = (win_x, win_y, win_x + win_w, win_y + win_h)
+
+        # 画面全体を暗転（Stage UI-D2: the one dim of the screen while the help is shown; the help window is the bright region)
+        _draw_menu_dim(painter, view, (win_x - 2, win_y - 2, win_x + win_w + 2, win_y + win_h + 2))
         
         # 3. 枠とタイトルの描画
         painter.setBrush(QColor(30, 30, 30, 240))
