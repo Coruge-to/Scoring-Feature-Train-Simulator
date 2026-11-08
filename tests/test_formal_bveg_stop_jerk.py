@@ -5,7 +5,7 @@ THE CONTRACT (Owner, 2026-11-08)
   * Deduction on the UNROUNDED value, no tolerance: >= 0.100 G -> -200, >= 0.065 G -> -100, otherwise 0. One step only.
   * No sample in the window -> nothing is judged (no deduction, LastStop BveG = None, F2 "--"); never a fake 0, never another value.
   * CalcG, the n values and the sway path are retired from the product: no symbol, no wire token (CALCG, ACCELX, SWAY, SWAYR), no F2 text, no log field.
-  * F2 shows ONE line: "BveG: +0.000 G    LastStop BveG: 0.000 G" ("BveG: --    LastStop BveG: --" when unavailable); no graph, no MaxG.
+  * F2 shows ONE line: "BveG: +0.000 G    LastStop BveG: 0.000 G" ("BveG: ---    LastStop BveG: ---" when unavailable); no graph, no MaxG.
   * The user text of the stop-jerk row names 0.5 s, 0.065G, 2.3km/h/s, 0.100G, 3.5km/h/s; the two boundary spans are coloured (white outline), the rest is normal.
 RED rows fail on the baseline 86b7b6e for a declared reason (the first word of the failure message); GUARD rows pass on both. PyQt6 is needed for the executable rows.
 """
@@ -602,7 +602,7 @@ class G_Display(Direct):
         self.o.bve_accel_z = None
         self.o.last_stop_g_bve = None
         texts, _ = self.f2()
-        self.assertIn("BveG: --    LastStop BveG: --", texts)
+        self.assertIn("BveG: ---    LastStop BveG: ---", texts)
         joined = "\n".join(texts)
         self.assertNotIn("BveG: +0.000", joined)
         self.assertNotIn("LastStop BveG: 0.000", joined)
@@ -624,7 +624,7 @@ class G_Display(Direct):
 
         self.o.telemetry_gate = Gate()
         texts, _ = self.f2()
-        self.assertIn("BveG: --    LastStop BveG: --", texts)
+        self.assertIn("BveG: ---    LastStop BveG: ---", texts)
 
     def test_FB73_RED_no_calcg_no_n_no_graph_no_maxg_no_reference_text(self):
         self.scene()
@@ -660,7 +660,7 @@ class G_Display(Direct):
         self.o.bve_accel_z = 0.5
         texts, _ = self.f2()
         self.assertTrue(any(t.startswith("[SCORING RULES]") for t in texts))
-        self.assertIn("BveG: +0.051 G    LastStop BveG: --", texts)
+        self.assertIn("BveG: +0.051 G    LastStop BveG: ---", texts)
 
 
 F2_LINES_IN_THIS_SCENE = 15  # measured in this scene; the baseline 86b7b6e draws 17 (CalcG/BveG row, LastStop row and the n row became ONE row)
@@ -670,20 +670,15 @@ class H_Text(Direct):
     def draw_row(self):
         from PyQt6.QtGui import QImage, QPainter
         import menu_ui
-        plain, spans = [], []
-        orig_plain, orig_spans = menu_ui.draw_text_with_outline, menu_ui.draw_text_spans_with_outline
+        plain = []
+        orig_plain = menu_ui.draw_text_with_outline
 
         def rec_plain(painter, text, font, color, outline, x, y, *a, **k):
-            plain.append((text, color, outline, x, y))
+            plain.append((text, color, outline, x, y, font))
             return orig_plain(painter, text, font, color, outline, x, y, *a, **k)
 
-        def rec_spans(painter, sp, font, x, y, **k):
-            spans.append((list(sp), font, x, y))
-            return orig_spans(painter, sp, font, x, y, **k)
-
-        menu_ui.draw_text_with_outline, menu_ui.draw_text_spans_with_outline = rec_plain, rec_spans
+        menu_ui.draw_text_with_outline = rec_plain
         self.addCleanup(setattr, menu_ui, "draw_text_with_outline", orig_plain)
-        self.addCleanup(setattr, menu_ui, "draw_text_spans_with_outline", orig_spans)
         image = QImage(1920, 1080, QImage.Format.Format_ARGB32)
         painter = QPainter(image)
         o = self.o
@@ -695,8 +690,8 @@ class H_Text(Direct):
             menu_ui.draw_menu(o, painter, 1920)
         finally:
             painter.end()
-            menu_ui.draw_text_with_outline, menu_ui.draw_text_spans_with_outline = orig_plain, orig_spans
-        return plain, spans
+            menu_ui.draw_text_with_outline = orig_plain
+        return plain
 
     def test_FB80_RED_the_user_text_is_the_formal_wording(self):
         import stop_jerk_text
@@ -713,41 +708,27 @@ class H_Text(Direct):
         self.assertEqual("%.1f" % (0.065 * 9.80665 * 3.6), "2.3")
         self.assertEqual("%.1f" % (0.100 * 9.80665 * 3.6), "3.5")
 
-    def test_FB82_RED_only_the_two_boundary_spans_are_coloured_and_outlined_white(self):
+    def test_FB82_RED_the_description_is_plain_text_again_without_coloured_ranges(self):
+        # 2026-11-08 Owner ruling: the coloured boundary ranges were hard to read; the description is the original white text with a black outline
         import stop_jerk_text, config
         lines = stop_jerk_text.STOP_JERK_DESCRIPTION_LINES
         self.assertEqual(len(lines), 3, "the number of lines is unchanged (title + 2)")
-        third = lines[2]
-        kinds = [(t, k) for t, k in third]
-        self.assertEqual(kinds, [("（※", "normal"), ("0.065G≒2.3km/h/s", "first"), ("以上で-100点、", "normal"), ("0.100G≒3.5km/h/s", "second"), ("以上で-200点）", "normal")])
-        self.assertEqual(stop_jerk_text.span_colors("first"), (config.STOP_JERK_FIRST_BOUNDARY_COLOR, config.COLOR_OUTLINE_WHITE))
-        self.assertEqual(stop_jerk_text.span_colors("second"), (config.STOP_JERK_SECOND_BOUNDARY_COLOR, config.COLOR_OUTLINE_WHITE))
-        self.assertEqual(stop_jerk_text.span_colors("normal"), (config.COLOR_WHITE, config.COLOR_OUTLINE_BLACK))
-        self.assertNotEqual(config.STOP_JERK_FIRST_BOUNDARY_COLOR, config.STOP_JERK_SECOND_BOUNDARY_COLOR)
+        self.assertTrue(all(isinstance(line, str) for line in lines), "plain lines, no (text, kind) spans")
+        self.assertFalse(hasattr(stop_jerk_text, "span_colors"), "COLOUR: no span colour function")
+        self.assertFalse(hasattr(config, "STOP_JERK_FIRST_BOUNDARY_COLOR") or hasattr(config, "STOP_JERK_SECOND_BOUNDARY_COLOR"), "COLOUR: no boundary colour constant")
+        src = open(os.path.join(ROOT, "utils.py"), encoding="utf-8").read()
+        self.assertNotIn("draw_text_spans_with_outline", src)
 
-    def test_FB83_the_boundary_colours_are_the_bve_material_colours_computed_mechanically(self):
-        import config
-
-        def material(n):
-            return (min(max(128 + n // 2, 96), 160), min(max(160 - n, 96), 160), 96)
-
-        for g, colour in ((0.065, config.STOP_JERK_FIRST_BOUNDARY_COLOR), (0.100, config.STOP_JERK_SECOND_BOUNDARY_COLOR)):
-            n = int(12.5 * (0.0669 * (g * 9.80665)) * 64.0)
-            self.assertEqual(material(n), colour, "COLOUR: the constant is not the mechanical BVE colour of %s G (n=%d)" % (g, n))
-
-    def test_FB84_RED_the_menu_draws_the_spans_with_the_white_outline_and_keeps_the_line_pitch(self):
+    def test_FB84_RED_the_menu_draws_the_three_lines_as_white_text_with_a_black_outline_and_keeps_the_line_pitch(self):
         import config, stop_jerk_text
-        plain, spans = self.draw_row()
-        self.assertEqual(len(spans), 3, "COLOURED-SPANS: the three lines are drawn as spans")
-        drawn = [(t, c, oc) for t, c, oc in spans[2][0]]
-        self.assertEqual([t for t, _, _ in drawn], [t for t, _ in stop_jerk_text.STOP_JERK_DESCRIPTION_LINES[2]])
-        self.assertEqual(drawn[1][1:], (config.STOP_JERK_FIRST_BOUNDARY_COLOR, config.COLOR_OUTLINE_WHITE))
-        self.assertEqual(drawn[3][1:], (config.STOP_JERK_SECOND_BOUNDARY_COLOR, config.COLOR_OUTLINE_WHITE))
-        for i in (0, 2, 4):
-            self.assertEqual(drawn[i][1:], (config.COLOR_WHITE, config.COLOR_OUTLINE_BLACK), "the %dth span must be the normal colour" % i)
-        pitch = [spans[j][3] - spans[j - 1][3] for j in (1, 2)]
+        plain = self.draw_row()
+        rows = [p for p in plain if p[0] in stop_jerk_text.STOP_JERK_DESCRIPTION_LINES]
+        self.assertEqual([r[0] for r in rows], list(stop_jerk_text.STOP_JERK_DESCRIPTION_LINES), "the three lines are drawn, each as ONE plain line")
+        for r in rows:
+            self.assertEqual((r[1], r[2]), (config.COLOR_WHITE, config.COLOR_OUTLINE_BLACK), "white text, black outline")
+        pitch = [rows[j][4] - rows[j - 1][4] for j in (1, 2)]
         self.assertEqual(pitch, [40, 40], "the line pitch of the description is unchanged")
-        self.assertEqual(len({id(s[1]) for s in spans}), 1, "one font for the three lines")
+        self.assertEqual(len({id(r[5]) for r in rows}), 1, "one font for the three lines")
 
     def test_FB85_GUARD_the_other_rows_are_still_drawn_as_plain_lines(self):
         import menu_ui

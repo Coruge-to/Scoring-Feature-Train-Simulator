@@ -1838,7 +1838,7 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
         if old is None:
             self.skipTest("baseline commit / git not available (INCONCLUSIVE)")
         # 2026-11-08 (an intended change, formal LastStop BveG): the stop-jerk constants are ADDED (nothing is changed or removed)
-        added = {"STANDARD_GRAVITY_MPS2", "STOP_JERK_WINDOW_SECONDS", "STOP_JERK_FIRST_BOUNDARY_G", "STOP_JERK_SECOND_BOUNDARY_G", "STOP_JERK_FIRST_BOUNDARY_COLOR", "STOP_JERK_SECOND_BOUNDARY_COLOR"}
+        added = {"STANDARD_GRAVITY_MPS2", "STOP_JERK_WINDOW_SECONDS", "STOP_JERK_FIRST_BOUNDARY_G", "STOP_JERK_SECOND_BOUNDARY_G"}
         now = ast.parse(read("config.py"))
         kept = [n for n in now.body if not (isinstance(n, ast.Assign) and any(getattr(t, "id", None) in added for t in n.targets))]
         self.assertEqual(len(now.body) - len(kept), len(added))

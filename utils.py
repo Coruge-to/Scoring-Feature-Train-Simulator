@@ -71,13 +71,6 @@ def draw_text_with_outline(painter, text, font, text_color, outline_color, x, y,
         painter.setPen(text_color)
     painter.drawText(int(x), int(y), text_str)
 
-# 1 行を、色の違う複数の区間（(文字列, 文字色, 縁取り色)）として左から順に描く。区間ごとの幅は QFontMetrics で数える。
-def draw_text_spans_with_outline(painter, spans, font, x, y, passes=8):
-    fm = QFontMetrics(font)
-    for text, text_color, outline_color in spans:
-        draw_text_with_outline(painter, text, font, text_color, outline_color, x, y, "left", passes=passes)
-        x += fm.horizontalAdvance(str(text))
-
 # ★【高品質版】パス・ストローク描画（HUDのデカ文字用・Wordと同じ美しい縁取り）
 def draw_text_with_stroke(painter, text, font, text_color, outline_color, x, y, align="left", stroke_width=OUTLINE_WIDTH):
     path = QPainterPath()

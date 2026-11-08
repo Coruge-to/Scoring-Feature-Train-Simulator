@@ -10,7 +10,7 @@ from PyQt6.QtGui import (
     QPen,
 )
 from config import *
-from utils import draw_text_spans_with_outline, draw_text_with_outline
+from utils import draw_text_with_outline
 import stop_jerk_text
 import time
 
@@ -1109,14 +1109,8 @@ def draw_menu(self, painter, logical_width):
         else:
             desc_text = desc_dict.get(self.menu_cursor, "")
 
-        if desc_text == stop_jerk_text.stop_jerk_description_text():
-            # 停車時衝動：第一・第二境界の文字だけ色を変える（縁取りは白）。行数・フォントサイズ・行間は他の説明と同じ
-            for j, line in enumerate(stop_jerk_text.STOP_JERK_DESCRIPTION_LINES):
-                spans = [(text,) + stop_jerk_text.span_colors(kind) for text, kind in line]
-                draw_text_spans_with_outline(painter, spans, self.font_desc, 180, desc_y + 40 + (j * 40), passes=8)
-        else:
-            for j, line in enumerate(desc_text.split('\n')):
-                draw_text_with_outline(painter, line, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, 180, desc_y + 40 + (j * 40), "left", passes=8)
+        for j, line in enumerate(desc_text.split('\n')):
+            draw_text_with_outline(painter, line, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, 180, desc_y + 40 + (j * 40), "left", passes=8)
 
     elif self.menu_state == 9:
         # Stage UI-4: no second dim layer here (the common one at the top of draw_menu already covers the whole window; a second one drawn inside the 16:9 area left a darker band in a window that is not 16:9)

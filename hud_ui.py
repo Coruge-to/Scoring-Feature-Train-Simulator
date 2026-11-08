@@ -131,8 +131,8 @@ def draw_hud(self, painter, logical_width):
         dbg_texts.append(" | ".join(pressure_parts))
     dbg_texts.append(f"Target_Cap_Val: {round(self.dbg_target_cap, 1)} | ActiveBlue: {round(float(self.dbg_blue), 1) if self.dbg_blue != 'None' else 'None'}  |  ActiveRed: {round(float(self.dbg_red), 1) if self.dbg_red != 'None' else 'None'}")
     # 停車時衝動（正式採点）の F2 表示は 1 行だけ: 「BveG」は公式 AccelerationZ の瞬時値（符号付き）、「LastStop BveG」は直近の停止の窓平均の絶対値（採点に使った値）。
-    # 値が無いとき（AVAIL が accelz を出さない／この Tick に標本が無い／直近の停止に判定が無い）は "--"（0.0 を出さない、他の値で代用しない）。
-    bve_text, last_bve_text = "BveG: --", "LastStop BveG: --"
+    # 値が無いとき（AVAIL が accelz を出さない／この Tick に標本が無い／直近の停止に判定が無い）は "---"（0.0 を出さない、他の値で代用しない。2026-11-08 Owner："--" から "---" へ）。
+    bve_text, last_bve_text = "BveG: ---", "LastStop BveG: ---"
     if hud_data_available(self, "accelz"):
         if getattr(self, "bve_accel_z", None) is not None:
             bve_text = f"BveG: {self.bve_accel_z / STANDARD_GRAVITY_MPS2:+.3f} G"

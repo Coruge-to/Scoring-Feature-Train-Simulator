@@ -1718,7 +1718,7 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
         self.assertEqual(old_net.replace("\r\n", "\n").replace(retired, ""), open(os.path.join(ROOT, "network.py"), encoding="utf-8").read().replace("\r\n", "\n"))
         old_cfg = ast.parse(_git("show", E3_COMMIT + ":config.py").replace("\r\n", "\n"))
         now_cfg = ast.parse(open(os.path.join(ROOT, "config.py"), encoding="utf-8").read().replace("\r\n", "\n"))
-        added = {"STANDARD_GRAVITY_MPS2", "STOP_JERK_WINDOW_SECONDS", "STOP_JERK_FIRST_BOUNDARY_G", "STOP_JERK_SECOND_BOUNDARY_G", "STOP_JERK_FIRST_BOUNDARY_COLOR", "STOP_JERK_SECOND_BOUNDARY_COLOR"}
+        added = {"STANDARD_GRAVITY_MPS2", "STOP_JERK_WINDOW_SECONDS", "STOP_JERK_FIRST_BOUNDARY_G", "STOP_JERK_SECOND_BOUNDARY_G"}
         now_cfg.body = [n for n in now_cfg.body if not (isinstance(n, ast.Assign) and any(getattr(x, "id", None) in added for x in n.targets))]
         self.assertEqual(ast.dump(old_cfg), ast.dump(now_cfg))
         # Phase SI-A (on purpose): scoring_logic.py and utils.py carry exactly ONE change since E3 - the switch of the Desktop debug log (no score, no rule, no constant)
@@ -1777,7 +1777,7 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
                   "Assign(targets=[Name(id='ILLEGAL_MOVE_TEXTS', ctx=Store())], value=Tuple(elts=[Constant(value='不正な移動が検知されました。'), Constant(value='採点を中止します。')], ctx=Load()))",
                   # Stage TB-H 5b (on purpose): TURNBACK_SPECIAL_SECONDS (the 3.0 s exception of the arrival result popups) is gone (tests/test_pt_tbh_first_jump_10s.py JM-02)
                   "Assign(targets=[Name(id='TURNBACK_TOTAL_SECONDS', ctx=Store())], value=BinOp(left=Attribute(value=Name(id='pseudo_turnback_machine', ctx=Load()), attr='REQUEST_AFTER_MS', ctx=Load()), op=Div(), right=Constant(value=1000.0)))"}),
-                ("utils.py", old_utils, {"write_desktop_log"}, {"set_desktop_log_enabled", "desktop_log_enabled", "desktop_log_requested", "draw_text_spans_with_outline"}),   # 2026-11-08: + the coloured-span line drawer of the stop-jerk text
+                ("utils.py", old_utils, {"write_desktop_log"}, {"set_desktop_log_enabled", "desktop_log_enabled", "desktop_log_requested"}),
                 # Stage TB-H (on purpose): the timing screen of draw_menu is the ONLY member of menu_ui.py that changed since E3 (nothing removed, nothing added)
                 # Stage TB-I (brake chain, on purpose): the ONE new member is the pure helper _brake_rule_start (the effective start of a basic brake rule that the screens draw); draw_menu calls it at four places
                 ("menu_ui.py", old_menu, {"draw_menu"}, {"_brake_rule_start", "Import(names=[alias(name='stop_jerk_text')])"})):   # 2026-11-08: the stop-jerk text module is imported (formal LastStop BveG wording, coloured spans)
