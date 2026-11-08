@@ -318,7 +318,10 @@ class SiAScopeOfMain(unittest.TestCase):
         # are left out at the generation): the local valid_stas construction and the two list comprehensions left handle_menu_enter. These are the 12 distinct lines (stripped) that the diff shows as removed; the
         # candidate rule itself (the valid stations, the bounds) moved unchanged (tests/test_pt_tbd_candidates.py); no score, no rule and no constant is among them.
         # Stage TB-H (on purpose): the timing toggle asks untimed_reason instead of comparing with the start index (the start and the crossed pair B are fixed untimed)
-        "handle_menu_enter": {"if sta_idx != getattr(self, 'setting_start_idx', 0):", "actual_terminal_idx = self.get_actual_terminal_idx() if hasattr(self, 'get_actual_terminal_idx') else -1",
+        # Stage ENV-1 (on purpose; Owner contract 2026-11-08): the Enter of the environment settings screen (menu_state 4) acts on the VALUE cell only and goes through Overlay.toggle_disp_setting (the one state function that keeps
+        # 制限速度 / 制限速度予告 consistent): the three lines of the old whole-row toggle left (tests/test_env_settings_layout.py)
+        "handle_menu_enter": {"if self.menu_cursor <= 6:", "key = getattr(self, 'settings_keys', [])[self.menu_cursor]", "getattr(self, 'disp_settings', {})[key] = not getattr(self, 'disp_settings', {})[key]",
+                              "if sta_idx != getattr(self, 'setting_start_idx', 0):", "actual_terminal_idx = self.get_actual_terminal_idx() if hasattr(self, 'get_actual_terminal_idx') else -1",
                               "e_idx = getattr(self, 'setting_end_idx', -1) if getattr(self, 'setting_end_idx', -1) != -1 else actual_terminal_idx",
                               'for i, s in enumerate(self.station_list):', "if getattr(self, 'station_list', []):", 'if i > 0 and not s.get("is_pass", False):',
                               'if self.dropdown_target == "start_sta":', 'opts = [s for s in valid_stas if s["idx"] < e_idx]',

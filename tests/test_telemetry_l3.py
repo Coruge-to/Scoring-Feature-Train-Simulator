@@ -688,7 +688,8 @@ class C_Controller(unittest.TestCase):
         self.pump(2)
         events = self.log.events("hud-items")
         self.assertEqual(len(events), 2)
-        self.assertIn("unavailable=dist+grad+handle+limit+time_left", events[1])
+        # Stage ENV-1 (on purpose): the new HUD switch limit_advance (the blink of the limit row) is an item of the contract with the limit tokens, so a sender without limit data reports it with the limit row
+        self.assertIn("unavailable=dist+grad+handle+limit+limit_advance+time_left", events[1])
 
     def test_a_sender_without_avail_reports_nothing_unavailable(self):
         self.hud.start()

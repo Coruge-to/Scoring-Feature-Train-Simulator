@@ -44,6 +44,44 @@ def _draw_menu_layer_dim(painter, view, rgba):
     painter.drawRect(x0, y0, x1 - x0, y1 - y0)
 
 
+# Stage ENV-1 (Owner contract 2026-11-08): the cursor / click rectangle of ONE cell (a label or a value) of a toggle row is the same on the penalty pages and on the environment settings screen: the text box
+# widened by a padding (15 for a label, 10 for a value), a height of the font + 12, rounded 6, HIGHLIGHT_COLOR. draw_menu keeps its own offsets (GLOBAL_BOX_X_OFFSET / SCORING_BOX_Y_OFFSET) and passes them in.
+CELL_CURSOR_LABEL_PAD = 15
+CELL_CURSOR_VALUE_PAD = 10
+CELL_CURSOR_EXTRA_H = 12
+CELL_CURSOR_RADIUS = 6
+# the environment settings screen (menu_state 4): the label column, the right edge the values had when they were right aligned (ON and OFF now start at the left edge of the former OFF), the rows
+ENV_TITLE = "=== 環境設定 ==="
+ENV_TITLE_Y = 200
+ENV_FIRST_ROW_Y = 300
+ENV_ROW_STEP = 70
+ENV_LABEL_X = 600
+ENV_VALUE_RIGHT_X = 1320
+
+
+def cell_cursor_geometry(fm, cell_x, cell_w, base_y, pad, box_y_offset, box_x_offset):
+    """(x, y, w, h) of the cursor and the click zone of one cell whose text starts at cell_x (left aligned) on the baseline base_y."""
+    return (cell_x - pad + box_x_offset, base_y - fm.ascent() - 6 + box_y_offset, cell_w + 2 * pad, fm.height() + CELL_CURSOR_EXTRA_H)
+
+
+def env_settings_layout(fm, fm_title, labels, center_x, middle_y, box_y_offset):
+    """The positions of the environment settings screen, the whole block centred in the menu screen with ONE offset (dx, dy), computed in this order: the rows (all of them, with the one added for the speed limit
+    advance) -> the left aligned values -> the text box (heading, labels and the widest value 'OFF'; the cursor padding is NOT part of it) and the cursor box (heading box + the cursor range of every row) -> the offset
+    from the centre of the screen. The offset is whole pixels (half up), it does not depend on the current values (ON / OFF) or the cursor, so nothing moves when a value changes."""
+    off_w = fm.horizontalAdvance("OFF")
+    value_x = ENV_VALUE_RIGHT_X - off_w
+    ys = [ENV_FIRST_ROW_Y + ENV_ROW_STEP * i for i in range(len(labels))]
+    title_w = fm_title.horizontalAdvance(ENV_TITLE)
+    text_left = min([ENV_LABEL_X, center_x - title_w / 2.0])
+    text_right = max([center_x + title_w / 2.0, value_x + off_w] + [ENV_LABEL_X + fm.horizontalAdvance(name) for name in labels])
+    cursor_top = lambda y: y - fm.ascent() - 6 + box_y_offset
+    top = min(ENV_TITLE_Y - fm_title.ascent(), cursor_top(ys[0]))
+    bottom = max(ENV_TITLE_Y + fm_title.descent(), cursor_top(ys[-1]) + fm.height() + CELL_CURSOR_EXTRA_H)
+    dx = int(math.floor(center_x - (text_left + text_right) / 2.0 + 0.5))
+    dy = int(math.floor(middle_y - (top + bottom) / 2.0 + 0.5))
+    return {"dx": dx, "dy": dy, "title_x": center_x + dx, "title_y": ENV_TITLE_Y + dy, "label_x": ENV_LABEL_X + dx, "value_x": value_x + dx, "ys": [y + dy for y in ys]}
+
+
 def _brake_rule_start(self, r_idx):
     """The effective start StationIndex of basic brake rule r_idx (an owner without the method keeps the plain boundary of the previous rule)."""
     fn = getattr(self, 'brake_rule_start', None)
@@ -132,33 +170,20 @@ def draw_menu(self, painter, logical_width, _parent=False):
         else:
             self.menu_click_zones.append((box_x, box_y, box_x + box_w, box_y + box_h, action_idx))
 
-    def draw_setting_item(name, is_on, y, is_selected, action_idx):
-        fm = QFontMetrics(self.font_normal)
-        box_w = 800 
-        box_x = center_x - (box_w / 2) + GLOBAL_BOX_X_OFFSET
-        box_h = fm.height() + 16
-        box_y = y - fm.ascent() - 6 - (fm.descent() // 2) + MENU_BOX_Y_OFFSET
-
-        if is_selected:
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(HIGHLIGHT_COLOR)
-            painter.drawRoundedRect(int(box_x), int(box_y), int(box_w), int(box_h), 8, 8)
-
-        draw_text_with_outline(painter, name, self.font_normal, MENU_TEXT, MENU_OUTLINE, box_x - GLOBAL_BOX_X_OFFSET + 40, y, "left", passes=8)
-        val_text = "ON" if is_on else "OFF"
-        val_color = COLOR_P if is_on else COLOR_B_EMG
-        draw_text_with_outline(painter, val_text, self.font_normal, val_color, COLOR_WHITE, box_x - GLOBAL_BOX_X_OFFSET + box_w - 40, y, "right", passes=8)
-        self.menu_click_zones.append((box_x, box_y, box_x + box_w, box_y + box_h, action_idx))
-
     MAIN_SHIFT_Y = 25
 
     title_text = ""
+    title_x = center_x
     title_y = 200
     if self.menu_state == 1:
         title_text = "=== メニュー ==="
         title_y = 315
     elif self.menu_state == 2: title_text = "=== 選択した駅からやり直す ==="
-    elif self.menu_state == 4: title_text = "=== 環境設定 ==="
+    elif self.menu_state == 4:
+        # Stage ENV-1: the whole environment settings block (heading, rows, cursors, zones) has one offset, computed for all the rows (env_settings_layout)
+        title_text = ENV_TITLE
+        env_layout = env_settings_layout(QFontMetrics(self.font_normal), QFontMetrics(self.font_big), list(self.settings_names), center_x, BASE_SCREEN_H / 2, SCORING_BOX_Y_OFFSET)
+        title_x, title_y = env_layout["title_x"], env_layout["title_y"]
     elif self.menu_state in [5, 7]: 
         title_text = "=== 採点設定 (1/3) ==="
         title_y = 112 + MAIN_SHIFT_Y
@@ -168,7 +193,7 @@ def draw_menu(self, painter, logical_width, _parent=False):
 
     # Stage UI-5: the pop-up screens (the basic brake 7, the timing 8, the initial / relaxation 9) draw their own title; the title of the page behind them (1/3, 2/3) is not drawn through them (it showed above / through the panel)
     if title_text and self.menu_state not in [3, 7, 8, 9]:
-        draw_text_with_outline(painter, title_text, self.font_big, MENU_TEXT, MENU_OUTLINE, center_x, title_y, "center", passes=8)
+        draw_text_with_outline(painter, title_text, self.font_big, MENU_TEXT, MENU_OUTLINE, title_x, title_y, "center", passes=8)
 
     def get_sta_name(idx):
         if not getattr(self, 'station_list', []):
@@ -346,11 +371,31 @@ def draw_menu(self, painter, logical_width, _parent=False):
             self.menu_click_zones.append((box_x, box_y, box_x + fixed_box_w, box_y + fixed_box_h, i))
 
     elif self.menu_state == 4:
-        for i in range(7):
+        # Stage ENV-1: a grid of rows x 2 columns; the LABEL and the VALUE of a row are separate cells (menu_cursor = the row, menu_cursor_x = -1 LABEL / 0 VALUE, as on the penalty pages) with the cursor of the penalty rows
+        fm = QFontMetrics(self.font_normal)
+        sel_row, sel_col = self.menu_cursor, getattr(self, 'menu_cursor_x', -1)
+        for i, name in enumerate(self.settings_names):
             key = self.settings_keys[i]
-            name = self.settings_names[i]
             is_on = getattr(self, 'disp_settings', {}).get(key, True)
-            draw_setting_item(name, is_on, 300 + i * 70, (i == self.menu_cursor), i)
+            base_y = env_layout["ys"][i]
+
+            cx, cy, cw, ch = cell_cursor_geometry(fm, env_layout["label_x"], fm.horizontalAdvance(name), base_y, CELL_CURSOR_LABEL_PAD, SCORING_BOX_Y_OFFSET, GLOBAL_BOX_X_OFFSET)
+            self.menu_click_zones.append((cx, cy, cx + cw, cy + ch, i, -1))
+            if sel_row == i and sel_col == -1:
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(HIGHLIGHT_COLOR)
+                painter.drawRoundedRect(int(cx), int(cy), int(cw), int(ch), CELL_CURSOR_RADIUS, CELL_CURSOR_RADIUS)
+            draw_text_with_outline(painter, name, self.font_normal, MENU_TEXT, MENU_OUTLINE, env_layout["label_x"], base_y, "left", passes=8)
+
+            val_text = "ON" if is_on else "OFF"
+            val_color = COLOR_P if is_on else COLOR_B_EMG
+            cx, cy, cw, ch = cell_cursor_geometry(fm, env_layout["value_x"], fm.horizontalAdvance(val_text), base_y, CELL_CURSOR_VALUE_PAD, SCORING_BOX_Y_OFFSET, GLOBAL_BOX_X_OFFSET)
+            self.menu_click_zones.append((cx, cy, cx + cw, cy + ch, i, 0))
+            if sel_row == i and sel_col == 0:
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(HIGHLIGHT_COLOR)
+                painter.drawRoundedRect(int(cx), int(cy), int(cw), int(ch), CELL_CURSOR_RADIUS, CELL_CURSOR_RADIUS)
+            draw_text_with_outline(painter, val_text, self.font_normal, val_color, COLOR_WHITE, env_layout["value_x"], base_y, "left", passes=8)
 
     elif self.menu_state in [5, 7]:
         sta_start = get_sta_name(getattr(self, 'setting_start_idx', 0))
@@ -977,31 +1022,32 @@ def draw_menu(self, painter, logical_width, _parent=False):
 
         def draw_toggle_row(cursor_idx, label_text, is_on, base_y, locked=False):
             # 固定項目(locked)は通常表示のまま、値セルのクリック領域を登録せず値を変更させない
-            box_y = base_y - fm.ascent() - 6 + SCORING_BOX_Y_OFFSET
             label_w = fm.horizontalAdvance(label_text)
+            lx, box_y, lw, lh = cell_cursor_geometry(fm, label_x, label_w, base_y, CELL_CURSOR_LABEL_PAD, SCORING_BOX_Y_OFFSET, GLOBAL_BOX_X_OFFSET)
             # 項目ラベルのクリック領域
-            self.menu_click_zones.append((label_x - 15 + GLOBAL_BOX_X_OFFSET, box_y, label_x - 15 + GLOBAL_BOX_X_OFFSET + label_w + 30, box_y + fm.height() + 12, cursor_idx, -1))
+            self.menu_click_zones.append((lx, box_y, lx + lw, box_y + lh, cursor_idx, -1))
             
             if self.menu_cursor == cursor_idx and getattr(self, 'menu_cursor_x', 0) == -1:
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(HIGHLIGHT_COLOR)
-                painter.drawRoundedRect(int(label_x - 15 + GLOBAL_BOX_X_OFFSET), int(box_y), int(label_w + 30), int(fm.height() + 12), 6, 6)
+                painter.drawRoundedRect(int(lx), int(box_y), int(lw), int(lh), CELL_CURSOR_RADIUS, CELL_CURSOR_RADIUS)
             draw_text_with_outline(painter, label_text, self.font_menu, COLOR_B_EMG, COLOR_WHITE, label_x, base_y, "left", passes=8)
             
             val_text = "ON" if is_on else "OFF"
             val_col = COLOR_P if is_on else COLOR_B_EMG
             
             val_w = fm.horizontalAdvance(val_text)
+            vx, box_y, vw, vh = cell_cursor_geometry(fm, val_x_start, val_w, base_y, CELL_CURSOR_VALUE_PAD, SCORING_BOX_Y_OFFSET, GLOBAL_BOX_X_OFFSET)
             # ON/OFF値のクリック領域
             if not locked:
-                self.menu_click_zones.append((val_x_start - 10 + GLOBAL_BOX_X_OFFSET, box_y, val_x_start - 10 + GLOBAL_BOX_X_OFFSET + val_w + 20, box_y + fm.height() + 12, cursor_idx, 0))
+                self.menu_click_zones.append((vx, box_y, vx + vw, box_y + vh, cursor_idx, 0))
 
             is_val_focused = (self.menu_cursor == cursor_idx and getattr(self, 'menu_cursor_x', 0) == 0)
             if cursor_idx != 0: 
                 if is_val_focused:
                     painter.setPen(Qt.PenStyle.NoPen)
                     painter.setBrush(HIGHLIGHT_COLOR)
-                    painter.drawRoundedRect(int(val_x_start - 10 + GLOBAL_BOX_X_OFFSET), int(box_y), int(val_w + 20), int(fm.height() + 12), 6, 6)
+                    painter.drawRoundedRect(int(vx), int(box_y), int(vw), int(vh), CELL_CURSOR_RADIUS, CELL_CURSOR_RADIUS)
                 
             draw_text_with_outline(painter, val_text, self.font_menu, val_col, COLOR_WHITE, val_x_start, base_y, "left", passes=8)
 

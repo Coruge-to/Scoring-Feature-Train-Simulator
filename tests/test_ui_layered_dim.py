@@ -661,15 +661,16 @@ class Layered(Base):
             self.assertNotIn(word, block, "the drop-down screen is one Python implementation for the Current and the Legacy DLL")
 
 
+# Stage ENV-1 (on purpose; Owner contract 2026-11-08): __init__ (the new disp_settings key / name) and handle_menu_enter (the state 4 Enter acts on the VALUE cell, through toggle_disp_setting) are the two members of this list that changed
 INPUT_PINS = {
     "main.py": {
-        "__init__": "438104e491aeff0d",
+        "__init__": "915175b4f03acfa7",
         "_handle_keys": "2fdff247b333c919",
         "_handle_mouse": "7afa380eb3c20e77",
         "_sync_operation_cursor": "b50358a62b2ca451",
         "handle_dropdown_enter": "7df61f96a2374b59",
         "handle_menu_backspace": "7dd171b8554bc6a4",
-        "handle_menu_enter": "6bf88a0d7d915c5a",
+        "handle_menu_enter": "557cc9c1cefad7b4",
         "set_input_ownership": "1c828c7be1ba3a8f",
         "toggle_menu": "7a8d5f39518d3d06"
     },

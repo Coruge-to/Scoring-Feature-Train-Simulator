@@ -94,11 +94,11 @@ class Overlay(QWidget):
         self.is_scoring_mode = False 
         
         self.disp_settings = {
-            "time": True, "time_left": True, "speed": True, "limit": True,
+            "time": True, "time_left": True, "speed": True, "limit": True, "limit_advance": True,
             "dist": True, "handle": True, "grad": True
         }
         self.settings_keys = list(self.disp_settings.keys())
-        self.settings_names = ["現在時刻", "残り時間", "現在速度", "制限速度", "残距離", "ハンドル・レバーサ位置", "勾配"]
+        self.settings_names = ["現在時刻", "残り時間", "現在速度", "制限速度", "制限速度予告", "残距離", "ハンドル・レバーサ位置", "勾配"]
 
         # 実際の速度制限超過採点
         self.is_speed_limit_exceeded = False
@@ -1521,6 +1521,34 @@ class Overlay(QWidget):
                 if not getattr(self, 'station_list', [])[idx].get("is_timing", False):
                     self.user_timing_overrides[idx] = True
 
+    # Stage ENV-1 (Owner contract 2026-11-08): the ONE place that changes the environment settings (the keyboard Enter, the mouse - which comes to handle_menu_enter - and the normalisation all use it).
+    # The speed limit advance (制限速度予告: the red / blue blink warnings of the HUD speed limit row) can only be ON while the speed limit (制限速度) is ON: the state (limit OFF, advance ON) does not exist.
+    def set_speed_limit_visible(self, enabled):
+        self.disp_settings["limit"] = bool(enabled)
+        self.normalize_speed_limit_settings()
+
+    def set_speed_limit_advance_visible(self, enabled):
+        self.disp_settings["limit_advance"] = bool(enabled)
+        if self.disp_settings["limit_advance"]:
+            self.disp_settings["limit"] = True
+        self.normalize_speed_limit_settings()
+
+    def normalize_speed_limit_settings(self):
+        settings = self.disp_settings
+        if not settings.get("limit", True):
+            settings["limit_advance"] = False
+
+    def set_disp_setting(self, key, enabled):
+        if key == "limit":
+            self.set_speed_limit_visible(enabled)
+        elif key == "limit_advance":
+            self.set_speed_limit_advance_visible(enabled)
+        else:
+            self.disp_settings[key] = bool(enabled)
+
+    def toggle_disp_setting(self, key):
+        self.set_disp_setting(key, not self.disp_settings.get(key, True))
+
     def handle_menu_up(self):
         if self.menu_state == 11: 
             self.menu_cursor = 0 # 強制固定
@@ -1708,7 +1736,7 @@ class Overlay(QWidget):
         elif self.menu_state in [3, 12]:
             if self.menu_cursor < 1: self.menu_cursor += 1
         elif self.menu_state == 4:
-            if self.menu_cursor < 6: self.menu_cursor += 1
+            if self.menu_cursor < len(getattr(self, 'settings_keys', [])) - 1: self.menu_cursor += 1
 
     def handle_menu_left(self):
         if self.menu_state == 5:
@@ -1716,6 +1744,8 @@ class Overlay(QWidget):
             self.menu_cursor_x = max(-1, getattr(self, 'menu_cursor_x', 0) - 1)
         elif self.menu_state == 6:
             self.menu_cursor_x = max(-1, getattr(self, 'menu_cursor_x', 0) - 1)
+        elif self.menu_state == 4:
+            self.menu_cursor_x = max(-1, getattr(self, 'menu_cursor_x', -1) - 1)
         elif self.menu_state == 7:
             if getattr(self, 'sub_cursor', 0) < len(getattr(self, 'brake_rules', [])):
                 self.sub_cursor_x = max(0, getattr(self, 'sub_cursor_x', 0) - 1)
@@ -1745,6 +1775,8 @@ class Overlay(QWidget):
             else: max_x = -1
             self.menu_cursor_x = min(max_x, getattr(self, 'menu_cursor_x', 0) + 1)
 
+        elif self.menu_state == 4:
+            self.menu_cursor_x = min(0, getattr(self, 'menu_cursor_x', -1) + 1)
         elif self.menu_state in [7, 9]:
             rules = getattr(self, 'brake_rules', []) if self.menu_state == 7 else getattr(self, 'penalty_init_rules', [])
             sub_c = getattr(self, 'sub_cursor', 0) if self.menu_state == 7 else getattr(self, 'init_sub_cursor', 0)
@@ -1798,6 +1830,8 @@ class Overlay(QWidget):
             elif "環境設定" in selected:
                 self.menu_state = 4
                 self.menu_cursor = 0
+                self.menu_cursor_x = -1                      # Stage ENV-1: the first LABEL is selected
+                self.normalize_speed_limit_settings()
         elif self.menu_state == 2:
             if len(getattr(self, 'save_data', [])) > 0:
                 self.target_retry_idx = self.menu_cursor
@@ -1823,9 +1857,10 @@ class Overlay(QWidget):
                 self.menu_state = 2
                 self.menu_cursor = getattr(self, 'target_retry_idx', 0)
         elif self.menu_state == 4:
-            if self.menu_cursor <= 6:
-                key = getattr(self, 'settings_keys', [])[self.menu_cursor]
-                getattr(self, 'disp_settings', {})[key] = not getattr(self, 'disp_settings', {})[key]
+            # Stage ENV-1: Enter acts on the VALUE cell only (menu_cursor_x == 0, the mouse click on the selected cell comes here too); on a LABEL it does nothing
+            keys = getattr(self, 'settings_keys', [])
+            if getattr(self, 'menu_cursor_x', -1) == 0 and 0 <= self.menu_cursor < len(keys):
+                self.toggle_disp_setting(keys[self.menu_cursor])
 
         elif self.menu_state == 5:
             if self.menu_cursor == 0 and getattr(self, 'menu_cursor_x', 0) >= 0:

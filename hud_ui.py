@@ -259,7 +259,7 @@ def draw_hud(self, painter, logical_width):
 
     if hud_item_visible(self, "limit"):
         show_l, show_v = True, True
-        if self.blink_active:
+        if self.blink_active and hud_item_visible(self, "limit_advance"):
             is_type_changed = (self.target_type != self.base_limit_type)
             is_capped_blue = (self.limit_color == COLOR_P and self.disp_limit < self.effective_limit)
             if self.blink_phase < 0.5:

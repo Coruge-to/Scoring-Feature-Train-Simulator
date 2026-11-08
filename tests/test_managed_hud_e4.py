@@ -1786,7 +1786,20 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
                                                          "_draw_menu_layer_dim", "menu_panel_rect",
                                                          "Assign(targets=[Name(id='MENU_BASE_DIM_RGBA', ctx=Store())], value=Tuple(elts=[Constant(value=0), Constant(value=0), Constant(value=0), Constant(value=220)], ctx=Load()))",
                                                          "Assign(targets=[Name(id='MENU_CHILD_DIM_RGBA', ctx=Store())], value=Tuple(elts=[Constant(value=0), Constant(value=0), Constant(value=0), Constant(value=180)], ctx=Load()))",
-                                                         "Assign(targets=[Name(id='MENU_PARENT_PAGE', ctx=Store())], value=Dict(keys=[Constant(value=7), Constant(value=8), Constant(value=9)], values=[Constant(value=5), Constant(value=5), Constant(value=6)]))"})):
+                                                         "Assign(targets=[Name(id='MENU_PARENT_PAGE', ctx=Store())], value=Dict(keys=[Constant(value=7), Constant(value=8), Constant(value=9)], values=[Constant(value=5), Constant(value=5), Constant(value=6)]))",
+                                                         # Stage ENV-1 (on purpose; Owner contract 2026-11-08): the environment settings screen is a grid of rows x 2 columns: the pure cell cursor geometry (shared with the penalty page rows), the pure layout
+                                                         # of the screen (one offset for the whole block) and their module constants; draw_menu calls them (tests/test_env_settings_layout.py)
+                                                         "cell_cursor_geometry", "env_settings_layout",
+                                                         "Assign(targets=[Name(id='CELL_CURSOR_LABEL_PAD', ctx=Store())], value=Constant(value=15))",
+                                                         "Assign(targets=[Name(id='CELL_CURSOR_VALUE_PAD', ctx=Store())], value=Constant(value=10))",
+                                                         "Assign(targets=[Name(id='CELL_CURSOR_EXTRA_H', ctx=Store())], value=Constant(value=12))",
+                                                         "Assign(targets=[Name(id='CELL_CURSOR_RADIUS', ctx=Store())], value=Constant(value=6))",
+                                                         "Assign(targets=[Name(id='ENV_TITLE', ctx=Store())], value=Constant(value='=== 環境設定 ==='))",
+                                                         "Assign(targets=[Name(id='ENV_TITLE_Y', ctx=Store())], value=Constant(value=200))",
+                                                         "Assign(targets=[Name(id='ENV_FIRST_ROW_Y', ctx=Store())], value=Constant(value=300))",
+                                                         "Assign(targets=[Name(id='ENV_ROW_STEP', ctx=Store())], value=Constant(value=70))",
+                                                         "Assign(targets=[Name(id='ENV_LABEL_X', ctx=Store())], value=Constant(value=600))",
+                                                         "Assign(targets=[Name(id='ENV_VALUE_RIGHT_X', ctx=Store())], value=Constant(value=1320))"})):
             with open(os.path.join(ROOT, name), encoding="utf-8") as f:
                 new = f.read()
             a, b = parts(old), parts(new)

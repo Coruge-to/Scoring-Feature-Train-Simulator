@@ -37,7 +37,8 @@ PINNED_BLOBS = {
     "managed_input.py": "57553a79bc51521dd62647299208870becc4097b",       # Cursor-Q3 (on purpose; the dialog hook of the operation cursor, nothing of the displayed target or the official supply; tests/test_operation_cursor_q3.py): was 618d48f2...  # + the generation default prev_tgt_idx of SI-R5.2-C (was e1b79288... : the two generation defaults of the close-range reset, was 6b0bda0b...)       # 2026-11-08 (the pin moved, an intended change: formal LastStop BveG, CalcG / sway retired; was 60f1f69c...)
     "official_target_contract.py": "9c0a68979113626724ccfa48e9c9d8cd117b3bae",
     # Stage TB-E (an intended change, not a drift) changed telemetry_contract.py on purpose (the word PTPAIR in TOKEN_KEYS["station"], the receiver key of the pseudo-turnback pairs; the OFFTGT supply is untouched; tests/test_pt_tbe_receiver.py): the blob moved from 0cc2ef6a...
-    "telemetry_contract.py": "d854e66a0eaef045174d7fa3c5acfadfac6adcf5",       # 2026-11-08 (the pin moved, an intended change: formal LastStop BveG, CalcG / sway retired; was b9b8d7d8...)
+    # Stage ENV-1 (the pin moved, an intended change): HUD_ITEM_REQUIRES gained the entry limit_advance (the same limit tokens as limit); the OFFTGT supply and every token / wire part are untouched (tests/test_env_settings_layout.py)
+    "telemetry_contract.py": "03349ae0578527222b039981b3ff603e15b406bd",       # 2026-11-08 (the pin moved, an intended change: formal LastStop BveG, CalcG / sway retired; was b9b8d7d8...)
     "network.py": "04d32aa0342fa17db3723ca1c7af3a66373d3474",       # 2026-11-08 (the pin moved, an intended change, was c3e39424...): the CALCG part of the (unused) network receiver is retired
 }
 FIELDS = H.HudTarget._fields

@@ -63,6 +63,7 @@ HUD_ITEM_REQUIRES = {
     "time_left": ("time", "station"),
     "speed": ("speed",),
     "limit": ("siglimit", "maplimit"),
+    "limit_advance": ("siglimit", "maplimit"),            # Stage ENV-1: the red / blue blink of the limit row needs the same limit data as the row itself
     "dist": ("loc", "station"),
     "handle": ("handle",),
     "grad": ("grad",),
