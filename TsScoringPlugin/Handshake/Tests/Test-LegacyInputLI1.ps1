@@ -145,9 +145,9 @@ Check 'B05 NaN / +Infinity / -Infinity in the single element -> nonfinite' (((Pr
 # ---------------------------------------------------------------------------------------------------------------------------------------------
 $h = NewIn; $h.Run(3, 16)
 $line = Last $h
-$allToks = 'bcp+bpp+brake_cab+brake_type+calcg+door+grad+handle+loc+maplimit+meta+prates+siglimit+siglimit_ahead+speed+station+time'
+$allToks = 'bcp+bpp+brake_cab+brake_type+door+grad+handle+loc+maplimit+meta+prates+siglimit+siglimit_ahead+speed+station+time'
 Check 'C01 default fake (one-lever Ecb 5/8/9 at rest, store 0 / 490): the line carries REV POW BRK HTYPE ALLTXT BCP BPP with the generic texts' (($line -match ('(^|,)REV:' + $W_FWD + ':1,')) -and ((Part $line 'POW') -ceq 'N:0') -and ((Part $line 'BRK') -ceq 'N:0:9') -and ((Part $line 'HTYPE') -ceq '1') -and ((Part $line 'ALLTXT') -ceq ($W_BACK + '_' + $W_REVOFF + '_' + $W_FWD + ':N_P1_P2_P3_P4_P5:N_B1_B2_B3_B4_B5_B6_B7_B8_EB:')) -and ((Part $line 'BCP') -ceq '0.0') -and ((Part $line 'BPP') -ceq '490.0'))
-Check 'C02 AVAIL names exactly the 14 tokens of Phase L3 plus handle, bcp, bpp (17), sorted; the first line (no acceleration reference yet) lacks calcg only' (((Part (Last $h) 'AVAIL') -ceq ('1:' + $allToks)) -and ((@(Toks ($h.Sink.Lines()[0]))).Count -eq 16) -and (-not (HasTok ($h.Sink.Lines()[0]) 'calcg')))
+Check 'C02 AVAIL names exactly the 13 tokens of Phase L3 (calcg retired 2026-11-08) plus handle, bcp, bpp (16), sorted; the first line announces the same 16 and never calcg' (((Part (Last $h) 'AVAIL') -ceq ('1:' + $allToks)) -and ((@(Toks ($h.Sink.Lines()[0]))).Count -eq 16) -and (-not (HasTok ($h.Sink.Lines()[0]) 'calcg')))
 # every supported combination, every position: the line carries what the table says
 $combos = @(@(1, 1, 4, 5, 6), @(1, 2, 4, 9, 10), @(1, 3, 5, 2, 3), @(2, 1, 4, 7, 8), @(2, 1, 6, 8, 9), @(2, 2, 4, 9, 10), @(2, 3, 5, 2, 3))
 $bad = 0; $n = 0; $firstBad2 = ''
@@ -237,7 +237,7 @@ Check 'C19 the host is asked for the handles and for the store at most ONCE per 
 $h = NewInNoDiag; $h.Run(100, 16)
 Check 'C20 without a diagnostic (no observation wired) the handle group and the pressures are still written, from one read per Tick' (($h.Input.CallCount('TryHandles') -eq 100) -and ($h.Input.CallCount('TryStorePressure') -eq 100) -and (HasTok (Last $h) 'handle') -and (HasTok (Last $h) 'bcp') -and ($h.Input.CallCount('TryNativePressure') -eq 0))
 $h = NewH $false; $h.Run(20, 16)
-Check 'C21 a session built without the input surface (the Phase L3 sender) writes no handle / pressure key and the 14 tokens of Phase L3' ((NoHandleKeys (Last $h)) -and (-not (Has (Last $h) 'BCP')) -and (-not (Has (Last $h) 'BPP')) -and ((Part (Last $h) 'AVAIL') -ceq '1:brake_cab+brake_type+calcg+door+grad+loc+maplimit+meta+prates+siglimit+siglimit_ahead+speed+station+time'))
+Check 'C21 a session built without the input surface (the Phase L3 sender) writes no handle / pressure key and the 13 tokens of Phase L3 (calcg retired)' ((NoHandleKeys (Last $h)) -and (-not (Has (Last $h) 'BCP')) -and (-not (Has (Last $h) 'BPP')) -and ((Part (Last $h) 'AVAIL') -ceq '1:brake_cab+brake_type+door+grad+loc+maplimit+meta+prates+siglimit+siglimit_ahead+speed+station+time'))
 
 # pause / soft OFF / scenario end / re-selection
 $h = NewIn; $h.Run(6, 16); $calls = $h.Input.TotalCalls(); $idP = $h.ScenarioId; $nP = $h.Sink.Lines().Count
@@ -306,7 +306,7 @@ $dumpX = Dump $h 'x-dump.txt'
 if ($py -and (Test-Path $xPy)) {
     $j = (& $py -I $xPy $dumpX | Out-String) | ConvertFrom-Json
     $tel = @($j | Where-Object { $_.kind -eq 'telemetry' })
-    Check 'E01 the Python reference reader accepts every line, reads exactly the 17 announced tokens, none unknown / malformed' (($tel.Count -ge 2) -and (@($tel | Where-Object { -not $_.valid }).Count -eq 0) -and ((($tel[1].tokens | Sort-Object) -join '+') -ceq $allToks) -and ($tel[1].unknown -eq 0) -and ($tel[1].bad -eq 0))
+    Check 'E01 the Python reference reader accepts every line, reads exactly the 16 announced tokens, none unknown / malformed' (($tel.Count -ge 2) -and (@($tel | Where-Object { -not $_.valid }).Count -eq 0) -and ((($tel[1].tokens | Sort-Object) -join '+') -ceq $allToks) -and ($tel[1].unknown -eq 0) -and ($tel[1].bad -eq 0))
     Check 'E02 the keys of the line are inside the contract vocabulary (the Python vocabulary knows REV POW BRK HTYPE ALLTXT BCP BPP)' ((@('REV', 'POW', 'BRK', 'HTYPE', 'ALLTXT', 'BCP', 'BPP') | Where-Object { $tel[1].keys -notcontains $_ }).Count -eq 0)
 }
 else { Skip 'E01-E02 (python or tests\telemetry_xcheck.py missing)' }

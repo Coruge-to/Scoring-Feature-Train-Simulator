@@ -54,7 +54,7 @@ PYTHON_PINS = {
     # telemetry_state_defaults() (+ comments). It does not touch the jump contract; the regions of main.py that name the jump contract are unchanged (tests\test_official_target_supply_s2a.py, class F).
     # Stage TB-E (the pin moved, an intended change, was 87A3CAA6...): telemetry_contract.py gained the word PTPAIR in TOKEN_KEYS["station"] (+ a comment). It does not touch the jump contract;
     # tests\test_pt_tbe_receiver.py holds the receiver of the new key.
-    "telemetry_contract.py": "50F6B82C17FADECB8AFEF3F5E8C4AFFFAA5DE3FE183810D75F3DD5B6C848783B",
+    "telemetry_contract.py": "6762B978860440CE77812144758498CBD4C410FAC2F1558CB375D5D49A034754",       # 2026-11-08 (the pin moved, an intended change, was 50F6B82C...): the calcg / accelx / sway tokens and their captures are retired; the jump contract is untouched
     "dataplane_contract.py": "53D23EA683DE8C6344932DEF5D550C0646B3B95ECC5561A3CDAF66F46D9EF27D",
     "telemetry_dataplane_receiver.py": "7E651F9E2523F035C9A15ED1AF7A23EC8D373BDAB99B7085A8E9BA26521A44E9",
     "managed_app_directory.py": "7B77DA8C4D04B32603AE7BFFAA1A74FCE07253B1BE2084ECB11EBBE5B46DCA8A",
@@ -165,7 +165,7 @@ REGION_PINS = {
         "Overlay.read_udp_data": ("slice", "D227ABC32AAD5F93FF1011ADC97BB444EBE7C1501D8D21F8282C1C78A9825B1C", 5),
         # Phase ST-3d (was 8DF01409..., 5 records): a scenario change closes the open transaction and releases is_official_jumping
         # Legacy scoring LC-4b (A16, was 064FF5BE...): the condition of the baseline block looks at the JUMP key of the line (a JUMP-only line is not a baseline), the 7 jump records stay (tests/test_lc4b_python_jump_state.py)
-        "Overlay.apply_telemetry_text": ("slice", "F63313F69BEE4F1B1A0E719917F6F0B7BB83714036E4265DE60125AFFFE209C9", 7),
+        "Overlay.apply_telemetry_text": ("slice", "1D1ADDB8BE14160C15E905DC96056D70B36A1755BC866E6BAB5D5A28E3ACA4A5", 7),  # 2026-11-08 (an intended change, formal LastStop BveG): the CALCG part of the telemetry chain is gone (was F63313F6...); the jump parts are untouched
         # Phase ST-3d (was 84E656C2..., 8 records): the start request comes from _scoring_start_plan (refused before anything changes) and the start opens its transaction
         "Overlay.handle_menu_enter": ("slice", "5943298E8353AA2DEED72DEAC4BD898BADCAF87D828F8A1313DDB6DAA7559022", 3),
         "Overlay._detect_and_release_fast_forward": ("slice", "6E15C0D15405AC3D2025E2EBD501EF36EC8D1D916D56CDA25E9E1D5E7B9092E7", 1),
@@ -182,7 +182,7 @@ REGION_PINS = {
         # Phase ST-3d (was EA70319D..., 9 records): + jump_expectation: None
         "generation_defaults": ("slice", "30BDFEF6909510B1AEA0AF833832BBB61E72E30D484777E81BD2C3527D2B35A6", 10),
         # Phase ST-3d (was 35BF78F1..., 2 records): + overlay.jump_expectation reset
-        "discard_scoring_session": ("slice", "D8C47223B603D0E6BB275C4637729784D8DE14865988DF0B6DA8E306F8A180DE", 3),
+        "discard_scoring_session": ("slice", "DD554AD16FC477C4B24A4AC8292E4F0980B33E341FAAD3649EBD41ED77189139", 3),  # 2026-11-08 (an intended change, formal LastStop BveG): the sway Shadow boundary call is gone from discard_scoring_session (was D8C47223...); the jump cancel is untouched
         "discard_generation_state": ("slice", "2E51777AEEE6233FA907BBD73C25D0BD02D060A766149F6C2188CF5BA7133950", 2),
         "ManagedInputController._observe": ("slice", "D84735A078A800DE92834344F0FCA2D04B7AF879D8168AEAB9EDF2B8114B87D7", 1),       # Stage TB-C (was 8275B161...): the abort reason names internal_abort_reason (OD-TB-30: no warning popup of W2)
     },
@@ -207,7 +207,7 @@ LC4B_EXECUTE_RETRY_PIN = ("whole", "9CEEFF77BE70F07889ECD1D30EA0889C155BB3CA1F97
 # replaced is not a stop). At the LJX-1 commit the function names no jump word (an EMPTY slice, 0 records: the SHA-256 of the empty text); now it names `is_official_jumping` once (1 record) and is declared.
 EMPTY_SLICE_PIN = ("slice", "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855", 0)
 # Shadow comparison (Stage 1, an intended change): update_stop_jerk_penalty hands the text of is_official_jumping to the shadow recorder (the second mention); the old value was ("slice", "D43FFB9C...", 1)
-LC3A_UPDATE_STOP_JERK_PIN = ("slice", "C01E8271A0DB1E0CFF89E550F6A91E4E6F2BC1AF933A44A3BC32E8C8AE6AB2CC", 2)
+LC3A_UPDATE_STOP_JERK_PIN = ("slice", "D43FFB9C0D190C9E0574CD41C08754A1AFCA7C3EC830742C4B14CFFAD9FA8387", 1)  # 2026-11-08 (an intended change, formal LastStop BveG): update_stop_jerk_penalty now names is_official_jumping once (the Shadow log line that carried it is gone; was C01E8271..., 2 records)
 
 # Time Fix B (an INTENDED change of a scoring region, not of the jump contract): the departure range check of evaluate_departure names `is_official_retry` in its condition, and that one condition
 # now reads the local margin_f / margin_b (the range kept at the arrival of an operational stop; the telemetry margin of the new target for every other stop) instead of self.bve_margin_f / _b.

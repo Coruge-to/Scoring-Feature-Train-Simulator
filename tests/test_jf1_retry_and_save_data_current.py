@@ -517,11 +517,11 @@ class R_ExecuteRetry(Base):
     def test_CURRENT_R20_begin_official_jump_clears_transient_state_but_keeps_warning_popups_and_the_restored_score(self):
         o = self.o
         o.popups = [{"text": "w", "category": "警告"}, {"text": "r", "category": "転動"}]
-        o.g_history.append((0.0, 1.0))
+        o.accel_z_history.append((0.0, 1.0))
         o.pending_jump_complete = {"type": "STA"}
         self.retry(1, [cp(0.0, T0), cp(1000.0, T0 + 60000, score=420, details=ZERO, name="B")])
         self.assertEqual([p["category"] for p in o.popups], ["警告"])
-        self.assertEqual(list(o.g_history), [])
+        self.assertEqual(list(o.accel_z_history), [])
         self.assertIsNone(o.pending_jump_complete)
         self.assertEqual(o.score, 420)
 

@@ -128,20 +128,10 @@ namespace TSScoringPlugin.Telemetry
         bool TryScenarioMeta(out LegacyScenarioMeta meta);
     }
 
-    /// <summary>Shadow comparison (Stage 1): the official AccelerationZ (Scenario.Vehicle.VibrationManager.AccelerationZ, m/s^2). A SEPARATE interface so that ILegacyApi and every
+    /// <summary>The official AccelerationZ (Scenario.Vehicle.VibrationManager.AccelerationZ, m/s^2). A SEPARATE interface so that ILegacyApi and every
     /// implementation of it stay as they are. false = not available (an exception or a non-finite value): nothing is written, nothing is defaulted.</summary>
     internal interface ILegacyVibrationApi
     {
         bool TryAccelerationZ(out double metersPerSecondSquared);
-    }
-
-    /// <summary>Shadow sway diagnostics: the public FrontAccelerationX (Scenario.Vehicle.VibrationManager.FrontAccelerationX, m/s^2) and the four RAW states of the BVE passenger-sway figure
-    /// (read by the shared SwayStateReader). A SEPARATE interface so that ILegacyApi and every implementation of it stay as they are. false = not available: nothing is written, nothing is
-    /// defaulted. `diagnostic` is the resolution diagnostic (the SWAYR value) or null; it is given whether or not the states could be read.</summary>
-    internal interface ILegacySwayApi
-    {
-        bool TryFrontAccelerationX(out double metersPerSecondSquared);
-
-        bool TrySwayState(out double longitudinalX, out double longitudinalV, out double lateralX, out double lateralV, out string diagnostic);
     }
 }

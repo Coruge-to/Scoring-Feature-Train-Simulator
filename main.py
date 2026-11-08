@@ -36,7 +36,6 @@ from scoring_logic import (
     turnback_diag,
     add_score_popup,
     turnback_held_a_target,
-    sway_shadow_resolution,
 )
 from menu_ui import draw_menu
 from hud_ui import draw_hud
@@ -255,7 +254,6 @@ class Overlay(QWidget):
         self.blink_active = False
         self.last_update_time = 0.0
         self.show_graph = False
-        self.g_history = []  
 
         self.bve_hwnd = None
         self.was_bve_found = False
@@ -394,15 +392,10 @@ class Overlay(QWidget):
         self.map_head_limit = 1000.0
         self.map_tail_limit = 1000.0
         self.bve_clear_dist = 0.0
-        self.bve_calc_g = 0.0
-        self.bve_accel_z = None                    # Shadow (BveG): the official AccelerationZ (m/s^2) of the latest line, None = not provided
-        self.bve_accel_x = None                    # Shadow (sway): the public FrontAccelerationX (m/s^2) of the latest line, None = not provided
-        self.bve_sway = None                       # Shadow (sway): the four RAW states of the BVE passenger-sway figure of the latest line (a tuple), None = not provided
-        self.bve_sway_res = None                   # Shadow (sway): the resolution diagnostic of the reflection reader (SWAYR) of the latest line, None = none
+        self.bve_accel_z = None                    # the official AccelerationZ (m/s^2) of the latest line, None = not provided (the one input of the stop-jerk scoring)
         self.accel_z_history = []
-        self.last_stop_g_bve = None
+        self.last_stop_g_bve = None                # LastStop BveG (G): the formal stop-jerk value of the latest judged stop, None = no judgement
         self.is_stopping_zone = False
-        self.last_stop_g = 0.0
         self.stop_notch_state = "IDLE"
 
         self.cab_brk_count = 8
@@ -414,7 +407,6 @@ class Overlay(QWidget):
 
         self.hb_prev_notch = 0
         self.hb_cushion_entry_time = 0.0
-        self.hb_cushion_max_g = 0.0
         self.hb_strong_entered = False
         self.dbg_is_wait = False
         self.dbg_target_cap = 1000.0
@@ -979,11 +971,7 @@ class Overlay(QWidget):
         if latest_telemetry:
             parts = latest_telemetry.split(',')
             self._offtgt_raw = offtgt_capture(parts)
-            self.bve_accel_z = telemetry_contract.accelz_capture(parts)    # Shadow (BveG): kept out of the part chain below on purpose
-            self.bve_accel_x = telemetry_contract.accelx_capture(parts)    # Shadow (sway): the same, for the public FrontAccelerationX
-            self.bve_sway = telemetry_contract.sway_capture(parts)         # Shadow (sway): the four raw states (None when any is missing / not finite)
-            self.bve_sway_res = telemetry_contract.swayr_capture(parts)    # Shadow (sway): the resolution diagnostic (a reason, never a value)
-            sway_shadow_resolution(self, self.bve_sway_res)                # logged once per change
+            self.bve_accel_z = telemetry_contract.accelz_capture(parts)    # the official AccelerationZ of this line: kept out of the part chain below on purpose
             self._ptpair_raw = route_pairset.capture(parts)             # Stage TB-E: the PTPAIR part of THIS line with the SCENARIO_ID of the same line; judged by _route_pairset_sync after the line is applied
             for part in parts:
                 try:
@@ -1151,7 +1139,6 @@ class Overlay(QWidget):
                     elif part.startswith("MAPHEAD:"): self.map_head_limit = float(part.split(':')[1])
                     elif part.startswith("MAPTAIL:"): self.map_tail_limit = float(part.split(':')[1])
                     elif part.startswith("CLEARDIST:"): self.bve_clear_dist = float(part.split(':')[1])
-                    elif part.startswith("CALCG:"): self.bve_calc_g = float(part.split(':')[1])
                     elif part.startswith("BTYPE:"): self.bve_btype = part.split(':')[1].strip()
                     elif part.startswith("JUMP:"): self.bve_jump_count = int(part.split(':')[1])
                     elif part.startswith("CAB:"): 

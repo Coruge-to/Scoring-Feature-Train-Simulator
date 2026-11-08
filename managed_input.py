@@ -53,7 +53,7 @@ def generation_defaults():
         "bb_state": "IDLE", "bb_apply_count": 0, "bb_release_count": 0, "bb_is_in_zone": False, "bb_evaluated": False, "bb_current_notch": 0,
         "bb_notch_change_time": 0.0, "bb_prev_stable_notch": 0, "bb_is_stable": True,
         # initial / relaxation brake
-        "hb_prev_notch": 0, "hb_cushion_entry_time": 0.0, "hb_cushion_max_g": 0.0, "hb_strong_entered": False,
+        "hb_prev_notch": 0, "hb_cushion_entry_time": 0.0, "hb_strong_entered": False,
         # roll
         "door_open_loc": 0.0, "roll_penalty_count": 0, "roll_was_moving": False,
         # position / time changes
@@ -71,13 +71,13 @@ def generation_defaults():
         "station_list": [], "pending_station_list": None,
         # Phase ST-2a: the identity published for that station list (-1 / "" = the sender's indexes are not usable); written by Overlay._station_identity_sync only
         "bve_tgt_idx": -1, "bve_arr_idx": -1, "bve_arr_seq": -1, "bve_list_id": "",
-        "last_update_time": 0.0, "prev_frame_loc": 0.0, "g_history": [], "accel_z_history": [], "last_bve_time_ms": 0,
+        "last_update_time": 0.0, "prev_frame_loc": 0.0, "accel_z_history": [], "last_bve_time_ms": 0,
         "meta_title": "", "meta_route": "", "meta_vehicle": "", "meta_author": "", "meta_comment": "",
         "prev_base_limit": 1000.0, "prev_diff_s": 0, "prev_door": 0, "prev_doordir": 1, "prev_is_pass": 0, "prev_is_timing": 0, "prev_next_loc": -1.0,
         "prev_term": 0, "prev_tgt_idx": -1,
         # the evaluation of the current station
         "is_first_udp": True, "is_first_station": True, "is_approaching": False, "is_stopped_out_of_range": False, "has_scored_time_this_station": False,
-        "has_scored_stop_this_station": False, "has_departed": False, "close_range_departure_reset_pending": False, "prev_actual_stop_loc": -1.0, "is_stopping_zone": False, "last_stop_g": 0.0, "last_stop_g_bve": None,
+        "has_scored_stop_this_station": False, "has_departed": False, "close_range_departure_reset_pending": False, "prev_actual_stop_loc": -1.0, "is_stopping_zone": False, "last_stop_g_bve": None,
         "stop_notch_state": "IDLE",
         # the speed limit guidance (blink / candidates of the previous scenario)
         "disp_limit": 1000.0, "limit_color": COLOR_WHITE, "effective_limit": 1000.0, "current_base_limit": 1000.0, "limit_changed_loc": -1.0,
@@ -146,26 +146,25 @@ def discard_scoring_session(overlay):
     """The scoring SESSION is over (soft OFF, Session OFF, a generation boundary): scoring inactive, its state discarded. Nothing of the scenario
     itself (station list, the chosen stations and rules, the latest telemetry values, the user's settings) is touched, so the user can start again.
     The menu is closed WITHOUT pressing anything in BVE."""
-    from scoring_logic import reset_result_display_state, reset_roll_state, reset_speed_penalty_state, reset_station_evaluation_state, sway_shadow_boundary
+    from scoring_logic import reset_result_display_state, reset_roll_state, reset_speed_penalty_state, reset_station_evaluation_state
     _cancel_outstanding_jump(overlay, "session-ended")
-    sway_shadow_boundary(overlay, "session-end")                # Shadow (sway): an open stop window is cut, its display value and its replica go with the session
     d = generation_defaults()
     for name in (
         "popups", "score", "score_details", "is_scoring_mode", "is_scoring_finished", "is_result_saved", "saved_file_path", "end_message_time", "result_screen_time",
         "theoretical_score", "total_retry_count", "save_data", "rollback_msg", "rollback_msg_timer",
         "manual_eb_penalty_applied", "smee_virtual_eb_active", "manual_eb_accum_time", "manual_eb_cooling_time",
         "bb_state", "bb_apply_count", "bb_release_count", "bb_is_in_zone", "bb_evaluated", "bb_current_notch", "bb_notch_change_time",
-        "bb_prev_stable_notch", "bb_is_stable", "hb_prev_notch", "hb_cushion_entry_time", "hb_cushion_max_g", "hb_strong_entered",
+        "bb_prev_stable_notch", "bb_is_stable", "hb_prev_notch", "hb_cushion_entry_time", "hb_strong_entered",
         "jump_lock", "ignore_next_pass_score", "is_official_jumping", "is_official_retry", "expected_target_loc", "expected_target_time",
         "pending_jump_complete", "menu_state", "menu_cursor", "menu_scroll", "target_retry_idx", "menu_cursor_x", "dropdown_active", "dropdown_cursor",
         "dropdown_scroll", "dropdown_options", "dropdown_target", "dropdown_target_rule_idx", "summary_scroll", "sub_cursor", "sub_cursor_x", "sub_scroll",
-        "input_buffer", "input_mode_active", "input_fresh", "show_help", "last_update_time", "g_history", "blink_phase", "blink_active",
+        "input_buffer", "input_mode_active", "input_fresh", "show_help", "last_update_time", "blink_phase", "blink_active",
         "is_first_udp", "is_first_station", "has_departed", "ff_check_real_time", "ff_check_bve_time", "is_fast_forwarding",
     ):
         setattr(overlay, name, d[name])
     overlay.retry_pending = d["retry_pending"]                  # Phase ST-2b: a retry that waits for its jump belongs to the scoring session (kept out of the tuple above: that header is a pinned jump-contract region)
     overlay.jump_expectation = d["jump_expectation"]            # Phase ST-3d: so does the expectation of the open official jump
-    overlay.accel_z_history = d["accel_z_history"]              # Shadow (BveG): its buffer and its last value end with the session (kept out of the pinned tuple above)
+    overlay.accel_z_history = d["accel_z_history"]              # the stop-jerk (BveG) buffer and its last value end with the session (kept out of the pinned tuple above)
     overlay.last_stop_g_bve = d["last_stop_g_bve"]
     overlay.prev_tgt_idx = d["prev_tgt_idx"]                    # Phase SI-R5.2-C: the departure station kept for evaluate_departure belongs to the session too
     reset_result_display_state(overlay)
@@ -184,8 +183,6 @@ def discard_generation_state(overlay):
     kick start state - and the reference of the sender's JUMP counter is taken again from the FIRST accepted telemetry of the generation. The user's
     settings, the infrastructure and the window state are kept. The latest telemetry VALUES are reset by Overlay.reset_telemetry_state."""
     _cancel_outstanding_jump(overlay, "generation")
-    from scoring_logic import sway_shadow_boundary
-    sway_shadow_boundary(overlay, "generation")                 # Shadow (sway): the open stop window of the previous scenario instance is cut
     for name, value in generation_defaults().items():
         setattr(overlay, name, value)
     for name in GENERATION_DROP:

@@ -41,7 +41,6 @@
     <Compile Include="..\Handshake\Telemetry\Shared\PackageContract.cs"><Link>Shared\PackageContract.cs</Link></Compile>
     <Compile Include="..\Handshake\Telemetry\Shared\PseudoTurnbackQualifier.cs"><Link>Shared\PseudoTurnbackQualifier.cs</Link></Compile>
     <Compile Include="..\Handshake\Telemetry\Shared\PseudoTurnbackPairCodec.cs"><Link>Shared\PseudoTurnbackPairCodec.cs</Link></Compile>
-    <Compile Include="..\Handshake\Telemetry\Shared\SwayStateReader.cs"><Link>Shared\SwayStateReader.cs</Link></Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup><Analyzer Include="..\BveEx.Caller.InputDevice.dll" /></ItemGroup>

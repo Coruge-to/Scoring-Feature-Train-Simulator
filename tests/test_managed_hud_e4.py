@@ -1711,7 +1711,16 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
         out = _git("diff", "--name-only", E3_COMMIT, "--", "config.py", "network.py")
         if out is None:
             self.skipTest("git not available (INCONCLUSIVE)")
-        self.assertEqual(out.strip(), "")
+        # 2026-11-08 (an intended change, formal LastStop BveG): config.py gained the stop-jerk constants and network.py lost the CALCG part of its (unused) receiver; nothing else of the two files moved
+        self.assertEqual(sorted(out.split()), ["config.py", "network.py"])
+        old_net = _git("show", E3_COMMIT + ":network.py")
+        retired = "                    elif part.startswith(\"CALCG:\"): self.bve_calc_g = float(part.split(':')[1])\n"
+        self.assertEqual(old_net.replace("\r\n", "\n").replace(retired, ""), open(os.path.join(ROOT, "network.py"), encoding="utf-8").read().replace("\r\n", "\n"))
+        old_cfg = ast.parse(_git("show", E3_COMMIT + ":config.py").replace("\r\n", "\n"))
+        now_cfg = ast.parse(open(os.path.join(ROOT, "config.py"), encoding="utf-8").read().replace("\r\n", "\n"))
+        added = {"STANDARD_GRAVITY_MPS2", "STOP_JERK_WINDOW_SECONDS", "STOP_JERK_FIRST_BOUNDARY_G", "STOP_JERK_SECOND_BOUNDARY_G", "STOP_JERK_FIRST_BOUNDARY_COLOR", "STOP_JERK_SECOND_BOUNDARY_COLOR"}
+        now_cfg.body = [n for n in now_cfg.body if not (isinstance(n, ast.Assign) and any(getattr(x, "id", None) in added for x in n.targets))]
+        self.assertEqual(ast.dump(old_cfg), ast.dump(now_cfg))
         # Phase SI-A (on purpose): scoring_logic.py and utils.py carry exactly ONE change since E3 - the switch of the Desktop debug log (no score, no rule, no constant)
         old_scoring, old_utils, old_menu = _git("show", E3_COMMIT + ":scoring_logic.py"), _git("show", E3_COMMIT + ":utils.py"), _git("show", E3_COMMIT + ":menu_ui.py")
         if old_scoring is None or old_utils is None or old_menu is None:
@@ -1739,7 +1748,7 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
                 # evaluate_arrival and update_physics_and_scoring (already changed above) call them; no score, no rule, no constant (tests/test_pt_scoring_continuity.py / test_pt_display_contract.py)
                 # no score, no rule, no constant (E3 -> now: scoring_logic.py +488 -120 by git numstat, the numbers of Test-HudLinkE4.ps1 S10b)
                 ("scoring_logic.py", old_scoring, {"write_limit_debug_log", "execute_retry", "create_save_data", "evaluate_arrival", "update_physics_and_scoring", "evaluate_departure", "reset_station_evaluation_state",
-                                                   "reset_transient_scoring_state", "update_stop_jerk_penalty"},
+                                                   "reset_transient_scoring_state", "update_stop_jerk_penalty", "update_initial_and_release_brake_penalty"},
                  {"note_save_skipped", "operational_stop_station", "resolve_operational_stop_completion", "Import(names=[alias(name='station_identity')])",
                   "Import(names=[alias(name='jump_transaction')])", "Import(names=[alias(name='jump_wire')])",         # Phase ST-3d (on purpose): execute_retry builds its request with jump_transaction / jump_wire (the Jump wire v2)
                   "close_range_fix_previous_stop", "init_basic_braking_state", "close_range_pair_is_close", "update_close_range_departure_reset", "close_range_fix_landing_stop",
@@ -1752,9 +1761,8 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
                   # Stage TB-H (on purpose): pair B untimed by contract (one pure section helper, the set of crossed B, the reason; two reason constants; tests/test_pt_tbh_pairb_contract.py)
                   "turnback_crossed_pairs", "turnback_b_indexes", "untimed_reason",
                   # Shadow comparison (Stage 1, on purpose): the BveG stop-jerk beside the CalcG one - three PURE helpers and one recorder that only reads (no score, no rule, no constant; tests/test_shadow_stop_jerk.py RS38)
-                  "stop_jerk_window_mean", "stop_jerk_g_from_accel_z", "stop_jerk_points", "shadow_stop_jerk_record",
+                  "stop_jerk_window_mean", "stop_jerk_g_from_accel_z", "stop_jerk_points", "judge_stop_jerk", "stop_jerk_log",   # 2026-11-08 (formal LastStop BveG): the judgement and its one diagnostic line; the Shadow recorder and the sway functions are retired
                   # Shadow sway diagnostics (on purpose): five functions that only READ the overlay (the sway Shadow state of its own, one diagnostic line behind desktop_log_enabled()); no score, no rule, no constant (tests/test_sway_shadow.py SG01 / SW_X01)
-                  "sway_shadow_log", "sway_shadow_tick", "sway_shadow_stop", "sway_shadow_boundary", "sway_shadow_resolution", "Import(names=[alias(name='sway_shadow')])",
                   # Stage TB-H (A re-stop wait; on purpose): the strict facts of the re-stop wait (speed != 0 / inside the author range of A), the range kept at the arrival, the removal of the chain's own popups, the two displays of the wait, the arrival at another station (tests/test_pt_tbh_arestop.py)
                   "turnback_train_state", "turnback_stop_range_capture", "turnback_drop_popups", "turnback_drop_arrival_results", "turnback_cancel_show", "turnback_restop_show", "turnback_other_arrival", "turnback_illegal_move_show", "turnback_held_a_target",   # Stage TB-H 5b (on purpose): turnback_drop_arrival_results ends the arrival result popups when the Jump is cancelled (tests/test_pt_tbh_first_jump_10s.py),
                   "Assign(targets=[Name(id='UNTIMED_SCORING_START', ctx=Store())], value=Constant(value='UNTIMED_SCORING_START'))",
@@ -1769,10 +1777,10 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
                   "Assign(targets=[Name(id='ILLEGAL_MOVE_TEXTS', ctx=Store())], value=Tuple(elts=[Constant(value='不正な移動が検知されました。'), Constant(value='採点を中止します。')], ctx=Load()))",
                   # Stage TB-H 5b (on purpose): TURNBACK_SPECIAL_SECONDS (the 3.0 s exception of the arrival result popups) is gone (tests/test_pt_tbh_first_jump_10s.py JM-02)
                   "Assign(targets=[Name(id='TURNBACK_TOTAL_SECONDS', ctx=Store())], value=BinOp(left=Attribute(value=Name(id='pseudo_turnback_machine', ctx=Load()), attr='REQUEST_AFTER_MS', ctx=Load()), op=Div(), right=Constant(value=1000.0)))"}),
-                ("utils.py", old_utils, {"write_desktop_log"}, {"set_desktop_log_enabled", "desktop_log_enabled", "desktop_log_requested"}),
+                ("utils.py", old_utils, {"write_desktop_log"}, {"set_desktop_log_enabled", "desktop_log_enabled", "desktop_log_requested", "draw_text_spans_with_outline"}),   # 2026-11-08: + the coloured-span line drawer of the stop-jerk text
                 # Stage TB-H (on purpose): the timing screen of draw_menu is the ONLY member of menu_ui.py that changed since E3 (nothing removed, nothing added)
                 # Stage TB-I (brake chain, on purpose): the ONE new member is the pure helper _brake_rule_start (the effective start of a basic brake rule that the screens draw); draw_menu calls it at four places
-                ("menu_ui.py", old_menu, {"draw_menu"}, {"_brake_rule_start"})):
+                ("menu_ui.py", old_menu, {"draw_menu"}, {"_brake_rule_start", "Import(names=[alias(name='stop_jerk_text')])"})):   # 2026-11-08: the stop-jerk text module is imported (formal LastStop BveG wording, coloured spans)
             with open(os.path.join(ROOT, name), encoding="utf-8") as f:
                 new = f.read()
             a, b = parts(old), parts(new)

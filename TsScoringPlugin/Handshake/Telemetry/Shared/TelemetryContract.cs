@@ -9,7 +9,7 @@ using System.Text;
 // The wire format is the one the Python application has always read on UDP 127.0.0.1:54321: ONE datagram of comma separated `KEY:value` parts per
 // Tick. Phase L3 adds one optional part, AVAIL, the list of the data groups ("tokens") the line really carries:
 //
-//     AVAIL:1:brake_cab+brake_type+calcg+...        (tokens sorted, joined by '+')
+//     AVAIL:1:accelz+brake_cab+brake_type+...       (tokens sorted, joined by '+')
 //
 // A sender never writes the keys of a token it does not list, and never writes a placeholder for them. The Python side (telemetry_contract.py)
 // is the reference reader: both vocabularies are compared by the offline tests.
@@ -41,17 +41,12 @@ namespace TSScoringPlugin.Telemetry
         internal const string TokBrakeType = "brake_type";
         internal const string TokBrakeCab = "brake_cab";
         internal const string TokPRates = "prates";
-        internal const string TokCalcG = "calcg";
-        internal const string TokAccelZ = "accelz";          // Shadow comparison (Stage 1): ACCELZ, the official AccelerationZ in m/s^2 exactly as the host reports it
-        internal const string TokAccelX = "accelx";          // Shadow sway diagnostics: ACCELX, the official FrontAccelerationX in m/s^2 exactly as the host reports it (the left-right input of the figure)
-        internal const string TokSway = "sway";              // Shadow sway diagnostics: SWAY, the four RAW states of the BVE passenger-sway figure (front-back x, v, left-right x, v), read by SwayStateReader
-        internal const string KeySwayR = "SWAYR";            // the resolution diagnostic of that reader (result:version:entry[:detail]): a diagnostic part, NOT a token (never in AVAIL)
+        internal const string TokAccelZ = "accelz";          // ACCELZ, the official AccelerationZ in m/s^2 exactly as the host reports it (the one input of the stop-jerk scoring)
         internal const string TokMeta = "meta";
         internal const string TokJump = "jump";              // Phase LJX-1: JUMP (the counter of the official jumps); announced only while the Legacy Jump execution contract is open
 
         // "no limit" in the km/h of the contract (the value the Python HUD prints as ---)
         internal const double NoLimitKmh = 1000.0;
-        internal const double GravityMps2 = 9.80665;
 
         internal static string FormatAvail(IEnumerable<string> tokens)
         {

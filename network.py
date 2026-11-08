@@ -166,7 +166,6 @@ def process_udp_data(self):
                     elif part.startswith("MAPHEAD:"): self.map_head_limit = float(part.split(':')[1])
                     elif part.startswith("MAPTAIL:"): self.map_tail_limit = float(part.split(':')[1])
                     elif part.startswith("CLEARDIST:"): self.bve_clear_dist = float(part.split(':')[1])
-                    elif part.startswith("CALCG:"): self.bve_calc_g = float(part.split(':')[1])
                     elif part.startswith("BTYPE:"): self.bve_btype = part.split(':')[1].strip()
                     elif part.startswith("JUMP:"): self.bve_jump_count = int(part.split(':')[1])
                     elif part.startswith("CAB:"): 

@@ -129,7 +129,7 @@ class A_StateContract(unittest.TestCase):
         o.reset_telemetry_state()
         o.reset_generation_state()
         survivors = {name for name in si0.D3_VARIABLES if getattr(o, name) is marker}
-        self.assertEqual(len(si0.D3_VARIABLES), 42)
+        self.assertEqual(len(si0.D3_VARIABLES), 41)       # 2026-11-08 (an intended change, formal LastStop BveG): hb_cushion_max_g, the write-only CalcG maximum, is retired (was 42)
         self.assertEqual(survivors, set())                                  # (bve_hwnd = marker is not a valid window -> forgotten as well)
         self.assertIsNone(o.bve_hwnd)
         self.assertFalse(o.is_linked)
@@ -151,7 +151,7 @@ class A_StateContract(unittest.TestCase):
         o.manual_eb_accum_time = 0.3
         o.manual_eb_cooling_time = 0.5
         o.smee_virtual_eb_active = True
-        o.hb_prev_notch, o.hb_strong_entered, o.hb_cushion_entry_time, o.hb_cushion_max_g = 7, True, 3.0, 0.2
+        o.hb_prev_notch, o.hb_strong_entered, o.hb_cushion_entry_time = 7, True, 3.0
         o.bb_state, o.bb_apply_count, o.bb_release_count, o.bb_is_in_zone, o.bb_evaluated = "FAILED", 3, 2, True, True
         o.bb_current_notch, o.bb_prev_stable_notch, o.bb_notch_change_time, o.bb_is_stable = 5, 4, 9.0, False
         o.last_jump_count, o.bve_jump_count, o.jump_lock = 4, 4, True
@@ -174,7 +174,7 @@ class A_StateContract(unittest.TestCase):
         o.reset_telemetry_state()
         o.reset_generation_state()
         self.assertEqual((o.manual_eb_penalty_applied, o.manual_eb_accum_time, o.manual_eb_cooling_time, o.smee_virtual_eb_active), (False, 0.0, 0.0, False))
-        self.assertEqual((o.hb_prev_notch, o.hb_strong_entered, o.hb_cushion_entry_time, o.hb_cushion_max_g), (0, False, 0.0, 0.0))
+        self.assertEqual((o.hb_prev_notch, o.hb_strong_entered, o.hb_cushion_entry_time), (0, False, 0.0))
         self.assertEqual((o.bb_state, o.bb_apply_count, o.bb_release_count, o.bb_is_in_zone, o.bb_evaluated), ("IDLE", 0, 0, False, False))
         self.assertEqual((o.bb_current_notch, o.bb_prev_stable_notch, o.bb_notch_change_time, o.bb_is_stable), (0, 0, 0.0, True))
         self.assertEqual((o.last_jump_count, o.bve_jump_count, o.jump_lock, o.jump_baseline_pending), (0, 0, False, True))
@@ -1549,8 +1549,8 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
                                                                            or (isinstance(n.func, ast.Attribute) and n.func.attr == "write_desktop_log"))]
             if calls:
                 counts[name] = len(calls)
-        self.assertEqual(counts, {"main.py": 12, "scoring_logic.py": 25})            # 23: Stage TB-C turnback_diag (fixed words only); 25: Shadow sway diagnostics (on purpose) sway_shadow_log, the one writer of the sway lines, behind desktop_log_enabled()
-        self.assertEqual(sum(counts.values()), 37)            # 25 / 37 (Shadow sway diagnostics, on purpose); 24 / 36: Shadow comparison (Stage 1, on purpose) shadow_stop_jerk_record writes ONE diagnostic line per judged stop, behind desktop_log_enabled()
+        self.assertEqual(counts, {"main.py": 12, "scoring_logic.py": 24})            # 23: Stage TB-C turnback_diag (fixed words only); 25: Shadow sway diagnostics (on purpose) sway_shadow_log, the one writer of the sway lines, behind desktop_log_enabled()
+        self.assertEqual(sum(counts.values()), 36)            # 25 / 37 (Shadow sway diagnostics, on purpose); 24 / 36: Shadow comparison (Stage 1, on purpose) shadow_stop_jerk_record writes ONE diagnostic line per judged stop, behind desktop_log_enabled()
         openers = {}
         for name in ("main.py", "scoring_logic.py", "hud_ui.py", "menu_ui.py", "utils.py", "managed_hud.py", "managed_input.py", "managed_mode.py",
                      "managed_state.py", "telemetry_contract.py", "telemetry_gate.py", "config.py"):
@@ -1782,10 +1782,13 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
             'add_score_popup(self, 0, "不正なジャンプを検知しました。", COLOR_B_EMG, "big", "警告", current_time, force=True)',
             'add_score_popup(self, 0, "採点を中断します。", COLOR_B_EMG, "big", "警告", current_time, force=True)',
         )
+        # Formal LastStop BveG (2026-11-08, an intended change): the CalcG / Shadow / sway code of scoring_logic.py is retired and update_stop_jerk_penalty judges the official AccelerationZ window.
+        # These are the 15 distinct lines (stripped) that the diff shows as removed; the deduction values (-100 / -200), the thresholds (0.065 / 0.100 G) and the 0.5 s window are the same constants.
+        formal_bveg_retired = ('self.g_history.clear()', 'self.hb_cushion_max_g = 0.0', 'def update_stop_jerk_penalty(self, current_time, decel_g):', 'recent_g = [h[1] for h in self.g_history if current_time - h[0] <= 0.5]', 'if recent_g:', 'self.last_stop_g = sum(recent_g) / len(recent_g)', 'self.last_stop_g = decel_g', '# 前進・後退のどちらでも加速度の絶対値で停車時衝動を判定する', 'abs_stop_g = abs(self.last_stop_g)', 'if abs_stop_g >= 0.10:', 'elif abs_stop_g >= 0.065:', 'decel_g,', 'if decel_g > self.hb_cushion_max_g: self.hb_cushion_max_g = decel_g', 'decel_g = -self.bve_calc_g', 'self.g_history = [h for h in self.g_history if h[0] > cutoff_time]')
         self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport) + tbd_running_end_judgement + pseudo_turnback_a_seam + st2a_checkpoint_identity + st2b_retry_by_saved_index
                                    + st3d_request_by_the_one_builder + st2c_first_station_distance + timefix_b_departure_margins + timefix_b3_zero_speed_and_jump_boundary
                                    + close_range_shared_basic_braking_init + si_r5_2a_p03_target_index + si_r5_2b_arrival_target_index + si_r5_2c_departure_prev_target_index
-                                   + lc3b_same_time_history_replace + stage_tbh6_illegal_move_wording], removed)
+                                   + lc3b_same_time_history_replace + stage_tbh6_illegal_move_wording + formal_bveg_retired], removed)
 
     def test_the_scoring_function_bodies_are_ast_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":scoring_logic.py")
@@ -1812,9 +1815,8 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
                                    # Stage TB-H (on purpose): pair B untimed by contract - one PURE helper of the section (turnback_crossed_pairs; turnback_fix_section itself is untouched), the set of the crossed B (turnback_b_indexes) and the reason (untimed_reason); the points, the rules and the constants of the scoring are not among them (tests/test_pt_tbh_pairb_contract.py)
                                    "turnback_crossed_pairs", "turnback_b_indexes", "untimed_reason",
                                    # Shadow comparison (Stage 1, on purpose): the BveG stop-jerk beside the CalcG one - three PURE helpers and one recorder that only reads (no score, no rule, no constant; tests/test_shadow_stop_jerk.py RS38)
-                                   "stop_jerk_window_mean", "stop_jerk_g_from_accel_z", "stop_jerk_points", "shadow_stop_jerk_record",
+                                   "stop_jerk_window_mean", "stop_jerk_g_from_accel_z", "stop_jerk_points", "judge_stop_jerk", "stop_jerk_log",   # 2026-11-08 (formal LastStop BveG): the judgement and its one diagnostic line replace the Shadow recorder; the sway_shadow_* functions are retired
                                    # Shadow sway diagnostics (on purpose): five functions that only READ the overlay (the sway Shadow state of its own, one diagnostic line behind desktop_log_enabled()); no score, no rule, no constant (tests/test_sway_shadow.py SG01 / SW_X01)
-                                   "sway_shadow_log", "sway_shadow_tick", "sway_shadow_stop", "sway_shadow_boundary", "sway_shadow_resolution",
                                    # Stage TB-H (A re-stop wait; on purpose): the strict facts of the wait, the kept range, the removal of the chain's own popups, the two displays, the arrival at another station; no score, no rule, no constant of the scoring (tests/test_pt_tbh_arestop.py)
                                    "turnback_train_state", "turnback_stop_range_capture", "turnback_drop_popups", "turnback_drop_arrival_results", "turnback_cancel_show", "turnback_restop_show", "turnback_other_arrival", "turnback_illegal_move_show", "turnback_held_a_target"},   # Stage TB-H 5b (on purpose): turnback_drop_arrival_results (the popup list filter of the cancellation); no score, no rule, no constant of the scoring (tests/test_pt_tbh_first_jump_10s.py)
                                    set(b))
@@ -1828,14 +1830,20 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
         # Legacy scoring LC-3A (on purpose): reset_transient_scoring_state clears the stop jerk state at a Jump boundary and update_stop_jerk_penalty does not judge a sample while a Jump is outstanding;
         # LC-3B: update_physics_and_scoring replaces the last g_history entry when the clock time repeats; LC-4 / LC-4b: execute_retry refuses after the scoring finished and while the Jump group is unavailable;
         # the points, the rules and the constants are not among them (tests/test_lc3a_stop_jerk_boundary.py / test_lc3b_clock_freeze.py / test_lc4_retry_after_finish.py / test_lc4b_python_jump_state.py pin the behaviour)
-        self.assertEqual(changed, ["create_save_data", "evaluate_arrival", "evaluate_departure", "execute_retry", "reset_station_evaluation_state", "reset_transient_scoring_state", "update_physics_and_scoring",
-                                   "update_stop_jerk_penalty", "write_limit_debug_log"])
+        self.assertEqual(changed, ["create_save_data", "evaluate_arrival", "evaluate_departure", "execute_retry", "reset_station_evaluation_state", "reset_transient_scoring_state", "update_initial_and_release_brake_penalty", "update_physics_and_scoring",
+                                   "update_stop_jerk_penalty", "write_limit_debug_log"])       # 2026-11-08: + update_initial_and_release_brake_penalty (the write-only CalcG parameter decel_g / hb_cushion_max_g is gone)
 
     def test_the_config_constants_are_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":config.py")
         if old is None:
             self.skipTest("baseline commit / git not available (INCONCLUSIVE)")
-        self.assertEqual(ast.dump(ast.parse(old.replace("\r\n", "\n"))), ast.dump(ast.parse(read("config.py"))))
+        # 2026-11-08 (an intended change, formal LastStop BveG): the stop-jerk constants are ADDED (nothing is changed or removed)
+        added = {"STANDARD_GRAVITY_MPS2", "STOP_JERK_WINDOW_SECONDS", "STOP_JERK_FIRST_BOUNDARY_G", "STOP_JERK_SECOND_BOUNDARY_G", "STOP_JERK_FIRST_BOUNDARY_COLOR", "STOP_JERK_SECOND_BOUNDARY_COLOR"}
+        now = ast.parse(read("config.py"))
+        kept = [n for n in now.body if not (isinstance(n, ast.Assign) and any(getattr(t, "id", None) in added for t in n.targets))]
+        self.assertEqual(len(now.body) - len(kept), len(added))
+        now.body = kept
+        self.assertEqual(ast.dump(ast.parse(old.replace("\r\n", "\n"))), ast.dump(now))
 
 
 if __name__ == "__main__":

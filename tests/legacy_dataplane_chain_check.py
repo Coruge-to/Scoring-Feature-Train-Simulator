@@ -97,7 +97,7 @@ def main(folder):
     gate = overlay.telemetry_gate
     names = ("bve_speed", "bve_time_ms", "bve_location", "bve_gradient", "bve_next_loc", "bve_next_time", "bve_is_pass", "bve_is_timing",
              "bve_margin_b", "bve_margin_f", "bve_door", "bve_doordir", "bve_term", "bve_current_station_name", "bve_signal_limit",
-             "bve_fwd_sig_limit", "bve_fwd_sig_loc", "map_head_limit", "map_tail_limit", "bve_calc_g", "bve_btype", "cab_brk_count",
+             "bve_fwd_sig_limit", "bve_fwd_sig_loc", "map_head_limit", "map_tail_limit", "bve_btype", "cab_brk_count",
              "has_holding_brake", "bve_pressure_rates", "bve_max_pressure", "meta_title", "meta_route", "meta_vehicle", "meta_author",
              "current_scenario_id", "bve_rev_text", "bve_pow_text", "bve_brk_text", "bcPressure", "bpPressure", "bve_train_length",
              "bve_actual_state", "is_bve_loaded")

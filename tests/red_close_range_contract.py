@@ -163,7 +163,6 @@ class Base(unittest.TestCase):
         o.prev_doordir = 1
         o.is_official_retry = False
         o.bve_brk_notch = 0
-        o.bve_calc_g = 0.0
         R.bind_identity(o, arr_idx=0, tgt_idx=1)
         self.S.reset_station_evaluation_state(o)
         self.tick()

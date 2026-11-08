@@ -101,7 +101,7 @@ Check 'A03 without the ground surface MAPHEAD equals MAPTAIL, there is no TRAINL
 $wt = NewG; $wt.Ground.CarThrow = $true; $wt.Ground.LimitsThrow = $true; $wt.Run(100, 16)
 Check 'A04 every ground read throwing: a line is still sent for every Tick (none skipped), without any ground group, each reason reported once' (($wt.LinesSent -eq 100) -and ($wt.LinesSkipped -eq 0) -and (@($wt.Sink.Lines() | Where-Object { (Has $_ 'TRAINLEN') -or (Has $_ 'MAPLIMITS') -or (Has $_ 'CLEARDIST') }).Count -eq 0) -and (@(Gnd $wt | Where-Object { $_ -like 'TEL_GROUND_UNAVAILABLE*' }).Count -eq 2))
 $wz = NewG; $wz.Run(10, 16)
-Check 'A05 the 14 tokens of the earlier phases keep their place: the AVAIL of a wired session with the default fakes is the earlier list plus trainlen and maplimit_ahead, sorted' (((Toks (Last $wz)) -join '+') -ceq 'bcp+bpp+brake_cab+brake_type+calcg+door+grad+handle+loc+maplimit+maplimit_ahead+meta+prates+siglimit+siglimit_ahead+speed+station+time+trainlen')
+Check 'A05 the 14 tokens of the earlier phases keep their place: the AVAIL of a wired session with the default fakes is the earlier list (without calcg, retired 2026-11-08: formal LastStop BveG) plus trainlen and maplimit_ahead, sorted' (((Toks (Last $wz)) -join '+') -ceq 'bcp+bpp+brake_cab+brake_type+door+grad+handle+loc+maplimit+maplimit_ahead+meta+prates+siglimit+siglimit_ahead+speed+station+time+trainlen')
 
 # ---------------------------------------------------------------------------------------------------------------------------------------------
 # B - TRAINLEN = CarLength x (MotorCar + TrailerCar)

@@ -99,13 +99,6 @@ namespace TSScoringPlugin.Telemetry
             sink = LegacyDataPlaneSink.Create(bvePid, LegacyDataPlaneSink.FixedLegacyDestination(), delegate (string text) { diag.Event("TEL_DP", text); });
             AtsExLegacyApi api = new AtsExLegacyApi();
             hostApi = api;
-            try
-            {
-                api.AttachDiag(diag);      // the sway source diagnostic goes to the per-process log of this DLL
-            }
-            catch
-            {
-            }
 
             try
             {
@@ -278,7 +271,6 @@ namespace TSScoringPlugin.Telemetry
             }
 
             try { session.OnDispose(); } catch { }
-            try { if (hostApi != null) { hostApi.ReleaseSway(); } } catch { }
             diag.Event("TEL_FINAL", "udpSent=" + sink.Sent + " udpFailed=" + sink.Failed + " mode=" + sink.ModeText);
         }
 
@@ -428,56 +420,8 @@ namespace TSScoringPlugin.Telemetry
         }
     }
 
-    /// <summary>
-    /// The host side of the sway source lookup (LegacySwayProvider / LegacySwaySourceFinder): the only place that names the wrapper types for it. No wrapper operator == / != is used anywhere
-    /// here: ClassWrapperBase.operator != is left.Equals(right) and throws for a null left operand (the SHD-L-01 failure); `is` and the original object are used instead.
-    /// </summary>
-    internal sealed class AtsExSwayHostAccess : ILegacySwayHostAccess
-    {
-        private readonly Func<MainForm> wrapperMainForm;
-        private readonly Func<object> rawMainForm;
-
-        /// <summary>Production: the two getters read IBveHacker.MainForm and IBveHacker.MainFormSource. The offline tests give getters over real wrappers made from fake original objects.</summary>
-        internal AtsExSwayHostAccess(Func<MainForm> wrapperMainForm, Func<object> rawMainForm)
-        {
-            this.wrapperMainForm = wrapperMainForm;
-            this.rawMainForm = rawMainForm;
-        }
-
-        public object WrapperMainForm()
-        {
-            MainForm form = wrapperMainForm();
-            return form;
-        }
-
-        public object WrapperAssistantDrawer(object wrapperMainForm)
-        {
-            return ((MainForm)wrapperMainForm).AssistantDrawer;
-        }
-
-        public System.Collections.IEnumerable WrapperItems(object wrapperAssistantDrawer)
-        {
-            return ((AssistantDrawer)wrapperAssistantDrawer).Items;
-        }
-
-        public object FigureOfWrapperItem(object wrapperItem)
-        {
-            if (wrapperItem is SwayGauge)
-            {
-                object src = ((SwayGauge)wrapperItem).Src;
-                return src;
-            }
-
-            return null;
-        }
-
-        public object RawMainForm()
-        {
-            return rawMainForm();
-        }
-    }
     /// <summary>The Legacy API read into ILegacyApi. Every Try method catches everything: an unreadable value is "not available", never a default.</summary>
-    internal sealed class AtsExLegacyApi : ILegacyApi, ILegacyInputApi, ILegacyScoringApi, ILegacyGroundApi, ILegacyOfficialTargetApi, ILegacyVibrationApi, ILegacySwayApi
+    internal sealed class AtsExLegacyApi : ILegacyApi, ILegacyInputApi, ILegacyScoringApi, ILegacyGroundApi, ILegacyOfficialTargetApi, ILegacyVibrationApi
     {
         private IBveHacker hacker;
         private INative nativeHost;
@@ -547,7 +491,7 @@ namespace TSScoringPlugin.Telemetry
             catch { return false; }
         }
 
-        // -- Shadow comparison (Stage 1): ILegacyVibrationApi. Tick thread only; READ ONLY (a getter); an exception or a non-finite value is "not available".
+        // -- ILegacyVibrationApi (the official AccelerationZ). Tick thread only; READ ONLY (a getter); an exception or a non-finite value is "not available".
         public bool TryAccelerationZ(out double metersPerSecondSquared)
         {
             metersPerSecondSquared = 0;
@@ -561,67 +505,7 @@ namespace TSScoringPlugin.Telemetry
             catch { return false; }
         }
 
-        // -- Shadow sway diagnostics: ILegacySwayApi. Tick thread only; READ ONLY. The public FrontAccelerationX is a getter. The raw states of the BVE passenger-sway figure come from the shared
-        // reflection reader; the figure object is looked up by LegacySwayProvider (src\LegacySwaySource.cs: the wrapper path first, a bounded raw-list fallback only when the wrapper path
-        // failed, the reason of a failure recorded once per scenario, an unresolved source looked for again on every 30th Tick, the result cached). Nothing is written or called in the host.
-        private LegacySwayProvider swayProvider;
-        private ITelemetryDiag swayDiag;
 
-        internal void AttachDiag(ITelemetryDiag d)
-        {
-            swayDiag = d;
-        }
-
-        /// <summary>Dispose: the sway provider and every reference it holds (the source object, the reader binding, the host) are released.</summary>
-        internal void ReleaseSway()
-        {
-            try
-            {
-                if (swayProvider != null)
-                {
-                    swayProvider.Release();
-                }
-            }
-            catch
-            {
-            }
-
-            swayProvider = null;
-        }
-
-        public bool TryFrontAccelerationX(out double metersPerSecondSquared)
-        {
-            metersPerSecondSquared = 0;
-            try
-            {
-                double value = current.Vehicle.VibrationManager.FrontAccelerationX;
-                if (double.IsNaN(value) || double.IsInfinity(value)) return false;
-                metersPerSecondSquared = value;
-                return true;
-            }
-            catch { return false; }
-        }
-
-        public bool TrySwayState(out double longitudinalX, out double longitudinalV, out double lateralX, out double lateralV, out string diagnostic)
-        {
-            longitudinalX = 0; longitudinalV = 0; lateralX = 0; lateralV = 0; diagnostic = null;
-            try
-            {
-                if (swayProvider == null)
-                {
-                    ITelemetryDiag d = swayDiag;
-                    swayProvider = new LegacySwayProvider(SwayStateReader.HostFileVersion(), new AtsExSwayHostAccess(delegate { return hacker.MainForm; }, delegate { return LegacySwayHostReader.ReadMainFormSource(hacker); }), d == null ? null : new Action<string, string>(d.Event));
-                }
-
-                object scenarioSource = current.Src;
-                return swayProvider.TryState(scenarioSource, out longitudinalX, out longitudinalV, out lateralX, out lateralV, out diagnostic);
-            }
-            catch
-            {
-                diagnostic = null;
-                return false;
-            }
-        }
         public bool TryDoorsClosed(out bool allClosed)
         {
             allClosed = false;

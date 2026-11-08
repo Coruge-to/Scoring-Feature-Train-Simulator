@@ -1,12 +1,7 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFontMetrics, QPainterPath, QPen, QLinearGradient, QFont
 from config import *
-import sway_shadow
 from utils import draw_text_with_stroke, get_outline_color
-
-# Stage UI-2 (Owner, 2026-11-05, a PROVISIONAL setting): the Decel G / Notch telemetry GRAPH of the F2 diagnostics (the bottom-left chart) is not drawn: it covered the cab desk and the door pilot lamp in the live photos.
-# The F2 diagnostic TEXT (the lines above it) and the F2 toggle (debug_all_penalties and show_graph change together) are unchanged. Set this to True to bring the chart back.
-G_GRAPH_ENABLED = False
 
 def hud_item_available(overlay, key):
     """Can the sender provide the data of this HUD item? (telemetry_contract AVAIL; a sender without AVAIL provides everything.)"""
@@ -135,24 +130,15 @@ def draw_hud(self, painter, logical_width):
     if pressure_parts:
         dbg_texts.append(" | ".join(pressure_parts))
     dbg_texts.append(f"Target_Cap_Val: {round(self.dbg_target_cap, 1)} | ActiveBlue: {round(float(self.dbg_blue), 1) if self.dbg_blue != 'None' else 'None'}  |  ActiveRed: {round(float(self.dbg_red), 1) if self.dbg_red != 'None' else 'None'}")
-    # Shadow comparison (Stage 1): CalcG / BveG are signed instants, the two LastStop values are absolute values of a signed window mean. An unavailable value is "--"
-    # (never the other system's value and never a 0.0). The score still follows the CalcG path only.
-    calc_text, bve_text = "CalcG: --", "BveG: --"
-    last_calc_text, last_bve_text = "LastStop CalcG: --", "LastStop BveG: --"
-    if hud_data_available(self, "calcg"):
-        calc_text = f"CalcG: {self.bve_calc_g:+.3f} G"
-        last_calc_text = f"LastStop CalcG: {abs(self.last_stop_g):.3f} G"
+    # 停車時衝動（正式採点）の F2 表示は 1 行だけ: 「BveG」は公式 AccelerationZ の瞬時値（符号付き）、「LastStop BveG」は直近の停止の窓平均の絶対値（採点に使った値）。
+    # 値が無いとき（AVAIL が accelz を出さない／この Tick に標本が無い／直近の停止に判定が無い）は "--"（0.0 を出さない、他の値で代用しない）。
+    bve_text, last_bve_text = "BveG: --", "LastStop BveG: --"
     if hud_data_available(self, "accelz"):
         if getattr(self, "bve_accel_z", None) is not None:
-            bve_text = f"BveG: {self.bve_accel_z / 9.80665:+.3f} G"
+            bve_text = f"BveG: {self.bve_accel_z / STANDARD_GRAVITY_MPS2:+.3f} G"
         if getattr(self, "last_stop_g_bve", None) is not None:
             last_bve_text = f"LastStop BveG: {self.last_stop_g_bve:.3f} G"
-    dbg_texts.append(f"{calc_text}    {bve_text}")
-    dbg_texts.append(f"{last_calc_text}    {last_bve_text}")
-    # Shadow sway diagnostics: the third Shadow line. 前後 = the n of the BVE figure's longitudinal state now, 前後最大 = the largest such n of the latest stop window (T .. T+1.0 s), 合成 = the combined
-    # n (REFERENCE ONLY, never a colour name). A value that is not available is "--" (never 0). One short form, no width-dependent switch. The seven levels are TScoring's approximation (sway_shadow.SEVEN_LEVEL_NOTE).
-    sway_now, sway_peak, sway_combined = sway_shadow.f2_values(self, hud_data_available(self, "sway"))
-    dbg_texts.append(f"前後{sway_now}    前後最大{sway_peak}    合成{sway_combined}[参考]")
+    dbg_texts.append(f"{bve_text}    {last_bve_text}")
 
     if self.show_graph:
         painter.setPen(Qt.PenStyle.NoPen)
@@ -168,66 +154,6 @@ def draw_hud(self, painter, logical_width):
             
             painter.drawText(20, dbg_y, text)
             dbg_y += 20
-
-    if G_GRAPH_ENABLED and self.show_graph and len(self.g_history) > 1:
-        graph_w = 800
-        graph_h = 250
-        graph_x = 5
-        graph_y = BASE_SCREEN_H - graph_h - 40
-        
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(0, 0, 0, 200))
-        painter.drawRect(int(graph_x), int(graph_y), int(graph_w), int(graph_h))
-        
-        painter.setPen(QPen(QColor(100, 100, 100), 1))
-        y_005 = graph_y + graph_h - (0.05 / 0.15) * graph_h
-        y_010 = graph_y + graph_h - (0.10 / 0.15) * graph_h
-        painter.drawLine(int(graph_x), int(y_005), int(graph_x + graph_w), int(y_005))
-        painter.drawLine(int(graph_x), int(y_010), int(graph_x + graph_w), int(y_010))
-
-        y_z1 = graph_y + graph_h - (0.015 / 0.15) * graph_h
-        y_z2 = graph_y + graph_h - (0.055 / 0.15) * graph_h
-        painter.setPen(QPen(QColor(200, 200, 0, 150), 2, Qt.PenStyle.DashLine))
-        painter.drawLine(int(graph_x), int(y_z1), int(graph_x + graph_w), int(y_z1))
-        painter.setPen(QPen(QColor(255, 50, 50, 150), 2, Qt.PenStyle.DashLine))
-        painter.drawLine(int(graph_x), int(y_z2), int(graph_x + graph_w), int(y_z2))
-        
-        now = self.bve_time_ms / 1000.0
-        path_g = QPainterPath()
-        path_notch = QPainterPath()
-        
-        first = True
-        for h_data in self.g_history:
-            t, g, notch, b_max = h_data
-            x = graph_x + graph_w - ((now - t) / 10.0) * graph_w
-            yg = graph_y + graph_h - (min(max(g, 0.0), 0.15) / 0.15) * graph_h
-            n_norm = max(0.0, min(notch, b_max)) / max(1.0, float(b_max))
-            yn = graph_y + graph_h - n_norm * graph_h
-            x = max(graph_x, min(x, graph_x + graph_w))
-
-            if first:
-                path_g.moveTo(x, yg)
-                path_notch.moveTo(x, yn)
-                first = False
-            else:
-                path_g.lineTo(x, yg)
-                path_notch.lineTo(x, yn)
-                
-        pen_g = QPen(QColor(0, 255, 100), 3)
-        pen_g.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        painter.setPen(pen_g)
-        painter.drawPath(path_g)
-        
-        pen_n = QPen(QColor(100, 150, 255), 2)
-        pen_n.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        painter.setPen(pen_n)
-        painter.drawPath(path_notch)
-        
-        painter.setFont(QFont("sans-serif", 12, QFont.Weight.Bold))
-        painter.setPen(QColor(255, 255, 255))
-        painter.drawText(int(graph_x + 10), int(graph_y + 25), "[TELEMETRY - 10 Seconds]  Green: Decel G (0.0-0.15) / Blue: Notch (0-Max)")
-        painter.drawText(int(graph_x + 10), int(y_z1 - 5), "ZONE1 (0.015G)")
-        painter.drawText(int(graph_x + 10), int(y_z2 - 5), "ZONE2 (0.055G)")
 
     display_list = []
 

@@ -28,7 +28,7 @@ import telemetry_gate as tg  # noqa: E402
 
 HAS_QT = importlib.util.find_spec("PyQt6") is not None
 
-LEGACY_TOKENS = ("time", "speed", "loc", "grad", "station", "door", "siglimit", "siglimit_ahead", "maplimit", "brake_type", "brake_cab", "prates", "calcg",
+LEGACY_TOKENS = ("time", "speed", "loc", "grad", "station", "door", "siglimit", "siglimit_ahead", "maplimit", "brake_type", "brake_cab", "prates", "accelz",
                  "meta")
 ECB, SMEE, CL = ref.ECB, ref.SMEE, ref.CL
 BTYPE = {ECB: "Ecb", SMEE: "Smee", CL: "Cl"}
@@ -61,7 +61,7 @@ def legacy_line(sid, handle=None, bcp=None, bpp=None, time_ms=36000000, speed=30
             tokens.append("bpp")
         tail.append("BPP:%s" % bpp)
     head = ("SCENARIO_ID:%d,AVAIL:1:%s,SPEED:%s,TIME:%d,LOCATION:1000.5,GRADIENT:-12.5,NEXTLOC:2500,NEXTTIME:36200000,ISPASS:0,ISTIMING:0,MARGINB:5,MARGINF:5,"
-            "SIGLIMIT:90,FWDSIGLIMIT:1000,FWDSIGLOC:-1,DOOR:0,DOORDIR:1,TERM:0,MAPHEAD:70,MAPTAIL:70,CALCG:0.00100,BTYPE:%s,CAB:5:0,"
+            "SIGLIMIT:90,FWDSIGLIMIT:1000,FWDSIGLOC:-1,DOOR:0,DOORDIR:1,TERM:0,MAPHEAD:70,MAPTAIL:70,ACCELZ:0.009807,BTYPE:%s,CAB:5:0,"
             "PRATES:0_0.2_0.4_0.6_0.8_1:490.0,STATNAME:S"
             % (sid, "+".join(sorted(tokens)), speed, time_ms, btype))
     return head + ("," + ",".join(tail) if tail else "")

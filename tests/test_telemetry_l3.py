@@ -41,13 +41,13 @@ def read_text(path):
 CURRENT_FULL = ("SCENARIO_ID:{sid},SPEED:45.5,TIME:36000000,LOCATION:1234.5,GRADIENT:10,NEXTLOC:2000,NEXTTIME:36100000,ISPASS:0,ISTIMING:1,"
                 "MARGINB:5,MARGINF:5,REV:前:1,POW:P3:3,BRK:N:0:8,HTYPE:2,ALLTXT:切_N_前:N_P1_P2_P3:N_B1_B2_B3_B4_B5_B6_B7_EB:,SIGLIMIT:1000,"
                 "TRAINLEN:80,MAPLIMITS:,FWDSIGLIMIT:1000,FWDSIGLOC:-1,DOOR:0,DOORDIR:1,TERM:0,MAPHEAD:1000,MAPTAIL:1000,CLEARDIST:0,"
-                "CALCG:0.00000,BTYPE:Ecb,JUMP:0,CAB:8:0,BCP:0.0,PRATES:0_0.1_0.2_0.3_0.4_0.5_0.6_0.7_1:440.0,BPP:0.0:490.0,STATNAME:駅A,DOORTIME:4630")
+                "ACCELZ:0.000000,BTYPE:Ecb,JUMP:0,CAB:8:0,BCP:0.0,PRATES:0_0.1_0.2_0.3_0.4_0.5_0.6_0.7_1:440.0,BPP:0.0:490.0,STATNAME:駅A,DOORTIME:4630")
 # the tokens a Legacy sender can provide (see Docs\Handshake-PhaseL3-LegacyTelemetry.md)
-LEGACY_TOKENS = ("time", "speed", "loc", "grad", "station", "door", "siglimit", "siglimit_ahead", "maplimit", "brake_type", "brake_cab", "prates", "calcg",
+LEGACY_TOKENS = ("time", "speed", "loc", "grad", "station", "door", "siglimit", "siglimit_ahead", "maplimit", "brake_type", "brake_cab", "prates", "accelz",
                  "meta")
 LEGACY_LINE = ("SCENARIO_ID:{sid},AVAIL:1:" + "+".join(sorted(LEGACY_TOKENS)) + ",SPEED:30.5,TIME:36000000,LOCATION:1000.5,GRADIENT:-12.5,NEXTLOC:2500,"
                "NEXTTIME:36200000,ISPASS:0,ISTIMING:0,MARGINB:5,MARGINF:5,SIGLIMIT:90,FWDSIGLIMIT:1000,FWDSIGLOC:-1,DOOR:0,DOORDIR:1,TERM:0,"
-               "MAPHEAD:70,MAPTAIL:70,CALCG:0.00100,BTYPE:Smee,CAB:5:0,PRATES:0_0.2_0.4_0.6_0.8_1:490.0,STATNAME:駅B")
+               "MAPHEAD:70,MAPTAIL:70,ACCELZ:0.009807,BTYPE:Smee,CAB:5:0,PRATES:0_0.2_0.4_0.6_0.8_1:490.0,STATNAME:駅B")
 
 
 def current_line(sid):
@@ -898,11 +898,11 @@ class D_RealOverlay(unittest.TestCase):
         # the F2 diagnostics are drawn with painter.drawText, not draw_text_with_stroke: build the text list the way draw_hud does
         self.assertFalse(self.hud_ui.hud_data_available(o, "bcp"))
         self.assertFalse(self.hud_ui.hud_data_available(o, "bpp"))
-        self.assertTrue(self.hud_ui.hud_data_available(o, "calcg"))
+        self.assertTrue(self.hud_ui.hud_data_available(o, "accelz"))
         src = read_text(os.path.join(ROOT, "hud_ui.py"))
         self.assertIn('hud_data_available(self, "bcp")', src)
         self.assertIn('hud_data_available(self, "bpp")', src)
-        self.assertIn('hud_data_available(self, "calcg")', src)
+        self.assertIn('hud_data_available(self, "accelz")', src)
 
     # -- strict: epochs and defaults ----------------------------------------------------------------------------------------------------
     def test_a_new_scenario_instance_leaves_no_old_value_behind(self):
@@ -1004,11 +1004,11 @@ class E_StaticGuards(unittest.TestCase):
 
         self.assertEqual(set(visible_keys), set(tc.HUD_ITEM_REQUIRES))
         self.assertEqual(len(visible_keys), len(tc.HUD_ITEM_REQUIRES))
-        self.assertEqual(set(diagnostic_guards), {"bcp", "bpp", "calcg", "accelz"})        # Shadow comparison (Stage 1, on purpose): the F2 BveG values are a diagnostic group of their own (token accelz)
+        self.assertEqual(set(diagnostic_guards), {"bcp", "bpp", "accelz"})        # Shadow comparison (Stage 1, on purpose): the F2 BveG values are a diagnostic group of their own (token accelz)
         self.assertIn("BCP", diagnostic_guards["bcp"])
         self.assertIn("BPP", diagnostic_guards["bpp"])
         self.assertIn("Virtual_EB", diagnostic_guards["bpp"])
-        self.assertIn("CalcG", diagnostic_guards["calcg"])
+        self.assertIn("BveG", diagnostic_guards["accelz"])
 
     def test_normal_mode_main_path_is_unchanged(self):
         new = read_text(os.path.join(ROOT, "main.py"))

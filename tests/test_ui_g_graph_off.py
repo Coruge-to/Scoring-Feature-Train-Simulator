@@ -1,8 +1,9 @@
 """Stage UI-2: the Decel G / Notch telemetry GRAPH of the F2 diagnostics is not drawn (a provisional Owner setting, 2026-11-05: the chart covered the cab desk and the door pilot lamp in the live photos of S-02 / S-01).
 
-Owner contract: the F2 diagnostic TEXT stays; only the chart (the bottom-left telemetry graph: its background, its lines, its two zone lines, its caption) is gone. F2 itself is unchanged: it still toggles debug_all_penalties AND show_graph together
-(main.py), and the diagnostic text is drawn while show_graph is on. One constant (hud_ui.G_GRAPH_ENABLED) brings the chart back.
-The REAL draw_hud runs on the real Overlay (offscreen) with a recording painter. RED = fails on the baseline d67e8a0 (the chart is drawn); GUARD = passes on the baseline and must keep passing."""
+Owner contract: the F2 diagnostic TEXT stays; the chart (the bottom-left telemetry graph: its background, its lines, its two zone lines, its caption) is gone. F2 itself is unchanged: it still toggles debug_all_penalties AND show_graph together
+(main.py), and the diagnostic text is drawn while show_graph is on.
+Update 2026-11-08 (formal LastStop BveG): the chart plotted the CalcG history, which is retired, so the chart CODE and its constant (hud_ui.G_GRAPH_ENABLED) are removed too (UG_04 / UG_05 now guard that).
+The REAL draw_hud runs on the real Overlay (offscreen) with a recording painter."""
 import os
 import socket
 import sys
@@ -88,7 +89,6 @@ class GraphOff(unittest.TestCase):
         o = self.o
         o.show_graph = show_graph
         o.bve_time_ms = 100000
-        o.g_history = [(90.0 + i * 0.3, 0.02 + 0.003 * i, float(i % 5), 8.0) for i in range(30)] if history else []
         existed = hasattr(self.hud_ui, "G_GRAPH_ENABLED")
         original = getattr(self.hud_ui, "G_GRAPH_ENABLED", None)
         if graph_enabled is not None:
@@ -126,17 +126,16 @@ class GraphOff(unittest.TestCase):
         self.assertEqual(p.paths, 0)
         self.assertFalse([t for t in p.texts if t.startswith("[TIMING]") or t.startswith("[TELEMETRY")])
 
-    def test_UG_04_RED_the_constant_brings_the_chart_back(self):
-        self.assertTrue(hasattr(self.hud_ui, "G_GRAPH_ENABLED"), "RED on the baseline: no constant")
-        p = self.render(graph_enabled=True)
-        self.assertGreaterEqual(p.paths, 2, "one line for G and one for the notch")
-        self.assertTrue([t for t in p.texts if t.startswith("[TELEMETRY - 10 Seconds]")], "and the caption")
-        self.assertIn("ZONE1 (0.015G)", p.texts)
+    def test_UG_04_the_chart_is_retired_with_the_calcg_history_no_constant_no_caption(self):
+        self.assertFalse(hasattr(self.hud_ui, "G_GRAPH_ENABLED"), "the chart constant is gone with the chart")
+        p = self.render()
+        self.assertEqual(p.paths, 0)
+        self.assertFalse([t for t in p.texts if t.startswith("[TELEMETRY - 10 Seconds]") or "ZONE1" in t or "ZONE2" in t])
 
-    def test_UG_05_RED_the_source_is_one_constant_and_one_condition(self):
+    def test_UG_05_the_source_has_no_chart_code_and_the_text_block_is_still_switched_by_show_graph_only(self):
         text = read("hud_ui.py")
-        self.assertEqual(text.count("G_GRAPH_ENABLED = False"), 1)
-        self.assertEqual(text.count("if G_GRAPH_ENABLED and self.show_graph and len(self.g_history) > 1:"), 1)
+        for banned in ("G_GRAPH_ENABLED", "g_history", "TELEMETRY - 10 Seconds", "ZONE1", "path_notch"):
+            self.assertNotIn(banned, text)
         self.assertEqual(text.count("    if self.show_graph:\n        painter.setPen(Qt.PenStyle.NoPen)"), 1, "the diagnostic text block is still switched by show_graph only")
 
     def test_UG_06_GUARD_F2_still_toggles_the_text_switch_and_the_chart_switch_together(self):

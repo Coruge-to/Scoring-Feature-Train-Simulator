@@ -307,7 +307,8 @@ class SiAScopeOfMain(unittest.TestCase):
     CHANGED_MEMBERS = {"update_logic", "apply_telemetry_text", "handle_menu_enter", "read_udp_data", "take_result_screenshot", "toggle_borderless_fullscreen"}
     REMOVED_LINES = {
         "apply_telemetry_text": {"if len(vals) >= 3: self.bve_bp_initial = float(vals[2])",
-                                 "self.max_pow_w = get_adjusted_max_w(pow_list, apply_offset=False)"},       # SI-A4: the holding speed texts are width candidates, too
+                                 "self.max_pow_w = get_adjusted_max_w(pow_list, apply_offset=False)",
+                                 'elif part.startswith("CALCG:"): self.bve_calc_g = float(part.split(\x27:\x27)[1])'},       # SI-A4: the holding speed texts are width candidates, too; 2026-11-08 (an intended change, formal LastStop BveG): the CALCG part is no longer taken
         "take_result_screenshot": {'save_path, _ = QFileDialog.getSaveFileName(self, "採点結果を保存", os.path.join(save_dir, default_name), "JPEG Image (*.jpg);;PNG Image (*.png)")'},
         # PID-D6 (on purpose): the scoring start's jump command goes through Overlay.send_jump_command (RequestId transport)
         # Phase ST-2a (on purpose): the first checkpoint of a scoring start is built as a dict (first_checkpoint) so that it can carry the verified station identity: the append( { ... } ) opening and closing lines left

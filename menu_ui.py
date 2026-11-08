@@ -10,7 +10,8 @@ from PyQt6.QtGui import (
     QPen,
 )
 from config import *
-from utils import draw_text_with_outline
+from utils import draw_text_spans_with_outline, draw_text_with_outline
+import stop_jerk_text
 import time
 
 def _brake_rule_start(self, r_idx):
@@ -1096,7 +1097,7 @@ def draw_menu(self, painter, logical_width):
             0: "【 転動 】\nドア開扉中に車両が完全に停止していたかを採点します。\n（※ドア開扉中に累計5cm動くたびに-500点）",
             1: "【 ATS信号無視 】\nβ版では未対応です。保安装置介入の判定機能は今後のアップデートで対応予定です。",
             2: "【 速度制限超過 】\n速度制限・信号制限を守ったかを採点します。\n（※1秒毎に超過した速度(km/h)を累積減点）",
-            3: "【 停車時衝動 】\n列車が完全に停止する際のショックの大きさを停止直前の0.5秒におけるGの平均値により採点します。\n（※0.065G≒2.3km/h/s以上で-100点、0.10G≒3.5km/h/s以上で-200点）",
+            3: stop_jerk_text.stop_jerk_description_text(),
             4: "【 非常ブレーキ 】\n走行中に非常ブレーキを使用したかどうかを採点します。\n（※非常ブレーキを使用するごとに-500点）",
             5: "【 初動・緩和ブレーキ 】\n基本制動のルールを設定した区間ごとに、\n異なる初動・緩和ブレーキのルールを適用したい場合に追加・編集します。",
             6: "次の設定ページ（評価点の設定）へ進みます。"
@@ -1108,8 +1109,14 @@ def draw_menu(self, painter, logical_width):
         else:
             desc_text = desc_dict.get(self.menu_cursor, "")
 
-        for j, line in enumerate(desc_text.split('\n')):
-            draw_text_with_outline(painter, line, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, 180, desc_y + 40 + (j * 40), "left", passes=8)
+        if desc_text == stop_jerk_text.stop_jerk_description_text():
+            # 停車時衝動：第一・第二境界の文字だけ色を変える（縁取りは白）。行数・フォントサイズ・行間は他の説明と同じ
+            for j, line in enumerate(stop_jerk_text.STOP_JERK_DESCRIPTION_LINES):
+                spans = [(text,) + stop_jerk_text.span_colors(kind) for text, kind in line]
+                draw_text_spans_with_outline(painter, spans, self.font_desc, 180, desc_y + 40 + (j * 40), passes=8)
+        else:
+            for j, line in enumerate(desc_text.split('\n')):
+                draw_text_with_outline(painter, line, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, 180, desc_y + 40 + (j * 40), "left", passes=8)
 
     elif self.menu_state == 9:
         # Stage UI-4: no second dim layer here (the common one at the top of draw_menu already covers the whole window; a second one drawn inside the 16:9 area left a darker band in a window that is not 16:9)

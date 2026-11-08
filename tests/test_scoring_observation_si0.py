@@ -108,7 +108,7 @@ class B_WhatTheSpeedLimitScoreAndTheGuidanceNeed(unittest.TestCase):
         for needed in ("effective_limit", "bve_speed", "pen_limit", "is_scoring_mode", "is_scoring_finished", "is_official_jumping", "is_first_udp"):
             self.assertIn(needed, a)
         for forbidden in ("bve_map_limits", "bve_clear_dist", "map_head_limit", "map_tail_limit", "bve_train_length", "bve_fwd_sig_limit", "bve_fwd_sig_loc",
-                          "bve_signal_limit", "bve_calc_g"):
+                          "bve_signal_limit"):
             self.assertNotIn(forbidden, a)
 
     def test_effective_limit_is_the_smaller_of_MAPTAIL_and_SIGLIMIT(self):
@@ -898,7 +898,7 @@ class F_UpdateLogicCharacterization(unittest.TestCase):
 # ----------------------------------------------------------------------------------------------------------------------------------------------
 D3_VARIABLES = [
     "manual_eb_penalty_applied", "manual_eb_accum_time", "manual_eb_cooling_time", "smee_virtual_eb_active",
-    "hb_cushion_entry_time", "hb_cushion_max_g", "hb_prev_notch", "hb_strong_entered",
+    "hb_cushion_entry_time", "hb_prev_notch", "hb_strong_entered",
     "bb_apply_count", "bb_current_notch", "bb_evaluated", "bb_is_in_zone", "bb_is_stable", "bb_notch_change_time", "bb_prev_stable_notch", "bb_release_count", "bb_state",
     "last_jump_count", "bve_jump_count", "station_list", "is_official_jumping", "is_official_retry", "jump_lock",
     "is_scoring_mode", "is_scoring_finished", "setting_start_idx", "setting_end_idx", "setting_stop_distance", "setting_initial_brake",
@@ -958,7 +958,7 @@ class G_WhatAGenerationChangeDiscardsToday(unittest.TestCase):
         kept = self.survivors(lambda o: o.apply_telemetry_text("SCENARIO_ID:2,SPEED:0"))
         self.assertEqual(kept, {
             "manual_eb_penalty_applied", "manual_eb_accum_time", "manual_eb_cooling_time", "smee_virtual_eb_active",
-            "hb_cushion_entry_time", "hb_cushion_max_g", "hb_prev_notch", "hb_strong_entered",
+            "hb_cushion_entry_time", "hb_prev_notch", "hb_strong_entered",
             "bb_apply_count", "bb_current_notch", "bb_evaluated", "bb_is_in_zone", "bb_is_stable", "bb_notch_change_time", "bb_prev_stable_notch", "bb_release_count", "bb_state",
             "last_jump_count", "bve_jump_count", "station_list", "is_official_retry", "jump_lock",
             "prev_base_limit", "prev_diff_s", "prev_door", "prev_doordir", "prev_frame_loc", "prev_is_pass", "prev_is_timing", "prev_next_loc", "prev_term", "last_update_time",

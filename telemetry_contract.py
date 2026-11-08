@@ -51,10 +51,7 @@ TOKEN_KEYS = {
     "bpp": ("BPP",),
     "trainlen": ("TRAINLEN",),
     "doortime": ("DOORTIME",),
-    "calcg": ("CALCG",),
     "accelz": ("ACCELZ",),
-    "accelx": ("ACCELX",),                # Shadow sway diagnostics: the public FrontAccelerationX (m/s^2), the left-right input of the BVE passenger-sway figure
-    "sway": ("SWAY",),                    # Shadow sway diagnostics: the four RAW states of that figure (SWAYR, its resolution diagnostic, is a part of its own and NOT a token)
     "meta": ("META",),
     "jump": ("JUMP", "JUMP_COMPLETE"),
 }
@@ -87,7 +84,7 @@ def telemetry_state_defaults():
         "default_handle_text_available": False,
         "bve_signal_limit": 1000.0, "bve_train_length": 20.0, "bve_map_limits": [],
         "bve_fwd_sig_limit": 1000.0, "bve_fwd_sig_loc": -1.0,
-        "map_head_limit": 1000.0, "map_tail_limit": 1000.0, "bve_clear_dist": 0.0, "bve_calc_g": 0.0, "bve_accel_z": None, "bve_accel_x": None, "bve_sway": None, "bve_sway_res": None,
+        "map_head_limit": 1000.0, "map_tail_limit": 1000.0, "bve_clear_dist": 0.0, "bve_accel_z": None,
         "bve_btype": "Ecb", "bcPressure": 0.0, "bpPressure": 0.0, "bve_bp_initial": 490.0,
         "bve_pressure_rates": [], "bve_max_pressure": 440.0,
         "cab_brk_count": 8, "has_holding_brake": False, "svc_brk_count": 8,
@@ -251,8 +248,8 @@ def parse_telemetry(text):
 
 
 def accelz_capture(parts):
-    """Shadow comparison (BveG): the official AccelerationZ of THIS telemetry line, in m/s^2, exactly as the sender wrote it (no unit change, no abs, no clamp).
-    None when the line has no ACCELZ part or the value is not a finite number: a value is never invented (no CALCG substitute, no 0.0) and an old value is never kept."""
+    """The official AccelerationZ of THIS telemetry line, in m/s^2, exactly as the sender wrote it (no unit change, no abs, no clamp).
+    None when the line has no ACCELZ part or the value is not a finite number: a value is never invented (no substitute value, no 0.0) and an old value is never kept."""
     value = None
     for part in parts:
         if part.startswith("ACCELZ:"):
@@ -264,49 +261,3 @@ def accelz_capture(parts):
                 return None
             value = number
     return value
-
-
-def accelx_capture(parts):
-    """Shadow sway diagnostics: the public FrontAccelerationX of THIS line in m/s^2, exactly as the sender wrote it. None when the line has none or it is not finite (never invented, never kept)."""
-    value = None
-    for part in parts:
-        if part.startswith("ACCELX:"):
-            try:
-                number = float(part.split(":")[1])
-            except (ValueError, IndexError):
-                return None
-            if number != number or number in (float("inf"), float("-inf")):
-                return None
-            value = number
-    return value
-
-
-def sway_capture(parts):
-    """Shadow sway diagnostics: the four RAW states of the BVE passenger-sway figure of THIS line (front-back x, v, left-right x, v) as a tuple, exactly as the sender wrote them.
-    None when the line has no SWAY part or any of the four is missing / not finite: nothing is invented (no 0.0) and an old value is never kept."""
-    value = None
-    for part in parts:
-        if part.startswith("SWAY:"):
-            fields = part.split(":")
-            if len(fields) != 5:
-                return None
-            try:
-                numbers = tuple(float(item) for item in fields[1:])
-            except ValueError:
-                return None
-            if any(n != n or n in (float("inf"), float("-inf")) for n in numbers):
-                return None
-            value = numbers
-    return value
-
-
-def swayr_capture(parts):
-    """Shadow sway diagnostics: the resolution diagnostic of the reflection reader (SWAYR:result:version:entry[:detail]) as a dict, or None. It is a REASON, never a value."""
-    result = None
-    for part in parts:
-        if part.startswith("SWAYR:"):
-            fields = part.split(":")
-            if len(fields) not in (4, 5) or not all(fields[1:4]):
-                return None
-            result = {"result": fields[1], "version": fields[2], "entry": fields[3], "detail": fields[4] if len(fields) == 5 else ""}
-    return result

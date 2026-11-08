@@ -215,28 +215,6 @@ namespace TsScoringLegacyTelemetryTests
         bool ILegacyVibrationApi.TryAccelerationZ(out double v) { v = 0; if (!HasAccelZ) { return false; } if (ThrowIn == "TryAccelerationZ") { throw new InvalidOperationException("fake failure in TryAccelerationZ"); } if (Fail.Contains("TryAccelerationZ")) { return false; } v = AccelZ; return true; }
     }
 
-    /// <summary>Shadow sway diagnostics: FakeApiVib plus the optional public FrontAccelerationX and the optional reflection reading of the BVE passenger-sway figure (ILegacySwayApi).</summary>
-    public class FakeApiSway : FakeApiVib, ILegacySwayApi
-    {
-        public bool HasAccelX = false;            // false = FrontAccelerationX cannot be read
-        public double AccelX = 0.0;               // the official FrontAccelerationX in m/s^2
-        public bool HasSway = false;              // false = the four raw states cannot be read (the earlier tests)
-        public double SwayXc = 0.0;               // longitudinal x, v and lateral x, v: the raw states the figure keeps, exactly as the reader returns them
-        public double SwayVc = 0.0;
-        public double SwayXd = 0.0;
-        public double SwayVd = 0.0;
-        public string SwayDiag = null;            // the SWAYR value (null = no diagnostic part)
-        bool ILegacySwayApi.TryFrontAccelerationX(out double v) { v = 0; if (!HasAccelX) { return false; } if (ThrowIn == "TryFrontAccelerationX") { throw new InvalidOperationException("fake failure in TryFrontAccelerationX"); } v = AccelX; return true; }
-        bool ILegacySwayApi.TrySwayState(out double xc, out double vc, out double xd, out double vd, out string diagnostic)
-        {
-            xc = 0; vc = 0; xd = 0; vd = 0; diagnostic = SwayDiag;
-            if (ThrowIn == "TrySwayState") { throw new InvalidOperationException("fake failure in TrySwayState"); }
-            if (!HasSway) { return false; }
-            xc = SwayXc; vc = SwayVc; xd = SwayXd; vd = SwayVd;
-            return true;
-        }
-    }
-
     public class CollectDiag : ITelemetryDiag
     {
         public List<string> Events = new List<string>();
@@ -548,7 +526,7 @@ namespace TsScoringLegacyTelemetryTests
     /// <summary>Drives the core the way the host adapter does: events, Ticks, the heartbeat, Dispose. Time is a number the test moves.</summary>
     public class Harness
     {
-        public FakeApi Api = new FakeApiSway();
+        public FakeApi Api = new FakeApiVib();
         public CollectSink Sink = new CollectSink();
         public CollectDiag Diag = new CollectDiag();
         public FakeScoringApi Scoring = null;     // Phase SI-0: null = no scoring-integration observation wired
@@ -667,7 +645,7 @@ namespace TsScoringLegacyTelemetryTests
     /// </summary>
     public class LiveHarness
     {
-        public FakeApi Api = new FakeApiSway();
+        public FakeApi Api = new FakeApiVib();
         internal LegacyDataPlaneSink Sink;
         public long Now = 1000;
         public long Seed = 7000000000L;

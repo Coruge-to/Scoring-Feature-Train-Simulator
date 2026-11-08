@@ -43,7 +43,7 @@ BASE_HEAD = "cab7dce265429ee43775ecbaa4c42f450058a653"
 # what the sender wrote, as the Overlay holds it after the line (the normalized INPUT); DOORTIME (bve_door_close_time_ms) is the known difference and is compared apart
 INPUT_FIELDS = ("bve_time_ms", "bve_speed", "bve_location", "bve_next_loc", "bve_next_time", "bve_margin_b", "bve_margin_f", "bve_door", "bve_doordir", "bve_is_pass", "bve_term",
                 "bve_brk_notch", "bve_brk_max", "bve_btype", "cab_brk_count", "cushion_min", "cushion_max", "bve_max_pressure", "bve_train_length", "bve_map_limits",
-                "map_head_limit", "map_tail_limit", "bve_clear_dist", "bve_jump_count", "bve_tgt_idx", "bve_arr_idx", "bve_list_id", "bve_calc_g", "current_scenario_id",
+                "map_head_limit", "map_tail_limit", "bve_clear_dist", "bve_jump_count", "bve_tgt_idx", "bve_arr_idx", "bve_list_id", "current_scenario_id",
                 "setting_stop_distance")
 # what the scoring made of it (the RESULT state)
 RESULT_FIELDS = ("score", "is_scoring_mode", "is_scoring_finished", "is_official_jumping", "jump_lock", "has_departed", "is_first_station", "has_scored_stop_this_station",

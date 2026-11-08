@@ -8,7 +8,6 @@ import jump_transaction
 import jump_wire
 import pseudo_turnback_machine
 import station_identity
-import sway_shadow
 from utils import (
     calculate_apex_speed,
     calculate_warning_distance,
@@ -16,8 +15,10 @@ from utils import (
     write_desktop_log,
 )
 
-# ---- Shadow comparison (Stage 1): the stop-jerk value of the OFFICIAL AccelerationZ, evaluated NEXT TO the CalcG one and never used for the score ----
-def stop_jerk_window_mean(history, current_time, window=0.5):
+# ---- 停車時衝動（正式採点）: BVE公式 Vehicle.Vibration.AccelerationZ の LastStop BveG ----
+# 停止直前 STOP_JERK_WINDOW_SECONDS 秒のサンプル（m/s^2）の符号付き単純平均の絶対値を STANDARD_GRAVITY_MPS2 で割って G にし、丸め前の値で判定する。
+# 窓にサンプルが無いときは判定しない（0 に偽装しない、他の値で代用しない）。表示用の丸めは判定に使わない。
+def stop_jerk_window_mean(history, current_time, window=STOP_JERK_WINDOW_SECONDS):
     """The signed simple mean of the samples (time, value) with current_time - window <= time <= current_time (both ends included, tolerance 1e-9).
     Returns (mean, count); (None, 0) when the window holds no sample - the caller then judges nothing (no substitute value)."""
     values = [entry[1] for entry in history if -1e-9 <= current_time - entry[0] <= window + 1e-9]
@@ -27,84 +28,45 @@ def stop_jerk_window_mean(history, current_time, window=0.5):
 
 
 def stop_jerk_g_from_accel_z(mean_mps2):
-    """m/s^2 -> G. The absolute value is taken AFTER the signed mean."""
-    return abs(mean_mps2) / 9.80665
+    """m/s^2 -> G (value_g = value_mps2 / STANDARD_GRAVITY_MPS2). The absolute value is taken AFTER the signed mean. No rounding."""
+    return abs(mean_mps2) / STANDARD_GRAVITY_MPS2
 
 
 def stop_jerk_points(g):
-    """The candidate step of a stop-jerk value in G: >= 0.100 -> -200, >= 0.065 -> -100, never -300 (one step only)."""
-    if g >= 0.100 - 1e-9:
+    """The formal step of a stop-jerk value in G: >= 0.100 -> -200, >= 0.065 -> -100, otherwise 0 (one step only, never -300).
+    The comparison is on the UNROUNDED value and has no tolerance."""
+    if g >= STOP_JERK_SECOND_BOUNDARY_G:
         return -200
-    if g >= 0.065 - 1e-9:
+    if g >= STOP_JERK_FIRST_BOUNDARY_G:
         return -100
     return 0
 
 
-def shadow_stop_jerk_record(self, current_time, calcg_samples, abs_stop_g_calc, pending_text):
-    """Stage 1 (Shadow): the BveG stop-jerk of the same stop, a diagnostic log line, NO effect on the score, the history, the popups or the result."""
-    try:
-        mean, count = stop_jerk_window_mean(getattr(self, "accel_z_history", ()), current_time)
-        if count == 0:
-            self.last_stop_g_bve = None
-            bve_text, bve_pen_text = "unavailable", "not-evaluated"
-        else:
-            g_bve = stop_jerk_g_from_accel_z(mean)
-            self.last_stop_g_bve = g_bve
-            bve_text, bve_pen_text = "%.5f" % g_bve, str(stop_jerk_points(g_bve))
-        self.accel_z_history = []                  # the samples of a judged stop are consumed: the next stop never reuses them
-        if desktop_log_enabled():
-            if getattr(self, "pen_jerk", True):
-                calc_pen = -200 if abs_stop_g_calc >= 0.10 else (-100 if abs_stop_g_calc >= 0.065 else 0)
-            else:
-                calc_pen = 0
-            write_desktop_log(
-                "[SHADOW STOP] station_index=%s target_station_index=%s host_time=%.3f window_start=%.3f window_end=%.3f calcg_samples=%d bveg_samples=%d "
-                "last_stop_calcg=%.5f last_stop_bveg=%s calcg_penalty=%d bveg_shadow_penalty=%s %s scenario_generation=%s" % (
-                    getattr(self, "bve_arr_idx", -1), getattr(self, "bve_tgt_idx", -1), current_time, current_time - 0.5, current_time,
-                    calcg_samples, count, abs_stop_g_calc, bve_text, calc_pen, bve_pen_text, pending_text,
-                    getattr(self, "current_scenario_id", -1)))
-    except Exception:
+def judge_stop_jerk(self, current_time):
+    """The formal stop-jerk judgement of the stop at current_time. Sets last_stop_g_bve (None = no judgement: nothing in the window) and consumes the samples of this stop.
+    Returns (points, sample_count): points is 0 / -100 / -200, or None when nothing was judged."""
+    mean, count = stop_jerk_window_mean(getattr(self, "accel_z_history", ()), current_time)
+    self.accel_z_history = []                      # the samples of a judged stop are consumed: the next stop never reuses them
+    if count == 0:
         self.last_stop_g_bve = None
+        return None, 0
+    g_bve = stop_jerk_g_from_accel_z(mean)
+    self.last_stop_g_bve = g_bve
+    return stop_jerk_points(g_bve), count
 
 
-# ---- Shadow sway diagnostics: the BVE passenger-sway figure as DIAGNOSTIC-ONLY values. These functions READ the overlay and write only the overlay's own `sway_shadow` state and the desktop log;
-# ---- they never change the score, the history, the checkpoints, the popups or the result. Every one of them swallows its own failure.
-def sway_shadow_log(message):
-    """One diagnostic line, only with TS_SCORING_DESKTOP_LOG=1."""
-    if desktop_log_enabled():
-        write_desktop_log(message)
-
-
-def sway_shadow_tick(self, current_time):
-    """Every tick: the public-API replica follows, an open stop window is judged for its end and takes the sample of this tick."""
+def stop_jerk_log(self, current_time, points, count):
+    """One diagnostic line per judged stop, only with TS_SCORING_DESKTOP_LOG=1. It never changes the score; a failure of the log is swallowed."""
     try:
-        sway_shadow.state_of(self).tick(self, current_time, sway_shadow_log)
-    except Exception:
-        pass
-
-
-def sway_shadow_stop(self, current_time, abs_stop_g_calc):
-    """The stop instant T: opens the sway stop window (the penalties of the same stop are copied into it for the log only)."""
-    try:
-        calc_pen = (-200 if abs_stop_g_calc >= 0.10 else (-100 if abs_stop_g_calc >= 0.065 else 0)) if getattr(self, "pen_jerk", True) else 0
-        bveg = getattr(self, "last_stop_g_bve", None)
-        sway_shadow.state_of(self).start(self, current_time, {"calcg": calc_pen, "bveg": "not-evaluated" if bveg is None else stop_jerk_points(bveg)})
-    except Exception:
-        pass
-
-
-def sway_shadow_boundary(self, reason):
-    """A formal boundary (the formal discard, F5 / session end, a new generation): an open window is cut and nothing of the old world is carried over."""
-    try:
-        sway_shadow.state_of(self).boundary(self, reason, sway_shadow_log)
-    except Exception:
-        pass
-
-
-def sway_shadow_resolution(self, res):
-    """The resolution diagnostic of the reflection reader (SWAYR), logged once per change."""
-    try:
-        sway_shadow.state_of(self).note_resolution(res, sway_shadow_log)
+        if desktop_log_enabled():
+            g_bve = getattr(self, "last_stop_g_bve", None)
+            write_desktop_log(
+                "[STOP JERK] station_index=%s target_station_index=%s host_time=%.3f window_start=%.3f window_end=%.3f bveg_samples=%d last_stop_bveg=%s penalty=%s "
+                "pen_jerk=%s scenario_generation=%s" % (
+                    getattr(self, "bve_arr_idx", -1), getattr(self, "bve_tgt_idx", -1), current_time, current_time - STOP_JERK_WINDOW_SECONDS, current_time, count,
+                    "unavailable" if g_bve is None else "%.5f" % g_bve,
+                    "not-evaluated(no-accelz-sample)" if points is None else str(points),
+                    bool(getattr(self, "pen_jerk", True)), getattr(self, "current_scenario_id", -1)))
     except Exception:
         pass
 
@@ -117,15 +79,12 @@ def reset_transient_scoring_state(self):
     総得点、得点内訳、採点設定、リトライ回数、
     駅単位の採点済み状態は変更しない。
     """
-    self.g_history.clear()
-    self.accel_z_history = []              # Shadow (BveG): its own buffer, discarded at the same boundaries
+    self.accel_z_history = []              # the stop-jerk samples (BveG): discarded at the same boundaries
     self.last_stop_g_bve = None
-    sway_shadow_boundary(self, "discard")  # Shadow (sway): an open stop window is cut here, the replica starts again
 
     # 停車時衝動判定
     # 境界の前の「走行中だった」記録と停止時の加速度は、境界の後へ持ち越さない
     self.is_stopping_zone = False
-    self.last_stop_g = 0.0
     self.stop_notch_state = "IDLE"
 
     # 不正ジャンプなどの警告は、後続の時刻巻き戻りリセットでも保持する
@@ -155,7 +114,6 @@ def reset_transient_scoring_state(self):
     self.has_evaluated_initial_brake = False
     self.idle_entered_while_stopped = False
     self.hb_cushion_entry_time = 0.0
-    self.hb_cushion_max_g = 0.0
 
     # 停止イベント検出
     self.prev_stop_detection_speed = getattr(
@@ -455,7 +413,7 @@ def update_manual_emergency_brake_state(self, dt):
     return is_eb_handle, manual_eb_qualified
 
 
-def update_stop_jerk_penalty(self, current_time, decel_g):
+def update_stop_jerk_penalty(self, current_time):
     # 公式ジャンプの完了待ちの間の車両状態は、ジャンプが置き換える前の世界を表す。停止として判定しない
     if getattr(self, 'is_official_jumping', False):
         return
@@ -464,22 +422,15 @@ def update_stop_jerk_penalty(self, current_time, decel_g):
         if self.is_stopping_zone:
             self.stop_notch_state = get_notch_state(self, self.bve_brk_notch)
 
-            recent_g = [h[1] for h in self.g_history if current_time - h[0] <= 0.5]
-            if recent_g:
-                self.last_stop_g = sum(recent_g) / len(recent_g)
-            else:
-                self.last_stop_g = decel_g
-
-            # 前進・後退のどちらでも加速度の絶対値で停車時衝動を判定する
-            abs_stop_g = abs(self.last_stop_g)
+            # 前進・後退のどちらでも加速度の絶対値で停車時衝動を判定する（正式指標＝LastStop BveG、丸め前の値）
+            points, count = judge_stop_jerk(self, current_time)
 
             if getattr(self, 'pen_jerk', True):
-                if abs_stop_g >= 0.10:
+                if points == -200:
                     add_score_popup(self, -200, "停車時衝動 -200", COLOR_B_EMG, "neg", "停車時衝動", current_time)
-                elif abs_stop_g >= 0.065:
+                elif points == -100:
                     add_score_popup(self, -100, "停車時衝動 -100", COLOR_B_EMG, "neg", "停車時衝動", current_time)
-            shadow_stop_jerk_record(self, current_time, len(recent_g), abs_stop_g, "is_official_jumping=%s" % bool(getattr(self, 'is_official_jumping', False)))       # Shadow (BveG): reads only, never changes the score
-            sway_shadow_stop(self, current_time, abs_stop_g)       # Shadow (sway): opens the stop window of this stop (T); reads only
+            stop_jerk_log(self, current_time, points, count)
             self.is_stopping_zone = False
 
     elif 0.0 < abs(self.bve_speed): #<= 1.5
@@ -647,7 +598,6 @@ def update_smee_virtual_emergency_brake(
 def update_initial_and_release_brake_penalty(
     self,
     current_time,
-    decel_g,
     in_station_zone,
     is_eb_handle,
 ):
@@ -665,8 +615,6 @@ def update_initial_and_release_brake_penalty(
     if curr_state == "CUSHION":
         if prev_state != "CUSHION":
             self.hb_cushion_entry_time = current_time
-            self.hb_cushion_max_g = 0.0
-        if decel_g > self.hb_cushion_max_g: self.hb_cushion_max_g = decel_g
 
     if curr_state == "STRONG":
         self.hb_strong_entered = True
@@ -2085,18 +2033,10 @@ def update_physics_and_scoring(self, current_time, dt):
     update_result_display(self, current_time)
     turnback_display_update(self, current_time)        # the pseudo-turnback guidance window (dormant without a chain)
 
-    decel_g = -self.bve_calc_g
-    # BVE時刻が止まっている間（一時停止、F1メニュー）も採点ステップは回り続ける。
-    # 同じ時刻の標本は最新の1件だけを残し、履歴の肥大と0.5秒平均の偏りを防ぐ
-    g_entry = (current_time, decel_g, self.bve_brk_notch, self.bve_brk_max)
-    if self.g_history and self.g_history[-1][0] == current_time:
-        self.g_history[-1] = g_entry
-    else:
-        self.g_history.append(g_entry)
+    # 停車時衝動（正式採点）の標本：BVE公式 AccelerationZ（m/s^2）をこの Tick の1サンプルとして専用の履歴へ入れる。
+    # BVE時刻が止まっている間（一時停止、F1メニュー）も採点ステップは回り続けるので、同じ時刻の標本は最新の1件だけを残し、履歴の肥大と0.5秒平均の偏りを防ぐ。
+    # 標本が無い Tick は何も足さない（0 を入れない）。
     cutoff_time = current_time - 10.0
-    self.g_history = [h for h in self.g_history if h[0] > cutoff_time]
-
-    # Shadow (BveG): the official AccelerationZ sample (m/s^2) of this tick in its OWN buffer; the same host time keeps only the newest sample; a tick without a sample adds nothing
     accel_z = getattr(self, "bve_accel_z", None)
     if accel_z is not None:
         accel_z_history = getattr(self, "accel_z_history", None)
@@ -2107,8 +2047,6 @@ def update_physics_and_scoring(self, current_time, dt):
         else:
             accel_z_history.append((current_time, accel_z))
         self.accel_z_history = [h for h in accel_z_history if h[0] > cutoff_time]
-
-    sway_shadow_tick(self, current_time)       # Shadow (sway): the replica follows, an open stop window ends or takes this tick's sample; reads only
 
     if self.bve_jump_count != getattr(self, 'last_jump_count', 0):
         write_desktop_log(f"[JUMP DETECT] BVEジャンプ検知！ カウント: {getattr(self, 'last_jump_count', 0)} -> {self.bve_jump_count}")
@@ -2163,7 +2101,6 @@ def update_physics_and_scoring(self, current_time, dt):
     update_stop_jerk_penalty(
         self,
         current_time,
-        decel_g,
     )
 
     is_eb_handle, manual_eb_qualified = (
@@ -2186,7 +2123,6 @@ def update_physics_and_scoring(self, current_time, dt):
     update_initial_and_release_brake_penalty(
         self,
         current_time,
-        decel_g,
         in_station_zone,
         is_eb_handle,
     )

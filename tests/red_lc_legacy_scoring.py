@@ -99,7 +99,7 @@ class Base(unittest.TestCase):
         if speed is not None:
             o.bve_speed = speed
         if calc_g is not None:
-            o.bve_calc_g = calc_g
+            o.bve_accel_z = (calc_g) * 9.80665
         if loc is not None:
             o.bve_location = loc
         if jump is not None:
@@ -325,15 +325,15 @@ class B_SliceA(Base):
         self.step(speed=0.0, calc_g=0.0, jump=1, official=True)
         self.assertEqual(self.jerk_popups(), [])
 
-    @lc("LC-A09C", "GUARD", note="(fixed by LC-3A) the formal boundary (reset_transient_scoring_state) clears the judged state of the stop-jerk (is_stopping_zone, last_stop_g, stop_notch_state)")
+    @lc("LC-A09C", "GUARD", note="(fixed by LC-3A) the formal boundary (reset_transient_scoring_state) clears the judged state of the stop-jerk (is_stopping_zone, last_stop_g_bve, stop_notch_state)")
     def test_A09C_boundary_clears_the_stop_jerk_state(self):
         self.scoring_scene()
         o = self.o
         self.accelerate()
-        o.last_stop_g = -0.08
+        o.last_stop_g_bve = 0.08
         o.stop_notch_state = "EMERGENCY"
         self.S.reset_transient_scoring_state(o)
-        self.assertEqual((o.is_stopping_zone, o.last_stop_g, o.stop_notch_state), (False, 0.0, "IDLE"), "stop-jerk state survives the boundary: %r" % ((o.is_stopping_zone, o.last_stop_g, o.stop_notch_state),))
+        self.assertEqual((o.is_stopping_zone, o.last_stop_g_bve, o.stop_notch_state), (False, 0.0, "IDLE"), "stop-jerk state survives the boundary: %r" % ((o.is_stopping_zone, o.last_stop_g_bve, o.stop_notch_state),))
 
     @lc("LC-A09D", "CHAR", note="a new scenario generation drops the stop-jerk state (F5): it already does today (the Retry / F5 initialisation of the fix must not conflict with it)")
     def test_A09D_generation_clears_the_stop_jerk_state(self):
@@ -342,7 +342,7 @@ class B_SliceA(Base):
         self.accelerate()
         self.assertTrue(o.is_stopping_zone)
         managed_input.discard_generation_state(o)
-        self.assertEqual((o.is_stopping_zone, o.last_stop_g), (False, 0.0), "stop-jerk state survives the generation: %r" % ((o.is_stopping_zone, o.last_stop_g),))
+        self.assertEqual((o.is_stopping_zone, o.last_stop_g_bve), (False, 0.0), "stop-jerk state survives the generation: %r" % ((o.is_stopping_zone, o.last_stop_g_bve),))
 
     @lc("LC-A09E", "GUARD", note="a real hard stop still makes the penalty (the fix must not remove the rule): -0.12 G for the last 0.5 s, then 0.0 -> -200")
     def test_A09E_a_real_hard_stop_is_penalised(self):
@@ -376,7 +376,7 @@ class B_SliceA(Base):
         self.o.bve_speed = 5.0
         for _ in range(1000):
             self.S.update_physics_and_scoring(self.o, 200.0, 0.0)
-        self.assertEqual(len(self.o.g_history), 1, "history grows while the time is frozen: %d" % len(self.o.g_history))
+        self.assertEqual(len(self.o.accel_z_history), 1, "history grows while the time is frozen: %d" % len(self.o.accel_z_history))
 
     @lc("LC-A11B", "GUARD", note="(fixed by LC-3B) C-LOOP-2: 600 duplicates of a frozen value do not dominate the 0.5 s mean of the stop-jerk")
     def test_A11B_duplicates_do_not_dominate_the_stop_value(self):
@@ -385,11 +385,11 @@ class B_SliceA(Base):
         for i in range(10):
             self.step(dt=0.04, speed=2.0, calc_g=-0.01)
         self.o.bve_speed = 2.0
-        self.o.bve_calc_g = -0.20                                          # the value of the frozen menu moment, repeated by the 16 ms step with the BVE time frozen
+        self.o.bve_accel_z = (-0.20) * 9.80665                                          # the value of the frozen menu moment, repeated by the 16 ms step with the BVE time frozen
         for _ in range(600):
             self.S.update_physics_and_scoring(self.o, self.t, 0.0)
         self.step(dt=0.1, speed=0.0, calc_g=-0.01)
-        self.assertLess(abs(self.o.last_stop_g), 0.1, "duplicates dominate the stop value: %r" % (self.o.last_stop_g,))
+        self.assertLess(abs(self.o.last_stop_g_bve), 0.1, "duplicates dominate the stop value: %r" % (self.o.last_stop_g_bve,))
 
     @lc("LC-A11C", "GUARD", note="(fixed by LC-3B) C-LOOP-2: with the time frozen the NEWEST value replaces the entry of that time (the older entries are untouched)")
     def test_A11C_frozen_time_replaces_the_newest_entry_only(self):
@@ -397,9 +397,9 @@ class B_SliceA(Base):
         self.step(dt=0.1, speed=5.0, calc_g=0.01)
         self.step(dt=0.1, speed=5.0, calc_g=0.02)
         for g in (0.03, 0.04):
-            self.o.bve_calc_g = g
+            self.o.bve_accel_z = (g) * 9.80665
             self.S.update_physics_and_scoring(self.o, self.t, 0.0)
-        values = [round(h[1], 3) for h in self.o.g_history]
+        values = [round(h[1], 3) for h in self.o.accel_z_history]
         self.assertEqual(values, [-0.01, -0.04], "history keeps %r" % (values,))
     @lc("LC-A12", "GUARD", note="with the time advancing the history keeps one entry per step, inside the 10 s retention")
     def test_A12_advancing_time_keeps_the_window(self):
@@ -407,7 +407,7 @@ class B_SliceA(Base):
         self.o.bve_speed = 5.0
         for _ in range(150):
             self.step(dt=0.1, speed=5.0, calc_g=0.0)
-        n = len(self.o.g_history)
+        n = len(self.o.accel_z_history)
         self.assertTrue(98 <= n <= 101, n)
 
 

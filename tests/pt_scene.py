@@ -81,7 +81,6 @@ class Scene(object):
         o.prev_doordir = 1
         o.is_official_retry = False
         o.bve_brk_notch = 8
-        o.bve_calc_g = 0.0
         o.is_first_udp = False
         o.save_data = [checkpoint0(self.sl)]
         o.bve_next_loc = o.prev_next_loc = A_MARK

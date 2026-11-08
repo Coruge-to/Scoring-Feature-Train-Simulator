@@ -79,8 +79,6 @@ namespace TSScoringPlugin.Telemetry
         private int scenarioId;
         private int lastScenarioId;
         private int lastTimeMs;
-        private double lastSpeedMps;
-        private bool haveLastSample;
         private long lastStaListMs;
         private bool staListSent;
         private long lastMetaMs;
@@ -418,8 +416,6 @@ namespace TSScoringPlugin.Telemetry
             scenarioToken = null;
             timeline.Reset();
             lastTimeMs = 0;
-            lastSpeedMps = 0.0;
-            haveLastSample = false;
             staListSent = false;
             metaSent = false;
             lastStaListMs = 0;
@@ -648,7 +644,6 @@ namespace TSScoringPlugin.Telemetry
             {
                 Discontinuities++;
                 timeline.MarkDiscontinuity();
-                haveLastSample = false;
                 LogDiscontinuity(sampleMono, timeMs, elapsed);
             }
 
@@ -659,7 +654,6 @@ namespace TSScoringPlugin.Telemetry
                 if (!discontinuity)
                 {
                     timeline.MarkDiscontinuity();
-                    haveLastSample = false;
                 }
 
                 // Phase ST-3c: a v2 jump names the station it adopted; the re-initialisation of THIS sample targets it (one shot: the timeline consumes it at the build below, or it expires
@@ -848,8 +842,8 @@ namespace TSScoringPlugin.Telemetry
             {
             }
 
-            // Shadow comparison (Stage 1): the official AccelerationZ of this Tick, m/s^2 exactly as read (no unit change, no abs, no clamp, no smoothing). It needs no previous sample.
-            // A value that cannot be read is not written and its token is not in AVAIL; CALCG is never put in its place.
+            // The official AccelerationZ of this Tick, m/s^2 exactly as read (no unit change, no abs, no clamp, no smoothing): the one input of the stop-jerk scoring. It needs no previous sample.
+            // A value that cannot be read is not written and its token is not in AVAIL; nothing is put in its place.
             try
             {
                 ILegacyVibrationApi vibration = api as ILegacyVibrationApi;
@@ -861,51 +855,6 @@ namespace TSScoringPlugin.Telemetry
             }
             catch
             {
-            }
-
-            // Shadow sway diagnostics: the public FrontAccelerationX (ACCELX, m/s^2 exactly as read) and the four RAW states of the BVE passenger-sway figure (SWAY, written only when all four are
-            // finite). Nothing is derived here (n, the colour and the thresholds are the Python side's). SWAYR is the resolution diagnostic, a part of its own that is NEVER an AVAIL token.
-            // A value that cannot be read is not written and its token is not in AVAIL; no 0.0 is invented and nothing stands in its place.
-            try
-            {
-                ILegacySwayApi sway = api as ILegacySwayApi;
-                if (sway != null)
-                {
-                    double accelX;
-                    if (sway.TryFrontAccelerationX(out accelX) && !double.IsNaN(accelX) && !double.IsInfinity(accelX))
-                    {
-                        lb.Group(TelemetryContract.TokAccelX, "ACCELX", TelemetryContract.F(accelX, "F6"));
-                    }
-
-                    double swayXc, swayVc, swayXd, swayVd;
-                    string swayDiagnostic;
-                    bool swayRead = sway.TrySwayState(out swayXc, out swayVc, out swayXd, out swayVd, out swayDiagnostic);
-                    if (swayRead && AllFinite(new double[] { swayXc, swayVc, swayXd, swayVd }))
-                    {
-                        lb.Group(TelemetryContract.TokSway, "SWAY", TelemetryContract.F(swayXc, "F6") + ":" + TelemetryContract.F(swayVc, "F6") + ":" + TelemetryContract.F(swayXd, "F6") + ":" + TelemetryContract.F(swayVd, "F6"));
-                    }
-
-                    if (!string.IsNullOrEmpty(swayDiagnostic))
-                    {
-                        lb.Part(TelemetryContract.KeySwayR, swayDiagnostic);
-                    }
-                }
-            }
-            catch
-            {
-            }
-
-            // acceleration from two samples of THIS scenario instance; the first sample has no reference and says nothing
-            if (haveLastSample)
-            {
-                double g = 0.0;
-                if (timeMs > lastTimeMs && timeMs - lastTimeMs < 1000)
-                {
-                    double dt = (timeMs - lastTimeMs) / 1000.0;
-                    g = ((speedMps - lastSpeedMps) / dt) / TelemetryContract.GravityMps2;
-                }
-
-                lb.Group(TelemetryContract.TokCalcG, "CALCG", TelemetryContract.F(g, "F5"));
             }
 
             try
@@ -1049,8 +998,6 @@ namespace TSScoringPlugin.Telemetry
             lastTimeMs = timeMs;
             lastSampleMonoMs = sampleMono;
             skippedAtLastSample = LinesSkipped;
-            lastSpeedMps = speedMps;
-            haveLastSample = true;
 
             // Phase SI-0: the scoring-integration observation (diagnostic log only). It runs after the line was sent and changes nothing of it.
             ObserveScoring(true, location, groundForProbe);
@@ -1156,12 +1103,6 @@ namespace TSScoringPlugin.Telemetry
 
             /// <summary>One more key of the group added last (its token is already announced).</summary>
             internal void Key(string key, string value)
-            {
-                body.Append(',').Append(key).Append(':').Append(value);
-            }
-
-            /// <summary>A diagnostic part of its own: it belongs to no group and announces no token (Shadow sway diagnostics: SWAYR).</summary>
-            internal void Part(string key, string value)
             {
                 body.Append(',').Append(key).Append(':').Append(value);
             }

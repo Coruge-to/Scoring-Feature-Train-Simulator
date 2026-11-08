@@ -2,13 +2,13 @@
 
 THE PROBLEM (Slice A)
   update_stop_jerk_penalty judges a stop (speed 0.0) from two pieces of state that live across ticks: `is_stopping_zone` ("the train was moving") and the mean of the
-  g_history of the last 0.5 s. `reset_transient_scoring_state` (the one formal discard of the frame-to-frame state: begin_official_jump / BVE jump count / time going backwards /
-  aborted jump) cleared g_history but NOT the judged state of the stop-jerk. So a Jump that lands with speed 0.0 was connected to the old trajectory: the "was moving" flag was
+  accel_z_history of the last 0.5 s. `reset_transient_scoring_state` (the one formal discard of the frame-to-frame state: begin_official_jump / BVE jump count / time going backwards /
+  aborted jump) cleared accel_z_history but NOT the judged state of the stop-jerk. So a Jump that lands with speed 0.0 was connected to the old trajectory: the "was moving" flag was
   still set and (Legacy: no CALCG on the first sample after a discontinuity, the previous value is held) the old acceleration became the "stop value" -> a false -100 / -200.
   A pending official jump kept the old telemetry flowing as a moving train, and a speed 0.0 sample without a counter movement yet was judged as a stop too.
 
 THE CONTRACT
-  1. every formal boundary leaves the stop-jerk state at its start values (is_stopping_zone False, last_stop_g 0.0, stop_notch_state "IDLE", g_history empty);
+  1. every formal boundary leaves the stop-jerk state at its start values (is_stopping_zone False, last_stop_g_bve 0.0, stop_notch_state "IDLE", accel_z_history empty);
   2. the stop-jerk is not judged while an official jump is pending (is_official_jumping): the vehicle state in that window is not a stop;
   3. the rule itself is unchanged: window mean of the last 0.5 s, |g| >= 0.065 -> -100, |g| >= 0.10 -> -200, once per stop, judged again after the next movement.
   Current (CALCG:0.00000 on the Jump line) and Legacy (the previous CALCG held) must give the same result.
@@ -36,7 +36,7 @@ HAS_QT = importlib.util.find_spec("PyQt6") is not None
 import lc_legacy_feed as F  # noqa: E402
 
 SHAPES = ("current", "legacy")
-START = (False, 0.0, "IDLE")         # (is_stopping_zone, last_stop_g, stop_notch_state) at the start
+START = (False, None, "IDLE")        # (is_stopping_zone, last_stop_g_bve, stop_notch_state) at the start (None = no judgement yet)
 
 
 def _profile_guard(cls):
@@ -55,7 +55,7 @@ def _profile_release(cls):
 
 
 def jerk_state(o):
-    return (o.is_stopping_zone, o.last_stop_g, o.stop_notch_state)
+    return (o.is_stopping_zone, o.last_stop_g_bve, o.stop_notch_state)
 
 
 class Direct(unittest.TestCase):
@@ -117,7 +117,7 @@ class Direct(unittest.TestCase):
         if speed is not None:
             o.bve_speed = speed
         if calc_g is not None:
-            o.bve_calc_g = calc_g
+            o.bve_accel_z = (calc_g) * 9.80665
         if loc is not None:
             o.bve_location = loc
         if jump is not None:
@@ -163,10 +163,10 @@ class A_JumpBoundary(Direct):
                     self.step(speed=3.0, calc_g=-0.15)                 # a hard braking window right before the Jump
                 self.land(shape, speed=1.0)
                 t_land = self.t
-                self.assertEqual(list(self.o.g_history), [], "the history of the old trajectory survived the Jump")
+                self.assertEqual(list(self.o.accel_z_history), [], "the history of the old trajectory survived the Jump")
                 self.step(speed=0.0, calc_g=0.0)                       # the new trajectory stops softly
                 self.assertEqual(self.jerk(), [], "the old braking window is judged as the stop of the new trajectory (%s)" % shape)
-                self.assertTrue(all(h[0] > t_land for h in self.o.g_history), "an entry older than the Jump is in the history")
+                self.assertTrue(all(h[0] > t_land for h in self.o.accel_z_history), "an entry older than the Jump is in the history")
 
     def test_SA_R4_current_jump_landing_at_speed_zero_is_not_a_stop(self):
         """SA-R4 (Current Jump, also SA-R2): CALCG:0.00000 on the Jump line."""
@@ -226,7 +226,7 @@ class A_JumpBoundary(Direct):
             self.accelerate()
             self.land(shape)
             self.step(speed=0.0, calc_g=0.0, official=False)
-            result[shape] = (jerk_state(self.o), self.jerk(), self.o.score, len(self.o.g_history))
+            result[shape] = (jerk_state(self.o), self.jerk(), self.o.score, len(self.o.accel_z_history))
         self.assertEqual(result["current"], result["legacy"], "Current / Legacy differ after a Jump: %r" % (result,))
 
     def test_SA_R2b_nothing_is_judged_while_the_official_jump_is_pending(self):
@@ -262,17 +262,17 @@ class B_OtherBoundaries(Direct):
         self.accelerate()
         self.step(speed=2.0, calc_g=-0.12)
         self.assertTrue(self.o.is_stopping_zone)
-        self.assertTrue(len(self.o.g_history) > 0)
+        self.assertTrue(len(self.o.accel_z_history) > 0)
         self.o.is_scoring_mode = True
         self.S.begin_official_jump(self.o, 1000.0, 36218000)
         self.assertEqual(jerk_state(self.o), START, "stop-jerk state survives the start")
-        self.assertEqual(list(self.o.g_history), [])
+        self.assertEqual(list(self.o.accel_z_history), [])
 
     def test_SA_R6_retry_jump_starts_from_the_start_state(self):
         """SA-R6 (boundary D): execute_retry ends in begin_official_jump; the score of the check point is restored by the request, the stop-jerk state is the start state."""
         self.scene()
         self.accelerate()
-        self.o.last_stop_g = -0.08
+        self.o.last_stop_g_bve = 0.08
         self.o.stop_notch_state = "EMERGENCY"
         self.S.begin_official_jump(self.o, 1000.0, 36218000)           # the call execute_retry makes (the order is pinned by tests/test_jf1_retry_and_save_data_current.py R19)
         self.assertEqual(jerk_state(self.o), START)
@@ -284,21 +284,21 @@ class B_OtherBoundaries(Direct):
                 self.new_rig()
                 self.scene()
                 self.accelerate()
-                self.o.last_stop_g = -0.08
+                self.o.last_stop_g_bve = 0.08
                 self.o.stop_notch_state = "EMERGENCY"
                 self.S.reset_transient_scoring_state(self.o)
                 self.assertEqual(jerk_state(self.o), START, "stop-jerk state survives %s" % label)
-                self.assertEqual(list(self.o.g_history), [])
+                self.assertEqual(list(self.o.accel_z_history), [])
 
     def test_SA_R7_a_new_generation_drops_the_stop_jerk_state(self):
         """SA-R7 (boundary E, F): F5 / a new scenario instance already discards everything (generation_defaults); this must keep holding."""
         o = self.scene()
         self.accelerate()
-        o.last_stop_g = -0.08
+        o.last_stop_g_bve = 0.08
         o.stop_notch_state = "EMERGENCY"
         self.MI.discard_generation_state(o)
         self.assertEqual(jerk_state(o), START)
-        self.assertEqual(list(o.g_history), [])
+        self.assertEqual(list(o.accel_z_history), [])
 
     def test_SA_R9_the_finished_scoring_judges_nothing_and_the_next_start_is_clean(self):
         """SA-R9 (boundary G): after the finish add_score_popup refuses every deduction, so a stale state is never a deduction; the next start is a boundary and leaves the start state."""
@@ -337,7 +337,7 @@ class B_OtherBoundaries(Direct):
                 self.MI.discard_scoring_session(o)
                 self.assertEqual(o.last_update_time, 0.0)
                 o.bve_speed = 0.0
-                o.bve_calc_g = 0.08
+                o.bve_accel_z = (0.08) * 9.80665
                 o.bve_time_ms += 100
                 if label == "normal-mode clock":
                     o._advance_scoring_clock_and_score(o.bve_time_ms / 1000.0)
@@ -462,7 +462,7 @@ class D_ManagedFlow(unittest.TestCase):
                 self.r.start_scoring_via_menu()
                 cmd = self.r.last_command()
                 self.assertTrue(self.o.is_official_jumping)
-                self.assertEqual(jerk_state(self.o)[1:], START[1:], "last_stop_g / stop_notch_state survive the start")
+                self.assertEqual(jerk_state(self.o)[1:], START[1:], "last_stop_g_bve / stop_notch_state survive the start")
                 t = self.run_up(shape, t, n=3, jump=0)                  # the pending window: the old telemetry still flows
                 self.land(cmd, shape, 36000000)
                 self.assertEqual(self.jerk(), [], "a false stop-jerk deduction after the landing (%s)" % shape)

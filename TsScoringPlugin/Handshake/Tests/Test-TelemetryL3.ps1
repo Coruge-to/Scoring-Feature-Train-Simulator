@@ -125,7 +125,7 @@ $h.Run(1, 16)
 $h.Api.SpeedMps = 21.0
 $h.Run(1, 100)
 $d = P (Last $h)
-Check 'U18 CALCG is the acceleration in G from two samples of this scenario (1 m/s over 0.1 s)' (Near ([double]$d['CALCG']) (10.0 / 9.80665) 0.0001)
+Check 'U18 CALCG is retired: the line carries no CALCG part (the official ACCELZ is the only acceleration value)' (-not $d.ContainsKey('CALCG'))
 
 # ---------------------------------------------------------------------------------------------------------------------------------------------
 # V - AVAIL: exactly what exists; never what does not
@@ -134,10 +134,10 @@ $h = NewH
 $h.Tick()
 $first = Last $h
 $expectedFirst = 'brake_cab,brake_type,door,grad,loc,maplimit,meta,prates,siglimit,siglimit_ahead,speed,station,time'
-Check 'V01 the first line announces every readable group except calcg (no reference sample yet)' ((((Tokens $first) -join ',') -eq $expectedFirst))
+Check 'V01 the first line announces every readable group' ((((Tokens $first) -join ',') -eq $expectedFirst))
 $h.Run(1, 16)
 $second = Last $h
-Check 'V02 the second line adds calcg' (((Tokens $second) -join ',') -eq 'brake_cab,brake_type,calcg,door,grad,loc,maplimit,meta,prates,siglimit,siglimit_ahead,speed,station,time')
+Check 'V02 the second line announces the same groups as the first (no reference sample is needed: calcg is retired)' (((Tokens $second) -join ',') -eq $expectedFirst)
 $ok = $true; foreach ($t in $NEVERTOK) { if ((Tokens $second) -contains $t) { $ok = $false } }
 Check 'V03 no token for handle texts, BCP, BPP, vehicle length, door time, ground look-ahead or jump' $ok
 $d = P $second
@@ -240,7 +240,7 @@ Check 'L03 nothing is sent while the scenario is being loaded (IsScenarioCreated
 $h.Api.Created = $true; $h.Api.Scenario = New-Object object; $h.Created(); $h.Run(1, 16)
 Check 'L04 the new instance has a new SCENARIO_ID' (($h.Epochs -eq 2) -and ($h.ScenarioId -ne $id1))
 $l = Last $h
-Check 'L05 and starts from nothing: no CALCG (no reference), the station list is sent again' ((-not ((Tokens $l) -contains 'calcg')) -and ((Tokens $l) -contains 'speed'))
+Check 'L05 and starts from nothing: no CALCG (retired), the station list is sent again' ((-not ((Tokens $l) -contains 'calcg')) -and ((Tokens $l) -contains 'speed'))
 $h2 = NewH; $h2.Api.Stations.Add((NewStation 'A' 0.0)); $h2.Api.Stations.Add((NewStation 'B' 1000.0 36100000 36130000)); $h2.Api.Stations.Add((NewStation 'C' 2000.0 -1 -1 $false $true))
 $h2.Tick(); $sl1 = $h2.Sink.Starting('STALIST:').Count
 $h2.Opened($false); $h2.Created(); $h2.Run(1, 16)
@@ -270,9 +270,9 @@ Check 'L14 nothing of the previous scenario survives: the new line describes the
 $h = NewH; $h.Run(3, 16)
 $h.Api.TimeMs = $h.Api.TimeMs + 60000; $h.Run(1, 16)
 $l = Last $h
-Check 'L15 a jump of the simulation time is recognised, and the line after it has no acceleration reference' (($h.Discontinuities -eq 1) -and (-not ((Tokens $l) -contains 'calcg')))
+Check 'L15 a jump of the simulation time is recognised' (($h.Discontinuities -eq 1) -and (-not ((Tokens $l) -contains 'calcg')))
 $h.Run(1, 16)
-Check 'L16 and the next one has again' ((Tokens (Last $h)) -contains 'calcg')
+Check 'L16 and the next line is normal again (still no calcg: retired)' (-not ((Tokens (Last $h)) -contains 'calcg'))
 $h = NewH; $h.Run(3, 16); $h.Api.TimeMs = $h.Api.TimeMs - 5000; $h.Run(1, 16)
 Check 'L17 a rewind of the simulation time is a discontinuity too' ($h.Discontinuities -eq 1)
 
@@ -290,14 +290,14 @@ $ids = @($h.Sink.Lines() | ForEach-Object { (P $_)['SCENARIO_ID'] } | Select-Obj
 Check 'G02 1000 Ticks of one scenario with a new wrapper each Tick: ONE scenario instance and ONE SCENARIO_ID' (($h.Sink.Lines().Count -eq 1000) -and ($h.Epochs -eq 1) -and ($ids.Count -eq 1) -and ($h.Api.WrappersIssued -eq 1000))
 $lines = $h.Sink.Lines()
 $withG = @($lines | Select-Object -Skip 1 | Where-Object { (Tokens $_) -contains 'calcg' }).Count
-Check 'G03 calcg appears from the second line on (the acceleration reference is no longer reset every Tick) and is not in the first' ((-not ((Tokens $lines[0]) -contains 'calcg')) -and ($withG -eq 999))
+Check 'G03 calcg is in no line (retired)' ($withG -eq 0)
 $sl = $h.Sink.Starting('STALIST:').Count; $mt = $h.Sink.Starting('META:').Count
 Check 'G04 STALIST and META keep their 1 s cadence (about 16 in 16 s of simulation), not one per Tick' (($sl -ge 15) -and ($sl -le 18) -and ($mt -ge 15) -and ($mt -le 18))
 Check 'G05 the diagnostic reports exactly one instance for the 1000 Ticks (no per-Tick log)' (($h.Diag.Named('TEL_EPOCH_BEGIN').Count -eq 1) -and ($h.Diag.Named('TEL_UDP_BEGIN').Count -eq 1) -and ($h.Diag.Events.Count -le 3))
 $idG = $h.ScenarioId; $cnt = $h.Sink.Lines().Count; $h.Now += 60000
 Check 'G06 a pause (no Ticks for a minute) reports PAUSED, sends nothing and keeps the instance' (($h.Heartbeat() -eq 'STATUS:LOADED:PAUSED') -and ($h.Sink.Lines().Count -eq $cnt) -and ($h.Active))
 $h.Run(50, 16)
-Check 'G07 after the pause: same SCENARIO_ID, still one instance, still calcg' (($h.ScenarioId -eq $idG) -and ($h.Epochs -eq 1) -and ((Tokens (Last $h)) -contains 'calcg') -and ($h.Discontinuities -eq 0))
+Check 'G07 after the pause: same SCENARIO_ID, still one instance, still no calcg' (($h.ScenarioId -eq $idG) -and ($h.Epochs -eq 1) -and (-not ((Tokens (Last $h)) -contains 'calcg')) -and ($h.Discontinuities -eq 0))
 # the same inputs through a stable-wrapper host and a new-wrapper host must produce the same datagrams (nothing but the identity was fixed)
 function GRun([bool]$fresh) {
     $x = NewH; $x.Api.FreshWrapperEachCall = $fresh
@@ -308,7 +308,7 @@ function GRun([bool]$fresh) {
 $gs = GRun $false; $gf = GRun $true
 Check 'G08 UDP format unchanged: every datagram (SCENARIO_ID, AVAIL, values, STALIST, META) is identical for a stable-wrapper and a new-wrapper host' (($gs.Sink.Sent.Count -eq $gf.Sink.Sent.Count) -and ((@($gs.Sink.Sent) -join "`n") -ceq (@($gf.Sink.Sent) -join "`n")))
 $gl = @($gf.Sink.Lines())
-Check 'G09 AVAIL unchanged: the same announced groups as before (calcg only from the second line)' ((((Tokens $gl[1]) -join ',') -eq 'brake_cab,brake_type,calcg,door,grad,loc,maplimit,meta,prates,siglimit,siglimit_ahead,speed,station,time') -and (((Tokens $gl[0]) -join ',') -eq 'brake_cab,brake_type,door,grad,loc,maplimit,meta,prates,siglimit,siglimit_ahead,speed,station,time'))
+Check 'G09 AVAIL unchanged: the same announced groups on every line (calcg is retired)' ((((Tokens $gl[1]) -join ',') -eq 'brake_cab,brake_type,door,grad,loc,maplimit,meta,prates,siglimit,siglimit_ahead,speed,station,time') -and (((Tokens $gl[0]) -join ',') -eq 'brake_cab,brake_type,door,grad,loc,maplimit,meta,prates,siglimit,siglimit_ahead,speed,station,time'))
 $neverSeen = @($gl | ForEach-Object { Tokens $_ } | Where-Object { $_ -in $NEVERTOK })
 $keysSeen = @($gl | ForEach-Object { (P $_).Keys } | Where-Object { $_ -in $NEVER })
 Check 'G10 unobtainable items unchanged: no handle / bcp / bpp / trainlen / doortime / maplimit_ahead / jump token and none of their keys' (($neverSeen.Count -eq 0) -and ($keysSeen.Count -eq 0))
@@ -371,7 +371,7 @@ if ($IP.GetProperty('Available').GetValue($null)) {
     Check 'R04 no wrapper, no identity (nothing is guessed)' ($null -eq $IP.GetMethod('IdentityOf').Invoke($null, [object[]]@($null)))
     $h = NewH; $IP.GetMethod('UseRealWrappers').Invoke($null, @(, $h.Api)) | Out-Null
     $h.Tick(); $h.Run(999, 16)
-    Check 'R05 1000 Ticks through REAL wrapper objects: one instance, one SCENARIO_ID, calcg from the second line' (($h.Sink.Lines().Count -eq 1000) -and ($h.Epochs -eq 1) -and (@($h.Sink.Lines() | ForEach-Object { (P $_)['SCENARIO_ID'] } | Select-Object -Unique).Count -eq 1) -and ((Tokens $h.Sink.Lines()[1]) -contains 'calcg'))
+    Check 'R05 1000 Ticks through REAL wrapper objects: one instance, one SCENARIO_ID, no calcg' (($h.Sink.Lines().Count -eq 1000) -and ($h.Epochs -eq 1) -and (@($h.Sink.Lines() | ForEach-Object { (P $_)['SCENARIO_ID'] } | Select-Object -Unique).Count -eq 1) -and (-not ((Tokens $h.Sink.Lines()[1]) -contains 'calcg')))
     $h.Opened($true); $h.Api.Scenario = New-Object object; $h.Created(); $h.Run(5, 16)
     Check 'R06 a reload through REAL wrapper objects is a new instance' ($h.Epochs -eq 2)
 }
@@ -679,68 +679,37 @@ Check 'Q18 the file log: 2000 Ticks, exactly one gradient line in the TEL_ forma
 # nothing else moved: AVAIL, the other values, the scenario identity
 $hq = NewH; $hq.Api.FreshWrapperEachCall = $true; $hq.Api.GradientRatio = 0.01; $hq.Tick(); $hq.Run(60, 16)
 $qa = @($hq.Sink.Lines())
-Check 'Q19 AVAIL is unchanged by the unit fix (same 14 tokens, calcg from the second line) and one instance / one SCENARIO_ID stays' ((((Tokens $qa[1]) -join ',') -eq 'brake_cab,brake_type,calcg,door,grad,loc,maplimit,meta,prates,siglimit,siglimit_ahead,speed,station,time') -and ($hq.Epochs -eq 1) -and (@($qa | ForEach-Object { (P $_)['SCENARIO_ID'] } | Select-Object -Unique).Count -eq 1))
+Check 'Q19 AVAIL is unchanged by the unit fix (the same 13 tokens, no calcg) and one instance / one SCENARIO_ID stays' ((((Tokens $qa[1]) -join ',') -eq 'brake_cab,brake_type,door,grad,loc,maplimit,meta,prates,siglimit,siglimit_ahead,speed,station,time') -and ($hq.Epochs -eq 1) -and (@($qa | ForEach-Object { (P $_)['SCENARIO_ID'] } | Select-Object -Unique).Count -eq 1))
 $qd = P $qa[1]
 Check 'Q20 the other values of the line are unchanged (speed 36 km/h of 10 m/s, location, time, signal limit 90)' ((Near ([double]$qd['SPEED']) 36.0) -and (Near ([double]$qd['LOCATION']) 1000.0) -and (Near ([double]$qd['SIGLIMIT']) 90.0))
 
 # ---------------------------------------------------------------------------------------------------------------------------------------------
-# SH - Shadow comparison (Stage 1): the official AccelerationZ (ACCELZ) is written as it is, needs no reference sample, and never stands in for CALCG
+# SH - the official AccelerationZ (ACCELZ) is written as it is, needs no reference sample, and nothing stands in for it (CALCG is retired)
 # ---------------------------------------------------------------------------------------------------------------------------------------------
 $h = NewH; $h.Api.HasAccelZ = $true; $h.Api.AccelZ = -0.5; $h.Tick()
 $sh1 = P (Last $h)
-Check 'SH01 the FIRST line already carries ACCELZ (no reference sample is needed): the raw m/s2 value with 6 decimals, and no CALCG yet' (($sh1['ACCELZ'] -eq '-0.500000') -and (-not $sh1.ContainsKey('CALCG')))
+Check 'SH01 the FIRST line already carries ACCELZ (no reference sample is needed): the raw m/s2 value with 6 decimals, and no CALCG' (($sh1['ACCELZ'] -eq '-0.500000') -and (-not $sh1.ContainsKey('CALCG')))
 Check 'SH02 AVAIL announces accelz on that line (and still no calcg)' (((Tokens (Last $h)) -contains 'accelz') -and (-not ((Tokens (Last $h)) -contains 'calcg')))
 $h.Api.AccelZ = 9.80665; $h.Run(1, 16)
 Check 'SH03 the value is not converted to G, not made absolute and not clamped (9.80665 stays 9.806650; the sign of the first line was kept)' (((P (Last $h))['ACCELZ'] -eq '9.806650') -and ($sh1['ACCELZ'].StartsWith('-')))
-Check 'SH04 CALCG is independent: the second line has both CALCG and ACCELZ' (((P (Last $h)).ContainsKey('CALCG')) -and ((Tokens (Last $h)) -contains 'accelz') -and ((Tokens (Last $h)) -contains 'calcg'))
+Check 'SH04 ACCELZ is the only acceleration group: the second line has ACCELZ and no CALCG' (((Tokens (Last $h)) -contains 'accelz') -and (-not ((P (Last $h)).ContainsKey('CALCG'))) -and (-not ((Tokens (Last $h)) -contains 'calcg')))
 $h.Api.AccelZ = [double]::NaN; $h.Run(1, 16)
 Check 'SH05 a NaN value writes no ACCELZ part and announces no accelz token (nothing is invented, no 0.0)' ((-not ((P (Last $h)).ContainsKey('ACCELZ'))) -and (-not ((Tokens (Last $h)) -contains 'accelz')))
 $h.Api.AccelZ = [double]::PositiveInfinity; $h.Run(1, 16)
 Check 'SH06 an Infinity value writes no ACCELZ part either' ((-not ((P (Last $h)).ContainsKey('ACCELZ'))) -and (-not ((Tokens (Last $h)) -contains 'accelz')))
 $h.Api.HasAccelZ = $false; $h.Run(1, 16)
-Check 'SH07 when the reading is not available there is no ACCELZ and no accelz, and CALCG is NOT put in its place' ((-not ((P (Last $h)).ContainsKey('ACCELZ'))) -and (-not ((Tokens (Last $h)) -contains 'accelz')) -and ((P (Last $h)).ContainsKey('CALCG')))
+Check 'SH07 when the reading is not available there is no ACCELZ and no accelz, and nothing is put in its place (no CALCG either)' ((-not ((P (Last $h)).ContainsKey('ACCELZ'))) -and (-not ((Tokens (Last $h)) -contains 'accelz')) -and (-not ((P (Last $h)).ContainsKey('CALCG'))))
 $h = NewH; $h.Api.HasAccelZ = $true; $h.Api.AccelZ = 0.8; $h.Tick(); $h.Api.AccelZ = 0.9; $h.Api.SpeedMps = 11.0; $h.Run(1, 100)
-Check 'SH08 the other values of the line are unchanged by the ACCELZ part (speed 39.6 km/h of 11 m/s, CALCG from 1 m/s over 0.1 s)' ((Near ([double](P (Last $h))['SPEED']) 39.6) -and (Near ([double](P (Last $h))['CALCG']) (10.0 / 9.80665) 0.0001) -and ((P (Last $h))['ACCELZ'] -eq '0.900000'))
+Check 'SH08 the other values of the line are unchanged by the ACCELZ part (speed 39.6 km/h of 11 m/s)' ((Near ([double](P (Last $h))['SPEED']) 39.6) -and ((P (Last $h))['ACCELZ'] -eq '0.900000'))
 $h = NewH; $h.Tick(); $h.Run(1, 16)
-Check 'SH09 a sender without the vibration reading is exactly as before (the V02 token list, no ACCELZ part)' ((((Tokens (Last $h)) -join ',') -eq 'brake_cab,brake_type,calcg,door,grad,loc,maplimit,meta,prates,siglimit,siglimit_ahead,speed,station,time') -and (-not ((P (Last $h)).ContainsKey('ACCELZ'))))
+Check 'SH09 a sender without the vibration reading announces the readable groups only (no ACCELZ part)' ((((Tokens (Last $h)) -join ',') -eq 'brake_cab,brake_type,door,grad,loc,maplimit,meta,prates,siglimit,siglimit_ahead,speed,station,time') -and (-not ((P (Last $h)).ContainsKey('ACCELZ'))))
 
 # ---------------------------------------------------------------------------------------------------------------------------------------------
-# SW - Shadow sway diagnostics: ACCELX (the public FrontAccelerationX), SWAY (the four RAW states of the BVE passenger-sway figure) and SWAYR (the resolution diagnostic)
+# SW - the sway family (ACCELX, SWAY, SWAYR) is retired: a line never carries any of them and AVAIL never announces accelx / sway
 # ---------------------------------------------------------------------------------------------------------------------------------------------
-$h = NewH; $h.Api.HasAccelX = $true; $h.Api.AccelX = -0.25; $h.Tick()
+$h = NewH; $h.Api.HasAccelZ = $true; $h.Api.AccelZ = -0.5; $h.Tick(); $h.Run(1, 16)
 $w1 = P (Last $h)
-Check 'SW01 the FIRST line already carries ACCELX: the raw m/s2 value with 6 decimals, and accelx is announced' (($w1['ACCELX'] -eq '-0.250000') -and ((Tokens (Last $h)) -contains 'accelx'))
-$h.Api.AccelX = 9.80665; $h.Run(1, 16)
-Check 'SW02 ACCELX is not converted, not made absolute and not clamped (9.80665 stays 9.806650)' (((P (Last $h))['ACCELX'] -eq '9.806650') -and ($w1['ACCELX'].StartsWith('-')))
-$h.Api.AccelX = [double]::NaN; $h.Run(1, 16)
-Check 'SW03 a NaN ACCELX writes no part and no accelx token (no 0.0)' ((-not ((P (Last $h)).ContainsKey('ACCELX'))) -and (-not ((Tokens (Last $h)) -contains 'accelx')))
-$h.Api.AccelX = [double]::NegativeInfinity; $h.Run(1, 16)
-Check 'SW04 an Infinity ACCELX writes no part either' ((-not ((P (Last $h)).ContainsKey('ACCELX'))) -and (-not ((Tokens (Last $h)) -contains 'accelx')))
-$h.Api.HasAccelX = $false; $h.Run(1, 16)
-Check 'SW05 when FrontAccelerationX cannot be read there is no ACCELX and no accelx token' ((-not ((P (Last $h)).ContainsKey('ACCELX'))) -and (-not ((Tokens (Last $h)) -contains 'accelx')))
-$h = NewH; $h.Api.HasSway = $true; $h.Api.SwayXc = 0.01; $h.Api.SwayVc = -0.02; $h.Api.SwayXd = 0.03; $h.Api.SwayVd = 0.04; $h.Tick()
-$w2 = P (Last $h)
-Check 'SW06 the FIRST line already carries SWAY: the four raw states, 6 decimals each, joined by colons, and sway is announced' (($w2['SWAY'] -eq '0.010000:-0.020000:0.030000:0.040000') -and ((Tokens (Last $h)) -contains 'sway'))
-$h.Api.SwayXc = -0.0666; $h.Api.SwayVc = 0.5; $h.Api.SwayXd = 0.0; $h.Api.SwayVd = 0.0; $h.Run(1, 16)
-Check 'SW07 the states are raw: nothing derived or converted in C# (no x + 0.315 v, no n, no abs)' (((P (Last $h))['SWAY'] -eq '-0.066600:0.500000:0.000000:0.000000') -and ((P (Last $h))['SWAY'].Split(':').Count -eq 4))
-$h.Api.SwayVd = [double]::NaN; $h.Run(1, 16)
-Check 'SW08 a NaN in any of the four states writes no SWAY and announces no sway (nothing is invented)' ((-not ((P (Last $h)).ContainsKey('SWAY'))) -and (-not ((Tokens (Last $h)) -contains 'sway')))
-$h.Api.SwayVd = 0.0; $h.Api.SwayXc = [double]::PositiveInfinity; $h.Run(1, 16)
-Check 'SW09 an Infinity state writes no SWAY either' ((-not ((P (Last $h)).ContainsKey('SWAY'))) -and (-not ((Tokens (Last $h)) -contains 'sway')))
-$h = NewH; $h.Api.HasSway = $false; $h.Api.SwayDiag = 'version-unsupported:5.9.0.1:legacy'; $h.Tick(); $h.Run(1, 16)
-$w3 = P (Last $h)
-Check 'SW10 when the states cannot be read there is no SWAY and no sway token, but the resolution diagnostic SWAYR is there (the reason travels, not a value)' ((-not $w3.ContainsKey('SWAY')) -and (-not ((Tokens (Last $h)) -contains 'sway')) -and ($w3['SWAYR'] -eq 'version-unsupported:5.9.0.1:legacy'))
-$h = NewH; $h.Api.HasSway = $true; $h.Api.SwayDiag = 'ok:5.8.7554.391:legacy'; $h.Tick(); $h.Run(1, 16)
-Check 'SW11 SWAYR is never an AVAIL token (a token would lengthen every missing list); the states are announced as sway' (((P (Last $h))['SWAYR'] -eq 'ok:5.8.7554.391:legacy') -and ((Tokens (Last $h)) -contains 'sway') -and (-not ((Tokens (Last $h)) -contains 'swayr')))
-$h = NewH; $h.Api.HasSway = $true; $h.Api.ThrowIn = 'TrySwayState'; $h.Tick(); $h.Run(1, 16)
-Check 'SW12 an exception while reading the states does not stop the line: no SWAY, the other values are still sent' ((-not ((P (Last $h)).ContainsKey('SWAY'))) -and ((P (Last $h)).ContainsKey('SPEED')) -and ((P (Last $h)).ContainsKey('CALCG')))
-$h = NewH; $h.Api.HasAccelZ = $true; $h.Api.AccelZ = -0.5; $h.Api.HasAccelX = $true; $h.Api.AccelX = 0.1; $h.Api.HasSway = $true; $h.Api.SwayXc = -0.01; $h.Tick(); $h.Run(1, 16)
-$w4 = P (Last $h)
-Check 'SW13 ACCELZ, ACCELX and SWAY are independent groups of one line (all three announced, none replaces another, CALCG is still its own)' (($w4['ACCELZ'] -eq '-0.500000') -and ($w4['ACCELX'] -eq '0.100000') -and ($w4['SWAY'] -eq '-0.010000:0.000000:0.000000:0.000000') -and ((Tokens (Last $h)) -contains 'accelz') -and ((Tokens (Last $h)) -contains 'accelx') -and ((Tokens (Last $h)) -contains 'sway') -and ((Tokens (Last $h)) -contains 'calcg'))
-$h = NewH; $h.Api.HasSway = $true; $h.Api.SwayXc = -0.05; $h.Tick(); $h.Api.SpeedMps = 11.0; $h.Run(1, 100)
-Check 'SW14 the other values of the line are unchanged by the SWAY part (speed 39.6 km/h of 11 m/s, CALCG from 1 m/s over 0.1 s)' ((Near ([double](P (Last $h))['SPEED']) 39.6) -and (Near ([double](P (Last $h))['CALCG']) (10.0 / 9.80665) 0.0001))
-$h = NewH; $h.Tick(); $h.Run(1, 16)
-Check 'SW15 a Tick where nothing of the sway family can be read is exactly as before (the V02 token list, no ACCELX, no SWAY, no SWAYR)' ((((Tokens (Last $h)) -join ',') -eq 'brake_cab,brake_type,calcg,door,grad,loc,maplimit,meta,prates,siglimit,siglimit_ahead,speed,station,time') -and (-not ((P (Last $h)).ContainsKey('ACCELX'))) -and (-not ((P (Last $h)).ContainsKey('SWAY'))) -and (-not ((P (Last $h)).ContainsKey('SWAYR'))))
+Check 'SW01 no ACCELX, SWAY or SWAYR part is written and accelx / sway are not announced (retired); ACCELZ is still there' ((-not $w1.ContainsKey('ACCELX')) -and (-not $w1.ContainsKey('SWAY')) -and (-not $w1.ContainsKey('SWAYR')) -and (-not ((Tokens (Last $h)) -contains 'accelx')) -and (-not ((Tokens (Last $h)) -contains 'sway')) -and ($w1['ACCELZ'] -eq '-0.500000'))
 
 # ---------------------------------------------------------------------------------------------------------------------------------------------
 $fail = @($results | Where-Object { -not $_.Ok }).Count

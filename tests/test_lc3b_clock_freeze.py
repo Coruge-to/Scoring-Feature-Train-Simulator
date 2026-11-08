@@ -1,7 +1,7 @@
-"""Phase LC-3B (Legacy scoring integration, C-LOOP-2) - the g_history while the BVE clock is frozen, as an executable contract.
+"""Phase LC-3B (Legacy scoring integration, C-LOOP-2) - the accel_z_history while the BVE clock is frozen, as an executable contract.
 
 THE PROBLEM (C-LOOP-2)
-  update_physics_and_scoring appends one (time, decel_g, notch, brk_max) entry to g_history on EVERY step and prunes only by the BVE time (10 s back from the newest entry).
+  update_physics_and_scoring appends one (time, decel_g, notch, brk_max) entry to accel_z_history on EVERY step and prunes only by the BVE time (10 s back from the newest entry).
   The Overlay steps on its own 16 ms timer, independent of the BVE clock. While the BVE time is frozen (Pause, the F1 menu, a duplicate datagram of the same millisecond) the steps keep
   coming with the SAME time: nothing is pruned, the list grows without a bound (and is rebuilt on every step), and the 0.5 s mean of the stop-jerk (update_stop_jerk_penalty) is
   dominated by copies of one frozen sample. Legacy shows it most (the host has no Tick while paused, only the Python timer runs).
@@ -136,7 +136,7 @@ class Direct(unittest.TestCase):
         if speed is not None:
             o.bve_speed = speed
         if calc_g is not None:
-            o.bve_calc_g = calc_g
+            o.bve_accel_z = (calc_g) * 9.80665
         if loc is not None:
             o.bve_location = loc
         if jump is not None:
@@ -165,7 +165,7 @@ class Direct(unittest.TestCase):
             self.step(speed=5.0 + 0.3 * i, calc_g=g, loc=100.0 + 0.6 * i)
 
     def history(self):
-        return [(h[0], round(h[1], 4)) for h in self.o.g_history]
+        return [(h[0], round(h[1], 4)) for h in self.o.accel_z_history]
 
     @contextlib.contextmanager
     def on(self, path):
@@ -185,10 +185,10 @@ class A_FrozenClock(Direct):
             with self.on(path_):
                 self.scene()
                 self.accelerate(5)
-                n0 = len(self.o.g_history)
+                n0 = len(self.o.accel_z_history)
                 self.assertEqual(n0, 6 if self.path != "direct" else 5)
                 self.freeze(1000)
-                self.assertEqual(len(self.o.g_history), n0, "history grows while the time is frozen: %d (was %d)" % (len(self.o.g_history), n0))
+                self.assertEqual(len(self.o.accel_z_history), n0, "history grows while the time is frozen: %d (was %d)" % (len(self.o.accel_z_history), n0))
 
     def test_CF_R2_a_long_freeze_leaves_the_scoring_state_as_one_step_does(self):
         """CF-R2: every plain attribute of the Overlay after 500 frozen steps equals the one after 1 frozen step (score, popups, brake / stop-jerk state, timers, history)."""
@@ -209,14 +209,14 @@ class A_FrozenClock(Direct):
             with self.on(path_):
                 self.scene()
                 self.accelerate(5)
-                n0 = len(self.o.g_history)
+                n0 = len(self.o.accel_z_history)
                 self.o.menu_state = 1
                 self.freeze(400)
                 self.o.menu_state = 0
-                self.assertEqual(len(self.o.g_history), n0, "history grows with the F1 menu open: %d (was %d)" % (len(self.o.g_history), n0))
+                self.assertEqual(len(self.o.accel_z_history), n0, "history grows with the F1 menu open: %d (was %d)" % (len(self.o.accel_z_history), n0))
 
     def test_CF_R4_the_newest_sample_of_an_instant_replaces_the_entry_of_that_time_only(self):
-        """CF-R4: same-time duplicates with DIFFERENT values (two datagrams of one millisecond): the newest wins, the older entries are untouched, the entry carries the newest brake fields."""
+        """CF-R4: same-time duplicates with DIFFERENT values (two datagrams of one millisecond): the newest wins, the older entries are untouched, the entry holds the newest value (the brake fields of the old CalcG history entry are retired with it)."""
         for path_ in PATHS:
             with self.on(path_):
                 self.scene()
@@ -228,8 +228,7 @@ class A_FrozenClock(Direct):
                 after = self.history()
                 self.assertEqual(len(after), len(before), "history keeps %r" % (after,))
                 self.assertEqual(after[:-1], before[:-1], "an older entry was touched")
-                self.assertEqual(after[-1], (before[-1][0], -0.04), "the newest value did not win: %r" % (after[-1],))
-                self.assertEqual(tuple(self.o.g_history[-1][2:]), (3, 7), "the entry does not carry the newest brake fields")
+                self.assertEqual(after[-1], (before[-1][0], round(0.04 * 9.80665, 4)), "the newest value did not win: %r" % (after[-1],))
 
     def test_CF_R5_a_frozen_value_does_not_dominate_the_stop_value(self):
         """CF-R5: 600 copies of a frozen hard value do not outweigh the distinct samples of the 0.5 s mean (no false -100 / -200 at the soft stop after the freeze)."""
@@ -241,7 +240,7 @@ class A_FrozenClock(Direct):
                     self.step(dt=0.04, speed=2.0, calc_g=-0.01)
                 self.freeze(600, speed=2.0, calc_g=-0.20)             # the value of the frozen menu moment, repeated by the 16 ms step
                 self.step(dt=0.1, speed=0.0, calc_g=-0.01)
-                self.assertLess(abs(self.o.last_stop_g), 0.1, "duplicates dominate the stop value: %r" % (self.o.last_stop_g,))
+                self.assertLess(abs(self.o.last_stop_g_bve), 0.1, "duplicates dominate the stop value: %r" % (self.o.last_stop_g_bve,))
                 self.assertEqual(self.jerk(), [], "false stop-jerk penalty after the freeze: %r" % (self.jerk(),))
 
     def test_CF_R6_the_freeze_before_a_real_hard_stop_does_not_hide_it(self):
@@ -281,13 +280,13 @@ class B_MovingClock(Direct):
         for path_ in PATHS:
             with self.on(path_):
                 self.scene()
-                n0 = len(self.o.g_history)
+                n0 = len(self.o.accel_z_history)
                 gs = (0.01, 0.02, 0.03, 0.04, 0.05)
                 for dt, g in zip((0.25, 1.0, 2.5, 0.016, 0.5), gs):
                     self.step(dt=dt, speed=5.0, calc_g=g)
                 hist = self.history()
                 self.assertEqual(len(hist), n0 + 5 if n0 else 5, "a slow frame was replaced: %r" % (hist,))
-                self.assertEqual([h[1] for h in hist[-5:]], [-g for g in gs])
+                self.assertEqual([h[1] for h in hist[-5:]], [round(g * 9.80665, 4) for g in gs])
                 self.assertEqual(sorted(set(h[0] for h in hist)), [h[0] for h in hist], "times are not strictly increasing: %r" % (hist,))
 
     def test_CF_R9_the_retention_is_ten_seconds_with_the_boundary_excluded(self):
@@ -295,7 +294,7 @@ class B_MovingClock(Direct):
         for path_ in PATHS:
             with self.on(path_):
                 self.scene()
-                self.o.g_history.clear()
+                self.o.accel_z_history.clear()
                 for _i in range(12):
                     self.step(dt=1.0, speed=5.0, calc_g=0.01)
                 hist = self.history()
@@ -310,11 +309,11 @@ class B_MovingClock(Direct):
                 self.scene()
                 self.accelerate(5)
                 self.freeze(800)
-                n0 = len(self.o.g_history)
+                n0 = len(self.o.accel_z_history)
                 for i in range(5):
                     self.step(dt=0.1, speed=6.0 + 0.2 * i, calc_g=0.05)
-                self.assertEqual(len(self.o.g_history), n0 + 5)
-                times = [h[0] for h in self.o.g_history]
+                self.assertEqual(len(self.o.accel_z_history), n0 + 5)
+                times = [h[0] for h in self.o.accel_z_history]
                 self.assertEqual(times, sorted(set(times)))
                 self.assertAlmostEqual(self.o.last_update_time if self.path != "direct" else self.now(), self.now(), places=6)
 
@@ -340,19 +339,19 @@ class B_MovingClock(Direct):
         self.scene()
         self.step(dt=0.1, speed=5.0, calc_g=0.01)
         self.step(dt=0.1, speed=5.0, calc_g=0.02)
-        n0 = len(self.o.g_history)
-        newest = self.o.g_history[-1][0]
+        n0 = len(self.o.accel_z_history)
+        newest = self.o.accel_z_history[-1][0]
         self.S.update_physics_and_scoring(self.o, newest - 0.05, 0.0)
-        self.assertEqual(len(self.o.g_history), n0 + 1, "an older time overwrote the newer entry")
-        self.assertEqual(self.o.g_history[-2][0], newest)
+        self.assertEqual(len(self.o.accel_z_history), n0 + 1, "an older time overwrote the newer entry")
+        self.assertEqual(self.o.accel_z_history[-2][0], newest)
 
     def test_CF_R13_the_cost_is_bounded(self):
         """CF-R13: 3000 frozen steps leave ONE entry for the frozen time (the list is not rebuilt from thousands of copies)."""
         self.scene()
-        self.o.g_history.clear()
+        self.o.accel_z_history.clear()
         self.step(dt=0.1, speed=5.0, calc_g=0.01)
         self.freeze(3000)
-        self.assertEqual(len(self.o.g_history), 1)
+        self.assertEqual(len(self.o.accel_z_history), 1)
 
 
 # =====================================================================================================================================================
@@ -367,11 +366,11 @@ class C_Boundaries(Direct):
                 self.accelerate(5)
                 self.freeze(20)
                 self.step(dt=0.0, speed=0.0, calc_g=0.0, jump=1, official=True)
-                self.assertEqual(list(self.o.g_history), [], "the history of the old trajectory survived the Jump")
-                self.assertEqual((self.o.is_stopping_zone, self.o.last_stop_g, self.o.stop_notch_state), (False, 0.0, "IDLE"))
+                self.assertEqual(list(self.o.accel_z_history), [], "the history of the old trajectory survived the Jump")
+                self.assertEqual((self.o.is_stopping_zone, self.o.last_stop_g_bve, self.o.stop_notch_state), (False, None, "IDLE"))
                 self.step(dt=0.0, speed=0.0, calc_g=0.0)
                 self.step(dt=0.0, speed=0.0, calc_g=0.0)
-                self.assertEqual(len(self.o.g_history), 1)
+                self.assertEqual(len(self.o.accel_z_history), 1)
                 self.assertEqual(self.jerk(), [])
 
     def test_CF_R15_the_clock_going_backwards_resets_before_the_replace(self):
@@ -382,9 +381,9 @@ class C_Boundaries(Direct):
                 self.path = path
                 self.scene()
                 self.accelerate(5)
-                stale = self.o.g_history[-3]
+                stale = self.o.accel_z_history[-3]
                 self.o.bve_time_ms = int(round(stale[0] * 1000))
-                self.o.bve_speed, self.o.bve_calc_g = 1.0, 0.0
+                self.o.bve_speed, self.o.bve_accel_z = 1.0, 0.0
                 self.step(dt=0.0)
                 hist = self.history()
                 self.assertEqual(hist, [(stale[0], -0.0)], "a stale entry survived the reset: %r" % (hist,))
@@ -408,9 +407,9 @@ class C_Boundaries(Direct):
                 self.scene()
                 self.accelerate(10)
                 self.step(dt=0.0, speed=0.0, calc_g=0.08, official=True)
-                n0 = len(self.o.g_history)
+                n0 = len(self.o.accel_z_history)
                 self.freeze(300, speed=0.0, calc_g=0.08)
-                self.assertEqual(len(self.o.g_history), n0)
+                self.assertEqual(len(self.o.accel_z_history), n0)
                 self.assertEqual(self.jerk(), [])
 
 
@@ -448,14 +447,14 @@ class D_ManagedPipeline(unittest.TestCase):
                 t += 100
                 r.send(F.line(shape, 1, t, 18.0, 100.0 + 0.5 * i, calcg=0.01, NEXTLOC=1000.0))
                 r.tick(1, 0.016)
-            n_moving = len(o.g_history)
+            n_moving = len(o.accel_z_history)
             freeze(r, shape, t)
-            n_frozen = len(o.g_history)
+            n_frozen = len(o.accel_z_history)
             for i in range(5):
                 t += 100
                 r.send(F.line(shape, 1, t, 18.0, 103.0 + 0.5 * i, calcg=0.02, NEXTLOC=1000.0))
                 r.tick(1, 0.016)
-            return {"moving": n_moving, "frozen": n_frozen, "final": len(o.g_history), "history": [(h[0], round(h[1], 4)) for h in o.g_history]}
+            return {"moving": n_moving, "frozen": n_frozen, "final": len(o.accel_z_history), "history": [(h[0], round(h[1], 4)) for h in o.accel_z_history]}
         finally:
             r.close()
 
