@@ -71,11 +71,11 @@ class PopupDim(Base):
     def test_UD4_RED_the_three_screens_have_no_dim_rectangle_of_their_own(self):
         with open(os.path.join(ROOT, "menu_ui.py"), encoding="utf-8") as fh:
             text = fh.read()
-        # Stage UI-D3 (on purpose): the common F1 layer is drawn by the one dim function (the colour MENU_DIM_RGBA, drawn first only while a page is in front)
-        self.assertEqual(text.count("_draw_menu_dim(painter, (0, 0, int(logical_width), int(BASE_SCREEN_H)), None)"), 1, "the common layer")
+        # Stage UI-D4 (on purpose): the common F1 layer (alpha 220) is drawn by the one layer dim function, first, once, over the whole window (the layers of the pop-up panels, the drop-down and the help are drawn by the same function)
+        self.assertEqual(text.count("_draw_menu_layer_dim(painter, (0, 0, self.width(), self.height()), MENU_BASE_DIM_RGBA)"), 1, "the common layer")
         self.assertNotIn("drawRect(0,0, int(BASE_SCREEN_W), int(BASE_SCREEN_H))", text)
         self.assertNotIn("drawRect(0, 0, int(BASE_SCREEN_W), int(BASE_SCREEN_H))", text)
-        self.assertEqual(text.count("# Stage UI-4: no second dim layer here"), 3)
+        self.assertEqual(text.count("# Stage UI-D4: the child dim layer (alpha 180, the whole window, once) is drawn just before the panel"), 3)
 
 class PopupBackground(PopupDim):
     """Stage UI-5 (Owner, 2026-11-05, screenshot 221512): the initial / relaxation screen's explanation box was darker than the panel, the title of the page behind the pop-up (1/3, 2/3) showed through / above the panel of the basic brake and the

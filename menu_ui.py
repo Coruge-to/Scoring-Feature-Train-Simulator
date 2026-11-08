@@ -14,15 +14,13 @@ from utils import draw_text_with_outline
 import stop_jerk_text
 import time
 
-# Stage UI-D3 (Owner clarification 2026-11-08 after the live Run CUI-C-01): THE dim of the F1 screens - ONE per picture, the colour and alpha of the operation help (MENU_DIM_RGBA, no other).
-# The F1 page itself is the one dim of the BVE screen (drawn first, under the page UI). While a pop-up panel, a drop-down or the operation help is in front, no page dim is drawn first: the whole content (BVE, the parent page, the panel ...)
-# is drawn and then the dim is applied ONCE, at the end, to the window minus the bright region (a union of rectangles). No pixel is dimmed twice.
-MENU_DIM_RGBA = (0, 0, 0, 180)
+# Stage UI-D4 (Owner contract 2026-11-08 after the live Run CUI-C-02): the dims of the F1 screens are LAYERED, one layer per step of the operation hierarchy, each layer = ONE rectangle that covers the whole window,
+# drawn at most ONCE per frame; what stays bright on a layer is drawn AFTER that layer's dim. No dim is ever built from touching rectangles or a hole (the shared edges fall on fractional pixels under Antialiasing and
+# leave a thin light line). The two alphas are the long-standing values and are NOT unified: the common F1 layer (alpha 220) and the layer of a pop-up panel, a drop-down and the operation help (alpha 180).
+MENU_BASE_DIM_RGBA = (0, 0, 0, 220)
+MENU_CHILD_DIM_RGBA = (0, 0, 0, 180)
 # The page behind a pop-up panel (it is drawn, dimmed, behind the panel): the basic brake and the operating time panels open from the scoring page 1/3 (menu_state 5), the initial / relaxation panel from the page 2/3 (menu_state 6).
 MENU_PARENT_PAGE = {7: 5, 8: 5, 9: 6}
-# Rows of a drop-down list outside its frame: NONE are drawn (the Owner has not defined a preview region). Only the frame and the two arrow tiles are bright; the rows beyond are not shown.
-# A positive value would draw that many COMPLETE rows on each side, beyond the arrow tiles, under the dim.
-DROPDOWN_PREVIEW_ROWS = 0
 
 
 def menu_panel_rect(state):
@@ -37,61 +35,13 @@ def menu_panel_rect(state):
     return (x, y, x + w, y + h)
 
 
-def _subtract(pieces, hole):
-    out = []
-    hx0, hy0, hx1, hy1 = hole
-    for x0, y0, x1, y1 in pieces:
-        ix0, iy0, ix1, iy1 = max(x0, hx0), max(y0, hy0), min(x1, hx1), min(y1, hy1)
-        if ix1 <= ix0 or iy1 <= iy0:
-            out.append((x0, y0, x1, y1))
-            continue
-        out += [(x0, y0, x1, iy0), (x0, iy1, x1, y1), (x0, iy0, ix0, iy1), (ix1, iy0, x1, iy1)]
-    return [r for r in out if r[2] > r[0] and r[3] > r[1]]
-
-
-def menu_dim_rects(view, bright):
-    """The rectangles (x, y, w, h) of the ONE dim = the view minus the bright region. view = (x, y, w, h) of the window in menu coordinates; bright = a list of (x0, y0, x1, y1) (the bright region is their union) or None (no bright region: the whole
-    view is dimmed). The result is a set of disjoint rectangles clamped to the view, none with a width or height of 0 or less, so every pixel is dimmed at most once."""
-    vx0, vy0 = int(math.floor(view[0])), int(math.floor(view[1]))
-    vx1, vy1 = int(math.ceil(view[0] + view[2])), int(math.ceil(view[1] + view[3]))
-    if vx1 <= vx0 or vy1 <= vy0:
-        return []
-    pieces = [(vx0, vy0, vx1, vy1)]
-    for h in (bright or ()):
-        pieces = _subtract(pieces, (int(math.floor(h[0])), int(math.floor(h[1])), int(math.ceil(h[2])), int(math.ceil(h[3]))))
-    return [(x0, y0, x1 - x0, y1 - y0) for x0, y0, x1, y1 in pieces]
-
-
-def _draw_menu_dim(painter, view, bright=None):
-    """THE dim of the F1 screens: the colour and alpha of the operation help, drawn once over everything but the bright region."""
+def _draw_menu_layer_dim(painter, view, rgba):
+    """ONE dim layer = ONE rectangle that covers the whole window (view = (x, y, w, h) of the window in the coordinates of the painter, plus a margin that is clipped away): no interior edge, so no seam under Antialiasing."""
+    x0, y0 = int(math.floor(view[0])) - 2, int(math.floor(view[1])) - 2
+    x1, y1 = int(math.ceil(view[0] + view[2])) + 2, int(math.ceil(view[1] + view[3])) + 2
     painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(QColor(*MENU_DIM_RGBA))
-    for x, y, w, h in menu_dim_rects(view, bright):
-        painter.drawRect(x, y, w, h)
-
-
-def dropdown_preview_slots(scroll, total, visible, start_y, row_h, x_span, bright, screen_h, rows):
-    """The slot numbers of the COMPLETE preview rows of a drop-down (negative: above the frame, >= visible: below it): at most `rows` on each side, nearest first, each fully inside the screen and not touching a bright rectangle."""
-    def free(i):
-        y = start_y + 10 + i * row_h
-        if y < 0 or y + row_h > screen_h:
-            return None
-        for bx0, by0, bx1, by1 in bright:
-            if x_span[0] < bx1 and x_span[1] > bx0 and y < by1 and y + row_h > by0:
-                return False
-        return True
-    out = []
-    for step, bound in ((-1, lambda i: scroll + i >= 0), (1, lambda i: scroll + i < total)):
-        i, taken = (-1 if step < 0 else visible), 0
-        while taken < rows and bound(i):
-            ok = free(i)
-            if ok is None:
-                break
-            if ok:
-                out.append(i)
-                taken += 1
-            i += step
-    return out
+    painter.setBrush(QColor(*rgba))
+    painter.drawRect(x0, y0, x1 - x0, y1 - y0)
 
 
 def _brake_rule_start(self, r_idx):
@@ -109,11 +59,10 @@ def draw_menu(self, painter, logical_width, _parent=False):
     SCORING_BOX_Y_OFFSET = -4
     MAIN_ROW0_STA_MAX_W = 400
 
-    # Stage UI-D3: the page in front is the one dim of the BVE screen (drawn first, under the page UI). With anything else in front (a pop-up panel, a drop-down, the help) the one dim is drawn at the end of the frame instead.
-    page_in_front = not (getattr(self, 'show_help', False) or (getattr(self, 'dropdown_active', False) and len(getattr(self, 'dropdown_options', [])) > 0) or self.menu_state in MENU_PARENT_PAGE)
-    if page_in_front and not _parent:
-        _draw_menu_dim(painter, (0, 0, int(logical_width), int(BASE_SCREEN_H)), None)
-    
+    # Stage UI-D4: the common F1 layer (alpha 220), always drawn first and once (the page behind a pop-up panel is drawn by a recursive call that must not add it again). The window in device coordinates.
+    if not _parent:
+        _draw_menu_layer_dim(painter, (0, 0, self.width(), self.height()), MENU_BASE_DIM_RGBA)
+
     painter.save()
     painter.resetTransform()
     scale_x = self.width() / BASE_SCREEN_W
@@ -132,9 +81,8 @@ def draw_menu(self, painter, logical_width, _parent=False):
     center_x = BASE_SCREEN_W / 2
     self.menu_click_zones.clear()
 
-    # Stage UI-D3: front_rects = the bright region (a list of rectangles, set where the panel / the drop-down is drawn; None while a page is in front), late_draws = the scroll arrows (drawn after the dim).
+    # Stage UI-D4: late_draws = the scroll arrows of the screen (drawn after the content; a drop-down flushes the ones behind it before its own dim layer).
     view = (-offset_x / menu_scale, -offset_y / menu_scale, self.width() / menu_scale, self.height() / menu_scale)
-    front_rects = None
     late_draws = []
     if not _parent and self.menu_state in MENU_PARENT_PAGE:
         # the page behind a pop-up panel is drawn (dimmed later, once, with everything else outside the panel): the same drawing as the page itself, without focus changes, input zones, drop-down or help
@@ -684,13 +632,13 @@ def draw_menu(self, painter, logical_width, _parent=False):
                 draw_text_with_outline(painter, line, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, 180, desc_y + 40 + (j * 40), "left", passes=8)
 
         if self.menu_state == 7:
-            # Stage UI-4: no second dim layer here (the common one at the top of draw_menu already covers the whole window; a second one drawn inside the 16:9 area left a darker band in a window that is not 16:9)
+            # Stage UI-D4: the child dim layer (alpha 180, the whole window, once) is drawn just before the panel; the panel and what it draws are bright
             sub_w, sub_h = 1700, 850
             sub_x, sub_y = 110, (BASE_SCREEN_H - sub_h) / 2
 
             self.active_panel_rect = (sub_x, sub_y, sub_x + sub_w, sub_y + sub_h)
-            front_rects = [(sub_x - 2, sub_y - 2, sub_x + sub_w + 2, sub_y + sub_h + 2)]
 
+            _draw_menu_layer_dim(painter, view, MENU_CHILD_DIM_RGBA)
             painter.setBrush(QColor(30, 30, 30, 240))
             painter.setPen(QPen(QColor(150, 150, 150), 3))
             painter.drawRoundedRect(int(sub_x), int(sub_y), int(sub_w), int(sub_h), 12, 12)
@@ -858,12 +806,11 @@ def draw_menu(self, painter, logical_width, _parent=False):
         TIMING_HIGHLIGHT_OFFSET_X = 0       
         TIMING_HIGHLIGHT_OFFSET_Y = 0       
         
-        # Stage UI-4: no second dim layer here (the common one at the top of draw_menu already covers the whole window; a second one drawn inside the 16:9 area left a darker band in a window that is not 16:9)
+        # Stage UI-D4: the child dim layer (alpha 180, the whole window, once) is drawn just before the panel; the panel and what it draws are bright
         SUB_X = (BASE_SCREEN_W - TIMING_SUB_W) / 2
         SUB_Y = (BASE_SCREEN_H - TIMING_SUB_H) / 2
         
         self.active_panel_rect = (SUB_X, SUB_Y, SUB_X + TIMING_SUB_W, SUB_Y + TIMING_SUB_H)
-        front_rects = [(SUB_X - 2, SUB_Y - 2, SUB_X + TIMING_SUB_W + 2, SUB_Y + TIMING_SUB_H + 2)]
 
         CONTENT_Y = SUB_Y                           # the content hangs from the TOP edge of the frame (the extra height is only below it)
         TITLE_Y = CONTENT_Y + TIMING_TITLE_Y_OFFSET
@@ -872,6 +819,7 @@ def draw_menu(self, painter, logical_width, _parent=False):
         ARROW_DOWN_Y = LIST_Y + (TIMING_VISIBLE_COUNT * TIMING_ROW_H) + TIMING_ARROW_DOWN_Y_OFFSET
         BTN_Y = CONTENT_Y + TIMING_BASE_H - TIMING_BTN_Y_OFFSET
         
+        _draw_menu_layer_dim(painter, view, MENU_CHILD_DIM_RGBA)
         painter.setBrush(QColor(30, 30, 30, 240))
         painter.setPen(QPen(QColor(150, 150, 150), 3))
         painter.drawRoundedRect(int(SUB_X), int(SUB_Y), int(TIMING_SUB_W), int(TIMING_SUB_H), 12, 12)
@@ -1218,14 +1166,14 @@ def draw_menu(self, painter, logical_width, _parent=False):
             draw_text_with_outline(painter, line, self.font_desc, COLOR_WHITE, COLOR_OUTLINE_BLACK, 180, desc_y + 40 + (j * 40), "left", passes=8)
 
     elif self.menu_state == 9:
-        # Stage UI-4: no second dim layer here (the common one at the top of draw_menu already covers the whole window; a second one drawn inside the 16:9 area left a darker band in a window that is not 16:9)
+        # Stage UI-D4: the child dim layer (alpha 180, the whole window, once) is drawn just before the panel; the panel and what it draws are bright
         sub_w, sub_h = 1700, 940
         sub_x, sub_y = 110, (BASE_SCREEN_H - sub_h) / 2
         SHIFT_Y = 30
 
         self.active_panel_rect = (sub_x, sub_y, sub_x + sub_w, sub_y + sub_h)
-        front_rects = [(sub_x - 2, sub_y - 2, sub_x + sub_w + 2, sub_y + sub_h + 2)]
         
+        _draw_menu_layer_dim(painter, view, MENU_CHILD_DIM_RGBA)
         painter.setBrush(QColor(30, 30, 30, 240))
         painter.setPen(QPen(QColor(150, 150, 150), 3))
         painter.drawRoundedRect(int(sub_x), int(sub_y), int(sub_w), int(sub_h), 12, 12)
@@ -1572,29 +1520,25 @@ def draw_menu(self, painter, logical_width, _parent=False):
         start_y = (BASE_SCREEN_H / 2) - (box_h / 2)
         
         self.active_dropdown_rect = (start_x, start_y, start_x + box_w, start_y + box_h)
-        # Stage UI-D3: the bright region of a drop-down = the frame + the up arrow tile (when the list scrolls up) + the down arrow tile (when it scrolls down) - a union of rectangles. Everything else is dimmed once, at the end of the frame:
-        # the parent page / panel and their arrows are no longer drawn bright, and NO row outside the frame is drawn (DROPDOWN_PREVIEW_ROWS rows at most, complete, beyond the tiles).
+        # Stage UI-D4: the drop-down layer: the arrows of the screen behind it are drawn first (so that the dim covers them), then the dim of the drop-down (alpha 180, the whole window, once), then the bright content:
+        # the frame, its rows and the two arrow tiles.
         scroll_now = getattr(self, 'dropdown_scroll', 0)
+        for late_draw in late_draws:
+            late_draw()
+        late_draws.clear()
+        _draw_menu_layer_dim(painter, view, MENU_CHILD_DIM_RGBA)
+        # ドロップダウン表示中は背後のクリック領域を無効化する
+        self.menu_click_zones.clear()
+
         arrow_tiles = []
         if scroll_now > 0:
             arrow_tiles.append((BASE_SCREEN_W / 2 - 30, start_y - 48, BASE_SCREEN_W / 2 + 30, start_y + 2))
         if scroll_now + 7 < len(self.dropdown_options):
             arrow_tiles.append((BASE_SCREEN_W / 2 - 30, start_y + box_h - 2, BASE_SCREEN_W / 2 + 30, start_y + box_h + 54))
-        front_rects = [(start_x - 2, start_y - 2, start_x + box_w + 2, start_y + box_h + 2)] + arrow_tiles
-        late_draws.clear()                     # (the scroll arrows of the PARENT are dimmed with it; the drop-down adds its own below)
-        # ドロップダウン表示中は背後のクリック領域を無効化する
-        self.menu_click_zones.clear()
-
         for tx0, ty0, tx1, ty1 in arrow_tiles:
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(20, 20, 20, 240))
             painter.drawRect(int(tx0), int(ty0), int(tx1 - tx0), int(ty1 - ty0))
-        for i in dropdown_preview_slots(scroll_now, len(self.dropdown_options), len(visible_opts), start_y, row_h, (start_x, start_x + box_w), front_rects, BASE_SCREEN_H, DROPDOWN_PREVIEW_ROWS):
-            ghost_y = start_y + 10 + i * row_h
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(20, 20, 20, 240))
-            painter.drawRect(int(start_x), int(ghost_y), int(box_w), int(row_h))
-            draw_text_with_outline(painter, str(self.dropdown_options[scroll_now + i].get("name", "不明")), self.font_menu, COLOR_WHITE, COLOR_OUTLINE_BLACK, BASE_SCREEN_W / 2, ghost_y + fm.ascent() + 8, "center", passes=8)
 
         painter.setPen(QPen(QColor(100, 100, 100), 4))
         painter.setBrush(QColor(20, 20, 20, 240))
@@ -1898,10 +1842,6 @@ def draw_menu(self, painter, logical_width, _parent=False):
         painter.restore()
         return
 
-    # Stage UI-D3: THE dim, once, at the end of the frame: the window minus the bright region (a pop-up panel, or a drop-down with its arrow tiles). While the operation help is shown the dim belongs to the help (below): they never add up.
-    # With a page in front (front_rects is None) the dim was drawn FIRST, under the page UI, and nothing is drawn here.
-    if not getattr(self, 'show_help', False) and front_rects is not None:
-        _draw_menu_dim(painter, view, front_rects)
     for late_draw in late_draws:
         late_draw()
 
@@ -1953,8 +1893,8 @@ def draw_menu(self, painter, logical_width, _parent=False):
         
         self.active_help_rect = (win_x, win_y, win_x + win_w, win_y + win_h)
 
-        # 画面全体を暗転（Stage UI-D2: the one dim of the screen while the help is shown; the help window is the bright region)
-        _draw_menu_dim(painter, view, [(win_x - 2, win_y - 2, win_x + win_w + 2, win_y + win_h + 2)])
+        # 画面全体を暗転（Stage UI-D4: the help layer, alpha 180, the whole window, once; the help window is drawn after it)
+        _draw_menu_layer_dim(painter, view, MENU_CHILD_DIM_RGBA)
         
         # 3. 枠とタイトルの描画
         painter.setBrush(QColor(30, 30, 30, 240))
