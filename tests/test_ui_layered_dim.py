@@ -7,6 +7,7 @@ Contract (menu_ui.draw_menu), the dims of the F1 screens are LAYERED, one layer 
   * the page behind a pop-up panel is drawn (basic brake and operating time: scoring page 1/3, initial / relaxation: 2/3); no row outside a list frame is drawn (the preview rows are a later commit); the panel background stays (30,30,30,240).
   * input (the help does not stop input), Cursor-Q3 and the rest of main.py / managed_input.py are unchanged.
 The REAL screen (menu_ui.draw_menu on an offscreen QImage, a flat background, Antialiasing ON as in Overlay.paintEvent, windows of non-integer menu_scale) is driven.
+Stage UI-D5 (commit 1 of 2026-11-08, red_20 .. guard_26): the scroll arrows of a drop-down are glyphs only, no tile background; hit rectangles, scroll, candidates unchanged.
 RED = fails on the baseline af46056; GUARD = passes there. Names: test_red_* / test_guard_*; every RED assertion message starts with 'UI-RED'."""
 import ast
 import hashlib
@@ -381,7 +382,7 @@ class Layered(Base):
     def test_guard_16_the_panel_and_drop_down_backgrounds_keep_their_alpha(self):
         text = source("menu_ui.py")
         self.assertEqual(text.count("painter.setBrush(QColor(30, 30, 30, 240))"), 4, "panels 7, 8, 9 and the help window: (30,30,30,240)")
-        self.assertIn(text.count("painter.setBrush(QColor(20, 20, 20, 240))"), (2, 3), "the drop-down frame and its arrow tiles (and, on the baseline, the preview rows): (20,20,20,240)")
+        self.assertEqual(text.count("painter.setBrush(QColor(20, 20, 20, 240))"), 1, "UI-RED: the drop-down frame is the only (20,20,20,240) background left (the arrow tiles are gone)")
 
     def test_guard_17_input_and_cursor_q3_code_is_unchanged(self):
         """the functions of main.py / managed_input.py that handle the help key, the input ownership and the override cursor, as AST hashes of af46056"""
@@ -417,6 +418,247 @@ class Layered(Base):
         rows = [z for z in o.menu_click_zones if len(z) >= 6 and z[4] == 997]
         self.assertTrue(rows and all(y0 <= z[1] and z[3] <= y1 for z in rows), "every row of the drop-down is inside its frame")
         self.assertIn(5, [z[5] for z in rows], "the selected row is in the frame")
+
+    # ================================================================== Stage UI-D5 (commit 1): the scroll arrows of a drop-down have NO background
+    # Owner contract 2026-11-08 (after PAIR-COMPAT-C-01): only the glyphs of the two arrows are drawn; the tile background (20,20,20,240) of af46056 is gone. The hit rectangles (40 x 45) stay and are never painted.
+    ARROW_SCENES = (("both", 12, 3, 5), ("only_down", 12, 0, 0), ("only_up", 12, 5, 5), ("none", 5, 0, 0))
+
+    def probe(self, o, state, width=1920, height=1080):
+        """one frame of the REAL screen -> (events, transform, image); events in drawing order: ('dim', alpha) | ('shape', kind, mapped rect, brush rgba, pen) | ('text', text, x, y, align, color)"""
+        from PyQt6.QtCore import QRectF, Qt
+        from PyQt6.QtGui import QPainter, QTransform
+        import menu_ui
+        ev = []
+        info = {"tf": None}
+
+        def rect_of(args):
+            if args and isinstance(args[0], (int, float)):
+                return QRectF(*[float(v) for v in args[:4]])
+            return QRectF(args[0])
+
+        class Spy(QPainter):
+            def rec(self, kind, rect=None):
+                b = self.brush().color()
+                m = self.worldTransform().mapRect(rect) if rect is not None else None
+                info["tf"] = QTransform(self.worldTransform())
+                ev.append(("shape", kind, None if m is None else (m.left(), m.top(), m.right(), m.bottom()), (b.red(), b.green(), b.blue(), b.alpha()), self.pen().style() != Qt.PenStyle.NoPen))
+
+            def drawRect(self, *args):
+                b = self.brush().color()
+                if b.alpha() in (220, 180) and self.pen().style() == Qt.PenStyle.NoPen and (b.red(), b.green(), b.blue()) == (0, 0, 0):
+                    info["tf"] = QTransform(self.worldTransform())
+                    ev.append(("dim", b.alpha()))
+                else:
+                    self.rec("drawRect", rect_of(args))
+                return super().drawRect(*args)
+
+            def drawRoundedRect(self, *args):
+                self.rec("drawRoundedRect", rect_of(args))
+                return super().drawRoundedRect(*args)
+
+            def fillRect(self, *args):
+                self.rec("fillRect", rect_of(args))
+                return super().fillRect(*args)
+
+            def drawPath(self, path):
+                self.rec("drawPath", path.boundingRect())
+                return super().drawPath(path)
+
+            def drawPolygon(self, *args):
+                self.rec("drawPolygon")
+                return super().drawPolygon(*args)
+
+            def drawLine(self, *args):
+                self.rec("drawLine")
+                return super().drawLine(*args)
+
+            def drawEllipse(self, *args):
+                self.rec("drawEllipse")
+                return super().drawEllipse(*args)
+
+        original = menu_ui.draw_text_with_outline
+
+        def record(painter, t, font, *a, **k):
+            ev.append(("text", t, a[2], a[3], a[4] if len(a) > 4 else k.get("align", "left"), a[0]))
+            return original(painter, t, font, *a, **k)
+        menu_ui.draw_text_with_outline = record
+        try:
+            image = self.render(o, state, width, height, painter_cls=Spy)
+        finally:
+            menu_ui.draw_text_with_outline = original
+        return ev, info["tf"], image
+
+    def after_last_dim(self, ev):
+        last = max(i for i, e in enumerate(ev) if e[0] == "dim")
+        return ev[last + 1:]
+
+    def press(self, o, key):
+        """the REAL _handle_keys with the key pressed (edge): the module 'keyboard' is the only thing replaced"""
+        import main
+        saved = main.keyboard.is_pressed
+        o.key_states[key] = False
+        main.keyboard.is_pressed = lambda k, _key=key: k == _key
+        try:
+            o._handle_keys(True, False)
+        finally:
+            main.keyboard.is_pressed = saved
+            o.key_states[key] = False
+
+    def click(self, o, x, y, width=1920, height=1080):
+        """the REAL _handle_mouse with a left click at the window point (x, y): only win32api / win32gui / geometry are replaced"""
+        import main
+        from PyQt6.QtCore import QRect
+        saved = (main.win32api.GetAsyncKeyState, main.win32gui.GetCursorPos)
+        o.geometry = lambda: QRect(0, 0, width, height)
+        o.last_left_click = False
+        main.win32api.GetAsyncKeyState = lambda vk: 0x8000
+        main.win32gui.GetCursorPos = lambda: (int(x), int(y))
+        try:
+            o._handle_mouse(True, False)
+        finally:
+            main.win32api.GetAsyncKeyState, main.win32gui.GetCursorPos = saved
+            o.last_left_click = False
+
+    def test_red_20_nothing_but_the_frame_and_the_selected_row_is_filled_after_the_drop_down_layer(self):
+        o = self.build()
+        for state in (5, 7):
+            for name, n, scroll, cursor in self.ARROW_SCENES:
+                for width, height in ((1920, 1080), (918, 627)):
+                    self.drop(o, n, scroll, cursor)
+                    ev, tf, _ = self.probe(o, state, width, height)
+                    # the hint button of the operation help (a rounded (50,50,50,200) shape in the bottom-right corner of the window) is the one shape of the screen that is not part of the drop-down
+                    shapes = [e for e in self.after_last_dim(ev) if e[0] == "shape" and not (e[1] == "drawRoundedRect" and e[3] == (50, 50, 50, 200) and e[2][0] > width * 0.8 and e[2][1] > height * 0.85)]
+                    want = 1 + (1 if scroll <= cursor < scroll + 7 else 0)
+                    where = "state %d, %s (%d options, scroll %d), %dx%d" % (state, name, n, scroll, width, height)
+                    self.assertEqual([s[1] for s in shapes], ["drawRoundedRect"] * want, "UI-RED: %s: after the drop-down layer only the frame and the selected row are drawn (no tile, no tile outline, no rectangle behind an arrow): %r" % (where, shapes))
+                    self.assertEqual(shapes[0][3], (20, 20, 20, 240), "%s: the frame keeps (20,20,20,240)" % where)
+
+    def test_red_21_the_pixels_around_the_arrows_are_not_the_tile_colour(self):
+        o = self.build()
+        from PyQt6.QtCore import QRectF
+        from PyQt6.QtGui import QColor
+        import math
+        for name, n, scroll, cursor in self.ARROW_SCENES[:3]:
+            for width, height in ((1920, 1080), (918, 627)):
+                self.drop(o, n, scroll, cursor)
+                ev, tf, image = self.probe(o, 5, width, height)
+                x0, y0, x1, y1 = o.active_dropdown_rect
+                tiles = []
+                if scroll > 0:
+                    tiles.append(("up", (960 - 30, y0 - 48, 960 + 30, y0 - 3)))
+                if scroll + 7 < n:
+                    tiles.append(("down", (960 - 30, y1 + 3, 960 + 30, y1 + 54)))
+                self.assertTrue(tiles, name)
+                for which, (a, b, c, d) in tiles:
+                    r = tf.mapRect(QRectF(a, b, c - a, d - b))
+                    xs = range(int(math.ceil(r.left())) + 1, int(math.floor(r.right())) - 1)
+                    ys = range(int(math.ceil(r.top())) + 1, int(math.floor(r.bottom())) - 1)
+                    total = len(xs) * len(ys)
+                    tile = sum(1 for yy in ys for xx in xs if 17.0 <= QColor(image.pixel(xx, yy)).red() <= 22.0)
+                    self.assertLess(tile / float(total), 0.08, "UI-RED: %s %s arrow, %dx%d: %d of %d pixels around the arrow have the tile colour (20,20,20,240) over the dimmed screen" % (name, which, width, height, tile, total))
+
+    def test_guard_22_the_arrow_glyphs_are_drawn_bright_after_the_layer_where_they_were(self):
+        from PyQt6.QtCore import QRectF
+        from PyQt6.QtGui import QColor, QFontMetrics
+        from config import COLOR_WHITE
+        import math
+        o = self.build()
+        for state in (5, 7):
+            for name, n, scroll, cursor in self.ARROW_SCENES:
+                for width, height in ((1920, 1080), (918, 627)):
+                    self.drop(o, n, scroll, cursor)
+                    ev, tf, image = self.probe(o, state, width, height)
+                    x0, y0, x1, y1 = o.active_dropdown_rect
+                    glyphs = {e[1]: e for e in self.after_last_dim(ev) if e[0] == "text" and e[1] in ("▲", "▼")}
+                    want = {}
+                    if scroll > 0:
+                        want["▲"] = y0 - 10
+                    if scroll + 7 < n:
+                        want["▼"] = y1 + 47
+                    where = "state %d, %s, %dx%d" % (state, name, width, height)
+                    self.assertEqual(sorted(glyphs), sorted(want), "%s: the arrows that exist, and only those, are drawn after the layer" % where)
+                    fm = QFontMetrics(o.font_normal)
+                    for g, baseline in want.items():
+                        e = glyphs[g]
+                        self.assertEqual((e[2], e[3], e[4], e[5]), (960.0, baseline, "center", COLOR_WHITE), "%s: glyph %s position / alignment / colour are unchanged" % (where, g))
+                        w = fm.horizontalAdvance(g)
+                        r = tf.mapRect(QRectF(960 - w / 2.0, baseline - fm.ascent(), w, fm.height()))
+                        best = max(QColor(image.pixel(xx, yy)).red() for yy in range(int(r.top()), int(math.ceil(r.bottom()))) for xx in range(int(r.left()), int(math.ceil(r.right()))))
+                        self.assertGreaterEqual(best, 240, "%s: glyph %s is bright (it is not under a layer)" % (where, g))
+
+    def test_guard_23_the_hit_rectangles_of_the_arrows_are_the_40_by_45_rectangles(self):
+        o = self.build()
+        for name, n, scroll, cursor in self.ARROW_SCENES:
+            self.drop(o, n, scroll, cursor)
+            self.render(o, 5, 1920, 1080)
+            x0, y0, x1, y1 = o.active_dropdown_rect
+            got = sorted(z for z in o.menu_click_zones if z[4] in (995, 996))
+            want = []
+            if scroll > 0:
+                want.append((940.0, y0 - 45, 980.0, y0, 996))
+            if scroll + 7 < n:
+                want.append((940.0, y1 + 12, 980.0, y1 + 57, 995))
+            self.assertEqual(got, sorted(want), "%s: the hit rectangles are 40 x 45 and where they were (not shrunk to the glyph, not swapped)" % name)
+
+    def test_guard_24_the_arrows_and_the_keys_scroll_the_drop_down(self):
+        o = self.build()
+        # the mouse: the centre and the two far corners of each hit rectangle
+        for corner in ("centre", "top-left", "bottom-right"):
+            self.drop(o, 12, 3, 3)
+            self.render(o, 5, 1920, 1080)
+            z = [z for z in o.menu_click_zones if z[4] == 996][0]
+            pt = {"centre": ((z[0] + z[2]) / 2, (z[1] + z[3]) / 2), "top-left": (z[0] + 1, z[1] + 1), "bottom-right": (z[2] - 1, z[3] - 1)}[corner]
+            self.click(o, *pt)
+            self.assertEqual((o.dropdown_cursor, o.dropdown_scroll), (2, 2), "the up arrow (%s of its hit rectangle) scrolls up" % corner)
+            self.drop(o, 12, 3, 9)
+            self.render(o, 5, 1920, 1080)
+            z = [z for z in o.menu_click_zones if z[4] == 995][0]
+            pt = {"centre": ((z[0] + z[2]) / 2, (z[1] + z[3]) / 2), "top-left": (z[0] + 1, z[1] + 1), "bottom-right": (z[2] - 1, z[3] - 1)}[corner]
+            self.click(o, *pt)
+            self.assertEqual((o.dropdown_cursor, o.dropdown_scroll), (10, 4), "the down arrow (%s of its hit rectangle) scrolls down" % corner)
+        # the keyboard
+        self.drop(o, 12, 3, 3)
+        self.press(o, "up")
+        self.assertEqual((o.dropdown_cursor, o.dropdown_scroll), (2, 2), "the up key scrolls up")
+        self.drop(o, 12, 3, 9)
+        self.press(o, "down")
+        self.assertEqual((o.dropdown_cursor, o.dropdown_scroll), (10, 4), "the down key scrolls down")
+
+    def test_guard_25_the_station_drop_down_keeps_the_pairset_candidates_and_renders_exactly_them(self):
+        P = self.P
+        sl = [P.station("S%02d" % i, 100.0 * i, raw_dep=P.T0 + 1000 * i, raw_arr=P.T0 + 1000 * i) for i in range(16)]
+        sl[-1]["is_terminal"] = True
+        s = P.Scene(self, drive=False, with_pairs=False)
+        s.sl = sl
+        s.o.station_list = sl
+        ps, why = self.PC.decode_ptpair("PTPAIR:1:%s:16:3:3-4-0;7-8-0;11-12-0" % P.R.SCOPE_LIST_ID, len(sl))
+        self.assertIsNone(why, why)
+        self.S.turnback_machine_of(s.o).set_pairset(ps)
+        o = s.o
+        o.setting_start_idx, o.setting_end_idx = 0, 15
+        A, B = (3, 7, 11), (4, 8, 12)
+        for column, want in ((0, [i for i in range(15) if i not in A]), (1, [i for i in range(1, 16) if i not in B])):
+            o.is_scoring_mode = False
+            o.dropdown_active = False
+            o.menu_state, o.menu_cursor, o.menu_cursor_x = 5, 0, column
+            o.handle_menu_enter(False)
+            ids = [opt["idx"] for opt in o.dropdown_options]
+            who = "start" if column == 0 else "end"
+            self.assertEqual(ids, want, "%s candidates: every A is gone from the starts, every B from the ends, nothing else" % who)
+            self.assertTrue(len(ids) > 7, "more candidates than rows: the arrows exist")
+            for scroll in (0, 3, len(ids) - 7):
+                o.dropdown_scroll = o.dropdown_cursor = scroll
+                ev, tf, _ = self.probe(o, 5)
+                post = self.after_last_dim(ev)
+                rows = [e[1] for e in post if e[0] == "text" and e[1] not in ("\u25b2", "\u25bc") and not e[1].startswith("\u64cd\u4f5c\u8aac\u660e")]
+                self.assertEqual(rows, [str(opt["name"]) for opt in o.dropdown_options[scroll:scroll + 7]], "%s candidates, scroll %d: the rendered rows are the candidates (ids = names), no leak, no partial row" % (who, scroll))
+                self.assertEqual(sorted(e[1] for e in post if e[0] == "text" and e[1] in ("▲", "▼")), sorted((["▲"] if scroll > 0 else []) + (["▼"] if scroll + 7 < len(ids) else [])), "%s candidates, scroll %d: the arrows" % (who, scroll))
+
+    def test_guard_26_the_drop_down_has_no_current_or_legacy_branch(self):
+        text = source("menu_ui.py")
+        block = text[text.index("if getattr(self, 'dropdown_active', False) and len(getattr(self, 'dropdown_options', [])) > 0:"):text.index("    elif self.menu_state == 11:")].lower()
+        for word in ("legacy", "current", "dll", "caller"):
+            self.assertNotIn(word, block, "the drop-down screen is one Python implementation for the Current and the Legacy DLL")
 
 
 INPUT_PINS = {

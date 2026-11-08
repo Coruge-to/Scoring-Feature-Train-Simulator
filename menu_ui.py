@@ -1521,24 +1521,13 @@ def draw_menu(self, painter, logical_width, _parent=False):
         
         self.active_dropdown_rect = (start_x, start_y, start_x + box_w, start_y + box_h)
         # Stage UI-D4: the drop-down layer: the arrows of the screen behind it are drawn first (so that the dim covers them), then the dim of the drop-down (alpha 180, the whole window, once), then the bright content:
-        # the frame, its rows and the two arrow tiles.
-        scroll_now = getattr(self, 'dropdown_scroll', 0)
+        # the frame, its rows and the two arrow glyphs (late_draws). The arrows have no background: their hit rectangles (menu_click_zones 996 / 995) are never painted.
         for late_draw in late_draws:
             late_draw()
         late_draws.clear()
         _draw_menu_layer_dim(painter, view, MENU_CHILD_DIM_RGBA)
         # ドロップダウン表示中は背後のクリック領域を無効化する
         self.menu_click_zones.clear()
-
-        arrow_tiles = []
-        if scroll_now > 0:
-            arrow_tiles.append((BASE_SCREEN_W / 2 - 30, start_y - 48, BASE_SCREEN_W / 2 + 30, start_y + 2))
-        if scroll_now + 7 < len(self.dropdown_options):
-            arrow_tiles.append((BASE_SCREEN_W / 2 - 30, start_y + box_h - 2, BASE_SCREEN_W / 2 + 30, start_y + box_h + 54))
-        for tx0, ty0, tx1, ty1 in arrow_tiles:
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(20, 20, 20, 240))
-            painter.drawRect(int(tx0), int(ty0), int(tx1 - tx0), int(ty1 - ty0))
 
         painter.setPen(QPen(QColor(100, 100, 100), 4))
         painter.setBrush(QColor(20, 20, 20, 240))
