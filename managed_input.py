@@ -325,10 +325,22 @@ def attach_result_dialog(overlay, translations_path=None, locale=None):
         dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
         _use_previous_label_translations(dialog)
         overlay.result_dialog = dialog
+        suspend = getattr(overlay, "suspend_operation_cursor", None)      # Phase Cursor-Q3: the dialog is a window of its own and keeps its own cursors
+        resume = getattr(overlay, "resume_operation_cursor", None)
         try:
+            if suspend is not None:
+                try:
+                    suspend()
+                except Exception:
+                    pass                                                  # (the arrow stays on the dialog: not worth losing the dialog)
             accepted = dialog.exec()
         finally:
             overlay.result_dialog = None
+            if resume is not None:
+                try:
+                    resume()
+                except Exception:
+                    pass
         if accepted:
             files = dialog.selectedFiles()
             return files[0] if files else ""

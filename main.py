@@ -7,7 +7,7 @@ import win32con
 from datetime import datetime
 from PyQt6.QtWidgets import QApplication, QWidget, QFileDialog
 from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QFont, QPainter, QFontDatabase, QColor, QFontMetrics, QPixmap 
+from PyQt6.QtGui import QFont, QPainter, QFontDatabase, QColor, QFontMetrics, QPixmap, QCursor
 from PyQt6.QtNetwork import QUdpSocket, QHostAddress
 import keyboard
 
@@ -2973,6 +2973,7 @@ class Overlay(QWidget):
         close without a handler (normal mode) is Qt's default."""
         handler = self.user_close_handler
         if handler is None or not event.spontaneous():
+            self.release_operation_cursor()               # Phase Cursor-Q3: the close that goes through ends the operation cursor, too (the user's close above keeps the screen)
             super().closeEvent(event)
             return
         event.ignore()
@@ -2987,14 +2988,53 @@ class Overlay(QWidget):
     def set_input_ownership(self, operation):
         """operation=True: this window receives the mouse and the keyboard (the operation screens); False: click-through again (the HUD). Only WS_EX_TRANSPARENT
         of the SAME native window changes - Qt's WindowTransparentForInput is this extended style and nothing else - so handle, owner and Z order stay.
-        Returns whether the style changed."""
-        hwnd = int(self.winId())
-        style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
-        wanted = (style & ~win32con.WS_EX_TRANSPARENT) if operation else (style | win32con.WS_EX_TRANSPARENT)
-        if wanted == style:
-            return False
-        win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, wanted)
-        return True
+        Phase Cursor-Q3: the arrow override cursor of the operation screens follows this same state (see _sync_operation_cursor), also when the style could not be
+        written. Returns whether the style changed."""
+        try:
+            hwnd = int(self.winId())
+            style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+            wanted = (style & ~win32con.WS_EX_TRANSPARENT) if operation else (style | win32con.WS_EX_TRANSPARENT)
+            if wanted == style:
+                return False
+            win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, wanted)
+            return True
+        finally:
+            self._operation_cursor_owned = bool(operation)
+            self._sync_operation_cursor()
+
+    # -- Phase Cursor-Q3: the cursor of the operation screens (managed mode) -------------------------------------------------------------------
+    # Qt keeps WindowTransparentForInput while only the native WS_EX_TRANSPARENT is dropped, so Qt never tracks the cursor over this window and the cursor that BVE set
+    # last (its resize border) would stay. The override cursor of the application is the one thing that is applied regardless (Cursor-Q2, L1). It is held exactly while
+    # an operation screen owns the input - pushed once when the first screen opens, kept across the screens, popped once when the HUD is complete again - and only by
+    # THIS method: _operation_cursor_override_active says whether this Overlay's one push is on the stack, so nothing else on the stack is ever popped.
+    _operation_cursor_override_active = False    # this Overlay pushed its ONE override cursor and has not popped it
+    _operation_cursor_owned = False              # an operation screen owns the input (the last set_input_ownership)
+    _operation_cursor_suspended = False          # the result save dialog is open: it is a window of its own and keeps the cursors of its own
+
+    def _sync_operation_cursor(self):
+        wanted = self._operation_cursor_owned and not self._operation_cursor_suspended
+        if wanted and not self._operation_cursor_override_active:
+            QApplication.setOverrideCursor(QCursor(Qt.CursorShape.ArrowCursor))
+            self._operation_cursor_override_active = True
+        elif self._operation_cursor_override_active and not wanted:
+            self._operation_cursor_override_active = False                # (cleared first: a pop is never repeated)
+            QApplication.restoreOverrideCursor()
+
+    def suspend_operation_cursor(self):
+        """The result save dialog opens: the arrow is not forced onto it (text cursor, resize handles). Symmetric with resume_operation_cursor."""
+        self._operation_cursor_suspended = True
+        self._sync_operation_cursor()
+
+    def resume_operation_cursor(self):
+        """The result save dialog is closed: the arrow is back when the operation screen still owns the input."""
+        self._operation_cursor_suspended = False
+        self._sync_operation_cursor()
+
+    def release_operation_cursor(self):
+        """The Overlay is closed (shutdown, Dispose, an exception path): nothing of the operation cursor outlives it. Safe to repeat."""
+        self._operation_cursor_owned = False
+        self._operation_cursor_suspended = False
+        self._sync_operation_cursor()
 
     def has_input_ownership(self):
         return not (win32gui.GetWindowLong(int(self.winId()), win32con.GWL_EXSTYLE) & win32con.WS_EX_TRANSPARENT)
@@ -3180,6 +3220,10 @@ def _release_overlay(overlay, hud=None):
     release_time_position_lock = getattr(overlay, '_release_time_position_window_lock', None)
     if release_time_position_lock is not None:
         release_time_position_lock()
+    release_operation_cursor = getattr(overlay, 'release_operation_cursor', None)
+    if release_operation_cursor is not None:
+        try: release_operation_cursor()                           # Phase Cursor-Q3: whatever happened before, no override cursor outlives the cleanup
+        except Exception: pass
     sock = getattr(overlay, 'udp_socket', None)
     if sock is not None:
         sock.close()
