@@ -1745,7 +1745,7 @@ class Overlay(QWidget):
         elif self.menu_state == 6:
             self.menu_cursor_x = max(-1, getattr(self, 'menu_cursor_x', 0) - 1)
         elif self.menu_state == 4:
-            self.menu_cursor_x = max(-1, getattr(self, 'menu_cursor_x', -1) - 1)
+            return                                          # Stage ENV-1: Left does nothing on the environment settings (the only selectable cell of a row is its VALUE)
         elif self.menu_state == 7:
             if getattr(self, 'sub_cursor', 0) < len(getattr(self, 'brake_rules', [])):
                 self.sub_cursor_x = max(0, getattr(self, 'sub_cursor_x', 0) - 1)
@@ -1776,7 +1776,7 @@ class Overlay(QWidget):
             self.menu_cursor_x = min(max_x, getattr(self, 'menu_cursor_x', 0) + 1)
 
         elif self.menu_state == 4:
-            self.menu_cursor_x = min(0, getattr(self, 'menu_cursor_x', -1) + 1)
+            return                                          # Stage ENV-1: Right does nothing on the environment settings
         elif self.menu_state in [7, 9]:
             rules = getattr(self, 'brake_rules', []) if self.menu_state == 7 else getattr(self, 'penalty_init_rules', [])
             sub_c = getattr(self, 'sub_cursor', 0) if self.menu_state == 7 else getattr(self, 'init_sub_cursor', 0)
@@ -1830,7 +1830,7 @@ class Overlay(QWidget):
             elif "環境設定" in selected:
                 self.menu_state = 4
                 self.menu_cursor = 0
-                self.menu_cursor_x = -1                      # Stage ENV-1: the first LABEL is selected
+                # Stage ENV-1: the first row (its VALUE) is selected; the screen has no column state
                 self.normalize_speed_limit_settings()
         elif self.menu_state == 2:
             if len(getattr(self, 'save_data', [])) > 0:
@@ -1857,9 +1857,9 @@ class Overlay(QWidget):
                 self.menu_state = 2
                 self.menu_cursor = getattr(self, 'target_retry_idx', 0)
         elif self.menu_state == 4:
-            # Stage ENV-1: Enter acts on the VALUE cell only (menu_cursor_x == 0, the mouse click on the selected cell comes here too); on a LABEL it does nothing
+            # Stage ENV-1: Enter switches the VALUE of the selected row (the mouse click on the selected row comes here too); the row stays selected
             keys = getattr(self, 'settings_keys', [])
-            if getattr(self, 'menu_cursor_x', -1) == 0 and 0 <= self.menu_cursor < len(keys):
+            if 0 <= self.menu_cursor < len(keys):
                 self.toggle_disp_setting(keys[self.menu_cursor])
 
         elif self.menu_state == 5:
@@ -2781,7 +2781,9 @@ class Overlay(QWidget):
                             break
                         
                         cur_idx, cur_x = self.menu_cursor, getattr(self, 'menu_cursor_x', -1)
-                        if self.menu_state == 8:
+                        if self.menu_state == 4:
+                            cur_idx, cur_x = self.menu_cursor, -1                       # Stage ENV-1: one zone per row (action_x -1), the selected row decides: no column, no click timing
+                        elif self.menu_state == 8:
                             cur_idx, cur_x = getattr(self, 'timing_cursor', 0), -1
                         elif self.menu_state == 7:
                             cur_idx, cur_x = getattr(self, 'sub_cursor', 0), getattr(self, 'sub_cursor_x', 0)
@@ -2791,7 +2793,9 @@ class Overlay(QWidget):
                         if cur_idx == action_idx and cur_x == action_x:
                             self.handle_menu_enter(is_bve_advancing)
                         else:
-                            if self.menu_state == 8:
+                            if self.menu_state == 4:
+                                self.menu_cursor = action_idx                          # Stage ENV-1: select the row only (menu_cursor_x is left alone)
+                            elif self.menu_state == 8:
                                 self.timing_cursor = action_idx
                             elif self.menu_state == 7:
                                 self.sub_cursor = action_idx

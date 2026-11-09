@@ -371,27 +371,23 @@ def draw_menu(self, painter, logical_width, _parent=False):
             self.menu_click_zones.append((box_x, box_y, box_x + fixed_box_w, box_y + fixed_box_h, i))
 
     elif self.menu_state == 4:
-        # Stage ENV-1: a grid of rows x 2 columns; the LABEL and the VALUE of a row are separate cells (menu_cursor = the row, menu_cursor_x = -1 LABEL / 0 VALUE, as on the penalty pages) with the cursor of the penalty rows
+        # Stage ENV-1 (8 rows x 1 column, Owner ruling after UIENV-C-01): the only selectable cell of a row is its VALUE; the label is display only. The state is menu_cursor (the row) alone: no column state exists.
+        # The cursor encloses only the ON / OFF text (the cursor of the penalty page value cells); a click on the label or on the value (one zone per row, from the label to the value) selects that row.
         fm = QFontMetrics(self.font_normal)
-        sel_row, sel_col = self.menu_cursor, getattr(self, 'menu_cursor_x', -1)
+        sel_row = self.menu_cursor
         for i, name in enumerate(self.settings_names):
             key = self.settings_keys[i]
             is_on = getattr(self, 'disp_settings', {}).get(key, True)
             base_y = env_layout["ys"][i]
 
-            cx, cy, cw, ch = cell_cursor_geometry(fm, env_layout["label_x"], fm.horizontalAdvance(name), base_y, CELL_CURSOR_LABEL_PAD, SCORING_BOX_Y_OFFSET, GLOBAL_BOX_X_OFFSET)
-            self.menu_click_zones.append((cx, cy, cx + cw, cy + ch, i, -1))
-            if sel_row == i and sel_col == -1:
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.setBrush(HIGHLIGHT_COLOR)
-                painter.drawRoundedRect(int(cx), int(cy), int(cw), int(ch), CELL_CURSOR_RADIUS, CELL_CURSOR_RADIUS)
             draw_text_with_outline(painter, name, self.font_normal, MENU_TEXT, MENU_OUTLINE, env_layout["label_x"], base_y, "left", passes=8)
 
             val_text = "ON" if is_on else "OFF"
             val_color = COLOR_P if is_on else COLOR_B_EMG
+            lx, _, _, _ = cell_cursor_geometry(fm, env_layout["label_x"], fm.horizontalAdvance(name), base_y, CELL_CURSOR_LABEL_PAD, SCORING_BOX_Y_OFFSET, GLOBAL_BOX_X_OFFSET)
             cx, cy, cw, ch = cell_cursor_geometry(fm, env_layout["value_x"], fm.horizontalAdvance(val_text), base_y, CELL_CURSOR_VALUE_PAD, SCORING_BOX_Y_OFFSET, GLOBAL_BOX_X_OFFSET)
-            self.menu_click_zones.append((cx, cy, cx + cw, cy + ch, i, 0))
-            if sel_row == i and sel_col == 0:
+            self.menu_click_zones.append((lx, cy, cx + cw, cy + ch, i))
+            if sel_row == i:
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(HIGHLIGHT_COLOR)
                 painter.drawRoundedRect(int(cx), int(cy), int(cw), int(ch), CELL_CURSOR_RADIUS, CELL_CURSOR_RADIUS)

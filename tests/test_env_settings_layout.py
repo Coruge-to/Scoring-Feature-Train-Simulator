@@ -1,14 +1,14 @@
-"""Stage ENV-1 (Owner contract 2026-11-08, commit 2): the environment settings screen (menu_state 4) is a fixed grid of 8 rows x 2 columns (LABEL, VALUE), LABEL and VALUE are separate selection targets, the new row 'limit_advance'
-(制限速度予告) switches ONLY the red / blue blink warnings of the HUD speed-limit row.
+"""Stage ENV-1 (Owner contract 2026-11-08, commit 2; cursor structure refined 2026-11-09 after UIENV-C-01): the environment settings screen (menu_state 4) is a fixed list of 8 rows x 1 selectable column: only the VALUE
+(ON / OFF) of a row can be selected, the label is display only; the row 'limit_advance' (制限速度予告) switches ONLY the red / blue blink warnings of the HUD speed-limit row.
 
 Contract
-  * rows (in this order): 現在時刻, 残り時間, 現在速度, 制限速度, 制限速度予告, 残距離, ハンドル・レバーサ位置, 勾配; selected_row = menu_cursor (0..7), selected_column = menu_cursor_x (-1 LABEL, 0 VALUE, like the penalty pages); entry = row 0, LABEL.
-  * the cursor encloses ONLY the label text or ONLY the value text and is the cursor of the penalty page rows (padding 15 / 10, height font + 12, radius 6, HIGHLIGHT_COLOR): no whole-row cursor, no new design.
+  * rows (in this order): 現在時刻, 残り時間, 現在速度, 制限速度, 制限速度予告, 残距離, ハンドル・レバーサ位置, 勾配; selected_row = menu_cursor (0..7) is the ONLY selection state (no column state: menu_cursor_x is neither read nor written by the screen); entry = row 0.
+  * the cursor encloses ONLY the value text (ON / OFF) and is the value cursor of the penalty page rows (padding 10, height font + 12, radius 6, HIGHLIGHT_COLOR): no label cursor, no whole-row cursor, no new design.
   * ON / OFF are left aligned: ON and OFF start at the X of the 'O' of the former right aligned OFF (1248); every row has the same value X.
   * the whole block (heading + 8 rows + the cursor ranges) is centred in the 1920 x 1080 menu screen: vertically on the box that includes the cursor ranges, horizontally on the TEXT box (heading, labels, the widest value 'OFF'; the cursor padding is not included);
     one offset for the heading, the texts, the cursors and the click zones; the order is: 8th row -> left aligned values -> text boxes -> centre -> offset.
-  * keys: Right LABEL->VALUE, Left VALUE->LABEL, both stay at the border, no value change; Up / Down keep the column and stop at the first / last row (no wrap, same for both columns); Enter on VALUE toggles ON/OFF and stays on VALUE; Enter on LABEL does nothing.
-  * mouse: the LABEL zone and the VALUE zone of a row; a click on the selected cell is the Enter, any other cell is only selected (no double click timing).
+  * keys: Left and Right do nothing at all; Up / Down move to the previous / next row and stop at the first / last row (no wrap); Enter toggles ON/OFF of the selected row and the row stays selected.
+  * mouse: ONE click zone per row (from the label to the value); a click on the row that is already selected is the Enter, a click on any other row only selects it (the label click selects the row's VALUE; no double click timing, the decision is the equality with the selected row).
   * limit_advance (default ON, no persistence): OFF hides the red and the blue blink (the current limit stays), ON is the behaviour until now; nothing but the drawing entry of the HUD knows it (guidance state, scoring, F2, logs, telemetry unchanged).
   * dependency (set by ONE state function for keyboard, mouse and the normalisation): 制限速度 OFF => 制限速度予告 OFF; 制限速度予告 ON => 制限速度 ON; 制限速度 ON does not turn the advance ON; the advance OFF keeps the limit ON; the cursor never moves by itself; (limit OFF, advance ON) cannot exist.
 The REAL menu_ui.draw_menu, hud_ui.draw_hud, scoring_logic guidance and the key / mouse handlers of main.py are driven (sia_rig Overlay). RED = fails on the baseline a202653 (commit 1); GUARD = passes there. RED messages start with 'ENV-RED'."""
@@ -29,6 +29,7 @@ for _p in (ROOT, HERE):
 import sia_rig as R  # noqa: E402
 
 LABEL, VALUE = -1, 0
+LEFTOVER = 7                         # a value of menu_cursor_x that no page uses: the screen must neither read nor write it
 TITLE = "=== 環境設定 ==="
 NAMES = ["現在時刻", "残り時間", "現在速度", "制限速度", "制限速度予告", "残距離", "ハンドル・レバーサ位置", "勾配"]
 KEYS = ["time", "time_left", "speed", "limit", "limit_advance", "dist", "handle", "grad"]
@@ -87,9 +88,11 @@ class Env(unittest.TestCase):
         self.t = 100.0
 
     # ------------------------------------------------------------------ the screen
-    def at(self, row, column, state=4):
+    def at(self, row, column=None, state=4):
+        """state 4: the screen has no column; menu_cursor_x gets the LEFTOVER value (a page without a column must leave it alone). Other states (the penalty page of a guard) take the column."""
         o = self.o
-        o.menu_state, o.menu_cursor, o.menu_cursor_x = state, row, column
+        o.menu_state, o.menu_cursor = state, row
+        o.menu_cursor_x = LEFTOVER if state == 4 else column
         o.show_help = False
         o.dropdown_active = False
 
@@ -192,12 +195,25 @@ class Env(unittest.TestCase):
                     setattr(obj, name, old)
             o.last_left_click = False
 
-    def click_cell(self, row, column):
-        self.render()
-        zones = [z for z in self.o.menu_click_zones if len(z) == 6 and z[4] == row and z[5] == column]
-        self.assertEqual(len(zones), 1, "ENV-RED: the screen has exactly one click zone for row %d column %d (LABEL -1 / VALUE 0), got %r" % (row, column, self.o.menu_click_zones))
+    def row_zones(self):
+        return [z for z in self.o.menu_click_zones if len(z) == 5 and 0 <= z[4] < 8]
+
+    def click_row(self, row, part="value"):
+        """a click on the label text, on the value text or in the middle of the row zone of a row (the REAL _handle_mouse)"""
+        frame = self.render()
+        zones = [z for z in self.row_zones() if z[4] == row]
+        self.assertEqual(len(zones), 1, "ENV1-RED: the screen has exactly one click zone for row %d, got %r" % (row, self.o.menu_click_zones))
         z = zones[0]
-        self.click_at((z[0] + z[2]) / 2.0, (z[1] + z[3]) / 2.0)
+        title, labels, values = self.grid(frame)
+        fm, _ = self.metrics()
+        if part == "label":
+            x = labels[row]["x"] + fm.horizontalAdvance(labels[row]["text"]) / 2.0
+        elif part == "value":
+            x = values[row]["x"] + fm.horizontalAdvance(values[row]["text"]) / 2.0
+        else:
+            x = (z[0] + z[2]) / 2.0
+        self.assertTrue(z[0] <= x <= z[2], "the %s of row %d is inside the row zone" % (part, row))
+        self.click_at(x, (z[1] + z[3]) / 2.0)
 
     def state(self):
         o = self.o
@@ -216,23 +232,39 @@ class Env(unittest.TestCase):
         self.assertEqual(ys, sorted(ys), "the rows go down")
         self.assertEqual([t["y"] for t in values], ys, "every value is on the baseline of its label")
 
-    def test_red_02_the_cursor_is_the_cursor_of_the_cell_and_never_the_whole_row(self):
+    def test_red_02_the_cursor_encloses_the_value_text_only(self):
         fm, _ = self.metrics()
-        for row in (0, 3, 4, 7):
-            for column in (LABEL, VALUE):
-                for on in (True, False):
-                    self.at(row, column)
+        for row in range(8):
+            for on in (True, False):
+                for leftover in (LABEL, VALUE, 1, LEFTOVER):
+                    self.at(row)
+                    self.o.menu_cursor_x = leftover                       # (a leftover of another page: it must not change what is drawn)
                     self.set_all(on)
                     title, labels, values = self.grid(frame := self.render())
                     cur = self.cursors(frame)
-                    where = "row %d, %s, values %s" % (row, "LABEL" if column == LABEL else "VALUE", "ON" if on else "OFF")
-                    self.assertEqual(len(cur), 1, "ENV-RED: %s: exactly one cursor" % where)
+                    where = "row %d, values %s, menu_cursor_x %s" % (row, "ON" if on else "OFF", leftover)
+                    self.assertEqual(len(cur), 1, "ENV1-RED: %s: exactly one cursor (no label cursor, no whole-row cursor)" % where)
                     x, y, w, h = cur[0]["rect"]
-                    cell = labels[row] if column == LABEL else values[row]
-                    pad = 15 if column == LABEL else 10
+                    cell = values[row]
                     cell_w = fm.horizontalAdvance(cell["text"])
-                    self.assertEqual((x, y, w, h), (cell["x"] - pad + GLOBAL_BOX_X_OFFSET, cell["y"] - fm.ascent() - 6 - 4, cell_w + 2 * pad, fm.height() + 12), "ENV-RED: %s: the cursor encloses the %s text only (the penalty page cursor)" % (where, "label" if column == LABEL else "value"))
-                    self.assertEqual(cur[0]["radius"], (6.0, 6.0), "ENV-RED: %s: radius 6" % where)
+                    self.assertEqual((x, y, w, h), (cell["x"] - 10 + GLOBAL_BOX_X_OFFSET, cell["y"] - fm.ascent() - 6 - 4, cell_w + 20, fm.height() + 12), "ENV1-RED: %s: the cursor encloses the ON / OFF text only (padding 10, the penalty page value cursor)" % where)
+                    self.assertEqual(cur[0]["radius"], (6.0, 6.0), "ENV1-RED: %s: radius 6" % where)
+                    label = labels[row]
+                    self.assertTrue(x >= label["x"] + fm.horizontalAdvance(label["text"]), "ENV1-RED: %s: the cursor does not reach the label text" % where)
+                    self.assertEqual(self.o.menu_cursor_x, leftover, "drawing never writes menu_cursor_x")
+
+    def test_red_02b_the_width_follows_the_text_and_the_left_edge_is_the_common_value_x(self):
+        fm, _ = self.metrics()
+        lefts, widths = set(), {}
+        for on in (True, False):
+            self.at(4)
+            self.set_all(on)
+            frame = self.render()
+            x, y, w, h = self.cursors(frame)[0]["rect"]
+            lefts.add(x)
+            widths["ON" if on else "OFF"] = w
+        self.assertEqual(len(lefts), 1, "ENV1-RED: the cursor left edge is the common VALUE start X for ON and OFF")
+        self.assertEqual(widths["OFF"] - widths["ON"], fm.horizontalAdvance("OFF") - fm.horizontalAdvance("ON"), "OFF may be wider than ON, by the text width only")
 
     def test_guard_03_the_cursor_geometry_is_the_one_of_the_penalty_page_rows(self):
         """measured on the REAL penalty page (menu_state 6, row 2 速度制限超過): label cursor -15 / +30 wide, value cursor -10 / +20, both fm.height()+12 high, radius 6, top = baseline - ascent - 6 - 4"""
@@ -289,7 +321,7 @@ class Env(unittest.TestCase):
         tw = fm_big.horizontalAdvance(TITLE)
         left = min([title["x"] - tw / 2.0] + [t["x"] for t in labels])
         right = max([title["x"] + tw / 2.0] + [t["x"] + fm.horizontalAdvance(t["text"]) for t in labels] + [t["x"] + fm.horizontalAdvance("OFF") for t in values])
-        zones = [z for z in self.o.menu_click_zones if len(z) == 6]
+        zones = self.row_zones()
         top = min([title["y"] - fm_big.ascent()] + [z[1] for z in zones])
         bottom = max([title["y"] + fm_big.descent()] + [z[3] for z in zones])
         return (left, top, right, bottom)
@@ -325,13 +357,14 @@ class Env(unittest.TestCase):
         self.at(7, VALUE)
         frame = self.render()
         title, labels, values = self.grid(frame)
-        zones = [z for z in self.o.menu_click_zones if len(z) == 6]
-        self.assertEqual(len(zones), 16, "ENV-RED: 8 rows x (LABEL, VALUE) click zones")
+        zones = self.row_zones()
+        self.assertEqual(len(zones), 8, "ENV1-RED: ONE click zone per row")
+        self.assertFalse([z for z in self.o.menu_click_zones if len(z) == 6], "ENV1-RED: no LABEL / VALUE cell zones (no column)")
         for row in range(8):
-            for column, cell, pad in ((LABEL, labels[row], 15), (VALUE, values[row], 10)):
-                z = [z for z in zones if z[4] == row and z[5] == column][0]
-                w = fm.horizontalAdvance(cell["text"])
-                self.assertEqual((z[0], z[1], z[2], z[3]), (cell["x"] - pad + GLOBAL_BOX_X_OFFSET, cell["y"] - fm.ascent() - 6 - 4, cell["x"] - pad + GLOBAL_BOX_X_OFFSET + w + 2 * pad, cell["y"] - fm.ascent() - 6 - 4 + fm.height() + 12), "ENV-RED: row %d column %d: the zone is the cursor range (same offset as the text)" % (row, column))
+            z = [z for z in zones if z[4] == row][0]
+            lw, vw = fm.horizontalAdvance(labels[row]["text"]), fm.horizontalAdvance(values[row]["text"])
+            top = labels[row]["y"] - fm.ascent() - 6 - 4
+            self.assertEqual((z[0], z[1], z[2], z[3]), (labels[row]["x"] - 15 + GLOBAL_BOX_X_OFFSET, top, values[row]["x"] - 10 + GLOBAL_BOX_X_OFFSET + vw + 20, top + fm.height() + 12), "ENV1-RED: row %d: the zone runs from the label cursor range to the value cursor range (same offset as the text)" % row)
         hint = [s for s in frame["shapes"] if s["kind"] == "rr" and s["brush"] == HINT]
         self.assertTrue(all(0 <= z[0] and z[2] <= 1920 and 0 <= z[1] and z[3] <= 1080 for z in zones), "inside the screen")
         self.assertLess(max(z[3] for z in zones), 1022, "the block does not reach the operation hint (it starts at 1022 in the menu screen)")
@@ -341,7 +374,7 @@ class Env(unittest.TestCase):
         ref = None
         for width, height in SIZES:
             frame = self.render(width, height)
-            got = ([(t["text"], t["x"], t["y"]) for t in frame["texts"] if t["text"] in NAMES + ["ON", "OFF", TITLE]], [z for z in self.o.menu_click_zones if len(z) == 6])
+            got = ([(t["text"], t["x"], t["y"]) for t in frame["texts"] if t["text"] in NAMES + ["ON", "OFF", TITLE]], self.row_zones())
             ref = ref or got
             self.assertEqual(got, ref, "%dx%d: menu coordinates do not depend on the window" % (width, height))
 
@@ -354,87 +387,156 @@ class Env(unittest.TestCase):
         o.menu_cursor = [i for i, t in enumerate(items) if "環境設定" in t][0]
         o.handle_menu_enter(False)
 
-    def test_red_20_entering_the_screen_selects_the_first_label(self):
-        self.o.menu_cursor_x = 0                                         # (a leftover of another page)
+    def test_red_20_entering_the_screen_selects_the_first_row_value_and_touches_no_column(self):
+        self.o.menu_cursor_x = LEFTOVER                                  # (a leftover of another page)
         self.enter_screen()
-        self.assertEqual((self.o.menu_state, self.o.menu_cursor, self.o.menu_cursor_x), (4, 0, LABEL), "ENV-RED: entry = row 0, LABEL")
+        self.assertEqual((self.o.menu_state, self.o.menu_cursor, self.o.menu_cursor_x), (4, 0, LEFTOVER), "ENV1-RED: entry = row 0; menu_cursor_x is not written (no LABEL state is created)")
+        frame = self.render()
+        title, labels, values = self.grid(frame)
+        cur = self.cursors(frame)
+        self.assertEqual(len(cur), 1, "ENV1-RED: right after opening the screen the cursor is on the ON / OFF of the first row")
+        self.assertTrue(abs(cur[0]["rect"][1] - (values[0]["y"] - self.metrics()[0].ascent() - 10)) < 1e-9)
 
-    def test_red_21_right_and_left_move_between_the_columns_and_never_change_a_value(self):
+    def test_red_21_left_and_right_do_nothing(self):
         for row in range(8):
-            self.at(row, LABEL)
-            before = self.values()
-            self.press("right")
-            self.assertEqual((self.o.menu_cursor, self.o.menu_cursor_x), (row, VALUE), "ENV-RED: Right: LABEL -> VALUE of the same row (row %d)" % row)
-            self.press("right")
-            self.assertEqual((self.o.menu_cursor, self.o.menu_cursor_x), (row, VALUE), "VALUE + Right stays")
-            self.press("left")
-            self.assertEqual((self.o.menu_cursor, self.o.menu_cursor_x), (row, LABEL), "ENV-RED: Left: VALUE -> LABEL of the same row")
-            self.press("left")
-            self.assertEqual((self.o.menu_cursor, self.o.menu_cursor_x), (row, LABEL), "LABEL + Left stays")
-            self.assertEqual(self.values(), before, "no key changed a value")
-            self.assertEqual(self.o.menu_state, 4)
+            self.at(row)
+            before = self.state()
+            for key in ("right", "right", "left", "left", "right", "left"):
+                self.press(key)
+                self.assertEqual(self.state(), before, "ENV1-RED: %s on row %d changes nothing (no row, no value, no screen, no hidden column)" % (key, row))
+            self.assertEqual(len(self.cursors(self.render())), 1, "still one cursor, on the value of the row")
 
-    def test_red_22_up_and_down_keep_the_column(self):
-        for column in (LABEL, VALUE):
-            self.at(0, column)
-            for row in range(1, 8):
-                self.press("down")
-                self.assertEqual((self.o.menu_cursor, self.o.menu_cursor_x), (row, column), "ENV-RED: Down keeps the %s column (row %d)" % ("LABEL" if column == LABEL else "VALUE", row))
-            for row in range(6, -1, -1):
-                self.press("up")
-                self.assertEqual((self.o.menu_cursor, self.o.menu_cursor_x), (row, column), "ENV-RED: Up keeps the column (row %d)" % row)
+    def test_red_22_up_and_down_move_row_by_row(self):
+        self.at(0)
+        for row in range(1, 8):
+            self.press("down")
+            self.assertEqual((self.o.menu_cursor, self.o.menu_cursor_x), (row, LEFTOVER), "ENV1-RED: Down -> the VALUE of row %d" % row)
+        for row in range(6, -1, -1):
+            self.press("up")
+            self.assertEqual((self.o.menu_cursor, self.o.menu_cursor_x), (row, LEFTOVER), "ENV1-RED: Up -> the VALUE of row %d" % row)
 
     def test_red_23_the_owner_example_sequence(self):
-        self.at(0, LABEL)
-        seq = [("down", (1, LABEL)), ("right", (1, VALUE)), ("up", (0, VALUE)), ("down", (1, VALUE)), ("down", (2, VALUE))]
+        self.at(0)
+        seq = [("down", 1), ("down", 2), ("down", 3), ("down", 4), ("right", 4), ("left", 4), ("up", 3), ("down", 4)]
         for key, want in seq:
             self.press(key)
-            self.assertEqual((self.o.menu_cursor, self.o.menu_cursor_x), want, "ENV-RED: after %s" % key)
+            self.assertEqual((self.o.menu_cursor, self.o.menu_cursor_x), (want, LEFTOVER), "ENV1-RED: after %s" % key)
 
-    def test_guard_24_the_ends_stop_in_both_columns(self):
-        for column in (LABEL, VALUE):
-            self.at(0, column)
-            self.press("up")
-            self.assertEqual((self.o.menu_cursor, self.o.menu_cursor_x), (0, column), "the first row stays (no wrap)")
-            self.at(7, column)
-            self.press("down")
-            self.assertEqual((self.o.menu_cursor, self.o.menu_cursor_x), (7, column), "ENV-RED: the last row (7) stays (no wrap)")
+    def test_guard_24_the_ends_stop(self):
+        self.at(0)
+        self.press("up")
+        self.assertEqual(self.o.menu_cursor, 0, "the first row stays (no wrap)")
+        self.at(7)
+        self.press("down")
+        self.assertEqual(self.o.menu_cursor, 7, "ENV1-RED: the last row (7) stays (no wrap)")
 
-    def test_red_25_enter_on_a_value_toggles_it_and_stays_on_the_value(self):
-        for row in (0, 1, 2, 5, 6, 7):
+    def test_red_25_enter_toggles_the_selected_row_and_the_row_stays(self):
+        for row in range(8):
             for first in (True, False):
-                self.at(row, VALUE)
+                self.at(row)
                 self.set_all(True)
                 self.o.disp_settings[KEYS[row]] = first
+                if KEYS[row] == "limit_advance" and not first:
+                    self.o.disp_settings["limit_advance"] = False
                 self.press("enter")
-                self.assertEqual(self.o.disp_settings[KEYS[row]], not first, "ENV-RED: Enter on the VALUE of row %d toggles it" % row)
-                self.assertEqual((self.o.menu_state, self.o.menu_cursor, self.o.menu_cursor_x), (4, row, VALUE), "Enter keeps the VALUE selection")
-                self.assertEqual([self.o.disp_settings[k] for k in KEYS if k != KEYS[row]], [True] * 7, "no other row changed")
-
-    def test_red_26_enter_on_a_label_does_nothing(self):
-        for row in range(8):
-            self.at(row, LABEL)
-            before = self.state()
+                want = (not first) if KEYS[row] != "limit_advance" or first else True
+                self.assertEqual(self.o.disp_settings[KEYS[row]], want, "ENV1-RED: Enter on row %d switches its ON / OFF" % row)
+                self.assertEqual((self.o.menu_state, self.o.menu_cursor, self.o.menu_cursor_x), (4, row, LEFTOVER), "ENV1-RED: Enter keeps the row (and creates no column state)")
+        for row in (0, 1, 2, 5, 6, 7):
+            self.at(row)
+            self.set_all(True)
             self.press("enter")
-            self.assertEqual(self.state(), before, "ENV-RED: Enter on the LABEL of row %d changes nothing (no value, no column, no screen)" % row)
+            self.assertEqual([self.o.disp_settings[k] for k in KEYS if k != KEYS[row]], [True] * 7, "no other row changed (row %d)" % row)
+
+    def test_red_26_a_leftover_column_of_another_page_decides_nothing(self):
+        for leftover in (LABEL, VALUE, 1, LEFTOVER):
+            for row in (0, 2, 5, 7):
+                self.at(row)
+                self.o.menu_cursor_x = leftover
+                before = self.values()
+                self.press("enter")
+                self.assertNotEqual(self.values(), before, "ENV1-RED: Enter toggles the row whatever menu_cursor_x was (leftover %s, row %d): no hidden LABEL state" % (leftover, row))
+                self.assertEqual(self.o.menu_cursor_x, leftover)
+                self.press("enter")
+                self.assertEqual(self.values(), before)
 
     # ================================================================== mouse
-    def test_red_30_a_click_selects_a_cell_the_second_click_on_it_is_the_enter(self):
-        self.at(0, LABEL)
+    def test_red_30_a_click_selects_a_row_the_click_on_the_selected_row_is_the_enter(self):
+        self.at(0)
         before = self.values()
-        self.click_cell(2, LABEL)
-        self.assertEqual((self.o.menu_cursor, self.o.menu_cursor_x, self.values()), (2, LABEL, before), "ENV-RED: a LABEL click only selects")
-        self.click_cell(2, LABEL)
-        self.assertEqual((self.o.menu_cursor, self.o.menu_cursor_x, self.values()), (2, LABEL, before), "the click on the selected LABEL is the Enter: nothing")
-        self.click_cell(2, VALUE)
-        self.assertEqual((self.o.menu_cursor, self.o.menu_cursor_x, self.values()), (2, VALUE, before), "ENV-RED: the first VALUE click only selects (the LABEL of the same row was selected)")
-        self.click_cell(2, VALUE)
-        self.assertEqual((self.o.menu_cursor, self.o.menu_cursor_x), (2, VALUE))
-        self.assertEqual(self.o.disp_settings["speed"], False, "ENV-RED: the click on the selected VALUE toggles it")
-        self.click_cell(5, VALUE)
-        self.assertEqual((self.o.menu_cursor, self.o.menu_cursor_x, self.o.disp_settings["dist"], self.o.disp_settings["speed"]), (5, VALUE, True, False), "a click on the VALUE of another row only moves")
-        self.click_cell(5, VALUE)
+        self.click_row(2, "label")
+        self.assertEqual((self.o.menu_cursor, self.o.menu_cursor_x, self.values()), (2, LEFTOVER, before), "ENV1-RED: the first click (on the LABEL text of another row) only selects its VALUE: no value change, no column state")
+        self.assertEqual(len(self.cursors(self.render())), 1, "the cursor is on the VALUE of row 2 only")
+        self.click_row(2, "label")
+        self.assertEqual(self.o.menu_cursor, 2)
+        self.assertEqual(self.o.disp_settings["speed"], False, "ENV1-RED: a click on the already selected row (even on its label) is the Enter")
+        self.click_row(2, "value")
+        self.assertEqual(self.o.disp_settings["speed"], True, "the click on the selected VALUE toggles again")
+        self.click_row(5, "value")
+        self.assertEqual((self.o.menu_cursor, self.o.menu_cursor_x, self.o.disp_settings["dist"], self.o.disp_settings["speed"]), (5, LEFTOVER, True, True), "ENV1-RED: a click on the VALUE of another row only moves")
+        self.click_row(5, "value")
         self.assertEqual(self.o.disp_settings["dist"], False)
+        self.assertEqual(self.o.menu_cursor_x, LEFTOVER, "the mouse writes no column")
+
+    def test_red_31_the_label_click_selects_the_value_of_the_row_never_a_label(self):
+        for row in range(8):
+            self.at((row + 3) % 8)
+            before = self.values()
+            self.click_row(row, "label")
+            self.assertEqual(self.o.menu_cursor, row, "ENV1-RED: the label click selects the row %d" % row)
+            self.assertEqual(self.values(), before)
+            cur = self.cursors(self.render())
+            self.assertEqual(len(cur), 1)
+            title, labels, values = self.grid(self.render())
+            fm, _ = self.metrics()
+            self.assertGreaterEqual(cur[0]["rect"][0], labels[row]["x"] + fm.horizontalAdvance(labels[row]["text"]), "the cursor is on the value, not on the label")
+
+    def test_red_32_the_decision_is_the_selected_row_not_the_click_timing(self):
+        import time
+        real = time.time
+        for gap in (0.0, 0.05, 0.4, 5.0, 3600.0):
+            clock = [1000.0]
+            time.time = lambda: clock[0]
+            try:
+                self.at(1)
+                before = self.values()
+                self.click_row(6, "value")
+                clock[0] += gap
+                self.assertEqual(self.values(), before, "gap %s: a click on an unselected row never changes a value" % gap)
+                self.click_row(6, "value")
+                clock[0] += gap
+                self.assertEqual(self.o.disp_settings["handle"], False, "ENV1-RED: gap %s: the click on the selected row toggles whatever the time between the clicks was" % gap)
+                self.click_row(6, "value")
+                self.assertEqual(self.o.disp_settings["handle"], True)
+            finally:
+                time.time = real
+
+    def test_red_33_one_state_for_keyboard_and_mouse(self):
+        self.at(0)
+        self.press("down")
+        self.press("down")
+        self.assertEqual(self.o.menu_cursor, 2)
+        self.click_row(2, "value")                                        # (the keyboard selected row 2: this click is the Enter)
+        self.assertEqual(self.o.disp_settings["speed"], False, "ENV1-RED: the keyboard and the mouse share one selected row")
+        self.click_row(4, "label")
+        self.press("down")
+        self.assertEqual(self.o.menu_cursor, 5, "the key continues from the row the mouse selected")
+
+    def test_guard_34_no_hidden_label_state_in_the_code_of_the_screen(self):
+        import re
+        ui = source("menu_ui.py")
+        start = ui.index("    elif self.menu_state == 4:\n        # Stage ENV-1 (8 rows x 1 column")
+        body = ui[start:ui.index("    elif self.menu_state in [5, 7]:", start)]
+        self.assertNotIn("menu_cursor_x", body, "ENV1-RED: the drawing of the screen reads no column")
+        self.assertNotIn("sel_col", body)
+        self.assertEqual(body.count("drawRoundedRect"), 1, "ENV1-RED: ONE cursor shape (the value cursor)")
+        main_src = source("main.py")
+        e0 = main_src.index("        elif self.menu_state == 4:\n            # Stage ENV-1: Enter switches")
+        enter = main_src[e0:main_src.index("        elif self.menu_state == 5:\n            if self.menu_cursor == 0 and getattr(self, 'menu_cursor_x', 0) >= 0:", e0)]
+        self.assertNotIn("menu_cursor_x", enter, "ENV1-RED: Enter reads no column")
+        n0 = main_src.index('            elif "環境設定" in selected:')
+        entry = main_src[n0:main_src.index("        elif self.menu_state == 2:\n            if len(getattr(self, 'save_data', [])) > 0:", n0)]
+        self.assertNotIn("menu_cursor_x", entry, "ENV1-RED: entering the screen creates no column state")
 
     # ================================================================== limit_advance in the HUD
     def guidance(self, kind, advance=True, limit=True):
@@ -649,10 +751,10 @@ class Env(unittest.TestCase):
                 if mode == "key":
                     self.press("enter")
                 else:
-                    self.click_cell(row, VALUE)                       # (the cell is selected: this click is the Enter)
+                    self.click_row(row, "value")                       # (the row is selected: this click is the Enter)
                 where = "%s, row %d, %s" % (mode, row, start)
                 self.assertEqual(self.pair(), want, "ENV-RED: %s -> %s" % (where, want))
-                self.assertEqual((self.o.menu_cursor, self.o.menu_cursor_x), (row, VALUE), "ENV-RED: %s: the cursor stays where it was" % where)
+                self.assertEqual((self.o.menu_cursor, self.o.menu_cursor_x), (row, LEFTOVER), "ENV1-RED: %s: the cursor stays on the row" % where)
 
     def test_red_51_the_forbidden_state_cannot_be_reached_by_any_sequence(self):
         for mode in ("key", "mouse"):
@@ -666,7 +768,7 @@ class Env(unittest.TestCase):
                         if mode == "key":
                             self.press("enter")
                         else:
-                            self.click_cell(row, VALUE)
+                            self.click_row(row, "value")
                         self.assertNotEqual(self.pair(), (False, True), "ENV-RED: %s: (limit OFF, advance ON) after row %d from %s via %r" % (mode, row, start, seq))
                 if mode == "mouse":
                     break
@@ -730,8 +832,8 @@ class Env(unittest.TestCase):
         self.assertIn('if self.blink_active and hud_item_visible(self, "limit_advance"):', hud, "ENV-RED: the blink branch is entered only when the advance is shown (no transparent colour)")
 
     def test_guard_62_input_ownership_and_cursor_q3_functions_are_unchanged(self):
-        """the functions of main.py around the input ownership, Alt+F4, the Input Device switch and the Cursor-Q3 arrow are the ones of commit 1 (their AST hashes)"""
-        pinned = {"_handle_keys": "2fdff247b333c919", "_handle_mouse": "7afa380eb3c20e77", "_sync_operation_cursor": "b50358a62b2ca451", "handle_dropdown_enter": "7df61f96a2374b59",
+        """the functions of main.py around the input ownership, Alt+F4, the Input Device switch and the Cursor-Q3 arrow are the ones of commit 1 (their AST hashes). ON PURPOSE (8 x 1 cursor, 2026-11-09): only _handle_mouse differs - its menu_state 4 branch (the selected row decides, no column); every other function is the one of 12998d3"""
+        pinned = {"_handle_keys": "2fdff247b333c919", "_handle_mouse": "94ae4a8abbd9d38d", "_sync_operation_cursor": "b50358a62b2ca451", "handle_dropdown_enter": "7df61f96a2374b59",
                   "handle_menu_backspace": "7dd171b8554bc6a4", "set_input_ownership": "1c828c7be1ba3a8f", "toggle_menu": "7a8d5f39518d3d06"}
         tree = ast.parse(source("main.py"))
         got = {n.name: hashlib.sha256(ast.dump(n).encode("utf-8")).hexdigest()[:16] for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name in pinned}

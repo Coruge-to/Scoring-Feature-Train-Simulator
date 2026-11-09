@@ -666,11 +666,11 @@ INPUT_PINS = {
     "main.py": {
         "__init__": "915175b4f03acfa7",
         "_handle_keys": "2fdff247b333c919",
-        "_handle_mouse": "7afa380eb3c20e77",
+        "_handle_mouse": "94ae4a8abbd9d38d",  # on purpose (8 x 1 cursor, 2026-11-09): only the menu_state 4 branch of the click handling (the selected row decides, no column); every other function of this table is unchanged
         "_sync_operation_cursor": "b50358a62b2ca451",
         "handle_dropdown_enter": "7df61f96a2374b59",
         "handle_menu_backspace": "7dd171b8554bc6a4",
-        "handle_menu_enter": "557cc9c1cefad7b4",
+        "handle_menu_enter": "b408872f0cdcb2b7",  # on purpose (8 x 1 cursor, 2026-11-09): only the Enter of the environment settings (menu_state 4) lost its column condition
         "set_input_ownership": "1c828c7be1ba3a8f",
         "toggle_menu": "7a8d5f39518d3d06"
     },
