@@ -1480,7 +1480,7 @@ class Overlay(QWidget):
         if self.input_fresh:
             self.input_buffer = char
             self.input_fresh = False
-        elif len(self.input_buffer) < 3:
+        elif len(self.input_buffer) < (2 if self.menu_state == 10 else 3):          # Owner (live): the A boundary (menu_state 10) takes 2 digits at most; the stop distance (menu_state 5) keeps 3
             self.input_buffer += char
 
     def finalize_margin_input(self):

@@ -1799,7 +1799,9 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
                                                          "Assign(targets=[Name(id='ENV_FIRST_ROW_Y', ctx=Store())], value=Constant(value=300))",
                                                          "Assign(targets=[Name(id='ENV_ROW_STEP', ctx=Store())], value=Constant(value=70))",
                                                          "Assign(targets=[Name(id='ENV_LABEL_X', ctx=Store())], value=Constant(value=600))",
-                                                         "Assign(targets=[Name(id='ENV_VALUE_RIGHT_X', ctx=Store())], value=Constant(value=1320))"})):
+                                                         "Assign(targets=[Name(id='ENV_VALUE_RIGHT_X', ctx=Store())], value=Constant(value=1320))",
+                                                         # Cursor refinements (on purpose; Owner 2026-11-09, after the live smoke): the right padding of the environment settings value cursor (ON + 4 / OFF + 2); the scoring setting cursors are plain edits of draw_menu
+                                                         "Assign(targets=[Name(id='ENV_VALUE_CURSOR_RIGHT_EXTRA', ctx=Store())], value=Dict(keys=[Constant(value='ON'), Constant(value='OFF')], values=[Constant(value=4), Constant(value=2)]))"})):
             with open(os.path.join(ROOT, name), encoding="utf-8") as f:
                 new = f.read()
             a, b = parts(old), parts(new)

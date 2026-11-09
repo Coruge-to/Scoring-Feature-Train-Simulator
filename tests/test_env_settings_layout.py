@@ -247,7 +247,7 @@ class Env(unittest.TestCase):
                     x, y, w, h = cur[0]["rect"]
                     cell = values[row]
                     cell_w = fm.horizontalAdvance(cell["text"])
-                    self.assertEqual((x, y, w, h), (cell["x"] - 10 + GLOBAL_BOX_X_OFFSET, cell["y"] - fm.ascent() - 6 - 4, cell_w + 20, fm.height() + 12), "ENV1-RED: %s: the cursor encloses the ON / OFF text only (padding 10, the penalty page value cursor)" % where)
+                    self.assertEqual((x, y, w, h), (cell["x"] - 10 + GLOBAL_BOX_X_OFFSET, cell["y"] - fm.ascent() - 6 - 4, cell_w + 20 + (4 if cell["text"] == "ON" else 2), fm.height() + 12), "ENV1-RED: %s: the cursor encloses the ON / OFF text only (padding 10, the penalty page value cursor, + 4 px on the right for ON and + 2 px for OFF)" % where)
                     self.assertEqual(cur[0]["radius"], (6.0, 6.0), "ENV1-RED: %s: radius 6" % where)
                     label = labels[row]
                     self.assertTrue(x >= label["x"] + fm.horizontalAdvance(label["text"]), "ENV1-RED: %s: the cursor does not reach the label text" % where)
@@ -264,7 +264,33 @@ class Env(unittest.TestCase):
             lefts.add(x)
             widths["ON" if on else "OFF"] = w
         self.assertEqual(len(lefts), 1, "ENV1-RED: the cursor left edge is the common VALUE start X for ON and OFF")
-        self.assertEqual(widths["OFF"] - widths["ON"], fm.horizontalAdvance("OFF") - fm.horizontalAdvance("ON"), "OFF may be wider than ON, by the text width only")
+        self.assertEqual(widths["OFF"] - widths["ON"], fm.horizontalAdvance("OFF") - fm.horizontalAdvance("ON") + 2 - 4, "OFF may be wider than ON: the text width difference, and the right extra of OFF (2) instead of ON (4)")
+
+    def test_red_02c_the_cursor_gets_room_on_the_right_only_on_4_off_2(self):
+        """Owner (live smoke): ON +4 px, OFF +2 px, on the RIGHT edge only; the text, the left edge, the top / bottom, the zones stay"""
+        fm, _ = self.metrics()
+        base_pad_left, base_pad_right = 10 - GLOBAL_BOX_X_OFFSET, 10
+        for row in range(8):
+            for on in (True, False):
+                self.at(row)
+                self.set_all(on)
+                frame = self.render()
+                title, labels, values = self.grid(frame)
+                x, y, w, h = self.cursors(frame)[0]["rect"]
+                cell = values[row]
+                adv = fm.horizontalAdvance(cell["text"])
+                extra = 4 if on else 2
+                where = "row %d %s" % (row, "ON" if on else "OFF")
+                self.assertEqual(cell["x"], 1248 + (title["x"] - 960), "%s: the text did not move" % where)
+                self.assertEqual(x, cell["x"] - base_pad_left, "%s: the LEFT edge is the one of before" % where)
+                self.assertEqual((y, h), (cell["y"] - fm.ascent() - 10, fm.height() + 12), "%s: top and bottom are the ones of before" % where)
+                self.assertEqual(x + w, cell["x"] + adv + base_pad_right + GLOBAL_BOX_X_OFFSET + extra, "%s: the RIGHT edge is the old one + %d" % (where, extra))
+                zone = [z for z in self.row_zones() if z[4] == row][0]
+                self.assertEqual(zone[2], cell["x"] - base_pad_left + adv + 20, "%s: the click zone is unchanged (the old cursor range)" % where)
+                self.assertLess(x + w, 1920, "inside the screen")
+                label = labels[row]
+                self.assertGreater(x, label["x"] + fm.horizontalAdvance(label["text"]), "%s: the cursor does not reach the label" % where)
+                self.assertEqual(self.cursors(frame)[0]["radius"], (6.0, 6.0))
 
     def test_guard_03_the_cursor_geometry_is_the_one_of_the_penalty_page_rows(self):
         """measured on the REAL penalty page (menu_state 6, row 2 速度制限超過): label cursor -15 / +30 wide, value cursor -10 / +20, both fm.height()+12 high, radius 6, top = baseline - ascent - 6 - 4"""
@@ -279,7 +305,8 @@ class Env(unittest.TestCase):
             self.assertEqual(len(cur), 1, "the penalty page draws one cursor")
             x, y, w, h = cur[0]["rect"]
             pad = 15 if column == LABEL else 10
-            self.assertEqual((x - ev["x"], y - ev["y"], w - fm.horizontalAdvance(ev["text"]), h), (-pad + GLOBAL_BOX_X_OFFSET, -fm.ascent() - 6 - 4, 2 * pad, fm.height() + 12), "the penalty cursor relations (%s)" % ev["text"])
+            extra = 1 if column == LABEL else (4 if ev["text"] == "ON" else 3)           # Owner (live smoke 2026-11-09): the 2/3 item name cursor gets + 1 on the right, the value cursor ON + 4 / OFF + 3
+            self.assertEqual((x - ev["x"], y - ev["y"], w - fm.horizontalAdvance(ev["text"]), h), (-pad + GLOBAL_BOX_X_OFFSET, -fm.ascent() - 6 - 4, 2 * pad + extra, fm.height() + 12), "the penalty cursor relations (%s)" % ev["text"])
             self.assertEqual(cur[0]["radius"], (6.0, 6.0))
 
     def test_red_04_on_and_off_are_left_aligned_at_the_o_of_the_former_off(self):
