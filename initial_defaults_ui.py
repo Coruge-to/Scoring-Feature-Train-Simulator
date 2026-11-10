@@ -94,15 +94,26 @@ def build_dialog(defaults, save):
     dialog.setObjectName("initial_defaults_dialog")
     dialog.setWindowTitle(TITLE)
     root = QVBoxLayout(dialog)
-    columns = QHBoxLayout()
-    root.addLayout(columns)
+    root.setContentsMargins(36, 28, 36, 16)
+    root.setSpacing(8)
+    frame = QFrame()                                               # ONE thin outer frame around both columns (not a QGroupBox per section)
+    frame.setObjectName("outer_frame")
+    frame.setFrameShape(QFrame.Shape.Box)
+    frame.setFrameShadow(QFrame.Shadow.Plain)
+    frame.setLineWidth(1)
+    columns = QHBoxLayout(frame)
+    columns.setContentsMargins(18, 14, 18, 14)
+    columns.setSpacing(18)
+    root.addWidget(frame, 1)
 
     left, right = QVBoxLayout(), QVBoxLayout()
-    columns.addLayout(left)
+    left.setSpacing(8)
+    right.setSpacing(8)
+    columns.addLayout(left, 11)
     divider = QFrame()
     divider.setFrameShape(QFrame.Shape.VLine)
     columns.addWidget(divider)
-    columns.addLayout(right)
+    columns.addLayout(right, 10)
 
     left.addWidget(_column_title("環境設定"))
     env_boxes = []
@@ -112,7 +123,7 @@ def build_dialog(defaults, save):
         box.setChecked(bool(defaults.environment[index]))
         left.addWidget(box)
         env_boxes.append(box)
-    left.addSpacing(12)
+    left.addSpacing(18)
     left.addWidget(_column_title("採時駅設定"))
     timing = QCheckBox(TIMING_LABEL)
     timing.setObjectName("timing")
@@ -128,7 +139,7 @@ def build_dialog(defaults, save):
         box.setObjectName(name)
         box.setChecked(bool(pen_state[name]))
         right.addWidget(box)
-    right.addSpacing(12)
+    right.addSpacing(18)
     right.addWidget(_column_title("簡単設定"))
     preset_row = QHBoxLayout()
     preset_buttons = []
@@ -136,6 +147,7 @@ def build_dialog(defaults, save):
         button = QPushButton(label)
         button.setObjectName("preset_" + key)
         button.setStyleSheet("background-color: rgb(%d, %d, %d); color: white; font-weight: bold; padding: 6px 18px;" % tuple(colour[:3]))
+        button.setMinimumSize(110, 52)
         preset_row.addWidget(button)
         preset_buttons.append((key, button))
     right.addLayout(preset_row)
@@ -208,7 +220,8 @@ def build_dialog(defaults, save):
         dialog.accept()
 
     ok.clicked.connect(lambda checked=False: on_ok())
-    dialog.setMinimumWidth(640)
+    dialog.setMinimumSize(860, 520)
+    dialog.resize(860, 520)
     return dialog
 
 
