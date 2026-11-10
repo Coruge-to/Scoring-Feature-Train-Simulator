@@ -59,6 +59,7 @@ from official_target_contract import advance as offtgt_advance, capture as offtg
 import hud_target_contract
 import effective_station_state as ess
 import telemetry_receiver_directory
+import initial_defaults_ui
 import utils
 
 KERNING_OFFSETS = {
@@ -3507,6 +3508,8 @@ def _run_normal():
 
 def main(argv=None):
     argv = sys.argv if argv is None else argv
+    if initial_defaults_ui.is_requested(argv[1:]):          # the 'initial defaults' window (started by the Caller from the Input Device Properties): neither the Overlay nor the managed mode
+        return initial_defaults_ui.run(argv)
     if managed_mode.is_managed_requested(argv[1:]):
         return run_managed(argv)
     return _run_normal()

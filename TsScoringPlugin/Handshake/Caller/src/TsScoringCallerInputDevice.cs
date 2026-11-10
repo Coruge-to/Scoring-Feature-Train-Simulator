@@ -10,7 +10,8 @@ using Mackoy.Bvets;
 // Python, HUD, scoring, UDP, hooks, registry, or touch BVE/BveEX settings.
 // Constructor: nothing (Phase C1 adds log lines only). Load: publish Enabled and start the ONE background monitor.
 // Dispose: stop monitoring, publish Stop, withdraw Enabled, release everything.
-// Configure: one status dialog (everything is observed there).
+// Configure (Properties): starts the 'initial defaults' window (a separate Python process, from launcher.json; see InitialDefaultsLauncher.cs) and returns at once;
+// the status dialog is only the fallback of a failed start.
 // The only file this DLL writes is the Phase C1 observation log (Shared\ObservationLog.cs).
 // The class/namespace names are technical identifiers and keep "TSScoringPlugin".
 // ============================================================================
@@ -72,13 +73,45 @@ namespace TSScoringPlugin.Handshake
         {
         }
 
+        /// <summary>Test hook only (null in production): receives the notice that would be shown in the MessageBox, so that a test never opens a window.</summary>
+        internal static Action<IntPtr, string, string> ShowNotice { get; set; }
+
         public void Configure(IWin32Window owner)
         {
             ObservationLog.Write("A", "CONFIGURE_OPENED", "inst=" + instNo);
             try
             {
-                IntPtr handle = owner == null ? IntPtr.Zero : owner.Handle;
-                MessageBoxW(handle, session.BuildStatusText(), HandshakeSession.ProductDisplayName + " - handshake status", MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
+                // Properties: start the 'initial defaults' window (a separate Python process, started from launcher.json) and return at once.
+                // A second press while the window is open starts nothing. Only a failed start falls back to the status text of the handshake (as before).
+                string notice = null;
+                try
+                {
+                    InitialDefaultsLaunchResult launch = InitialDefaultsLauncher.TryLaunch();
+                    if (!launch.Started && !launch.AlreadyRunning)
+                    {
+                        notice = InitialDefaultsLauncher.FailureNotice(launch);
+                    }
+                }
+                catch
+                {
+                    notice = InitialDefaultsLauncher.FailureNotice(null);
+                }
+
+                if (notice != null)
+                {
+                    IntPtr handle = owner == null ? IntPtr.Zero : owner.Handle;
+                    string text = notice + "\r\n\r\n" + session.BuildStatusText();
+                    string caption = HandshakeSession.ProductDisplayName + " - handshake status";
+                    Action<IntPtr, string, string> show = ShowNotice;
+                    if (show != null)
+                    {
+                        show(handle, text, caption);
+                    }
+                    else
+                    {
+                        MessageBoxW(handle, text, caption, MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
+                    }
+                }
             }
             catch
             {
