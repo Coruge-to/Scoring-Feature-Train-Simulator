@@ -2,7 +2,7 @@
 
 Contract
   * `main.py --initial-defaults` opens ONE window titled 初期値設定 (nothing else: not managed mode, no Overlay). Any other combination of arguments with the flag is refused (exit 2). A second start while one is open exits at once (named mutex).
-  * left: 《環境設定》 8 rows (現在時刻, 残り時間, 現在速度, 制限速度, 制限速度予告, 残距離, ハンドル・レバーサ位置, 勾配) and 《採時駅設定》 (変更可能な非採時駅を全て採時駅にする); right: 《減点項目設定》 6 rows (転動, 保安装置介入, 速度制限超過, 停車時衝動,
+  * left: 環境設定 8 rows (現在時刻, 残り時間, 現在速度, 制限速度, 制限速度予告, 残距離, ハンドル・レバーサ位置, 勾配) and 採時駅設定 (変更可能な非採時駅を全て採時駅にする); right: 減点項目設定 6 rows (転動, 保安装置介入, 速度制限超過, 停車時衝動,
     非常ブレーキ, 初動・緩和ブレーキ) and the A boundary (Aランクは理論値の [50..90] %以上); bottom: the note ※設定は次回のシナリオ読込時またはF5再読込時に適用されます。 and OK; top right: x.
   * the speed limit / advance dependency is the SHARED state function (initial_defaults.set_speed_limit / set_speed_limit_advance).
   * 保安装置介入 is an EMPTY checkbox at its normal place that can not be turned ON (mouse, keyboard, setChecked), whatever the saved file says.
@@ -94,7 +94,7 @@ class Ui(unittest.TestCase):
         d = self.make()
         self.assertEqual(d.windowTitle(), "初期値設定")
         t = self.texts(d)
-        for label in ENV_LABELS + PEN_LABELS + [TIMING, NOTE, "OK", "《環境設定》", "《採時駅設定》", "《減点項目設定》"]:
+        for label in ENV_LABELS + PEN_LABELS + [TIMING, NOTE, "OK", "環境設定", "採時駅設定", "減点項目設定"]:
             self.assertIn(label, t, "ID2-RED: the label %r is missing" % label)
         self.assertEqual([self.find(d, "env_%d" % i).text() for i in range(8)], ENV_LABELS)
         self.assertEqual([self.find(d, n).text() for n in ("pen_rolling", "pen_safety", "pen_speed", "pen_shock", "pen_eb", "pen_init")], PEN_LABELS)

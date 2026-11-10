@@ -104,7 +104,7 @@ def build_dialog(defaults, save):
     columns.addWidget(divider)
     columns.addLayout(right)
 
-    left.addWidget(_column_title("《環境設定》"))
+    left.addWidget(_column_title("環境設定"))
     env_boxes = []
     for index, label in enumerate(ENV_LABELS):
         box = QCheckBox(label)
@@ -113,14 +113,14 @@ def build_dialog(defaults, save):
         left.addWidget(box)
         env_boxes.append(box)
     left.addSpacing(12)
-    left.addWidget(_column_title("《採時駅設定》"))
+    left.addWidget(_column_title("採時駅設定"))
     timing = QCheckBox(TIMING_LABEL)
     timing.setObjectName("timing")
     timing.setChecked(bool(defaults.all_changeable_non_timed_to_timed))
     left.addWidget(timing)
     left.addStretch(1)
 
-    right.addWidget(_column_title("《減点項目設定》"))
+    right.addWidget(_column_title("減点項目設定"))
     p = defaults.penalties
     pen_state = {"pen_rolling": p.rolling, "pen_safety": False, "pen_speed": p.speed_limit_exceeded, "pen_shock": p.stop_shock, "pen_eb": p.emergency_brake, "pen_init": p.initial_release_brake == "on1"}
     for name, label in PENALTY_LABELS:
@@ -129,7 +129,7 @@ def build_dialog(defaults, save):
         box.setChecked(bool(pen_state[name]))
         right.addWidget(box)
     right.addSpacing(12)
-    right.addWidget(_column_title("《簡単設定》"))
+    right.addWidget(_column_title("簡単設定"))
     preset_row = QHBoxLayout()
     preset_buttons = []
     for key, label, colour in PRESET_BUTTONS:                      # the EXISTING colour constants of config.py (the colours of the F1 page and the HUD): no new RGB value

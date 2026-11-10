@@ -96,7 +96,7 @@ class Presets(Base):
         for key, label, oid, _ in PRESET_IDS:
             self.assertEqual(self.find(d, oid).text(), label)
         from PyQt6.QtWidgets import QLabel
-        self.assertIn("《簡単設定》", [w.text() for w in d.findChildren(QLabel)])
+        self.assertIn("簡単設定", [w.text() for w in d.findChildren(QLabel)])
 
     def test_each_preset_shows_and_collects_its_table(self):
         for key, label, oid, _ in PRESET_IDS:
