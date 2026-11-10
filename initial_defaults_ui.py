@@ -19,6 +19,7 @@ NOTE = "※設定は次回のシナリオ読込時またはF5再読込時に適�
 ENV_LABELS = ("現在時刻", "残り時間", "現在速度", "制限速度", "制限速度予告", "残距離", "ハンドル・レバーサ位置", "勾配")
 TIMING_LABEL = "変更可能な非採時駅を全て採時駅にする"
 PENALTY_LABELS = (("pen_rolling", "転動"), ("pen_safety", "保安装置介入"), ("pen_speed", "速度制限超過"), ("pen_shock", "停車時衝動"), ("pen_eb", "非常ブレーキ"), ("pen_init", "初動・緩和ブレーキ"))
+PRESET_BUTTONS = (("beginner", "初級", config.COLOR_N), ("intermediate", "中級", config.COLOR_P), ("advanced", "上級", config.COLOR_B_EMG))
 SAVE_FAILED = "保存できませんでした。"
 MUTEX_NAME = "Local\\TSScoring.InitialDefaults.v1"
 ERROR_ALREADY_EXISTS = 183
@@ -128,6 +129,16 @@ def build_dialog(defaults, save):
         box.setChecked(bool(pen_state[name]))
         right.addWidget(box)
     right.addSpacing(12)
+    right.addWidget(_column_title("《簡単設定》"))
+    preset_row = QHBoxLayout()
+    preset_buttons = []
+    for key, label, colour in PRESET_BUTTONS:                      # the EXISTING colour constants of config.py (the colours of the F1 page and the HUD): no new RGB value
+        button = QPushButton(label)
+        button.setObjectName("preset_" + key)
+        button.setStyleSheet("background-color: rgb(%d, %d, %d); color: white; font-weight: bold; padding: 6px 18px;" % tuple(colour[:3]))
+        preset_row.addWidget(button)
+        preset_buttons.append((key, button))
+    right.addLayout(preset_row)
     rank_row = QHBoxLayout()
     rank_row.addWidget(QLabel("Aランクは理論値の"))
     spin = QSpinBox()
@@ -139,6 +150,17 @@ def build_dialog(defaults, save):
     rank_row.addStretch(1)
     right.addLayout(rank_row)
     right.addStretch(1)
+
+    def apply_preset(key):
+        """The six deductions and the A boundary of the preset (initial_defaults.apply_preset: the data of the model). The environment, the all-timing setting and the safety intervention are not touched."""
+        penalties, percent = D.PRESETS[key]
+        values = {"pen_rolling": penalties.rolling, "pen_speed": penalties.speed_limit_exceeded, "pen_shock": penalties.stop_shock, "pen_eb": penalties.emergency_brake, "pen_init": penalties.initial_release_brake == "on1"}
+        for object_name, value in values.items():
+            dialog.findChild(QWidget, object_name).setChecked(bool(value))
+        spin.setValue(percent)
+
+    for key, button in preset_buttons:
+        button.clicked.connect(lambda checked=False, k=key: apply_preset(k))
 
     guard = {"busy": False}
 
