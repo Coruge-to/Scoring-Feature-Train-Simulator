@@ -1819,7 +1819,7 @@ class Overlay(QWidget):
             self.menu_cursor_x = min(max_x, getattr(self, 'menu_cursor_x', 0) + 1)
             
         elif self.menu_state == 6:
-            if self.menu_cursor == 0: max_x = -1
+            if self.menu_cursor == 0: max_x = 0                       # INITIAL-DEFAULTS: rolling has an ON / OFF value
             elif self.menu_cursor == 1 and not ATS_SIGNAL_IGNORE_AVAILABLE: max_x = -1
             elif 1 <= self.menu_cursor <= 4: max_x = 0
             elif self.menu_cursor == 5: max_x = 1
@@ -1962,7 +1962,10 @@ class Overlay(QWidget):
                             p_rule["apply"] = "OFF"
 
         elif self.menu_state == 6:
-            if self.menu_cursor == 1 and getattr(self, 'menu_cursor_x', 0) == 0:
+            if self.menu_cursor == 0 and getattr(self, 'menu_cursor_x', 0) == 0:
+                if scoring_settings.active(self) is None:                 # INITIAL-DEFAULTS: rolling is switchable BEFORE the scoring start only (the start freezes it in the running snapshot)
+                    self.pen_roll = not getattr(self, 'pen_roll', True)
+            elif self.menu_cursor == 1 and getattr(self, 'menu_cursor_x', 0) == 0:
                 if ATS_SIGNAL_IGNORE_AVAILABLE:
                     self.pen_ats = not getattr(self, 'pen_ats', False)
                 else:

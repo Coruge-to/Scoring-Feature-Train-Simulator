@@ -1132,6 +1132,7 @@ def scoring_section_housekeeping(self):
 def scoring_feature_string(self):
     """The HUD text of the scoring functions that are ON, built from the scoring settings (the running snapshot while a Run is active)."""
     f_list = []
+    if scoring_settings.value(self, "rolling"): f_list.append("[転動]")
     if scoring_settings.value(self, "speed_limit_exceeded"): f_list.append("[制限超]")
     if scoring_settings.value(self, "stop_shock"): f_list.append("[衝動]")
     if scoring_settings.value(self, "emergency_brake"): f_list.append("[EB]")
@@ -2167,7 +2168,7 @@ def update_physics_and_scoring(self, current_time, dt):
                 - getattr(self, 'roll_penalty_count', 0)
             )
 
-            if new_penalty_count > 0:
+            if new_penalty_count > 0 and scoring_settings.value(self, "rolling"):          # INITIAL-DEFAULTS: rolling OFF (the running snapshot) stops only this deduction
                 penalty_points = 500 * new_penalty_count
                 current_event_id = getattr(self, 'roll_event_id', 0)
 

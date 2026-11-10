@@ -1047,16 +1047,15 @@ def draw_menu(self, painter, logical_width, _parent=False):
                 self.menu_click_zones.append((vx, box_y, vx + vw, box_y + vh, cursor_idx, 0))
 
             is_val_focused = (self.menu_cursor == cursor_idx and getattr(self, 'menu_cursor_x', 0) == 0)
-            if cursor_idx != 0: 
-                if is_val_focused:
-                    painter.setPen(Qt.PenStyle.NoPen)
-                    painter.setBrush(HIGHLIGHT_COLOR)
-                    painter.drawRoundedRect(int(vx), int(box_y), int(vw + (4 if is_on else 3)), int(vh), CELL_CURSOR_RADIUS, CELL_CURSOR_RADIUS)        # Owner (live): 2/3 ON right + 4 px, OFF right + 3 px in total (the environment settings have their own + 4 / + 2)
+            if is_val_focused:
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(HIGHLIGHT_COLOR)
+                painter.drawRoundedRect(int(vx), int(box_y), int(vw + (4 if is_on else 3)), int(vh), CELL_CURSOR_RADIUS, CELL_CURSOR_RADIUS)        # Owner (live): 2/3 ON right + 4 px, OFF right + 3 px in total (the environment settings have their own + 4 / + 2)
                 
             draw_text_with_outline(painter, val_text, self.font_menu, val_col, COLOR_WHITE, val_x_start, base_y, "left", passes=8)
 
-        draw_toggle_row(0, "転動", True, list_y_start)
-        draw_toggle_row(1, "ATS信号無視", is_ats_signal_ignore_effective(getattr(self, 'pen_ats', False)), list_y_start + row_h, locked=not ATS_SIGNAL_IGNORE_AVAILABLE)
+        draw_toggle_row(0, "転動", getattr(self, 'pen_roll', True), list_y_start)
+        draw_toggle_row(1, "保安装置介入", is_ats_signal_ignore_effective(getattr(self, 'pen_ats', False)), list_y_start + row_h, locked=not ATS_SIGNAL_IGNORE_AVAILABLE)
         draw_toggle_row(2, "速度制限超過", getattr(self, 'pen_limit', True), list_y_start + row_h * 2)
         draw_toggle_row(3, "停車時衝動", getattr(self, 'pen_jerk', True), list_y_start + row_h * 3)
         draw_toggle_row(4, "非常ブレーキ", getattr(self, 'pen_eb', True), list_y_start + row_h * 4)
@@ -1198,7 +1197,7 @@ def draw_menu(self, painter, logical_width, _parent=False):
 
         desc_dict = {
             0: "【 転動 】\nドア開扉中に車両が完全に停止していたかを採点します。\n（※ドア開扉中に累計5cm動くたびに-500点）",
-            1: "【 ATS信号無視 】\nβ版では未対応です。保安装置介入の判定機能は今後のアップデートで対応予定です。",
+            1: "【 保安装置介入 】\nβ版では未対応です。保安装置介入の判定機能は今後のアップデートで対応予定です。",
             2: "【 速度制限超過 】\n速度制限・信号制限を守ったかを採点します。\n（※1秒毎に超過した速度(km/h)を累積減点）",
             3: stop_jerk_text.stop_jerk_description_text(),
             4: "【 非常ブレーキ 】\n走行中に非常ブレーキを使用したかどうかを採点します。\n（※非常ブレーキを使用するごとに-500点）",
@@ -1688,6 +1687,7 @@ def draw_menu(self, painter, logical_width, _parent=False):
         
         # 各減点項目の有効設定からOFF状態を判定する
         is_ats_off   = not is_ats_signal_ignore_effective(getattr(self, 'pen_ats', False))
+        is_roll_off  = not getattr(self, 'pen_roll', True)          # INITIAL-DEFAULTS: rolling is a setting
         is_limit_off = not self.pen_limit
         is_jerk_off  = not self.pen_jerk
         is_eb_off    = not self.pen_eb
@@ -1734,10 +1734,10 @@ def draw_menu(self, painter, logical_width, _parent=False):
             draw_text_with_outline(painter, label2, self.font_menu, lbl_c2, COLOR_OUTLINE_BLACK, col2_lbl_x, y_pos, "left", passes=8)
             draw_text_with_outline(painter, val_str2, self.font_menu, get_val_color(val2, is_off2), v2_out, col2_val_x, y_pos, "right", passes=8)
 
-        draw_score_row("運転時分", "time", "ATS信号無視", "ats", table_y, is_time_off, is_ats_off)
+        draw_score_row("運転時分", "time", "保安装置介入", "ats", table_y, is_time_off, is_ats_off)
         draw_score_row("停止位置", "stop", "速度制限超過", "limit", table_y + row_h, False, is_limit_off)
         draw_score_row("基本制動", "base_brake", "初動ブレーキ", "init_brake", table_y + row_h * 2, is_base_off, is_init_off)
-        draw_score_row("転動", "roll", "緩和ブレーキ", "rel_brake", table_y + row_h * 3, False, is_rel_off)
+        draw_score_row("転動", "roll", "緩和ブレーキ", "rel_brake", table_y + row_h * 3, is_roll_off, is_rel_off)
         draw_score_row("停車時衝動", "jerk", "非常ブレーキ", "eb", table_y + row_h * 4, is_jerk_off, is_eb_off)
 
         bonus_val = sd.get("bonus", 0)

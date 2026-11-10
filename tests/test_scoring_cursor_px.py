@@ -195,7 +195,7 @@ class Cursors(unittest.TestCase):
     def test_08_the_initial_value_gets_two_pixels_the_release_value_left_1_right_3(self):
         fm = self.fm()
         for row, idx, s in ((0, 0, "ON①"), (0, 1, "ON②"), (1, 0, "OFF"), (1, 1, "ON①"), (2, 0, "ON②"), (2, 1, "OFF")):
-            rects, texts = self.render(9, menu_cursor=0, menu_cursor_x=0, init_sub_cursor=row, init_sub_cursor_x=idx)
+            rects, texts = self.render(9, menu_cursor=6, menu_cursor_x=0, init_sub_cursor=row, init_sub_cursor_x=idx)      # INITIAL-DEFAULTS Commit 4 (on purpose; INITIAL-DEFAULTS Commit 4): the parent page of the initial / release pop-up keeps its cursor on the button row 6 (no value cursor); row 0, rolling, now has a value cursor like the other rows
             x, y, w, h = self.one(rects)
             cut = 0 if idx == 0 else 1
             self.assertIn(x, [t - 10 + GLOBAL_BOX_X_OFFSET + cut for t in self.xs(texts, s)], "row %d cell %d %s: left edge +%d" % (row, idx, s, cut))
@@ -209,7 +209,7 @@ class Cursors(unittest.TestCase):
             x, y, w, h = self.one(rects)
             self.assertIn(x, [t - 15 + GLOBAL_BOX_X_OFFSET for t in self.xs(texts, name)], "1/3 %s: the left edge is the old one" % name)
             self.assertEqual(w, fm.horizontalAdvance(name) + 30 + 1, "1/3 %s: right +1" % name)
-        for row, name in ((0, "転動"), (1, "ATS信号無視"), (2, "速度制限超過"), (3, "停車時衝動"), (4, "非常ブレーキ")):
+        for row, name in ((0, "転動"), (1, "保安装置介入"), (2, "速度制限超過"), (3, "停車時衝動"), (4, "非常ブレーキ")):
             rects, texts = self.render(6, menu_cursor=row, menu_cursor_x=-1)
             x, y, w, h = self.one(rects)
             self.assertEqual(w, fm.horizontalAdvance(name) + 30 + 1, "2/3 %s: right +1" % name)

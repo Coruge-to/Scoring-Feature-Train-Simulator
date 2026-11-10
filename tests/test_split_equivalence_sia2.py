@@ -320,7 +320,8 @@ class SiAScopeOfMain(unittest.TestCase):
         # Stage TB-H (on purpose): the timing toggle asks untimed_reason instead of comparing with the start index (the start and the crossed pair B are fixed untimed)
         # Stage ENV-1 (on purpose; Owner contract 2026-11-08): the Enter of the environment settings screen (menu_state 4) acts on the VALUE cell only and goes through Overlay.toggle_disp_setting (the one state function that keeps
         # 制限速度 / 制限速度予告 consistent): the three lines of the old whole-row toggle left (tests/test_env_settings_layout.py)
-        "handle_menu_enter": {"if not (50 <= val <= 90): val = 70", "self.rank_a_ratio = val / 100.0",   # INITIAL-DEFAULTS Commit 3 (on purpose; INITIAL-DEFAULTS Commit 3): the typed A boundary uses the shared validation (initial_defaults.a_rank_percent_valid)
+        "handle_menu_enter": {"if not (50 <= val <= 90): val = 70", "self.rank_a_ratio = val / 100.0", "if self.menu_cursor == 1 and getattr(self, 'menu_cursor_x', 0) == 0:",   # INITIAL-DEFAULTS Commit 4 (on purpose; INITIAL-DEFAULTS Commit 4): the rolling Enter is the new first branch (the ATS branch became an elif)
+                                 # INITIAL-DEFAULTS Commit 3 (on purpose; INITIAL-DEFAULTS Commit 3): the typed A boundary uses the shared validation (initial_defaults.a_rank_percent_valid)
                               "if self.menu_cursor <= 6:", "key = getattr(self, 'settings_keys', [])[self.menu_cursor]", "getattr(self, 'disp_settings', {})[key] = not getattr(self, 'disp_settings', {})[key]",
                               "if sta_idx != getattr(self, 'setting_start_idx', 0):", "actual_terminal_idx = self.get_actual_terminal_idx() if hasattr(self, 'get_actual_terminal_idx') else -1",
                               "e_idx = getattr(self, 'setting_end_idx', -1) if getattr(self, 'setting_end_idx', -1) != -1 else actual_terminal_idx",

@@ -1790,7 +1790,8 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
         initial_defaults_settings_reads = (
             "and getattr(self, 'pen_limit', True)", "if getattr(self, 'pen_jerk', True):", "if getattr(self, 'pen_eb', True):",
             "if not is_ats_signal_ignore_effective(getattr(self, 'pen_ats', False)):", "and not is_ats_signal_ignore_effective(getattr(self, 'pen_ats', False))",
-            'p_rules = getattr(self, \'penalty_init_rules\', [{"apply": "ON①", "release": "ON①"}])', "f_list = []",
+            'p_rules = getattr(self, \'penalty_init_rules\', [{"apply": "ON①", "release": "ON①"}])', "f_list = []", "if new_penalty_count > 0:",    # INITIAL-DEFAULTS Commit 4 (on purpose; INITIAL-DEFAULTS Commit 4): the rolling penalty reads the running snapshot (the condition line gained a clause)
+            
             'if getattr(self, \'pen_limit\', True): f_list.append("[制限超]")', 'if getattr(self, \'pen_jerk\', True): f_list.append("[衝動]")', 'if getattr(self, \'pen_eb\', True): f_list.append("[EB]")',
             "if is_ats_signal_ignore_effective(getattr(self, 'pen_ats', False)): f_list.append(\"[ATS]\")", 'self.active_features_str = " ".join(f_list) if f_list else "すべてOFF"',
         )

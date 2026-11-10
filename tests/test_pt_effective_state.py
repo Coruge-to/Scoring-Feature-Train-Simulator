@@ -324,7 +324,7 @@ class D_PureAndStructure(unittest.TestCase):
             with open(os.path.join(ROOT, rel), "rb") as fh:
                 data = fh.read().replace(b"\r\n", b"\n")
             return hashlib.sha1(b"blob %d\x00" % len(data) + data).hexdigest()
-        self.assertEqual(blob("scoring_logic.py"), "8474380a7304c95a369c8665c289bad2613eefdb")       # INITIAL-DEFAULTS Commit 3 (on purpose; INITIAL-DEFAULTS Commit 3): the scoring settings are read through scoring_settings (the running snapshot); 2026-11-08 (the pin moved, an intended change: formal LastStop BveG, CalcG / sway retired; was 1187e257...)
+        self.assertEqual(blob("scoring_logic.py"), "93130b870a263ec19ff110ef5b7f2a300ba8c86b")       # INITIAL-DEFAULTS Commit 3 (on purpose; INITIAL-DEFAULTS Commit 3): the scoring settings are read through scoring_settings (the running snapshot); 2026-11-08 (the pin moved, an intended change: formal LastStop BveG, CalcG / sway retired; was 1187e257...)
         self.assertEqual(blob("pseudo_turnback_machine.py"), PINNED_MACHINE_BLOB)
 
     def test_PS_07_hud_ui_reads_the_effective_state_for_the_time_row(self):
