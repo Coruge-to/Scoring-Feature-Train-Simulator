@@ -8,7 +8,7 @@ import ctypes
 import sys
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QCheckBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QSpinBox, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QApplication, QStyleFactory, QCheckBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QSpinBox, QVBoxLayout, QWidget
 
 import config
 import initial_defaults as D
@@ -20,6 +20,7 @@ ENV_LABELS = ("現在時刻", "残り時間", "現在速度", "制限速度", "�
 TIMING_LABEL = "変更可能な非採時駅を全て採時駅にする"
 PENALTY_LABELS = (("pen_rolling", "転動"), ("pen_safety", "保安装置介入"), ("pen_speed", "速度制限超過"), ("pen_shock", "停車時衝動"), ("pen_eb", "非常ブレーキ"), ("pen_init", "初動・緩和ブレーキ"))
 PRESET_BUTTONS = (("beginner", "初級", config.COLOR_N), ("intermediate", "中級", config.COLOR_P), ("advanced", "上級", config.COLOR_B_EMG))
+A_RANK_INVALID = "Aランク境界は50〜90の整数で入力してください。"
 SAVE_FAILED = "保存できませんでした。"
 MUTEX_NAME = "Local\\TSScoring.InitialDefaults.v1"
 ERROR_ALREADY_EXISTS = 183
@@ -80,6 +81,32 @@ class FixedOffCheckBox(QCheckBox):
         QCheckBox.setCheckState(self, Qt.CheckState.Unchecked)
 
 
+class FocusWheelSpinBox(QSpinBox):
+    """The standard spin box (the up / down buttons are part of it); the mouse wheel changes the value only while it has the keyboard focus (a wheel over the box never gives the focus)."""
+
+    def __init__(self, *args):
+        QSpinBox.__init__(self, *args)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setWrapping(False)
+        self.setSingleStep(1)
+
+    def wheelEvent(self, event):
+        if self.hasFocus():
+            QSpinBox.wheelEvent(self, event)
+        else:
+            event.ignore()
+
+
+ROW_SPACING = 4                                                   # the one vertical spacing of every item row of both columns
+
+
+def use_native_style():
+    """The native Windows drawing of the standard widgets (check boxes, spin box) as the application style (Qt owns it); the other styles take the accent colour of the system theme (a dark slate here). Only the process of this window is affected."""
+    app = QApplication.instance()
+    if app is not None and "windowsvista" in [k.lower() for k in QStyleFactory.keys()] and app.style().objectName().lower() != "windowsvista":
+        app.setStyle("windowsvista")
+
+
 def _column_title(text):
     label = QLabel(text)
     font = label.font()
@@ -93,6 +120,7 @@ def build_dialog(defaults, save):
     dialog = QDialog()
     dialog.setObjectName("initial_defaults_dialog")
     dialog.setWindowTitle(TITLE)
+    use_native_style()
     root = QVBoxLayout(dialog)
     root.setContentsMargins(36, 28, 36, 16)
     root.setSpacing(8)
@@ -107,8 +135,8 @@ def build_dialog(defaults, save):
     root.addWidget(frame, 1)
 
     left, right = QVBoxLayout(), QVBoxLayout()
-    left.setSpacing(8)
-    right.setSpacing(8)
+    left.setSpacing(ROW_SPACING)
+    right.setSpacing(ROW_SPACING)
     columns.addLayout(left, 11)
     divider = QFrame()
     divider.setFrameShape(QFrame.Shape.VLine)
@@ -153,8 +181,9 @@ def build_dialog(defaults, save):
     right.addLayout(preset_row)
     rank_row = QHBoxLayout()
     rank_row.addWidget(QLabel("Aランクは理論値の"))
-    spin = QSpinBox()
+    spin = FocusWheelSpinBox()
     spin.setObjectName("a_rank")
+    spin.setMinimumWidth(64)
     spin.setRange(D.A_RANK_MIN_PERCENT, D.A_RANK_MAX_PERCENT)
     spin.setValue(defaults.a_rank_percent if D.a_rank_percent_valid(defaults.a_rank_percent) else D.A_RANK_BUILTIN_PERCENT)
     rank_row.addWidget(spin)
@@ -211,6 +240,12 @@ def build_dialog(defaults, save):
     root.addLayout(buttons)
 
     def on_ok():
+        text = spin.lineEdit().text().strip() if spin.lineEdit() is not None else str(spin.value())
+        if not (text.isascii() and text.isdigit() and D.a_rank_percent_valid(int(text))):         # an empty / non-integer / out-of-range input is refused: never clamped silently, nothing is saved
+            message.setText(A_RANK_INVALID)
+            spin.setFocus()
+            spin.selectAll()
+            return
         try:
             save(collect(dialog))
         except (ValueError, D.SaveError, OSError):
@@ -220,8 +255,8 @@ def build_dialog(defaults, save):
         dialog.accept()
 
     ok.clicked.connect(lambda checked=False: on_ok())
-    dialog.setMinimumSize(860, 520)
-    dialog.resize(860, 520)
+    dialog.setMinimumSize(860, 440)
+    dialog.resize(860, 440)
     return dialog
 
 

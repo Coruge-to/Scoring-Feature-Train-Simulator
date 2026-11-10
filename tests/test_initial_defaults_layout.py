@@ -61,7 +61,7 @@ class Layout(unittest.TestCase):
         from PyQt6.QtWidgets import QCheckBox, QPushButton
         d = self.make()
         self.assertGreaterEqual(d.width(), 860)
-        self.assertGreaterEqual(d.height(), 520)
+        self.assertGreaterEqual(d.height(), 440)
         self.assertGreater(d.width() / d.height(), 1.5, "a wide (landscape) dialog")
         fr = self.find(d, "outer_frame").rect()
         for w in self.find(d, "outer_frame").findChildren(QCheckBox) + self.find(d, "outer_frame").findChildren(QPushButton):

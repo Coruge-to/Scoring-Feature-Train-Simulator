@@ -79,7 +79,7 @@
     {"set": "python", "path": "hud_target_contract.py", "blob_sha256": "416D98DC76C7F247B07AE53AEE2A90E332939FCF0261F0969B244F96E86C9E99", "blob_size": 8771, "blob_eol": "lf"},
     {"set": "python", "path": "hud_ui.py", "blob_sha256": "B1685742254606E5A1BDEFFB779972CEE63078DFF992C67DA9D477851697B3D5", "blob_size": 21824, "blob_eol": "lf"},
     {"set": "python", "path": "initial_defaults.py", "blob_sha256": "A95231BD80F2465383E53DF53248132073F7F0346AF850E3F2144B2566D2FFBB", "blob_size": 13927, "blob_eol": "lf"},
-    {"set": "python", "path": "initial_defaults_ui.py", "blob_sha256": "5FDEA83CF053A3760E2B45478C5B8DF12C81FC57214F48B0A15CC027945F761C", "blob_size": 11368, "blob_eol": "lf"},
+    {"set": "python", "path": "initial_defaults_ui.py", "blob_sha256": "352262328BA7D415C1D93239EAFBD732719E98BE78D3D83C283BD34C21E6C9B3", "blob_size": 13162, "blob_eol": "lf"},
     {"set": "python", "path": "jump_transaction.py", "blob_sha256": "BC5DFAE3BA83BDD4E1606D70B1E4960FA939206709C4DAAE357C1EA081B6A954", "blob_size": 17222, "blob_eol": "lf"},
     {"set": "python", "path": "jump_wire.py", "blob_sha256": "3F24A9F733FDD8E2FD8A1BC0FE24DB594916671FE78608B76879538B9B35EA27", "blob_size": 20563, "blob_eol": "lf"},
     {"set": "python", "path": "main.py", "blob_sha256": "ACC397829878DE2F0C973234066C3694D97AE710716C0087C89B5658DD7FA48F", "blob_size": 204035, "blob_eol": "lf"},
@@ -138,5 +138,5 @@
     {"set": "shared", "path": "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryContract.cs", "blob_sha256": "D5E4AAB343C9BB6145CDFDE9226C1871BDDAD1D4EAE503D368C5841922D966D8", "blob_size": 9030, "blob_eol": "lf"},
     {"set": "shared", "path": "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs", "blob_sha256": "9D6C47493457FD840E8CA5186C8E16181F0B5CF85C10721087C9098DD6644680", "blob_size": 6615, "blob_eol": "lf"}
   ],
-  "fingerprint": "D3D50E5C550E5487945E5856913EEB5EEEF87471A02AEB1533B9072BEEA930EC"
+  "fingerprint": "9490877A353B8251CFB8BE3ECAE5F01407D9F8CDA7DAC7EC2D0EB867CC484273"
 }
