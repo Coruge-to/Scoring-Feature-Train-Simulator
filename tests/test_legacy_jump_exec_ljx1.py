@@ -202,7 +202,8 @@ ST3D_EXECUTE_RETRY_PIN = ("whole", "E5DB2D56A0FC1A4894DD4FBDA7D7CFF63BEB4EB78E74
 # Legacy scoring LC-4 / LC-4b (an INTENDED change of the jump contract): execute_retry refuses once the scoring has finished (LC-4, 'scoring-finished') and while the Jump group is unavailable (LC-4b, A14); both refusals
 # come BEFORE the request is built, so no request is made and none is sent (4 + 4 added lines, no deleted line). Its new canonical AST is pinned here (it was E5DB2D56...); begin_official_jump, the other WHOLE region and
 # every SLICE region are still compared with the blob of the formal LJX-1 commit (identical), except the pinned ones.
-LC4B_EXECUTE_RETRY_PIN = ("whole", "9CEEFF77BE70F07889ECD1D30EA0889C155BB3CA1F97C0CE611DEC86CA523894", 1)
+LC4B_EXECUTE_RETRY_PIN = ("whole", "397F331F41D559CEF26F1683B9A66F5761C6AB47929C041CC38CCC032E903CA4", 1)
+INITIAL_DEFAULTS_SPEED_LIMIT_PIN = ("slice", "CBF75A39FB78D742853315F4A20A8047E1D0C97A1DF2B63E15D8FE62C86DF0F4", 1)      # INITIAL-DEFAULTS Commit 3 (on purpose): the speed limit penalty reads its setting through scoring_settings.value (the one condition line of the jump slice changed; no score, no rule, no constant)
 
 # Legacy scoring LC-3A (an INTENDED change of the stop jerk judgement, not of the jump contract): update_stop_jerk_penalty returns without judging while `is_official_jumping` is set (a sample taken while the world is about to be
 # replaced is not a stop). At the LJX-1 commit the function names no jump word (an EMPTY slice, 0 records: the SHA-256 of the empty text); now it names `is_official_jumping` once (1 record) and is declared.
@@ -319,6 +320,8 @@ class A2_TheLegacyJumpContractRegionsOfThePythonSide(unittest.TestCase):
         self.assertTrue(all(value is not None for value in then.values()), then)
         self.assertEqual(now.pop("execute_retry"), LC4B_EXECUTE_RETRY_PIN)           # Phase ST-2b / ST-3d / LC-4 / LC-4b: the intended changes, pinned on their own (the ST-2b and ST-3d values stay above as history)
         then.pop("execute_retry")
+        self.assertEqual(now.pop("update_speed_limit_penalty"), INITIAL_DEFAULTS_SPEED_LIMIT_PIN)       # INITIAL-DEFAULTS Commit 3: the intended change, pinned on its own
+        then.pop("update_speed_limit_penalty")
         self.assertEqual(then.pop("update_stop_jerk_penalty"), EMPTY_SLICE_PIN)      # Legacy scoring LC-3A: at LJX-1 the function names no jump word ...
         self.assertEqual(now.pop("update_stop_jerk_penalty"), LC3A_UPDATE_STOP_JERK_PIN)   # ... now it names `is_official_jumping` once: the intended change, pinned on its own
         self.assertEqual(now.pop("evaluate_departure"), TIMEFIX_B3_EVALUATE_DEPARTURE_PIN)     # Time Fix B / B2 / B3: the intended changes, pinned on their own (the Time Fix B and B2 values stay above as history)

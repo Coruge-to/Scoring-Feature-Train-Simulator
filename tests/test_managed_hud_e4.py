@@ -1748,7 +1748,8 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
                 # evaluate_arrival and update_physics_and_scoring (already changed above) call them; no score, no rule, no constant (tests/test_pt_scoring_continuity.py / test_pt_display_contract.py)
                 # no score, no rule, no constant (E3 -> now: scoring_logic.py +488 -120 by git numstat, the numbers of Test-HudLinkE4.ps1 S10b)
                 ("scoring_logic.py", old_scoring, {"write_limit_debug_log", "execute_retry", "create_save_data", "evaluate_arrival", "update_physics_and_scoring", "evaluate_departure", "reset_station_evaluation_state",
-                                                   "reset_transient_scoring_state", "update_stop_jerk_penalty", "update_initial_and_release_brake_penalty"},
+                                                   "reset_transient_scoring_state", "update_stop_jerk_penalty", "update_initial_and_release_brake_penalty",
+                                                   "add_score_popup", "update_manual_emergency_brake_penalty", "update_speed_limit_penalty"},          # INITIAL-DEFAULTS Commit 3 (on purpose): the scoring settings are read through scoring_settings (no score, no rule, no constant)
                  {"note_save_skipped", "operational_stop_station", "resolve_operational_stop_completion", "Import(names=[alias(name='station_identity')])",
                   "Import(names=[alias(name='jump_transaction')])", "Import(names=[alias(name='jump_wire')])",         # Phase ST-3d (on purpose): execute_retry builds its request with jump_transaction / jump_wire (the Jump wire v2)
                   "close_range_fix_previous_stop", "init_basic_braking_state", "close_range_pair_is_close", "update_close_range_departure_reset", "close_range_fix_landing_stop",
@@ -1776,7 +1777,9 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
                   # Stage TB-H 6 (on purpose): the ONE wording constant of the illegal-movement warning (illegal Jump and B reached by driving; tests/test_pt_tbh_selfdrive_hud.py SD-04/05)
                   "Assign(targets=[Name(id='ILLEGAL_MOVE_TEXTS', ctx=Store())], value=Tuple(elts=[Constant(value='不正な移動が検知されました。'), Constant(value='採点を中止します。')], ctx=Load()))",
                   # Stage TB-H 5b (on purpose): TURNBACK_SPECIAL_SECONDS (the 3.0 s exception of the arrival result popups) is gone (tests/test_pt_tbh_first_jump_10s.py JM-02)
-                  "Assign(targets=[Name(id='TURNBACK_TOTAL_SECONDS', ctx=Store())], value=BinOp(left=Attribute(value=Name(id='pseudo_turnback_machine', ctx=Load()), attr='REQUEST_AFTER_MS', ctx=Load()), op=Div(), right=Constant(value=1000.0)))"}),
+                  "Assign(targets=[Name(id='TURNBACK_TOTAL_SECONDS', ctx=Store())], value=BinOp(left=Attribute(value=Name(id='pseudo_turnback_machine', ctx=Load()), attr='REQUEST_AFTER_MS', ctx=Load()), op=Div(), right=Constant(value=1000.0)))",
+                  # INITIAL-DEFAULTS Commit 3 (on purpose): the import of scoring_settings and the HUD feature text of the scoring settings
+                  "scoring_feature_string", "Import(names=[alias(name='scoring_settings')])"}),
                 ("utils.py", old_utils, {"write_desktop_log"}, {"set_desktop_log_enabled", "desktop_log_enabled", "desktop_log_requested"}),
                 # Stage TB-H (on purpose): the timing screen of draw_menu is the ONLY member of menu_ui.py that changed since E3 (nothing removed, nothing added)
                 # Stage TB-I (brake chain, on purpose): the ONE new member is the pure helper _brake_rule_start (the effective start of a basic brake rule that the screens draw); draw_menu calls it at four places

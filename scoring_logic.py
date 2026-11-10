@@ -7,6 +7,7 @@ from config import *
 import jump_transaction
 import jump_wire
 import pseudo_turnback_machine
+import scoring_settings
 import station_identity
 from utils import (
     calculate_apex_speed,
@@ -66,7 +67,7 @@ def stop_jerk_log(self, current_time, points, count):
                     getattr(self, "bve_arr_idx", -1), getattr(self, "bve_tgt_idx", -1), current_time, current_time - STOP_JERK_WINDOW_SECONDS, current_time, count,
                     "unavailable" if g_bve is None else "%.5f" % g_bve,
                     "not-evaluated(no-accelz-sample)" if points is None else str(points),
-                    bool(getattr(self, "pen_jerk", True)), getattr(self, "current_scenario_id", -1)))
+                    bool(scoring_settings.value(self, "stop_shock")), getattr(self, "current_scenario_id", -1)))
     except Exception:
         pass
 
@@ -320,7 +321,7 @@ def update_speed_limit_penalty(self, current_time):
         and not getattr(self, 'is_scoring_finished', False)
         and not getattr(self, 'is_official_jumping', False)
         and not getattr(self, 'is_first_udp', False)
-        and getattr(self, 'pen_limit', True)
+        and scoring_settings.value(self, "speed_limit_exceeded")
     ):
         current_limit = getattr(self, 'effective_limit', 1000.0)
 
@@ -425,7 +426,7 @@ def update_stop_jerk_penalty(self, current_time):
             # 前進・後退のどちらでも加速度の絶対値で停車時衝動を判定する（正式指標＝LastStop BveG、丸め前の値）
             points, count = judge_stop_jerk(self, current_time)
 
-            if getattr(self, 'pen_jerk', True):
+            if scoring_settings.value(self, "stop_shock"):
                 if points == -200:
                     add_score_popup(self, -200, "停車時衝動 -200", COLOR_B_EMG, "neg", "停車時衝動", current_time)
                 elif points == -100:
@@ -456,7 +457,7 @@ def update_manual_emergency_brake_penalty(
     if eb_event_active:
         if not self.manual_eb_penalty_applied:
             if abs(self.bve_speed) > 0.0:
-                if getattr(self, 'pen_eb', True):
+                if scoring_settings.value(self, "emergency_brake"):
                     add_score_popup(
                         self,
                         -500,
@@ -748,7 +749,7 @@ def execute_retry(self, index, is_bve_advancing):
         for k in self.score_details: self.score_details[k] = 0
 
     # ATS信号無視が無効な間は、復元した内訳でも0を維持する
-    if not is_ats_signal_ignore_effective(getattr(self, 'pen_ats', False)):
+    if not is_ats_signal_ignore_effective(scoring_settings.value(self, "safety_intervention")):
         self.score_details['ats'] = 0
 
     #?self.bve_door = 0
@@ -795,7 +796,7 @@ def add_score_popup(
     # ATS信号無視が無効な間は、得点・内訳・ポップアップへ反映しない
     if (
         category == "ATS信号無視"
-        and not is_ats_signal_ignore_effective(getattr(self, 'pen_ats', False))
+        and not is_ats_signal_ignore_effective(scoring_settings.value(self, "safety_intervention"))
     ):
         return
 
@@ -1125,6 +1126,17 @@ def scoring_section_housekeeping(self):
     """Once per scoring tick: a snapshot that is no longer the Run's (session off, scoring finished or aborted, another generation) is dropped, never carried on."""
     if self.__dict__.get('_scoring_section') is not None and active_scoring_section(self) is None:
         self._scoring_section = None
+    scoring_settings.housekeeping(self)             # INITIAL-DEFAULTS: the running snapshot of the scoring settings follows the same lifetime
+
+
+def scoring_feature_string(self):
+    """The HUD text of the scoring functions that are ON, built from the scoring settings (the running snapshot while a Run is active)."""
+    f_list = []
+    if scoring_settings.value(self, "speed_limit_exceeded"): f_list.append("[制限超]")
+    if scoring_settings.value(self, "stop_shock"): f_list.append("[衝動]")
+    if scoring_settings.value(self, "emergency_brake"): f_list.append("[EB]")
+    if is_ats_signal_ignore_effective(scoring_settings.value(self, "safety_intervention")): f_list.append("[ATS]")
+    return " ".join(f_list) if f_list else "すべてOFF"
 
 
 def turnback_session_active(self):
@@ -1995,7 +2007,7 @@ def update_physics_and_scoring(self, current_time, dt):
 
         # 2. 区間ルールの抽出（物理座標ではなく、次駅ターゲットを基準にする！）
         b_rules = getattr(self, 'brake_rules', [{"end_idx": -1, "apply": "階段", "release": "階段"}])
-        p_rules = getattr(self, 'penalty_init_rules', [{"apply": "ON①", "release": "ON①"}])
+        p_rules = scoring_settings.value(self, "init_rules")
 
         active_b_rule = b_rules[-1]
         active_p_rule = p_rules[-1] if len(p_rules) == len(b_rules) else {"apply": "ON①", "release": "ON①"}
@@ -2023,12 +2035,7 @@ def update_physics_and_scoring(self, current_time, dt):
             self.active_rule_init_release = active_p_rule.get("release", "ON①")
 
         # 3. 機能ON/OFFの文字列化（HUD表示用）
-        f_list = []
-        if getattr(self, 'pen_limit', True): f_list.append("[制限超]")
-        if getattr(self, 'pen_jerk', True): f_list.append("[衝動]")
-        if getattr(self, 'pen_eb', True): f_list.append("[EB]")
-        if is_ats_signal_ignore_effective(getattr(self, 'pen_ats', False)): f_list.append("[ATS]")
-        self.active_features_str = " ".join(f_list) if f_list else "すべてOFF"
+        self.active_features_str = scoring_feature_string(self)
 
     update_result_display(self, current_time)
     turnback_display_update(self, current_time)        # the pseudo-turnback guidance window (dormant without a chain)

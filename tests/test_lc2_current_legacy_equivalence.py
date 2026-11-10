@@ -89,6 +89,10 @@ class LC2Base(unittest.TestCase):
         self.r = self.D.D6Rig(self.main)
         self.o = self.r.o
         self.addCleanup(self.r.close)
+        import initial_defaults as _ID
+        # INITIAL-DEFAULTS Commit 3 (on purpose): these slices pin the scoring maths with the settings the Overlay had before the saved defaults existed (initial / release brake ON①, A boundary 70 = the advanced preset);
+        # the builtin defaults of a fresh install are the intermediate preset (initial / release OFF, A boundary 60), which changes those scores by design
+        self.o.initial_defaults_loader = lambda: _ID.LoadResult(_ID.apply_preset(_ID.builtin_defaults(), "advanced"), "file", ())
         return self.r
 
     def land(self, cmd, shape, t=36000000):

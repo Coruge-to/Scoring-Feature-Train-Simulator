@@ -1785,10 +1785,19 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
         # Formal LastStop BveG (2026-11-08, an intended change): the CalcG / Shadow / sway code of scoring_logic.py is retired and update_stop_jerk_penalty judges the official AccelerationZ window.
         # These are the 15 distinct lines (stripped) that the diff shows as removed; the deduction values (-100 / -200), the thresholds (0.065 / 0.100 G) and the 0.5 s window are the same constants.
         formal_bveg_retired = ('self.g_history.clear()', 'self.hb_cushion_max_g = 0.0', 'def update_stop_jerk_penalty(self, current_time, decel_g):', 'recent_g = [h[1] for h in self.g_history if current_time - h[0] <= 0.5]', 'if recent_g:', 'self.last_stop_g = sum(recent_g) / len(recent_g)', 'self.last_stop_g = decel_g', '# 前進・後退のどちらでも加速度の絶対値で停車時衝動を判定する', 'abs_stop_g = abs(self.last_stop_g)', 'if abs_stop_g >= 0.10:', 'elif abs_stop_g >= 0.065:', 'decel_g,', 'if decel_g > self.hb_cushion_max_g: self.hb_cushion_max_g = decel_g', 'decel_g = -self.bve_calc_g', 'self.g_history = [h for h in self.g_history if h[0] > cutoff_time]')
+        # INITIAL-DEFAULTS Commit 3 (on purpose): the scoring reads its settings through scoring_settings.value (the running snapshot while a Run is active, the live F1 attribute before the start) instead of reading the live attributes
+        # directly, and the HUD feature text is built by scoring_feature_string; these are the distinct lines (stripped) that the diff shows as removed; no score, no rule and no constant is among them.
+        initial_defaults_settings_reads = (
+            "and getattr(self, 'pen_limit', True)", "if getattr(self, 'pen_jerk', True):", "if getattr(self, 'pen_eb', True):",
+            "if not is_ats_signal_ignore_effective(getattr(self, 'pen_ats', False)):", "and not is_ats_signal_ignore_effective(getattr(self, 'pen_ats', False))",
+            'p_rules = getattr(self, \'penalty_init_rules\', [{"apply": "ON①", "release": "ON①"}])', "f_list = []",
+            'if getattr(self, \'pen_limit\', True): f_list.append("[制限超]")', 'if getattr(self, \'pen_jerk\', True): f_list.append("[衝動]")', 'if getattr(self, \'pen_eb\', True): f_list.append("[EB]")',
+            "if is_ats_signal_ignore_effective(getattr(self, 'pen_ats', False)): f_list.append(\"[ATS]\")", 'self.active_features_str = " ".join(f_list) if f_list else "すべてOFF"',
+        )
         self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport) + tbd_running_end_judgement + pseudo_turnback_a_seam + st2a_checkpoint_identity + st2b_retry_by_saved_index
                                    + st3d_request_by_the_one_builder + st2c_first_station_distance + timefix_b_departure_margins + timefix_b3_zero_speed_and_jump_boundary
                                    + close_range_shared_basic_braking_init + si_r5_2a_p03_target_index + si_r5_2b_arrival_target_index + si_r5_2c_departure_prev_target_index
-                                   + lc3b_same_time_history_replace + stage_tbh6_illegal_move_wording + formal_bveg_retired], removed)
+                                   + lc3b_same_time_history_replace + stage_tbh6_illegal_move_wording + formal_bveg_retired + initial_defaults_settings_reads], removed)
 
     def test_the_scoring_function_bodies_are_ast_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":scoring_logic.py")
@@ -1818,7 +1827,7 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
                                    "stop_jerk_window_mean", "stop_jerk_g_from_accel_z", "stop_jerk_points", "judge_stop_jerk", "stop_jerk_log",   # 2026-11-08 (formal LastStop BveG): the judgement and its one diagnostic line replace the Shadow recorder; the sway_shadow_* functions are retired
                                    # Shadow sway diagnostics (on purpose): five functions that only READ the overlay (the sway Shadow state of its own, one diagnostic line behind desktop_log_enabled()); no score, no rule, no constant (tests/test_sway_shadow.py SG01 / SW_X01)
                                    # Stage TB-H (A re-stop wait; on purpose): the strict facts of the wait, the kept range, the removal of the chain's own popups, the two displays, the arrival at another station; no score, no rule, no constant of the scoring (tests/test_pt_tbh_arestop.py)
-                                   "turnback_train_state", "turnback_stop_range_capture", "turnback_drop_popups", "turnback_drop_arrival_results", "turnback_cancel_show", "turnback_restop_show", "turnback_other_arrival", "turnback_illegal_move_show", "turnback_held_a_target"},   # Stage TB-H 5b (on purpose): turnback_drop_arrival_results (the popup list filter of the cancellation); no score, no rule, no constant of the scoring (tests/test_pt_tbh_first_jump_10s.py)
+                                   "turnback_train_state", "turnback_stop_range_capture", "turnback_drop_popups", "turnback_drop_arrival_results", "turnback_cancel_show", "turnback_restop_show", "turnback_other_arrival", "turnback_illegal_move_show", "turnback_held_a_target", "scoring_feature_string"},   # INITIAL-DEFAULTS Commit 3 (on purpose): scoring_feature_string (the HUD feature text of the scoring settings); Stage TB-H 5b (on purpose): turnback_drop_arrival_results (the popup list filter of the cancellation); no score, no rule, no constant of the scoring (tests/test_pt_tbh_first_jump_10s.py)
                                    set(b))
         changed = sorted(n for n in a if a[n] != b[n])
         # only the diagnostic writer got the switch and (PID-D6) execute_retry's one transport line; no score, no rule, no constant
@@ -1830,8 +1839,9 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
         # Legacy scoring LC-3A (on purpose): reset_transient_scoring_state clears the stop jerk state at a Jump boundary and update_stop_jerk_penalty does not judge a sample while a Jump is outstanding;
         # LC-3B: update_physics_and_scoring replaces the last g_history entry when the clock time repeats; LC-4 / LC-4b: execute_retry refuses after the scoring finished and while the Jump group is unavailable;
         # the points, the rules and the constants are not among them (tests/test_lc3a_stop_jerk_boundary.py / test_lc3b_clock_freeze.py / test_lc4_retry_after_finish.py / test_lc4b_python_jump_state.py pin the behaviour)
-        self.assertEqual(changed, ["create_save_data", "evaluate_arrival", "evaluate_departure", "execute_retry", "reset_station_evaluation_state", "reset_transient_scoring_state", "update_initial_and_release_brake_penalty", "update_physics_and_scoring",
-                                   "update_stop_jerk_penalty", "write_limit_debug_log"])       # 2026-11-08: + update_initial_and_release_brake_penalty (the write-only CalcG parameter decel_g / hb_cushion_max_g is gone)
+        # INITIAL-DEFAULTS Commit 3 (on purpose): + add_score_popup, update_manual_emergency_brake_penalty, update_speed_limit_penalty (the settings are read through scoring_settings; the points, the rules and the constants are the same)
+        self.assertEqual(changed, ["add_score_popup", "create_save_data", "evaluate_arrival", "evaluate_departure", "execute_retry", "reset_station_evaluation_state", "reset_transient_scoring_state", "update_initial_and_release_brake_penalty",
+                                   "update_manual_emergency_brake_penalty", "update_physics_and_scoring", "update_speed_limit_penalty", "update_stop_jerk_penalty", "write_limit_debug_log"])       # 2026-11-08: + update_initial_and_release_brake_penalty (the write-only CalcG parameter decel_g / hb_cushion_max_g is gone)
 
     def test_the_config_constants_are_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":config.py")

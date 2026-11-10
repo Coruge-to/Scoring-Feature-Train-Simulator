@@ -107,7 +107,7 @@ GENERATION_DROP = frozenset({
 # the user's settings, the window state, the infrastructure and the input-hold bookkeeping: deliberately NOT discarded with a generation
 KEPT_ACROSS_GENERATIONS = frozenset({
     # user settings (HUD items, scoring switches, evaluation ranks, the debug switches)
-    "disp_settings", "settings_keys", "settings_names", "pen_eb", "pen_jerk", "pen_limit", "pen_ats", "rank_a_ratio", "rank_multi", "F8_disable",
+    "disp_settings", "settings_keys", "settings_names", "pen_eb", "pen_jerk", "pen_limit", "pen_ats", "pen_roll", "initial_defaults_loader", "rank_a_ratio", "rank_multi", "F8_disable",
     "enable_limit_debug_log", "debug_all_penalties", "show_graph", "menu_items_off", "menu_items_on",
     # window state of the BVE window (validated against the window handle before it is used again) and the link
     "is_borderless_fullscreen", "bve_original_placement", "bve_original_style", "bve_hwnd", "was_bve_found", "is_linked",

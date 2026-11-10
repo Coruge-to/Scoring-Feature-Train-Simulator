@@ -1,4 +1,4 @@
-﻿"""Stage UI-D4 (Owner contract 2026-11-08 after the live Run CUI-C-02). This FILE REPLACES tests/test_ui_single_dim.py (the single-dim contract of af46056, which the Owner withdrew).
+"""Stage UI-D4 (Owner contract 2026-11-08 after the live Run CUI-C-02). This FILE REPLACES tests/test_ui_single_dim.py (the single-dim contract of af46056, which the Owner withdrew).
 
 Contract (menu_ui.draw_menu), the dims of the F1 screens are LAYERED, one layer per step of the operation hierarchy:
   * F1 common layer alpha 220 (always, first), pop-up panel layer alpha 180, drop-down layer alpha 180, operation help layer alpha 180 - the two alphas are NOT unified, their effects multiply (the Owner's specification).
@@ -661,16 +661,16 @@ class Layered(Base):
             self.assertNotIn(word, block, "the drop-down screen is one Python implementation for the Current and the Legacy DLL")
 
 
-# Stage ENV-1 (on purpose; Owner contract 2026-11-08): __init__ (the new disp_settings key / name) and handle_menu_enter (the state 4 Enter acts on the VALUE cell, through toggle_disp_setting) are the two members of this list that changed
+# INITIAL-DEFAULTS Commit 3 (on purpose; INITIAL-DEFAULTS Commit 3): __init__ (the saved-defaults attributes), _handle_mouse and handle_menu_enter (the one A boundary clamp) changed; Stage ENV-1 (on purpose; Owner contract 2026-11-08): __init__ (the new disp_settings key / name) and handle_menu_enter (the state 4 Enter acts on the VALUE cell, through toggle_disp_setting) are the two members of this list that changed
 INPUT_PINS = {
     "main.py": {
-        "__init__": "915175b4f03acfa7",
+        "__init__": "c6b0eff750d4ee95",
         "_handle_keys": "2fdff247b333c919",
-        "_handle_mouse": "94ae4a8abbd9d38d",  # on purpose (8 x 1 cursor, 2026-11-09): only the menu_state 4 branch of the click handling (the selected row decides, no column); every other function of this table is unchanged
+        "_handle_mouse": "d9706338016528d3",  # on purpose (8 x 1 cursor, 2026-11-09): only the menu_state 4 branch of the click handling (the selected row decides, no column); every other function of this table is unchanged
         "_sync_operation_cursor": "b50358a62b2ca451",
         "handle_dropdown_enter": "7df61f96a2374b59",
         "handle_menu_backspace": "7dd171b8554bc6a4",
-        "handle_menu_enter": "b408872f0cdcb2b7",  # on purpose (8 x 1 cursor, 2026-11-09): only the Enter of the environment settings (menu_state 4) lost its column condition
+        "handle_menu_enter": "aeef7808eda8b981",  # on purpose (8 x 1 cursor, 2026-11-09): only the Enter of the environment settings (menu_state 4) lost its column condition
         "set_input_ownership": "1c828c7be1ba3a8f",
         "toggle_menu": "7a8d5f39518d3d06"
     },

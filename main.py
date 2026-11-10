@@ -59,7 +59,10 @@ from official_target_contract import advance as offtgt_advance, capture as offtg
 import hud_target_contract
 import effective_station_state as ess
 import telemetry_receiver_directory
+import initial_defaults
 import initial_defaults_ui
+import scoring_settings
+from scoring_settings import build as build_scoring_settings
 import utils
 
 KERNING_OFFSETS = {
@@ -219,6 +222,10 @@ class Overlay(QWidget):
         self.pen_jerk = True
         self.pen_limit = True
         self.pen_ats = False
+        self.pen_roll = True                 # INITIAL-DEFAULTS: rolling (転動) on / off - a scenario setting (its effect on the scoring comes with the next commit)
+        self._scoring_settings = None        # the running snapshot (scoring_settings.ScoringSettings) of the Run that is going on
+        self.initial_defaults_loader = initial_defaults.load      # reads the saved defaults at every scenario load (a test replaces it)
+        self._pending_all_timing = None      # (scenario generation, enabled) until the station list of that generation is known
         self.penalty_init_rules = [{"end_idx": -1, "apply": "ON①", "release": "ON①"}]
         self.init_summary_scroll = 0
         self.init_sub_scroll = 0
@@ -507,6 +514,7 @@ class Overlay(QWidget):
             self._station_identity_sync()                    # Phase ST-2a: AFTER the line is applied (and observed) and the station list is adopted, never before
             self._offtgt_sync()                              # Phase SI-R2.2-S2a: the line is judged again against the list it was sent with
             self._route_pairset_sync()                       # Stage TB-E: the route pair set of the line, judged against the adopted list and the current generation
+            self._initial_defaults_timing_sync()             # INITIAL-DEFAULTS: the all-timing setting, once the station list of this generation is adopted
 
         self._poll_jump_client()
         try:
@@ -1014,6 +1022,7 @@ class Overlay(QWidget):
                                 self.operational_stop_latch = None
                                 self.operational_stop_margins = None
 
+                            self._apply_initial_defaults(new_id)             # INITIAL-DEFAULTS: the scenario settings are regenerated from the saved defaults (the first scenario, another scenario and F5 alike)
                             route_pairset.clear(self, "scenario-change")      # Stage TB-E: a new scenario instance / F5: the route pair set (and the run's set) of the old one is void
                             self.needs_margin_recalc = True
                             self.current_scenario_id = new_id
@@ -1268,11 +1277,58 @@ class Overlay(QWidget):
         # the station of this Jump is the current station: its ACTUAL landing position is the anchor of the close-range departure protection of the next pair (the START / RETRY entry; the arrival path is evaluate_arrival)
         close_range_fix_landing_stop(self, verdict.selected_idx, verdict.actual_location)
 
+    def _apply_initial_defaults(self, generation):
+        """INITIAL-DEFAULTS: regenerates the scenario settings (the F1 attributes) from the saved defaults, read from the file NOW (no file = the builtin values). Values are copied: nothing is shared with the defaults.
+        The safety intervention is always OFF. The all-timing setting waits for the station list of this generation (_initial_defaults_timing_sync)."""
+        try:
+            defaults = self.initial_defaults_loader().defaults
+        except Exception:
+            defaults = initial_defaults.builtin_defaults()
+        settings = dict(zip(initial_defaults.ENV_F1_KEYS, [bool(v) for v in defaults.environment]))
+        initial_defaults.normalize_speed_limit_settings(settings)
+        self.disp_settings = settings
+        p = defaults.penalties
+        self.pen_roll = bool(p.rolling)
+        self.pen_limit = bool(p.speed_limit_exceeded)
+        self.pen_jerk = bool(p.stop_shock)
+        self.pen_eb = bool(p.emergency_brake)
+        self.pen_ats = False
+        mark = "ON①" if p.initial_release_brake == "on1" else "OFF"
+        self.penalty_init_rules = [{"end_idx": -1, "apply": mark, "release": mark}]
+        self.rank_a_ratio = initial_defaults.a_rank_percent_to_ratio(defaults.a_rank_percent) if initial_defaults.a_rank_percent_valid(defaults.a_rank_percent) else 0.6
+        self._pending_all_timing = (generation, bool(defaults.all_changeable_non_timed_to_timed))
+
+    def _initial_defaults_timing_sync(self):
+        """Applies the all-timing setting ONCE per scenario generation, when the station list of that generation is known."""
+        pending = self._pending_all_timing
+        if pending is None:
+            return
+        generation, enabled = pending
+        if generation != getattr(self, 'current_scenario_id', -1):
+            self._pending_all_timing = None
+            return
+        if not self.station_list or not getattr(self, 'bve_list_id', ""):
+            return
+        self._pending_all_timing = None
+        if enabled:
+            self.apply_all_changeable_non_timed_as_timed(True)
+
+    def apply_all_changeable_non_timed_as_timed(self, enabled):
+        """IDEMPOTENT (never the F1 toggle): enabled makes every CHANGEABLE non-timed station of the settings range timed; the fixed contracts (the scoring start, the pseudo-turnback B) always win; False changes nothing."""
+        if not enabled:
+            return
+        for idx in self.get_timing_target_stas():
+            if untimed_reason(self, idx) is not None:
+                continue
+            if not self.station_list[idx].get("is_timing", False):
+                self.user_timing_overrides[idx] = True
+
     def is_station_timing(self, sta_idx):
         if untimed_reason(self, sta_idx) is not None:         # Stage TB-H: the start of the Run (UNTIMED_SCORING_START) and the B of every pair that the section crosses (UNTIMED_TURNBACK_B) are untimed by contract, whatever an override says
             return False
-        if sta_idx in self.user_timing_overrides:
-            return self.user_timing_overrides[sta_idx] 
+        has_override, override = scoring_settings.timing_override(self, sta_idx)
+        if has_override:
+            return override
         if 0 <= sta_idx < len(self.station_list):
             return self.station_list[sta_idx].get("is_timing", False) 
         return False
@@ -1525,19 +1581,13 @@ class Overlay(QWidget):
     # Stage ENV-1 (Owner contract 2026-11-08): the ONE place that changes the environment settings (the keyboard Enter, the mouse - which comes to handle_menu_enter - and the normalisation all use it).
     # The speed limit advance (制限速度予告: the red / blue blink warnings of the HUD speed limit row) can only be ON while the speed limit (制限速度) is ON: the state (limit OFF, advance ON) does not exist.
     def set_speed_limit_visible(self, enabled):
-        self.disp_settings["limit"] = bool(enabled)
-        self.normalize_speed_limit_settings()
+        initial_defaults.set_speed_limit(self.disp_settings, enabled)
 
     def set_speed_limit_advance_visible(self, enabled):
-        self.disp_settings["limit_advance"] = bool(enabled)
-        if self.disp_settings["limit_advance"]:
-            self.disp_settings["limit"] = True
-        self.normalize_speed_limit_settings()
+        initial_defaults.set_speed_limit_advance(self.disp_settings, enabled)
 
     def normalize_speed_limit_settings(self):
-        settings = self.disp_settings
-        if not settings.get("limit", True):
-            settings["limit_advance"] = False
+        initial_defaults.normalize_speed_limit_settings(self.disp_settings)
 
     def set_disp_setting(self, key, enabled):
         if key == "limit":
@@ -1756,7 +1806,7 @@ class Overlay(QWidget):
         elif self.menu_state == 10:
             if getattr(self, 'input_mode_active', False): return
             if self.menu_cursor == 0:
-                self.rank_a_ratio = max(0.50, round(self.rank_a_ratio - 0.01, 2))
+                self.rank_a_ratio = initial_defaults.clamp_a_rank_ratio(self.rank_a_ratio - 0.01)
 
     def handle_menu_right(self):
         if self.menu_state == 5:
@@ -1795,7 +1845,7 @@ class Overlay(QWidget):
         elif self.menu_state == 10:
             if getattr(self, 'input_mode_active', False): return
             if self.menu_cursor == 0:
-                self.rank_a_ratio = min(0.9, round(self.rank_a_ratio + 0.01, 2))
+                self.rank_a_ratio = initial_defaults.clamp_a_rank_ratio(self.rank_a_ratio + 0.01)
 
     def handle_menu_enter(self, is_bve_advancing):
         if self.menu_state == 1:
@@ -2045,8 +2095,7 @@ class Overlay(QWidget):
                     if self.input_buffer:
                         try:
                             val = int(self.input_buffer)
-                            if not (50 <= val <= 90): val = 70
-                            self.rank_a_ratio = val / 100.0
+                            self.rank_a_ratio = initial_defaults.a_rank_percent_to_ratio(val) if initial_defaults.a_rank_percent_valid(val) else 0.7      # an input out of 50..90 is 70 (the F1 contract)
                         except ValueError: pass
                     self.input_mode_active = False
                     
@@ -2068,6 +2117,7 @@ class Overlay(QWidget):
                     return
                 turnback_fix_section(self)                 # OD-TB-26 / OD-TB-24: the section the scoring crosses is fixed HERE, once
                 self._scoring_section = build_scoring_section(self)      # Stage TB-D (OD-TD-4): start / end / section / generation / crossed pairs of THIS Run, immutable, the only running source
+                self._scoring_settings = build_scoring_settings(self)    # INITIAL-DEFAULTS: the scoring settings of THIS Run (the six penalties, the A boundary, the timing), immutable, the only running source
                 self.internal_abort_reason = ""
                 self.is_scoring_mode = True
                 reset_result_display_state(self)
@@ -2725,8 +2775,7 @@ class Overlay(QWidget):
             if slider_y - 100 <= ly <= slider_y + 100:
                 # X座標からパーセンテージを逆算
                 pct = (lx - slider_x) / slider_w
-                pct = max(0.50, min(0.9, pct))
-                self.rank_a_ratio = round(pct, 2)
+                self.rank_a_ratio = initial_defaults.clamp_a_rank_ratio(pct)
                 self.menu_cursor = 0 # カーソルをスライダーに合わせる
                 self.input_mode_active = False # 手入力をキャンセル
         if is_left_clicked and not self.last_left_click:

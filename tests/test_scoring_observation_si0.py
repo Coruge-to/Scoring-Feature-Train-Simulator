@@ -105,8 +105,10 @@ class B_WhatTheSpeedLimitScoreAndTheGuidanceNeed(unittest.TestCase):
 
     def test_the_speed_limit_score_reads_effective_limit_speed_and_the_user_setting_only(self):
         a = attrs_of(self.fn["update_speed_limit_penalty"])
-        for needed in ("effective_limit", "bve_speed", "pen_limit", "is_scoring_mode", "is_scoring_finished", "is_official_jumping", "is_first_udp"):
+        for needed in ("effective_limit", "bve_speed", "is_scoring_mode", "is_scoring_finished", "is_official_jumping", "is_first_udp"):
             self.assertIn(needed, a)
+        # INITIAL-DEFAULTS Commit 3 (on purpose): the user setting (pen_limit) is read through scoring_settings.value (the running snapshot while a Run is active; the live pen_limit before the start)
+        self.assertIn('scoring_settings.value(self, "speed_limit_exceeded")', source_of("scoring_logic.py", self.fn["update_speed_limit_penalty"]))
         for forbidden in ("bve_map_limits", "bve_clear_dist", "map_head_limit", "map_tail_limit", "bve_train_length", "bve_fwd_sig_limit", "bve_fwd_sig_loc",
                           "bve_signal_limit"):
             self.assertNotIn(forbidden, a)
@@ -119,7 +121,8 @@ class B_WhatTheSpeedLimitScoreAndTheGuidanceNeed(unittest.TestCase):
 
     def test_the_limit_penalty_default_is_on(self):
         self.assertIn("self.pen_limit = True", read("main.py"))
-        self.assertIn("getattr(self, 'pen_limit', True)", source_of("scoring_logic.py", self.fn["update_speed_limit_penalty"]))
+        self.assertIn('scoring_settings.value(self, "speed_limit_exceeded")', source_of("scoring_logic.py", self.fn["update_speed_limit_penalty"]))      # INITIAL-DEFAULTS Commit 3 (on purpose)
+        self.assertIn('"speed_limit_exceeded": ("pen_limit", True)', read("scoring_settings.py"))
 
     def test_MAPLIMITS_and_CLEARDIST_feed_only_the_guidance_of_update_physics_and_scoring(self):
         users = {}
@@ -402,7 +405,7 @@ class E_TheSeamsOfUpdateLogic(unittest.TestCase):
             loaded = {n.id for n in ast.walk(func) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
             external |= {n for n in loaded - local if not hasattr(builtins, n)}
         self.assertEqual(external, {"QApplication", "keyboard", "win32gui", "win32api", "win32con", "time", "write_desktop_log", "reset_transient_scoring_state",
-                                    "update_physics_and_scoring", "BASE_SCREEN_W", "BASE_SCREEN_H"})
+                                    "update_physics_and_scoring", "BASE_SCREEN_W", "BASE_SCREEN_H", "initial_defaults"})      # INITIAL-DEFAULTS Commit 3 (on purpose): initial_defaults (the shared F1 state functions and the one A boundary clamp, used by the menu key handlers of update_logic)
 
     def test_there_is_no_other_caller_of_update_logic_than_the_timer(self):
         t = ast.parse(read("main.py"))
