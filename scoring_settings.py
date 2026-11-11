@@ -27,7 +27,7 @@ LIVE = {
     "speed_limit_exceeded": ("pen_limit", True),
     "stop_shock": ("pen_jerk", True),
     "emergency_brake": ("pen_eb", True),
-    "a_rank_ratio": ("rank_a_ratio", 0.7),
+    "a_rank_ratio": ("rank_a_ratio", 0.6),
 }
 DEFAULT_INIT_RULES = [{"apply": "ON①", "release": "ON①"}]
 
@@ -44,7 +44,7 @@ def build(overlay):
         stop_shock=bool(getattr(overlay, "pen_jerk", True)),
         emergency_brake=bool(getattr(overlay, "pen_eb", True)),
         init_rules=rules,
-        a_rank_ratio=float(getattr(overlay, "rank_a_ratio", 0.7)),
+        a_rank_ratio=float(getattr(overlay, "rank_a_ratio", 0.6)),
         timing_overrides=overrides)
 
 

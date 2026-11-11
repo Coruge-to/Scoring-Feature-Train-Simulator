@@ -1795,10 +1795,12 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
             'if getattr(self, \'pen_limit\', True): f_list.append("[制限超]")', 'if getattr(self, \'pen_jerk\', True): f_list.append("[衝動]")', 'if getattr(self, \'pen_eb\', True): f_list.append("[EB]")',
             "if is_ats_signal_ignore_effective(getattr(self, 'pen_ats', False)): f_list.append(\"[ATS]\")", 'self.active_features_str = " ".join(f_list) if f_list else "すべてOFF"',
         )
+        # INITIAL-DEFAULTS Stage F2 (on purpose; Owner 2026-11-11): the label of the safety intervention row in the Desktop log breakdown is the user-visible name 保安装置介入 (the old name ATS信号無視 left this one log line; the internal key 'ats' stays)
+        stage_f2_desktop_log_label = ('write_desktop_log(f"  ATS信号無視: {self.score_details.get(\'ats\', 0)}")',)
         self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport) + tbd_running_end_judgement + pseudo_turnback_a_seam + st2a_checkpoint_identity + st2b_retry_by_saved_index
                                    + st3d_request_by_the_one_builder + st2c_first_station_distance + timefix_b_departure_margins + timefix_b3_zero_speed_and_jump_boundary
                                    + close_range_shared_basic_braking_init + si_r5_2a_p03_target_index + si_r5_2b_arrival_target_index + si_r5_2c_departure_prev_target_index
-                                   + lc3b_same_time_history_replace + stage_tbh6_illegal_move_wording + formal_bveg_retired + initial_defaults_settings_reads], removed)
+                                   + lc3b_same_time_history_replace + stage_tbh6_illegal_move_wording + formal_bveg_retired + initial_defaults_settings_reads + stage_f2_desktop_log_label], removed)
 
     def test_the_scoring_function_bodies_are_ast_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":scoring_logic.py")

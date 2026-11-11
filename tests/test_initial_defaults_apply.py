@@ -380,7 +380,7 @@ class RunningSnapshot(Base):
         import types
         bare = types.SimpleNamespace()
         V = self.SS.value
-        self.assertEqual((V(bare, "rolling"), V(bare, "speed_limit_exceeded"), V(bare, "stop_shock"), V(bare, "emergency_brake"), V(bare, "a_rank_ratio")), (True, True, True, True, 0.7))
+        self.assertEqual((V(bare, "rolling"), V(bare, "speed_limit_exceeded"), V(bare, "stop_shock"), V(bare, "emergency_brake"), V(bare, "a_rank_ratio")), (True, True, True, True, 0.6))           # INITIAL-DEFAULTS Stage F2 (Owner 2026-11-11): the default A boundary is 60
         live = types.SimpleNamespace(pen_roll=False, pen_limit=True, pen_jerk=False, pen_eb=True, rank_a_ratio=0.81)
         self.assertEqual((V(live, "rolling"), V(live, "speed_limit_exceeded"), V(live, "stop_shock"), V(live, "emergency_brake"), V(live, "a_rank_ratio")), (False, True, False, True, 0.81))
 

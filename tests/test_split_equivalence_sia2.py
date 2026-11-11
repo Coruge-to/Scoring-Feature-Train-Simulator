@@ -331,7 +331,8 @@ class SiAScopeOfMain(unittest.TestCase):
                               'valid_stas = []', 'valid_stas.append({"idx": 0, "name": self.station_list[0]["name"]})', 'valid_stas.append({"idx": i, "name": s["name"]})',
                               "self.udp_socket.writeDatagram(retry_cmd.encode('utf-8'), QHostAddress.SpecialAddress.LocalHost, 54322)", "getattr(self, 'save_data', []).append({", "})",
                               "execute_retry(self, getattr(self, 'target_retry_idx', -1), is_bve_advancing)", "# 始発駅以外へのリトライをSランク判定用の回数へ加算する",
-                              "if getattr(self, 'target_retry_idx', -1) > 0:", "self.total_retry_count += 1"}
+                              "if getattr(self, 'target_retry_idx', -1) > 0:", "self.total_retry_count += 1",
+                              "try:", "val = int(self.input_buffer)", "except ValueError: pass", "if self.input_buffer:"}      # INITIAL-DEFAULTS Stage F2 (on purpose; Owner 2026-11-11): the A boundary confirm goes through the shared initial_defaults.normalize_a_rank_percent: the try / int() / except lines and the `if self.input_buffer:` condition of the old confirm left (an EMPTY input is 60 as well)
                               # Phase ST-3d (on purpose): the scoring start builds its request BEFORE anything of the scoring is changed, by the one builder of the Jump wire v2: the computation of the start
                               # position / time / command moved to Overlay._scoring_start_plan (the v1 text assembly and the guard around it left). These are the 32 distinct lines (stripped) that the diff shows
                               # as removed from handle_menu_enter; no score, no rule and no constant is among them (the start time rule moved unchanged).

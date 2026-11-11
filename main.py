@@ -239,7 +239,7 @@ class Overlay(QWidget):
         self.is_fast_forwarding = False
 
         # 評価ランクの閾値とSランク判定に使用する状態
-        self.rank_a_ratio = 0.7  # Aランクの閾値 (0.60 ～ 1.00)
+        self.rank_a_ratio = 0.6  # Aランクの閾値 (0.50 ～ 0.90。導入時既定は60%)
         self.rank_multi = 0.7    # Rank B・Cの減衰倍率
         self.theoretical_score = 0 # 理論値
         self.total_retry_count = 0 # Sランク判定用のやり直し回数
@@ -1534,6 +1534,8 @@ class Overlay(QWidget):
         )
 
     def apply_numeric_char(self, char):
+        if not (type(char) is str and len(char) == 1 and char in "0123456789"):                # ASCII digits only (a full-width digit, a sign, a space, a decimal point never enter a numeric input)
+            return
         if self.input_fresh:
             self.input_buffer = char
             self.input_fresh = False
@@ -2095,11 +2097,9 @@ class Overlay(QWidget):
                     self.input_buffer = "" 
                     self.input_fresh = True
                 else:
-                    if self.input_buffer:
-                        try:
-                            val = int(self.input_buffer)
-                            self.rank_a_ratio = initial_defaults.a_rank_percent_to_ratio(val) if initial_defaults.a_rank_percent_valid(val) else 0.7      # an input out of 50..90 is 70 (the F1 contract)
-                        except ValueError: pass
+                    # the shared confirm rule: 50..90 is adopted; 00..49, 91..99, one digit and an EMPTY input are 60 - silently (F1 shows no notice)
+                    percent, _corrected = initial_defaults.normalize_a_rank_percent(self.input_buffer)
+                    self.rank_a_ratio = initial_defaults.a_rank_percent_to_ratio(percent)
                     self.input_mode_active = False
                     
             elif self.menu_cursor == 1: # 「採点を開始する」
@@ -2265,6 +2265,12 @@ class Overlay(QWidget):
             self.input_fresh = False 
             if len(getattr(self, 'input_buffer', "")) > 0: self.input_buffer = self.input_buffer[:-1]
             return
+        if self.menu_state == 10 and self.menu_cursor == 0 and getattr(self, 'input_mode_active', False):
+            # the A boundary input: Backspace deletes the last typed character ONLY (an empty input stays empty and the edit goes on; nothing is confirmed, restored or cancelled, and no other setting - the stop distance included - is touched).
+            # The page is left by a Backspace after the Enter that ended the edit.
+            self.input_fresh = False
+            if len(getattr(self, 'input_buffer', "")) > 0: self.input_buffer = self.input_buffer[:-1]
+            return
 
         if self.menu_state == 1: self.toggle_menu(is_bve_advancing)
         elif self.menu_state == 2:
@@ -2291,11 +2297,8 @@ class Overlay(QWidget):
         elif self.menu_state == 9:
             self.menu_state = 6
         elif self.menu_state == 10:
-            if getattr(self, 'input_mode_active', False):
-                self.finalize_margin_input() # 入力モード解除用流用
-            else:
-                self.menu_state = 6
-                self.menu_cursor = 6
+            self.menu_state = 6                                  # (an A boundary input in progress never gets here: it is handled above; the old call of finalize_margin_input - the STOP DISTANCE confirm - is gone)
+            self.menu_cursor = 6
         elif self.menu_state == 12:
             self.menu_state = 1
             if "採点を中断する" in getattr(self, 'current_menu_items', []):

@@ -10,7 +10,7 @@ import math
 import sys
 
 from PyQt6.QtCore import QRect, Qt, QTimer
-from PyQt6.QtGui import QColor, QImage, QPainter, QPalette
+from PyQt6.QtGui import QColor, QImage, QPainter, QPalette, QValidator
 from PyQt6.QtWidgets import QApplication, QProxyStyle, QStyle, QStyleFactory, QStyleOptionButton, QStyleOption, QStyleOptionSpinBox, QStylePainter, QCheckBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSpinBox, QToolButton, QVBoxLayout, QWidget
 
 import config
@@ -23,7 +23,7 @@ ENV_LABELS = ("現在時刻", "残り時間", "現在速度", "制限速度", "�
 TIMING_LABEL = "変更可能な非採時駅を全て採時駅にする"
 PENALTY_LABELS = (("pen_rolling", "転動"), ("pen_safety", "保安装置介入"), ("pen_speed", "速度制限超過"), ("pen_shock", "停車時衝動"), ("pen_eb", "非常ブレーキ"), ("pen_init", "初動・緩和ブレーキ"))
 PRESET_BUTTONS = (("beginner", "初級", config.COLOR_N), ("intermediate", "中級", config.COLOR_P), ("advanced", "上級", config.COLOR_B_EMG))
-A_RANK_INVALID = "50〜90の整数で入力してください。"
+A_RANK_INVALID = "50～90の整数を入力してください。"
 SAVE_FAILED = "保存できませんでした。"
 MUTEX_NAME = "Local\\TSScoring.InitialDefaults.v1"
 ERROR_ALREADY_EXISTS = 183
@@ -325,6 +325,7 @@ class FocusWheelSpinBox(QSpinBox):
         self.setWrapping(False)
         self.setSingleStep(1)
         self.arrow_buttons = None
+        self.finishing_text = None
 
     def place_arrow_buttons(self):
         """The up button covers the upper half plus one row, the down button the lower half: no gap, one shared boundary row."""
@@ -335,6 +336,37 @@ class FocusWheelSpinBox(QSpinBox):
         half = inner // 2
         up.setGeometry(self.width() - 1 - SPIN_BUTTON_WIDTH, 1, SPIN_BUTTON_WIDTH, half + 1)
         down.setGeometry(self.width() - 1 - SPIN_BUTTON_WIDTH, 1 + half, SPIN_BUTTON_WIDTH, inner - half)
+
+    def validate(self, text, pos):
+        """The editable text of the A boundary (the shared rule of initial_defaults.a_rank_text_allowed): ASCII digits, 2 at most, 00..99 while typing / pasting / committing from an IME; anything else (sign, space, point, a full-width digit, a 3rd digit)
+        is refused. The value range 50..90 is judged at the OK (D.normalize_a_rank_percent), never while typing."""
+        if not D.a_rank_text_allowed(text):
+            return QValidator.State.Invalid, text, pos
+        return (QValidator.State.Acceptable if text and D.a_rank_percent_valid(int(text)) else QValidator.State.Intermediate), text, pos
+
+    def keep_refused_text(self, call):
+        """Qt writes the last valid value back into the field when the field is left or Enter is pressed (an out-of-range / empty text is not a value). The OK of this window must still SEE what the user typed (49 / empty -> the input error),
+        so the typed text is remembered in `finishing_text` while Qt interprets it (editingFinished is emitted inside) and put back afterwards. A valid value is not touched."""
+        edit = self.lineEdit()
+        raw = edit.text()
+        self.finishing_text = raw
+        try:
+            call()
+        finally:
+            self.finishing_text = None
+        if edit.text() != raw and D.a_rank_text_allowed(raw) and not (raw and D.a_rank_percent_valid(int(raw))):
+            blocked = edit.blockSignals(True)
+            edit.setText(raw)
+            edit.blockSignals(blocked)
+
+    def focusOutEvent(self, event):
+        self.keep_refused_text(lambda: QSpinBox.focusOutEvent(self, event))
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.keep_refused_text(lambda: QSpinBox.keyPressEvent(self, event))
+        else:
+            QSpinBox.keyPressEvent(self, event)
 
     def resizeEvent(self, event):
         QSpinBox.resizeEvent(self, event)
@@ -589,6 +621,8 @@ def build_dialog(defaults, save):
         for object_name, value in values.items():
             dialog.findChild(QWidget, object_name).setChecked(bool(value))
         spin.setValue(percent)
+        spin.lineEdit().setText(str(percent))                      # the field shows the preset value even when its text was an unconfirmed input (setValue alone keeps the text when the value did not change)
+        set_reason("input_error", False)                         # a preset ends the input error (the A boundary is a valid value again)
 
     for key, button in preset_buttons:
         button.clicked.connect(lambda checked=False, k=key: apply_preset(k))
@@ -636,19 +670,43 @@ def build_dialog(defaults, save):
     bottom.addWidget(ok)
     root.addLayout(bottom)
 
+    # TWO independent reasons share the one lower-left message area; they are never one internal reason. The save failure has the priority over the input error.
+    reasons = {"input_error": False, "save_failed": False}
+
+    def refresh_message():
+        message.setText(SAVE_FAILED if reasons["save_failed"] else (A_RANK_INVALID if reasons["input_error"] else ""))
+
+    def set_reason(name, on):
+        reasons[name] = bool(on)
+        refresh_message()
+
+    def on_spin_finished():
+        """A valid 50..90 typed and confirmed (the field left / Enter) ends the input error. Leaving the field with anything else shows nothing: the error appears only at OK."""
+        text = spin.finishing_text if spin.finishing_text is not None else spin.lineEdit().text()      # what was typed (Qt has already written the last valid value back when it emits this signal)
+        if text and D.a_rank_text_allowed(text) and D.a_rank_percent_valid(int(text)):
+            set_reason("input_error", False)
+
+    spin.editingFinished.connect(on_spin_finished)
+
     def on_ok():
-        text = spin.lineEdit().text().strip() if spin.lineEdit() is not None else str(spin.value())
-        if not (text.isascii() and text.isdigit() and D.a_rank_percent_valid(int(text))):         # an empty / non-integer / out-of-range input is refused: never clamped silently, nothing is saved
-            message.setText(A_RANK_INVALID)
+        set_reason("save_failed", False)                           # a new attempt: the previous save failure is judged again
+        text = spin.lineEdit().text() if spin.lineEdit() is not None else str(spin.value())
+        percent, corrected = D.normalize_a_rank_percent(text) if text else (D.A_RANK_BUILTIN_PERCENT, True)
+        if corrected:                                              # out of range / empty / not an ASCII integer: the field goes back to 60, NOTHING is saved, the window stays open, the field has the focus again
+            spin.setValue(percent)
+            spin.lineEdit().setText(str(percent))
             spin.setFocus()
             spin.selectAll()
+            set_reason("input_error", True)
             return
+        spin.setValue(percent)
         try:
             save(collect(dialog))
         except (ValueError, D.SaveError, OSError):
-            message.setText(SAVE_FAILED)
+            set_reason("save_failed", True)
             return
-        message.setText("")
+        reasons["input_error"] = reasons["save_failed"] = False
+        refresh_message()
         dialog.accept()
 
     ok.clicked.connect(lambda checked=False: on_ok())

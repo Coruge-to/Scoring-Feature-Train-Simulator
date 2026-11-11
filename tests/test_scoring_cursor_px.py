@@ -263,7 +263,7 @@ class Cursors(unittest.TestCase):
         self.assertFalse(o.input_mode_active)
         o.input_mode_active, o.input_buffer = True, "40"
         o.handle_menu_enter(False)
-        self.assertEqual(round(o.rank_a_ratio, 2), 0.70, "outside 50..90: the default 70 as before")
+        self.assertEqual(round(o.rank_a_ratio, 2), 0.60, "outside 50..90: 60, silently (INITIAL-DEFAULTS Stage F2, Owner 2026-11-11; it was 70 before)")
 
 
 if __name__ == "__main__":

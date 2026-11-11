@@ -859,9 +859,9 @@ class Env(unittest.TestCase):
         self.assertIn('if self.blink_active and hud_item_visible(self, "limit_advance"):', hud, "ENV-RED: the blink branch is entered only when the advance is shown (no transparent colour)")
 
     def test_guard_62_input_ownership_and_cursor_q3_functions_are_unchanged(self):
-        """the functions of main.py around the input ownership, Alt+F4, the Input Device switch and the Cursor-Q3 arrow are the ones of commit 1 (their AST hashes). ON PURPOSE (8 x 1 cursor, 2026-11-09): only _handle_mouse differs - its menu_state 4 branch (the selected row decides, no column); every other function is the one of 12998d3"""
+        """the functions of main.py around the input ownership, Alt+F4, the Input Device switch and the Cursor-Q3 arrow are the ones of commit 1 (their AST hashes). ON PURPOSE (8 x 1 cursor, 2026-11-09): only _handle_mouse differs - its menu_state 4 branch (the selected row decides, no column); every other function is the one of 12998d3. ON PURPOSE (INITIAL-DEFAULTS Stage F2, Owner 2026-11-11): handle_menu_backspace - the Backspace of the A boundary input deletes the last typed character (the old call of the stop distance confirm is gone; the pre-F2 pin was 7dd171b8554bc6a4)"""
         pinned = {"_handle_keys": "2fdff247b333c919", "_handle_mouse": "d9706338016528d3", "_sync_operation_cursor": "b50358a62b2ca451", "handle_dropdown_enter": "7df61f96a2374b59",
-                  "handle_menu_backspace": "7dd171b8554bc6a4", "set_input_ownership": "1c828c7be1ba3a8f", "toggle_menu": "7a8d5f39518d3d06"}
+                  "handle_menu_backspace": "f1342317d4d395d1", "set_input_ownership": "1c828c7be1ba3a8f", "toggle_menu": "7a8d5f39518d3d06"}
         tree = ast.parse(source("main.py"))
         got = {n.name: hashlib.sha256(ast.dump(n).encode("utf-8")).hexdigest()[:16] for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name in pinned}
         self.assertEqual(got, pinned)

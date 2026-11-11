@@ -1742,7 +1742,7 @@ def evaluate_arrival(self, current_time, arrival_target_loc=None):
             write_desktop_log(f"  緩和ブレーキ: {self.score_details.get('rel_brake', 0)}")
             write_desktop_log(f"  非常ブレーキ: {self.score_details.get('eb', 0)}")
             write_desktop_log(f"  速度制限超過: {self.score_details.get('limit', 0)}")
-            write_desktop_log(f"  ATS信号無視: {self.score_details.get('ats', 0)}")
+            write_desktop_log(f"  保安装置介入: {self.score_details.get('ats', 0)}")
             write_desktop_log("----------------------------------------------")
             write_desktop_log(f"  内訳の合計: {total_details} 点")
             write_desktop_log(f"  実際の総合得点(self.score): {self.score} 点")

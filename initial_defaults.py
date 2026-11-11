@@ -95,6 +95,22 @@ def a_rank_percent_to_ratio(percent):
     return round(percent / 100.0, 2)
 
 
+def a_rank_text_allowed(text):
+    """The editable text of the A boundary (the 'initial defaults' window and F1): ASCII digits 0-9 only, 2 digits at most (00..99 while editing; the empty text is allowed). No sign, no space, no decimal point, no full-width digit."""
+    return type(text) is str and len(text) <= 2 and all(c in "0123456789" for c in text)
+
+
+def normalize_a_rank_percent(text):
+    """The ONE confirm rule of the A boundary text, shared by the 'initial defaults' window (OK) and F1 (Enter). Returns (percent, corrected):
+    50..90 is kept (corrected False); 00..49, 91..99, a single digit, an empty text or any other text is A_RANK_BUILTIN_PERCENT (60, corrected True). F1 applies the 60 silently; the window uses `corrected` to show the input error
+    (and does not save in that same OK)."""
+    if type(text) is str and 1 <= len(text) <= 2 and all(c in "0123456789" for c in text):
+        value = int(text)
+        if a_rank_percent_valid(value):
+            return value, False
+    return A_RANK_BUILTIN_PERCENT, True
+
+
 def clamp_a_rank_ratio(ratio):
     """The one clamp of the F1 value (the ratio 0.50..0.90, 2 digits)."""
     return max(A_RANK_MIN_PERCENT / 100.0, min(A_RANK_MAX_PERCENT / 100.0, round(float(ratio), 2)))

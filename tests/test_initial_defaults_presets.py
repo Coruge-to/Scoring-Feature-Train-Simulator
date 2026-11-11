@@ -154,16 +154,18 @@ class Presets(Base):
         self.assertEqual(got.a_rank_percent, 55)
         self.assertEqual((got.penalties.speed_limit_exceeded, got.penalties.initial_release_brake), (True, "on1"), "the advanced deductions stay")
 
-    def test_an_a_boundary_out_of_range_is_refused_at_the_save_and_never_clamped(self):
+    def test_an_a_boundary_out_of_range_is_not_saved_by_the_correcting_ok(self):
+        """INITIAL-DEFAULTS Stage F2 (Owner 2026-11-11): the OK on an out-of-range value goes back to 60, shows the red input error and saves NOTHING (a second OK saves 60); it was a plain refusal before."""
         d = self.make()
         d.show()
         spin = self.find(d, "a_rank")
         spin.setRange(0, 100)                                            # (a window that let a wrong value through)
         spin.setValue(49)
         self.find(d, "ok").click()
-        self.assertFalse(os.path.exists(self.path), "ID5-RED: an out-of-range A boundary was saved (or clamped and saved)")
+        self.assertFalse(os.path.exists(self.path), "ID5-RED: an out-of-range A boundary was saved by the correcting OK")
         self.assertTrue(d.isVisible(), "the window stays open")
-        self.assertTrue(self.find(d, "message").text())
+        self.assertEqual(self.find(d, "message").text(), self.U.A_RANK_INVALID)
+        self.assertEqual(spin.value(), 60, "the field went back to 60")
 
     def test_close_discards_a_preset_and_ok_saves_the_result(self):
         d = self.make()

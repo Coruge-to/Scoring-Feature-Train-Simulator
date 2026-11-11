@@ -1370,7 +1370,7 @@ def draw_menu(self, painter, logical_width, _parent=False):
         draw_text_with_outline(painter, title_text, self.font_big, MENU_TEXT, MENU_OUTLINE, center_x, title_y, "center", passes=8)
 
         # 数値の計算
-        rank_a_pct = int(round(getattr(self, 'rank_a_ratio', 0.70) * 100))
+        rank_a_pct = int(round(getattr(self, 'rank_a_ratio', 0.60) * 100))
         rank_multi = getattr(self, 'rank_multi', 0.70)
 
         rank_b_pct = int(round(rank_a_pct * rank_multi))
@@ -1755,7 +1755,7 @@ def draw_menu(self, painter, logical_width, _parent=False):
         total_score = getattr(self, 'score', 0)
         retries = getattr(self, 'total_retry_count', 0)
         
-        rank_a_pct = int(round(getattr(self, 'rank_a_ratio', 0.70) * 100))
+        rank_a_pct = int(round(getattr(self, 'rank_a_ratio', 0.60) * 100))
         rank_multi = getattr(self, 'rank_multi', 0.70)
 
         rank_b_pct = int(round(rank_a_pct * rank_multi))
