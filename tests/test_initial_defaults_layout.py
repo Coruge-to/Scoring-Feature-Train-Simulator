@@ -197,29 +197,11 @@ class Round12(Layout):
         item = self.find(d, "pen_rolling"); b0 = self.find(d, "preset_beginner")
         self.assertEqual(b0.mapTo(d, b0.rect().topLeft()).x(), item.mapTo(d, item.rect().topLeft()).x())
 
-    def test_the_header_colour_is_set_for_this_dialog_only_through_the_caption_attribute(self):
-        calls = []
-        recorded = self.U.set_header_colour
-        self.assertEqual(self.U.HEADER_RGB, (0xF1, 0xF3, 0xF6))
-        ok = recorded(1234, set_attribute=lambda h, attr, ref, size: calls.append((int(h.value), attr, ref._obj.value, size)) or 0)
-        self.assertTrue(ok if sys.platform == "win32" else not ok)
-        if sys.platform == "win32":
-            self.assertEqual(calls, [(1234, 35, 0xF6F3F1, 4)], "UI12-RED: DWMWA_CAPTION_COLOR with COLORREF 0x00F6F3F1 for the one window handle")
-        self.assertFalse(recorded(1, set_attribute=lambda *a: 5), "a failure changes nothing and does not raise")
-
-    def test_showing_the_dialog_colours_its_own_window_handle_once(self):
-        seen = []
-        original = self.U.set_header_colour
-        self.U.set_header_colour = lambda hwnd, *a, **k: seen.append(hwnd) or True
-        self.addCleanup(setattr, self.U, "set_header_colour", original)
-        d = self.make()
-        self.assertEqual(seen, [int(d.winId())], "UI12-RED: the header colour is applied to this dialog's handle only")
-
-    def test_the_header_colour_code_touches_no_application_or_theme_setting(self):
+    def test_the_title_bar_is_the_standard_windows_one_no_colour_code_is_left(self):
+        """INITIAL-DEFAULTS U4-A (Owner 2026-11-11): the fixed title bar colour (DWMWA_CAPTION_COLOR, #F1F3F6) was removed; Windows draws the standard title bar. (The contract is pinned in tests/test_initial_defaults_u4.py.)"""
         src = open(os.path.join(ROOT, "initial_defaults_ui.py"), encoding="utf-8").read()
-        for bad in ("DWMWA_USE_IMMERSIVE", "SetPreferredAppMode", "winreg", "QApplication.setPalette", "setWindowIcon"):
+        for bad in ("DWMWA_USE_IMMERSIVE", "SetPreferredAppMode", "winreg", "QApplication.setPalette", "setWindowIcon", "DwmSetWindowAttribute", "HEADER_RGB", "set_header_colour"):
             self.assertNotIn(bad, src)
-        self.assertEqual(src.count("windll.dwmapi.DwmSetWindowAttribute"), 1)
 
     def test_a_message_never_widens_the_window_or_overlaps_the_note_and_ok(self):
         d = self.make()

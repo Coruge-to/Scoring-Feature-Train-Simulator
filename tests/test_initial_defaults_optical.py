@@ -156,13 +156,21 @@ class Checkbox(unittest.TestCase):
         self.assertEqual(len(m), 10)
         self.assertTrue({c["checked"] for c in m if not c["disabled"]} == {True, False})
 
-    def test_no_geometry_changes_indicator_rect_row_geometry_sizeHint_and_focus_rect_equal_the_plain_style(self):
+    def test_the_indicator_is_the_logical_13_and_everything_else_of_the_geometry_follows_the_plain_style(self):
+        """INITIAL-DEFAULTS U4-B (Owner 2026-11-11): the indicator is ONE logical size (13) at every scale (the plain style gives 9 logical at the fixture x1.5 and 11 at the real Windows 175 %); the row pitch is unchanged, the indicator keeps the same centre,
+        and the size hint / the focus rect move only by the difference of the indicator width (at the scale 1.0 everything equals the plain style)."""
         for scale in ("1.0", "1.5"):
             for c in measured(scale)["checkbox"]:
-                self.assertEqual(c["indicator_rect"], c["ref_indicator_rect"], "OPT-RED: indicator rect moved (%s x%s)" % (c["name"], scale))
-                self.assertEqual(c["sizeHint"], c["ref_sizeHint"], "OPT-RED: sizeHint changed (%s x%s)" % (c["name"], scale))
-                self.assertEqual(c["focus_rect"], c["ref_focus_rect"], "OPT-RED: SE_CheckBoxFocusRect changed (%s x%s)" % (c["name"], scale))
+                ind, ref = c["indicator_rect"], c["ref_indicator_rect"]
+                shift = 13 - ref[2]
+                self.assertEqual(ind[2:], [13, 13], "OPT-RED: the indicator is %dx%d logical (%s x%s)" % (ind[2], ind[3], c["name"], scale))
+                self.assertEqual(ind[0], ref[0], "OPT-RED: indicator left moved (%s x%s)" % (c["name"], scale))
+                self.assertLessEqual(abs((ind[1] + ind[3] / 2.0) - (ref[1] + ref[3] / 2.0)), 0.5, "OPT-RED: the indicator centre moved (%s x%s)" % (c["name"], scale))
+                self.assertEqual(c["sizeHint"], [c["ref_sizeHint"][0] + shift, c["ref_sizeHint"][1]], "OPT-RED: sizeHint is not the plain one + the indicator difference (%s x%s)" % (c["name"], scale))
+                self.assertEqual(c["focus_rect"], [c["ref_focus_rect"][0] + shift] + list(c["ref_focus_rect"][1:]), "OPT-RED: SE_CheckBoxFocusRect (%s x%s)" % (c["name"], scale))
                 self.assertEqual(c["geometry"][1], 20, "the row pitch of 20 logical px")
+                if scale == "1.0":
+                    self.assertEqual(ind, ref, "the scale 1.0 equals the plain style")
 
     def test_the_focus_frame_is_drawn_at_the_original_rect_without_the_label_shift_and_only_with_focus(self):
         f = measured("1.0")["focus"]
@@ -1127,12 +1135,12 @@ class Contract(unittest.TestCase):
             lits = [n.value for n in ast.walk(node[0]) if isinstance(n, ast.Constant) and isinstance(n.value, (int, float)) and not isinstance(n.value, bool)]
             self.assertTrue(all(v in (0, 1, 2, 0.0, 2.0) for v in lits), "OPT-RED: fixed numbers in %s: %r" % (cls, lits))
 
-    def test_only_the_label_is_overridden_and_everything_else_is_delegated(self):
+    def test_only_the_label_and_the_indicator_metric_are_overridden_and_everything_else_is_delegated(self):
         tree = ast.parse(source())
         node = [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef) and n.name == "OpticalStyle"]
         self.assertEqual(len(node), 1, "OPT-RED: no OpticalStyle")
         methods = {n.name for n in node[0].body if isinstance(n, ast.FunctionDef)}
-        self.assertEqual(methods, {"__init__", "drawControl"}, "OPT-RED: %r" % methods)
+        self.assertEqual(methods, {"__init__", "drawControl", "pixelMetric"}, "OPT-RED: %r" % methods)           # INITIAL-DEFAULTS U4-B: pixelMetric gives the logical 13 of the indicator (PM_IndicatorWidth / Height) and delegates every other metric
 
     def test_the_style_has_the_lifetime_of_the_dialog(self):
         m = measured("1.0")["lifetime"]

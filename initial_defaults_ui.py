@@ -379,6 +379,7 @@ class FocusWheelSpinBox(QSpinBox):
             event.ignore()
 
 
+CHECKBOX_INDICATOR_LOGICAL = 13                                    # logical px: the ONE size of the indicator of every check box of this window (PM_IndicatorWidth / PM_IndicatorHeight); Qt converts it to device pixels at every scale (Owner contract 2026-11-11)
 CHECKBOX_OPTICAL_LIFT = 0.5                                        # logical px: one extra lift of the label of every check box (every item, state and scale); Owner contract 2026-11-10: 0.5, shared by every item / state / scale / column
 PRESET_OPTICAL_LIFT = 1.0                                          # logical px: the one extra lift of the text of the three preset buttons (the buttons have a shadow on the right and below); the same for every button, scale and state (Owner choice: candidate C of the comparison)
 TIE_MARGIN = 1e-6                                                 # float noise margin of the tie rule in optical_dy
@@ -407,28 +408,6 @@ PRESET_TOP_GAP = 2                                                # between the 
 PRESET_RIGHT_GAP = 0
 SECTION_GAP = 10                                                  # the gap between the upper and the lower region of a column
 PRESET_FONT_SCALE = 1.5                                           # the text of the three preset buttons relative to the system font
-
-
-DWMWA_CAPTION_COLOR = 35                                          # Windows 11: the caption colour of ONE window (DwmSetWindowAttribute); the OS theme and every other window are untouched
-HEADER_RGB = (0xF1, 0xF3, 0xF6)                                   # the header colour measured on the BVE settings window (Owner)
-
-
-def set_header_colour(hwnd, rgb=HEADER_RGB, set_attribute=None):
-    """Colour the native title bar of this one dialog. Returns False (and changes nothing) where Windows does not support it (Windows 10, other platforms, offscreen): the title bar then keeps the system colour."""
-    if sys.platform != "win32":
-        return False
-    try:
-        value = ctypes.c_uint(rgb[0] | (rgb[1] << 8) | (rgb[2] << 16))        # COLORREF 0x00BBGGRR
-        call = set_attribute or ctypes.windll.dwmapi.DwmSetWindowAttribute
-        return call(ctypes.c_void_p(hwnd), DWMWA_CAPTION_COLOR, ctypes.byref(value), ctypes.sizeof(value)) == 0
-    except Exception:
-        return False
-
-
-class InitialDefaultsDialog(QDialog):
-    def showEvent(self, event):
-        QDialog.showEvent(self, event)
-        set_header_colour(int(self.winId()))
 
 
 def optical_dy(target_centre, ink_edges, scale):
@@ -463,12 +442,19 @@ def painted_ink_rows(size, scale, font, paint):
 
 
 class OpticalStyle(QProxyStyle):
-    """The native style with one change: the label of a check box is moved so that the ink of the text is centred on the indicator. Only the label is painted shifted (the indicator, the geometry and the focus frame come from the native style unchanged)."""
+    """The native style with two changes for the check boxes of this window: (1) the indicator is ONE logical size (CHECKBOX_INDICATOR_LOGICAL, through PM_IndicatorWidth / PM_IndicatorHeight; the native style keeps the
+    theme glyph table and truncates the metric at some scales), (2) the label is moved so that the ink of the text is centred on the indicator. Nothing is drawn here except that label shift: the indicator, its states (checked, unchecked,
+    disabled, hover), the focus frame and every other metric come from the native style."""
 
     def __init__(self, base):
         QProxyStyle.__init__(self, base)
         self.setObjectName("windowsvista")
         self.known = {}
+
+    def pixelMetric(self, metric, option=None, widget=None):
+        if metric in (QStyle.PixelMetric.PM_IndicatorWidth, QStyle.PixelMetric.PM_IndicatorHeight):
+            return CHECKBOX_INDICATOR_LOGICAL
+        return QProxyStyle.pixelMetric(self, metric, option, widget)
 
     def drawControl(self, element, option, painter, widget=None):
         if element != QStyle.ControlElement.CE_CheckBoxLabel or widget is None:
@@ -518,7 +504,7 @@ def _column_title(text):
 
 def build_dialog(defaults, save):
     """The window for `defaults` (an InitialDefaults). save(InitialDefaults) is called by OK; it raises on failure (the window then stays open)."""
-    dialog = InitialDefaultsDialog()
+    dialog = QDialog()                                             # a plain dialog: Windows draws its standard title bar (no colour is set for it)
     dialog.setObjectName("initial_defaults_dialog")
     dialog.setWindowTitle(TITLE)
     # title text and the standard close button only: without the system-menu hint Windows shows no application icon on the title bar (this dialog only; no other window / the application icon is touched)
