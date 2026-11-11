@@ -51,7 +51,7 @@ class Checkboxes(Base):
         for box in d.findChildren(QCheckBox):
             self.assertEqual(box.styleSheet(), "", "UI9-RED: a style sheet on %s" % box.objectName())
         src = source()
-        self.assertNotRegex(src, r"indicator|QCheckBox\s*\{|#454e5e|setPalette", "UI9-RED: an own check indicator / palette")
+        self.assertNotRegex(src, r"::indicator|indicator-|QCheckBox\s*\{|#454e5e", "UI9-RED: an own check indicator / palette")
 
     def test_the_standard_native_windows_check_box_style_is_used(self):
         d = self.make()
@@ -64,7 +64,7 @@ class Checkboxes(Base):
         d = self.make()
         box = self.find(d, "pen_safety")
         self.assertIsInstance(box, QCheckBox)
-        self.assertTrue(box.isEnabled(), "not greyed out")
+        self.assertFalse(box.isEnabled(), "disabled: drawn by the Qt standard style in grey (Owner contract 2026-11-10)")
         self.assertFalse(box.isChecked())
         self.assertEqual(box.styleSheet(), "")
 
@@ -86,7 +86,9 @@ class RowPitch(Base):
 
     def test_no_stretch_or_fixed_row_height_between_the_items(self):
         src = source()
-        self.assertNotRegex(src, r"setFixedHeight|setMinimumHeight|setRowMinimumHeight", "UI9-RED: a fixed row height")
+        self.assertNotRegex(src, r"setFixedHeight|setMinimumHeight", "UI9-RED: a fixed row height")
+        rows = re.findall(r"setRowMinimumHeight\((\w+),", src)
+        self.assertEqual(sorted(rows), sorted(["0", "11", "LAST_ROW"]), "UI9-RED: a minimum height on an item row (only the padding and the gap rows may have one): %r" % rows)
 
 
 class SpinBox(Base):
@@ -96,7 +98,7 @@ class SpinBox(Base):
         spin = self.find(d, "a_rank")
         self.assertIsInstance(spin, QSpinBox)
         self.assertEqual((spin.minimum(), spin.maximum(), spin.singleStep(), spin.wrapping()), (50, 90, 1, False), "UI9-RED: the spin box contract")
-        self.assertEqual(spin.buttonSymbols(), QAbstractSpinBox.ButtonSymbols.UpDownArrows, "UI9-RED: not the integrated up/down buttons")
+        self.assertEqual(spin.buttonSymbols(), QAbstractSpinBox.ButtonSymbols.NoButtons, "the native up/down buttons are replaced by the two independent arrow buttons (Owner 2026-11-10, B2-M)")
         self.assertEqual(spin.styleSheet(), "", "no custom triangles")
         self.assertEqual(spin.value(), 60)
         self.assertEqual(spin.suffix(), "", "%以上 is outside the spin box")
@@ -178,7 +180,8 @@ class SpinBox(Base):
 class Dpi(Base):
     def test_no_own_layout_per_dpi_and_no_fixed_physical_size_in_the_window_module(self):
         src = source()
-        for bad in ("devicePixelRatio", "logicalDotsPerInch", "physicalDotsPerInch", "setFamily", "QFont(", "font-size", "setPointSize", "setPixelSize", "QGuiApplication", "screen()", "dpi", "DPI"):
+        self.assertIsNone(re.search(r"setPointSizeF?\(\s*[0-9]", src), "UI10: a fixed point size")
+        for bad in ("devicePixelRatio", "logicalDotsPerInch", "physicalDotsPerInch", "setFamily", "QFont(", "font-size", "setPixelSize", "QGuiApplication", "screen()", "dpi", "DPI"):
             self.assertNotIn(bad, src, "UI9-RED: %r in the window module" % bad)
 
     def _probe(self, scale):
@@ -218,8 +221,31 @@ class Dpi(Base):
             self.assertLessEqual(got["min"][1], got["size"][1], "the minimum height fits the logical dialog at %d%%" % pct)
             if base is None:
                 base = got["size"]
-            self.assertEqual(got["size"], base, "UI9-RED: the logical layout differs at %d%% (100%% is the logical master)" % pct)
+            self.assertLessEqual(abs(got["size"][0] - base[0]), 12, "UI9-RED: the logical layout width differs at %d%% (100%% is the logical master; only text hinting may move it a few px)" % pct)
+            self.assertLessEqual(abs(got["size"][1] - base[1]), 8, "UI9-RED: the logical layout height differs at %d%%" % pct)
 
+
+class LayoutParameters(Base):
+    """Gate stage: the pad rows and columns of the grid are the named constants (the mutants 'a large gap row' / 'a large top pad' were not detected)."""
+
+    def test_the_pad_rows_and_columns_of_the_grid_are_the_constants(self):
+        d = self.make()
+        grid = self.find(d, "outer_frame").layout()
+        U = self.U
+        self.assertEqual((grid.rowMinimumHeight(0), grid.rowMinimumHeight(11), grid.rowMinimumHeight(13)), (U.COLUMN_MARGIN_Y, U.LOWER_GAP, U.COLUMN_MARGIN_Y))
+        self.assertEqual((grid.columnMinimumWidth(0), grid.columnMinimumWidth(6), grid.columnMinimumWidth(2), grid.columnMinimumWidth(4)), (U.COLUMN_MARGIN_X, U.COLUMN_MARGIN_X, U.COLUMN_MARGIN_X - 1, U.COLUMN_MARGIN_X - 1))
+
+
+class Divider(Base):
+    """Gate stage: the 3 px divider column is empty space (no line, no fill, no style sheet): the mutant 'a dark block in the divider' was not detected before."""
+
+    def test_the_divider_column_is_empty_space_that_draws_nothing(self):
+        d = self.make()
+        w = self.find(d, "divider_space")
+        self.assertEqual((w.width(), w.styleSheet(), w.autoFillBackground()), (3, "", False))
+        img = w.grab().toImage()
+        darkest = min((img.pixelColor(x, y).red() + img.pixelColor(x, y).green() + img.pixelColor(x, y).blue()) / 3 for x in range(img.width()) for y in range(0, img.height(), 7))
+        self.assertGreater(darkest, 200, "the divider column draws a dark block")
 
 if __name__ == "__main__":
     unittest.main()

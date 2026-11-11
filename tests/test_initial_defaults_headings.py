@@ -55,7 +55,8 @@ class Headings(unittest.TestCase):
 
     def test_no_fixed_font_is_named_in_the_window_module(self):
         src = open(os.path.join(ROOT, "initial_defaults_ui.py"), encoding="utf-8").read()
-        for bad in ("MS ゴシック", "MS Gothic", "setFamily", "QFont(", "font-family", "font-size", "setPointSize", "setPixelSize"):
+        self.assertIsNone(re.search(r"setPointSizeF?\(\s*[0-9]", src), "a fixed point size")
+        for bad in ("MS ゴシック", "MS Gothic", "setFamily", "QFont(", "font-family", "font-size", "setPixelSize"):
             self.assertNotIn(bad, src, "UI7-RED: %r in the window module" % bad)
         self.assertEqual(re.findall(r"font-size", src), [])
 

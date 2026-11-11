@@ -144,7 +144,7 @@ class Presets(Base):
         texts = [w.text() for w in d.findChildren(QLabel)] + [w.text() for w in d.findChildren(QAbstractButton)]
         for bad in ("初級は", "中級は", "上級は", "理論値50", "理論値60", "理論値70", "初動と緩和以外"):
             self.assertFalse([t for t in texts if bad in t], "ID5-RED: an explanation text is shown (%s)" % bad)
-        self.assertIn("※設定は次回のシナリオ読込時またはF5再読込時に適用されます。", texts)
+        self.assertIn("※この設定は次にシナリオを読み込んだときに適用されます。", texts)
 
     def test_the_a_boundary_can_still_be_changed_after_a_preset(self):
         d = self.make()
