@@ -227,7 +227,7 @@ class Round12(Layout):
         gap = item.geometry().top() - (head.geometry().bottom() + 1)
         self.assertTrue(0 <= gap <= 3, "UI13-RED: the heading does not sit directly above its item (gap %d px; the item is centred in a row that is a little taller)" % gap)
         spin = self.find(d, "a_rank")
-        self.assertEqual(item.geometry().center().y() // 1, spin.geometry().center().y() // 1, "the timing item and the A boundary row stay on one line")
+        self.assertEqual(item.geometry().center().y() - self.U.RANK_ROW_RAISE, spin.geometry().center().y(), "the A boundary row stands RANK_ROW_RAISE higher than the timing item (U5-3: both bottom rows at the same visual height; the timing item does not move)")
 class Round15(Round12):
     """Round 15: the error texts share the text line of the note; OK text lift; spin 52."""
 

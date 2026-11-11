@@ -88,7 +88,7 @@ class RowPitch(Base):
         src = source()
         self.assertNotRegex(src, r"setFixedHeight|setMinimumHeight", "UI9-RED: a fixed row height")
         rows = re.findall(r"setRowMinimumHeight\((\w+),", src)
-        self.assertEqual(sorted(rows), sorted(["0", "11", "LAST_ROW"]), "UI9-RED: a minimum height on an item row (only the padding and the gap rows may have one): %r" % rows)
+        self.assertEqual(sorted(rows), sorted(["0", "11", "12", "LAST_ROW"]), "UI9-RED: a minimum height on an item row (only the padding, the gap row and the bottom row (U5: it keeps the height of the spin box so that the timing item stays centred) may have one): %r" % rows)
 
 
 class SpinBox(Base):
@@ -232,7 +232,7 @@ class LayoutParameters(Base):
         d = self.make()
         grid = self.find(d, "outer_frame").layout()
         U = self.U
-        self.assertEqual((grid.rowMinimumHeight(0), grid.rowMinimumHeight(11), grid.rowMinimumHeight(13)), (U.COLUMN_MARGIN_Y, U.LOWER_GAP, U.COLUMN_MARGIN_Y))
+        self.assertEqual((grid.rowMinimumHeight(0), grid.rowMinimumHeight(11), grid.rowMinimumHeight(13)), (U.COLUMN_MARGIN_Y, U.LOWER_GAP, U.INNER_MARGIN - U.ROW_INK_BELOW - U.FRAME_BOTTOM_RAISE - ((self.find(d, "a_rank").maximumHeight() - self.find(d, "timing").sizeHint().height()) - (self.find(d, "a_rank").maximumHeight() - self.find(d, "timing").sizeHint().height()) // 2)))
         self.assertEqual((grid.columnMinimumWidth(0), grid.columnMinimumWidth(6), grid.columnMinimumWidth(2), grid.columnMinimumWidth(4)), (U.COLUMN_MARGIN_X, U.COLUMN_MARGIN_X, U.COLUMN_MARGIN_X - 1, U.COLUMN_MARGIN_X - 1))
 
 

@@ -396,8 +396,16 @@ def use_native_style():
 
 
 WINDOW_MARGIN = 12                                                # margins of the window / the columns (Qt layout units; they follow the Windows scale)
+OK_INSET = 1                                                      # the native OK button is painted one row inside its widget rect (top and bottom)
+OUTER_GAP = WINDOW_MARGIN - OK_INSET                               # N2 / N3: the layout gap frame -> OK button and OK button -> window bottom; with the inset the painted gaps equal the one above the frame (N1 = WINDOW_MARGIN)
+ROW_INK_BELOW = 4                                                 # logical px from the visible bottom (indicator / text ink) of a check box row to the bottom of its widget rect (measured: 4 at the four Windows scales): the bottom margin M' is counted to the VISIBLE bottom
 COLUMN_MARGIN_X = 12
-COLUMN_MARGIN_Y = 8
+COLUMN_MARGIN_Y = 8                                               # the top pad row of the grid (as before U5): the ink of the headings stands HEADING_INK_OFFSET lower
+HEADING_INK_OFFSET = 3                                           # logical px from the top of a bold heading label to the top of its ink (measured, Yu Gothic UI 9 pt)
+INNER_MARGIN = COLUMN_MARGIN_Y + HEADING_INK_OFFSET               # M': the natural margin inside the frame, measured before U5 (inner top edge of the frame -> ink top of the headings = 11 logical px). The bottom of the timing row stands M' above the bottom of the frame
+EASY_SECTION_RAISE = 1                                            # logical px: the heading of the easy settings and the three buttons stand this much higher than the grid row of the last environment row, so that the ink centres of 勾配 and 簡単設定 are one (U5-2; the upper blocks stay where they stood)
+RANK_ROW_RAISE = 1                                                # logical px: the A-rank row (label + spin box + label, as ONE row) stands this much higher than the row of the timing item, so that both bottom rows stand at the same visual height; the timing item itself does not move (its pixel phase stays)
+FRAME_BOTTOM_RAISE = 1                                            # logical px: the whole lower structure (bottom of the frame, the note / OK row, the OK button, the bottom of the window) stands this much higher: the dialog is this much lower; the outer margins N2 / N3 keep their relation
 LOWER_GAP = 6                                                    # the gap between the buttons row and the lower row (timing item / A boundary)
 A_RANK_TEXT_LIFT_MARGIN = 1                                        # logical px of bottom margin of the inner line edit: raises the number by half of it; Owner contract 2026-11-10, shared by every scale / value / state
 A_RANK_SPIN_WIDTH = 52                                             # candidate nearest to the proposal image 5 (preview comparison: 48 / 52 / 56 / 64); not a final contract
@@ -514,8 +522,8 @@ def build_dialog(defaults, save):
     palette.setColor(QPalette.ColorRole.Window, palette.color(QPalette.ColorRole.Base))   # the standard light window colour of the Windows UI (the BVE settings window), taken from the palette: no RGB value is written here
     dialog.setPalette(palette)
     root = QVBoxLayout(dialog)
-    root.setContentsMargins(WINDOW_MARGIN, WINDOW_MARGIN, WINDOW_MARGIN, WINDOW_MARGIN)
-    root.setSpacing(8)
+    root.setContentsMargins(WINDOW_MARGIN, WINDOW_MARGIN, WINDOW_MARGIN, OUTER_GAP)
+    root.setSpacing(OUTER_GAP)
     frame = QFrame()                                               # ONE thin outer frame around both columns (not a QGroupBox per section)
     frame.setObjectName("outer_frame")
     frame.setFrameShape(QFrame.Shape.Box)
@@ -535,7 +543,6 @@ def build_dialog(defaults, save):
     grid.setColumnStretch(5, 0)
     grid.setRowMinimumHeight(0, COLUMN_MARGIN_Y)
     grid.setRowMinimumHeight(11, LOWER_GAP)
-    grid.setRowMinimumHeight(LAST_ROW, COLUMN_MARGIN_Y)
     divider = QWidget()                                            # no centre divider line is drawn; its 3 px column is kept as empty space so that no other geometry moves
     divider.setObjectName("divider_space")
     divider.setFixedWidth(3)
@@ -566,10 +573,12 @@ def build_dialog(defaults, save):
         if name == "pen_safety":
             box.setEnabled(False)                                  # the beta has no safety device scoring: OFF and not operable, drawn by the style as disabled (grey); no preset enables it
         grid.addWidget(box, 2 + index, 5, vcenter)
-    grid.addWidget(_column_title("簡単設定"), 9, 5, vcenter)          # the same grid row as the last environment row (勾配)
+    easy_title = _column_title("簡単設定")
+    easy_title.setContentsMargins(0, 0, 0, 2 * EASY_SECTION_RAISE)   # the text moves up by half of the bottom margin (like NOTE_LIFT); the heading stays in the same grid row as the last environment row (勾配)
+    grid.addWidget(easy_title, 9, 5, vcenter)
     preset_row = QHBoxLayout()
     preset_row.setSpacing(PRESET_SPACING)
-    preset_row.setContentsMargins(0, PRESET_TOP_GAP, PRESET_RIGHT_GAP, 0)    # the first button starts at the left edge of the right column content
+    preset_row.setContentsMargins(0, PRESET_TOP_GAP - EASY_SECTION_RAISE, PRESET_RIGHT_GAP, EASY_SECTION_RAISE)    # the first button starts at the left edge of the right column content; the buttons rise with the heading (the row keeps its height: nothing below moves), so the heading -> button gap is unchanged
     preset_buttons = []
     for key, label, colour in PRESET_BUTTONS:                      # the EXISTING colour constants of config.py (the colours of the F1 page and the HUD): no new RGB value
         button = OpticalPresetButton(label)
@@ -598,7 +607,11 @@ def build_dialog(defaults, save):
     rank_row.addWidget(spin)
     rank_row.addWidget(QLabel("%以上"))
     rank_row.addStretch(1)
-    grid.addLayout(rank_row, 12, 5)
+    rank_row.setContentsMargins(0, 0, 0, RANK_ROW_RAISE)           # the row is bottom aligned in the gap row + the bottom row: its bottom margin raises the whole row (label, spin box, label) by RANK_ROW_RAISE
+    grid.addLayout(rank_row, 11, 5, 2, 1, Qt.AlignmentFlag.AlignBottom)
+    below_timing = (spin.maximumHeight() - timing.sizeHint().height()) - (spin.maximumHeight() - timing.sizeHint().height()) // 2    # the space under the timing item when it is centred in a row as high as the spin box
+    grid.setRowMinimumHeight(12, spin.maximumHeight())               # the bottom row keeps the height it had when the A-rank row lived in it: the timing item stays centred (its place and pixel phase do not change)
+    grid.setRowMinimumHeight(LAST_ROW, INNER_MARGIN - below_timing - ROW_INK_BELOW - FRAME_BOTTOM_RAISE)  # the VISIBLE bottom (indicator / text ink) of the timing row -> inner bottom of the frame = M'
 
     def apply_preset(key):
         """The six deductions and the A boundary of the preset (initial_defaults.apply_preset: the data of the model). The environment, the all-timing setting and the safety intervention are not touched."""
@@ -635,6 +648,7 @@ def build_dialog(defaults, save):
         env_boxes[index].toggled.connect(lambda enabled, i=index: sync_environment(i, enabled))
 
     bottom = QHBoxLayout()                                         # the note (left) and OK (right) on ONE row
+    bottom.setSpacing(8)                                           # the horizontal spacing this row always had (it inherited the 8 of the root layout, which is now the vertical gap OUTER_GAP): the window width does not change
     note = QLabel(NOTE)
     note.setObjectName("note")
     note.setContentsMargins(0, 0, 0, NOTE_LIFT)                    # the CJK text of the note looks lower than the Latin "OK" of the button: lift it by the measured amount
