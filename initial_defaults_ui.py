@@ -746,7 +746,7 @@ def run(argv, defaults_path=None, instance=None, exec_fn=None):
         from PyQt6.QtWidgets import QApplication
         path = defaults_path or D.defaults_path()
         result = D.load(path)
-        QApplication.instance() or QApplication(list(argv[:1]))
+        app = QApplication.instance() or QApplication(list(argv[:1]))      # kept until run() returns: a dropped QApplication is destroyed at once (Qt fail-fast 0xC0000409 at the next widget)
         dialog = build_dialog(result.defaults, save=lambda value: D.save(value, path))
         (exec_fn or (lambda d: d.exec()))(dialog)
         return 0
