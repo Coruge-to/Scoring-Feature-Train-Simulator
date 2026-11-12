@@ -22,7 +22,7 @@ if ROOT not in sys.path:
 ENTRY =[sys.executable, "-B", os.path.join(ROOT, "main.py"), "--initial-defaults"]
 HELPER = [sys.executable, "-B", os.path.join(HERE, "ownership_fake_bve.py")]
 WINDOWS = os.name == "nt"
-TITLE = "初期値設定"
+TITLE = "標準採点設定"
 ENV_PID, ENV_OWNER, ENV_MAIN = "TSSCORING_INITDEF_BVE_PID", "TSSCORING_INITDEF_OWNER_HWND", "TSSCORING_INITDEF_BVE_MAIN_HWND"
 GWL_EXSTYLE, GWL_STYLE, GW_OWNER = -20, -16, 4
 WS_EX_TOPMOST, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW, WS_CAPTION, WS_SYSMENU = 0x8, 0x40000, 0x80, 0x00C00000, 0x00080000

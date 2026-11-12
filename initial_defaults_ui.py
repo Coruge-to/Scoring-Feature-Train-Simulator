@@ -18,7 +18,7 @@ import config
 import initial_defaults as D
 
 FLAG = "--initial-defaults"
-TITLE = "初期値設定"
+TITLE = "標準採点設定"
 NOTE = "※この設定は次にシナリオを読み込んだときに適用されます。"
 ENV_LABELS = ("現在時刻", "残り時間", "現在速度", "制限速度", "制限速度予告", "残距離", "ハンドル・レバーサ位置", "勾配")
 TIMING_LABEL = "変更可能な非採時駅を全て採時駅にする"

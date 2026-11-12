@@ -92,7 +92,7 @@ class Layout(unittest.TestCase):
         self.assertTrue(flags & Qt.WindowType.WindowCloseButtonHint, "the standard close button")
         self.assertTrue(flags & Qt.WindowType.WindowTitleHint)
         self.assertFalse(flags & Qt.WindowType.WindowSystemMenuHint, "UI10: no system-menu hint = no application icon on the title bar")
-        self.assertEqual(d.windowTitle(), "初期値設定")
+        self.assertEqual(d.windowTitle(), "標準採点設定")
 
 
 class Round10(Layout):

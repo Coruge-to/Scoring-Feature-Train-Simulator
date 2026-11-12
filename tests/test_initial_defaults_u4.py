@@ -80,7 +80,7 @@ class TitleBar(X.DialogBase):
     def test_a_the_window_title_flags_and_object_name_are_unchanged(self):
         from PyQt6.QtCore import Qt
         d = self.make()
-        self.assertEqual(d.windowTitle(), "初期値設定", "U4-GUARD: the title changed")
+        self.assertEqual(d.windowTitle(), "標準採点設定", "U4-GUARD: the title changed")
         self.assertEqual(d.objectName(), "initial_defaults_dialog")
         flags = d.windowFlags()
         for flag in (Qt.WindowType.WindowTitleHint, Qt.WindowType.WindowCloseButtonHint, Qt.WindowType.CustomizeWindowHint):

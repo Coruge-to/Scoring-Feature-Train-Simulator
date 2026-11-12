@@ -92,7 +92,7 @@ class Ui(unittest.TestCase):
     # ---------------------------------------------------------------- the window
     def test_title_and_labels(self):
         d = self.make()
-        self.assertEqual(d.windowTitle(), "初期値設定")
+        self.assertEqual(d.windowTitle(), "標準採点設定")
         t = self.texts(d)
         for label in ENV_LABELS + PEN_LABELS + [TIMING, NOTE, "OK", "環境設定", "採時駅設定", "減点項目設定"]:
             self.assertIn(label, t, "ID2-RED: the label %r is missing" % label)
@@ -286,7 +286,7 @@ class Ui(unittest.TestCase):
         code = self.U.run(["main.py", "--initial-defaults"], defaults_path=self.path, instance=FakeInstance(), exec_fn=exec_fn)
         self.assertEqual(code, 0)
         self.assertEqual(shown["a"], 77, "ID2-RED: the window did not load the saved file")
-        self.assertEqual(shown["title"], "初期値設定")
+        self.assertEqual(shown["title"], "標準採点設定")
         self.assertTrue(shown.get("released"))
 
     def test_a_second_instance_exits_at_once_without_a_window(self):
