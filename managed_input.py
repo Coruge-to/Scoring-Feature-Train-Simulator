@@ -425,6 +425,9 @@ class ManagedInputController(object):
         self._lock_wanted_last = False
         self._lines = {}
         self._total = 0
+        self._important = 0                 # Phase PFR-D: the lines of the important events (their own budget)
+        self._important_dropped = 0
+        self._important_summary = False
         self.steps = 0
         self.releases = 0
         self.refusals = 0
@@ -444,12 +447,36 @@ class ManagedInputController(object):
                        "stidx": 24,                                                         # (Phase ST-1B Prep: the STIDX observer's progress budget 20 + 4 verdict / scope events of one generation; stidx-sum keeps the default 10)
                        "jump-settled": 24}                                                  # (Phase ST-3d: the ONE final line of every official jump transaction: the starts and the retries of a session)
     TOTAL_LINE_BUDGET = 70
+    # Phase PFR-D (Owner ruling OD-PF-2, option D2): the Retry events are IMPORTANT. They are written when the 70 lines above are spent (a long run uses them up, and the line of a refused Retry
+    # was lost that way) and they use none of them; they have a budget of their own, IMPORTANT_LINE_CAP lines per process (every name together). The line after the last one is ONE
+    # `important-summary` line; later ones are only counted (input-summary: imp=, imp_dropped=). The Caller copies 200 lines per process: 70 + 40 + 1 leaves room for the rest.
+    IMPORTANT_EVENTS = frozenset(("retry-confirm-entered", "retry-accepted", "retry-rejected", "retry-request-created", "retry-exception"))
+    IMPORTANT_LINE_CAP = 40
 
     def cap_for(self, event):
         return self.EVENT_LINE_CAPS.get(event, self.EVENT_LINE_CAP)
 
+    def _note_important(self, event, fields):
+        if self._important >= self.IMPORTANT_LINE_CAP:
+            self._important_dropped += 1
+            if not self._important_summary:
+                self._important_summary = True
+                try:
+                    self._hud.emit_event("important-summary", cap=self.IMPORTANT_LINE_CAP)
+                except Exception:
+                    pass
+            return
+        self._important += 1
+        try:
+            self._hud.emit_event(event, **fields)
+        except Exception:
+            pass
+
     def note(self, event, **fields):
         """One `[MANAGED] event=...` line (fixed words and numbers only: no station name, no path), within the line budget."""
+        if event in self.IMPORTANT_EVENTS:
+            self._note_important(event, fields)
+            return
         count = self._lines.get(event, 0)
         if count >= self.cap_for(event) or self._total >= self.TOTAL_LINE_BUDGET:
             self.suppressed += 1
@@ -644,4 +671,4 @@ class ManagedInputController(object):
         )
 
     def summary_fields(self):
-        return dict(in_steps=self.steps, in_releases=self.releases, in_refusals=self.refusals, in_aborts=self.aborts, in_suppressed=self.suppressed)
+        return dict(in_steps=self.steps, in_releases=self.releases, in_refusals=self.refusals, in_aborts=self.aborts, in_suppressed=self.suppressed, imp=self._important, imp_dropped=self._important_dropped)

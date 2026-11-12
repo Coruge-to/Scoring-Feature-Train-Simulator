@@ -1583,7 +1583,7 @@ class K_TheRefusalIsDiagnosed(RetryBase):
         self.managed(RID1)
         self.confirm(2)
         accepted = self.events_of("retry-accepted")
-        self.assertEqual([e for e, _ in self.lines if e.startswith("retry-")], ["retry-accepted"])
+        self.assertEqual([e for e, _ in self.lines if e.startswith("retry-")], ["retry-accepted", "retry-request-created"])      # Phase PFR-D (on purpose): an accepted Retry also writes retry-request-created (an important event: a budget of its own)
         g = accepted[0]
         self.assertEqual((g["pos"], g["idx"], g["h"], g["c"], g["pend"], g["id"], g["cur"]), (2, 2, "4/4", "2/3", "sent", RID1[:4].hex().upper(), "%d:%s:5" % (SID, LID)))
 

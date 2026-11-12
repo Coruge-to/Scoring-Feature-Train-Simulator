@@ -882,6 +882,15 @@ class Overlay(QWidget):
         self._retry_counted_request = result.request_id
         self.total_retry_count += 1
 
+    def _retry_request_trace(self, result, position):
+        """Phase PFR-D: the ONE line of the Retry request that was created (an important event: a budget of its own). Fixed words and numbers only. Never raises."""
+        try:
+            request_id = result.request_id
+            self._emit_input_event("retry-request-created", pos=position, idx=result.selected_station_index,
+                                   id=request_id[:4].hex().upper() if isinstance(request_id, (bytes, bytearray)) and request_id else "-")
+        except Exception:
+            pass
+
     def _retry_trace(self, result, position, history_before, count_before):
         """The ONE internal diagnostic line of this retry operation (retry-accepted / retry-rejected): the reason code and the state numbers, fixed words only. Nothing on the
         screen; the normal mode installs no sink and writes nothing. Never raises."""
@@ -1890,6 +1899,7 @@ class Overlay(QWidget):
                 self.target_retry_idx = self.menu_cursor
                 self.menu_state = 3
                 self.menu_cursor = 0
+                self._emit_input_event("retry-confirm-entered", pos=self.target_retry_idx, h=len(self.save_data))      # Phase PFR-D: an important event (a budget of its own)
         elif self.menu_state == 3:
             if self.menu_cursor == 0: 
                 # Phase ST-2b: a refused retry changes nothing - not the count, not the history, not the screen (the menu stays where it is) and not the BVE resume flag
@@ -1897,7 +1907,11 @@ class Overlay(QWidget):
                 history_before, count_before = len(self.save_data), self.total_retry_count
                 self.was_advancing_before_menu = True
                 position = getattr(self, 'target_retry_idx', -1)
-                result = execute_retry(self, position, is_bve_advancing)
+                try:
+                    result = execute_retry(self, position, is_bve_advancing)
+                except Exception as exc:
+                    self._emit_input_event("retry-exception", type=type(exc).__name__)      # Phase PFR-D: reported (the type only), NOT swallowed
+                    raise
                 if result.accepted:
                     self._retry_count(result, position)
                 elif advancing_before is None:
@@ -1905,6 +1919,8 @@ class Overlay(QWidget):
                 else:
                     self.was_advancing_before_menu = advancing_before
                 self._retry_trace(result, position, history_before, count_before)
+                if result.accepted:
+                    self._retry_request_trace(result, position)
                 
             elif self.menu_cursor == 1: 
                 self.menu_state = 2

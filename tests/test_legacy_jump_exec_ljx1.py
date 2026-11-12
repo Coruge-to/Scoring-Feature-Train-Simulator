@@ -168,7 +168,7 @@ REGION_PINS = {
         # Legacy scoring LC-4b (A16, was 064FF5BE...): the condition of the baseline block looks at the JUMP key of the line (a JUMP-only line is not a baseline), the 7 jump records stay (tests/test_lc4b_python_jump_state.py)
         "Overlay.apply_telemetry_text": ("slice", "1D1ADDB8BE14160C15E905DC96056D70B36A1755BC866E6BAB5D5A28E3ACA4A5", 7),  # 2026-11-08 (an intended change, formal LastStop BveG): the CALCG part of the telemetry chain is gone (was F63313F6...); the jump parts are untouched
         # Phase ST-3d (was 84E656C2..., 8 records): the start request comes from _scoring_start_plan (refused before anything changes) and the start opens its transaction
-        "Overlay.handle_menu_enter": ("slice", "5943298E8353AA2DEED72DEAC4BD898BADCAF87D828F8A1313DDB6DAA7559022", 3),
+        "Overlay.handle_menu_enter": ("slice", "EA0610CE7CA855C3CC9F916C2372B7D6EA473121D3220E99FB297E52893E7AD4", 3),      # Phase PFR-D (on purpose): the confirmation page writes retry-confirm-entered, a Retry that raises writes retry-exception (and is not swallowed), an accepted Retry writes retry-request-created; no Jump, score or rule changed (was 5943298E...)
         "Overlay._detect_and_release_fast_forward": ("slice", "6E15C0D15405AC3D2025E2EBD501EF36EC8D1D916D56CDA25E9E1D5E7B9092E7", 1),
         "Overlay._advance_scoring_clock_and_score": ("slice", "781559CFFF388EE116614B528F018826B5A1FB0A2280C3D3CA72700C5F23779C", 2),
         # Phase ST-3d (was CC159076..., 6 records): the shutdown closes an open transaction (before the client is closed)

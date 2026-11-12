@@ -670,7 +670,7 @@ INPUT_PINS = {
         "_sync_operation_cursor": "b50358a62b2ca451",
         "handle_dropdown_enter": "7df61f96a2374b59",
         "handle_menu_backspace": "f1342317d4d395d1",   # on purpose (INITIAL-DEFAULTS Stage F2): while the A boundary is typed the Backspace deletes the last character (the old misroute into the stop distance confirm is gone); the page is left only after the Enter
-        "handle_menu_enter": "ab471ad1f29017f4",  # on purpose (INITIAL-DEFAULTS Stage F2): the A boundary confirm uses the shared normalization (silent 60 for 00..49 / 91..99 / one digit / an empty input);   # on purpose (8 x 1 cursor, 2026-11-09): only the Enter of the environment settings (menu_state 4) lost its column condition
+        "handle_menu_enter": "3ce6a455cd71a911",  # on purpose (Phase PFR-D: the diagnostics of the Retry confirmation / request / exception; was ab471ad1f29017f4);   # on purpose (INITIAL-DEFAULTS Stage F2): the A boundary confirm uses the shared normalization (silent 60 for 00..49 / 91..99 / one digit / an empty input);   # on purpose (8 x 1 cursor, 2026-11-09): only the Enter of the environment settings (menu_state 4) lost its column condition
         "set_input_ownership": "1c828c7be1ba3a8f",
         "toggle_menu": "7a8d5f39518d3d06"
     },
