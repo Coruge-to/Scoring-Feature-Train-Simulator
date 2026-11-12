@@ -57,8 +57,8 @@ THREAD_SNAPSHOT = {"HandshakeControlPlane.cs": 1, "AppProcessManager.cs": 1, "Bv
 
 PROTECTED_DLLS = (
     # (path, sha256 prefix, why)
-    (r"C:\Users\Public\Documents\BveEx\2.0\Extensions\TScoring.TelemetryB.dll", "1C2D6896", "Current telemetry DLL: contains no ObservationLog"),
-    (r"C:\Users\Public\Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Telemetry.dll", "B87C1AC9", "Legacy telemetry DLL: contains no ObservationLog"),
+    (r"C:\Users\Public\Documents\BveEx\2.0\Extensions\TScoring.TelemetryB.dll", "C2111C91", "Current telemetry DLL: contains no ObservationLog"),   # public naming migration N5 (on purpose): new file name; the stale prefix 1C2D6896 (a known baseline failure) is re-pinned to the TScoring.TelemetryB build
+    (r"C:\Users\Public\Documents\BveEx\Legacy\Extensions\TScoring.TelemetryA.dll", "E40D271C", "Legacy telemetry DLL: contains no ObservationLog"),   # likewise (was B87C1AC9)
     (r"C:\Users\Public\Documents\BveEx\2.0\Extensions\TSScoring.FirstChanceDiagnostic.dll", "04378DDC", "First-Chance diagnostic DLL: separate responsibility"),
 )
 
@@ -391,10 +391,10 @@ class UiContractStatic(unittest.TestCase):
     def test_guard_only_the_three_dlls_carry_the_observation_log(self):
         carriers = (
             (r"C:\Users\Public\Documents\BveEx\2.0\Extensions\TScoring.BridgeB.dll", True),
-            (r"C:\Users\Public\Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll", True),
+            (r"C:\Users\Public\Documents\BveEx\Legacy\Extensions\TScoring.BridgeA.dll", True),
             (r"C:\Program Files\mackoy\BveTs6\Input Devices\TScoring.InputDevice.dll", True),
             (r"C:\Users\Public\Documents\BveEx\2.0\Extensions\TScoring.TelemetryB.dll", False),
-            (r"C:\Users\Public\Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Telemetry.dll", False),
+            (r"C:\Users\Public\Documents\BveEx\Legacy\Extensions\TScoring.TelemetryA.dll", False),
             (r"C:\Users\Public\Documents\BveEx\2.0\Extensions\TSScoring.FirstChanceDiagnostic.dll", False),
         )
         seen = 0

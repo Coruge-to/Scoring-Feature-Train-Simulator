@@ -535,13 +535,13 @@ if (-not $BehaviorOnly) {
     $built1 = ($LASTEXITCODE -eq 0)
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $probeDir 'Build-B1Probe.ps1') -WorkDir $b2 -Root $Root | Out-Null
     $built2 = ($LASTEXITCODE -eq 0)
-    $pd1 = Join-Path $b1 'probe-out\TSScoringPlugin.AtsExLegacy.Telemetry.dll'; $pd2 = Join-Path $b2 'probe-out\TSScoringPlugin.AtsExLegacy.Telemetry.dll'; $prd = Join-Path $b1 'product-out\TSScoringPlugin.AtsExLegacy.Telemetry.dll'
+    $pd1 = Join-Path $b1 'probe-out\TScoring.TelemetryA.dll'; $pd2 = Join-Path $b2 'probe-out\TScoring.TelemetryA.dll'; $prd = Join-Path $b1 'product-out\TScoring.TelemetryA.dll'
     Check 'S26 the probe DLL builds (warnings are errors) and the build is deterministic (two builds, same SHA-256)' ($built1 -and $built2 -and (Test-Path $pd1) -and (Test-Path $pd2) -and ((Get-FileHash $pd1 -Algorithm SHA256).Hash -ceq (Get-FileHash $pd2 -Algorithm SHA256).Hash))
     Check 'S27 the PRODUCT DLL rebuilt from the working tree is byte-identical to the accepted 0.4.0.0 (SHA-256 995486BE...): the product is unchanged' ((Test-Path $prd) -and ((Get-FileHash $prd -Algorithm SHA256).Hash -ceq $AcceptedProductSha) -and ((Get-Item $prd).VersionInfo.FileVersion -ceq '0.4.0.0'))
     $pbytes = [IO.File]::ReadAllBytes($pd1); $prbytes = [IO.File]::ReadAllBytes($prd)
     $ptext = [Text.Encoding]::GetEncoding(28591).GetString($pbytes); $prtext = [Text.Encoding]::GetEncoding(28591).GetString($prbytes)
     Check 'S28 the probe DLL contains the probe types and is version 0.4.1.1; the product DLL contains none of them' (($ptext.Contains('B1ProbeHook')) -and ($ptext.Contains((U16 'PROBE_REQUEST_ACCEPTED'))) -and ((Get-Item $pd1).VersionInfo.FileVersion -ceq '0.4.1.1') -and (-not $prtext.Contains('B1Probe')) -and (-not $prtext.Contains((U16 'PROBE_'))))
-    Check 'S29 the probe DLL keeps the product file name and the product telemetry classes (TsScoringLegacyTelemetryExtension, LegacyTelemetrySession)' ((Split-Path $pd1 -Leaf) -ceq 'TSScoringPlugin.AtsExLegacy.Telemetry.dll' -and $ptext.Contains('TsScoringLegacyTelemetryExtension') -and $ptext.Contains('LegacyTelemetrySession'))
+    Check 'S29 the probe DLL keeps the product file name and the product telemetry classes (TsScoringLegacyTelemetryExtension, LegacyTelemetrySession)' ((Split-Path $pd1 -Leaf) -ceq 'TScoring.TelemetryA.dll' -and $ptext.Contains('TsScoringLegacyTelemetryExtension') -and $ptext.Contains('LegacyTelemetrySession'))
     Check 'S30 the probe DLL does not reference the Current / Handshake control plane (no BveEx, no Handshake type)' ((-not $ptext.Contains('Handshake')) -and (-not $ptext.Contains((U16 'Handshake'))) -and (-not $ptext.Contains('BveEx.PluginHost')))
     $cp = @('Bridge\src\HandshakeControlPlane.cs', 'Caller\src\HandshakeSession.cs', 'Caller\src\TsScoringCallerInputDevice.cs')
     $cpHits = @(); foreach ($c in $cp) { $cc = CodeOf (ReadText (Join-Path $Root $c)); foreach ($m in [regex]::Matches($cc, 'BveHacker|TimeManager|SetTime\(|InitializeTimeAndLocation|\.Initialize\(|LocationManager|ClassWrappers|BveTypes|AtsEx\.PluginHost')) { $cpHits += ($c + ':' + $m.Value) } }
@@ -552,7 +552,7 @@ if (-not $BehaviorOnly) {
 
     # the tap: a pass-through of every datagram, recording only the telemetry line
     $tapDir = Join-Path $testDir 'tap'; New-Item -ItemType Directory -Force $tapDir | Out-Null
-    $tapProbe = Join-Path $tapDir 'TSScoringPlugin.AtsExLegacy.Telemetry.dll'; Copy-Item $pd1 $tapProbe
+    $tapProbe = Join-Path $tapDir 'TScoring.TelemetryA.dll'; Copy-Item $pd1 $tapProbe
     Add-Type -TypeDefinition @"
 using System;
 using System.Collections.Generic;

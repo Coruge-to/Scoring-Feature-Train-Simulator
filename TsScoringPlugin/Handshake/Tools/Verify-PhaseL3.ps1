@@ -17,11 +17,11 @@ $top = (RunGit @('-C', $Root, 'rev-parse', '--show-toplevel')).Trim() -replace '
 $prefix = (RunGit @('-C', $Root, 'rev-parse', '--show-prefix')).Trim()      # TsScoringPlugin/Handshake/
 $telDir = Join-Path $Root 'Telemetry'
 $outDir = Join-Path $telDir 'Legacy\out'
-$dllPath = Join-Path $outDir 'TSScoringPlugin.AtsExLegacy.Telemetry.dll'
+$dllPath = Join-Path $outDir 'TScoring.TelemetryA.dll'
 
 Write-Host '==== the built DLL ===='
 $outFiles = @(Get-ChildItem $outDir -File -ErrorAction SilentlyContinue)
-Check 'out holds exactly the one telemetry DLL (no PDB, no third-party DLL, no other file)' (($outFiles.Count -eq 1) -and ($outFiles[0].Name -eq 'TSScoringPlugin.AtsExLegacy.Telemetry.dll') -and (@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0))
+Check 'out holds exactly the one telemetry DLL (no PDB, no third-party DLL, no other file)' (($outFiles.Count -eq 1) -and ($outFiles[0].Name -eq 'TScoring.TelemetryA.dll') -and (@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0))
 $vi = (Get-Item $dllPath).VersionInfo
 Check 'file version 0.3.0.0 (Phase LI2 holding speed handles and one-lever Cl on top of the LI1 handle / pressure sending, the Phase L3 sender and the LI0 observation) or 0.3.1.0 (the Phase SI-0 observation build) or 0.4.0.0 (Phase SI-1: TRAINLEN, MAPLIMITS, CLEARDIST and the head limit of MAPHEAD) or 0.4.2.0 (Phase PID-D4 Slice 1: the per-PID DataPlane transport) or 0.5.0.0 (Phase PID-D4 Legacy Jump 2A-alpha: the Legacy jump control plane) or 0.6.0.0 (Phase LJX-1: the Legacy jump execution behind a build flag), product TS Scoring, provider Coruge-to, description names Phase L3' (($vi.FileVersion -in @('0.3.0.0', '0.3.1.0', '0.4.0.0', '0.4.2.0', '0.5.0.0', '0.6.0.0')) -and ($vi.ProductName -eq 'TS Scoring') -and ($vi.CompanyName -eq 'Coruge-to') -and ($vi.Comments -match 'Phase L3'))
 $proj = [IO.File]::ReadAllText((Join-Path $telDir 'Legacy\TSScoringPlugin.AtsExLegacy.Telemetry.csproj'))
@@ -190,13 +190,13 @@ if (-not $SkipDeployedCheck) {
     # New: the deployed set is ONE accepted generation - Phase SI-A6 (Caller 0.12.0.0 0F64654F, Bridges 0.7.0.0 40376B11 / E4F3F556) or Phase SI-A7 M1a (Caller 0.13.0.0 8B677DCD, Bridges 0.8.0.0 A310AB03 / CC084CED);
     # both Callers (BVE6, BVE5) are the same file; Phase L3 itself changes no Caller and no Bridge.
     $c6 = H8 (Join-Path $env:ProgramW6432 'mackoy\BveTs6\Input Devices\TScoring.InputDevice.dll'); $c5 = H8 (Join-Path ${env:ProgramFiles(x86)} 'mackoy\BveTs5\Input Devices\TScoring.InputDevice.dll')
-    $bc = H8 (Join-Path $pub 'Documents\BveEx\2.0\Extensions\TScoring.BridgeB.dll'); $bl = H8 (Join-Path $pub 'Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll')
+    $bc = H8 (Join-Path $pub 'Documents\BveEx\2.0\Extensions\TScoring.BridgeB.dll'); $bl = H8 (Join-Path $pub 'Documents\BveEx\Legacy\Extensions\TScoring.BridgeA.dll')
     $genA6 = (($c6 -eq '0F64654F') -and ($c5 -eq '0F64654F') -and ($bc -eq '40376B11') -and ($bl -eq 'E4F3F556'))
     $genM1a = (($c6 -eq '8B677DCD') -and ($c5 -eq '8B677DCD') -and ($bc -eq 'A310AB03') -and ($bl -eq 'CC084CED'))
     Check 'deployed Callers (BVE6 and BVE5) and both Bridges are ONE accepted generation: Phase SI-A6 (Caller 0F64654F, Bridges 40376B11 / E4F3F556) or Phase SI-A7 M1a (Caller 8B677DCD, Bridges A310AB03 / CC084CED) - Phase L3 changes none of them' ($genA6 -or $genM1a)
-    Check 'the Legacy Extensions folder holds no telemetry DLL, a Phase L3 / LI / SI build of it (8BFD06AA 10683A92 1F8AE8D3 A01C80BF 688C11A3 96EA2AF8 3DE98B3E 6CBC3471 995486BE, the 2A-alpha build 08CE368C, the LJX-1 acceptance build A060272C, the StationIndex ST-1B acceptance build 3DA8B5ED) or this build, and the Current Extensions folder none' ((((H8 (Join-Path $pub 'Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Telemetry.dll')) -in @('8BFD06AA', '10683A92', '1F8AE8D3', 'A01C80BF', '688C11A3', '96EA2AF8', '3DE98B3E', '6CBC3471', '995486BE', '08CE368C', 'A060272C', '3DA8B5ED', 'absent', (H8 $dllPath)))) -and ((H8 (Join-Path $pub 'Documents\BveEx\2.0\Extensions\TSScoringPlugin.AtsExLegacy.Telemetry.dll')) -eq 'absent'))
+    Check 'the Legacy Extensions folder holds no telemetry DLL, a Phase L3 / LI / SI build of it (8BFD06AA 10683A92 1F8AE8D3 A01C80BF 688C11A3 96EA2AF8 3DE98B3E 6CBC3471 995486BE, the 2A-alpha build 08CE368C, the LJX-1 acceptance build A060272C, the StationIndex ST-1B acceptance build 3DA8B5ED) or this build, and the Current Extensions folder none' ((((H8 (Join-Path $pub 'Documents\BveEx\Legacy\Extensions\TScoring.TelemetryA.dll')) -in @('8BFD06AA', '10683A92', '1F8AE8D3', 'A01C80BF', '688C11A3', '96EA2AF8', '3DE98B3E', '6CBC3471', '995486BE', '08CE368C', 'A060272C', '3DA8B5ED', 'absent', (H8 $dllPath)))) -and ((H8 (Join-Path $pub 'Documents\BveEx\2.0\Extensions\TScoring.TelemetryA.dll')) -eq 'absent'))
     # Phase SI-A7 M1a changes no telemetry: the built Legacy Telemetry stays 0.4.0.0 (995486BE) and the deployed one is that build or absent
-    Check 'Legacy Telemetry 0.4.0.0 is unchanged by Phase SI-A7 M1a: the built DLL is 995486BE and the deployed one is that build (or absent)' (((H8 $dllPath) -eq '995486BE') -and ((H8 (Join-Path $pub 'Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Telemetry.dll')) -in @('995486BE', 'absent')))
+    Check 'Legacy Telemetry 0.4.0.0 is unchanged by Phase SI-A7 M1a: the built DLL is 995486BE and the deployed one is that build (or absent)' (((H8 $dllPath) -eq '995486BE') -and ((H8 (Join-Path $pub 'Documents\BveEx\Legacy\Extensions\TScoring.TelemetryA.dll')) -in @('995486BE', 'absent')))
     Check 'launcher.json is the E3 one (91471ACC)' ((H8 (Join-Path $env:LOCALAPPDATA 'Coruge-to\TS Scoring\launcher.json')) -eq '91471ACC')
 }
 

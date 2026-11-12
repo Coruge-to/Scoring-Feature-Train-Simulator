@@ -27,7 +27,7 @@ $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 $root = Split-Path $here -Parent
 $legacyHost = Join-Path $env:PUBLIC 'Documents\BveEx\Legacy'
-if ([string]::IsNullOrEmpty($ProductDll)) { $ProductDll = Join-Path $root 'Telemetry\Legacy\out\TSScoringPlugin.AtsExLegacy.Telemetry.dll' }
+if ([string]::IsNullOrEmpty($ProductDll)) { $ProductDll = Join-Path $root 'Telemetry\Legacy\out\TScoring.TelemetryA.dll' }
 New-Item -ItemType Directory -Force $ControlDir | Out-Null
 
 function WriteJson([string]$name, [string]$text) {

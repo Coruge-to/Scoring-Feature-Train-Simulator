@@ -14,7 +14,7 @@ param(
 
 $repo = Split-Path (Split-Path $Root -Parent) -Parent
 $legacyHost = Join-Path $env:PUBLIC 'Documents\BveEx\Legacy'
-if ([string]::IsNullOrEmpty($DllPath)) { $DllPath = Join-Path $Root 'Telemetry\Legacy\out\TSScoringPlugin.AtsExLegacy.Telemetry.dll' }
+if ([string]::IsNullOrEmpty($DllPath)) { $DllPath = Join-Path $Root 'Telemetry\Legacy\out\TScoring.TelemetryA.dll' }
 $fixtures = @((Join-Path $Root 'Tests\TelemetryTestFixture.cs'), (Join-Path $Root 'Tests\LegacyDataPlaneTestFixture.cs'), (Join-Path $Root 'Tests\LegacyIlCallScan.cs'))
 $testDir = Join-Path $Root 'logs\d4-tests'
 if (Test-Path $testDir) { Remove-Item $testDir -Recurse -Force }
@@ -31,7 +31,7 @@ function Sha([string]$path) { if (Test-Path -LiteralPath $path) { return (Get-Fi
 
 # ---------------------------------------------------------------------------------------------------------------------------------------------
 Write-Host '--- A-E: the compiled checks (the real DLL, the real session, the real sink and routing core)'
-$dllCopy = Join-Path $testDir 'TSScoringPlugin.AtsExLegacy.Telemetry.dll'
+$dllCopy = Join-Path $testDir 'TScoring.TelemetryA.dll'
 Copy-Item $DllPath $dllCopy
 $fixtureDll = Join-Path $testDir 'TsScoringLegacyTelemetryTests.dll'
 Add-Type -Path $fixtures -ReferencedAssemblies @($dllCopy, 'System.dll', 'System.Core.dll') -OutputAssembly $fixtureDll -OutputType Library

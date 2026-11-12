@@ -67,8 +67,8 @@ $sandbox = Join-Path $testDir 'profile'
 New-Item -ItemType Directory -Force (Join-Path $sandbox 'Desktop') | Out-Null
 
 # the telemetry DLL (copied) and the fixture (compiled into an assembly that may see the internals)
-$dllCopy = Join-Path $testDir 'TSScoringPlugin.AtsExLegacy.Telemetry.dll'
-Copy-Item (Join-Path $Root 'Telemetry\Legacy\out\TSScoringPlugin.AtsExLegacy.Telemetry.dll') $dllCopy
+$dllCopy = Join-Path $testDir 'TScoring.TelemetryA.dll'
+Copy-Item (Join-Path $Root 'Telemetry\Legacy\out\TScoring.TelemetryA.dll') $dllCopy
 $fixtureDll = Join-Path $testDir 'TsScoringLegacyTelemetryTests.dll'
 Add-Type -TypeDefinition ([IO.File]::ReadAllText((Join-Path $Root 'Tests\TelemetryTestFixture.cs'))) -ReferencedAssemblies @($dllCopy) -OutputAssembly $fixtureDll -OutputType Library
 Add-Type -TypeDefinition @"

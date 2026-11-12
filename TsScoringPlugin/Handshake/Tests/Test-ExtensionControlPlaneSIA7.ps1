@@ -354,7 +354,7 @@ if ($isLegacy) { [void][Reflection.Assembly]::LoadFrom((Join-Path $hostDir 'AtsE
 
 $callerAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TScoring.InputDevice.dll')))
 $curAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TScoring.BridgeB.dll')))
-$legAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'Bridge\Legacy\out\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll')))
+$legAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'Bridge\Legacy\out\TScoring.BridgeA.dll')))
 $brAsm = if ($isLegacy) { $legAsm } else { $curAsm }
 $NS = 'TSScoringPlugin.Handshake.'
 $NPS = [Reflection.BindingFlags]'NonPublic,Public,Static'

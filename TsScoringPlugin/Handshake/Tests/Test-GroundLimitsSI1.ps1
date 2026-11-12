@@ -8,7 +8,7 @@ param([string]$Root = (Split-Path $PSScriptRoot -Parent))
 
 $repo = Split-Path (Split-Path $Root -Parent) -Parent
 $legacyHost = Join-Path $env:PUBLIC 'Documents\BveEx\Legacy'
-$dllPath = Join-Path $Root 'Telemetry\Legacy\out\TSScoringPlugin.AtsExLegacy.Telemetry.dll'
+$dllPath = Join-Path $Root 'Telemetry\Legacy\out\TScoring.TelemetryA.dll'
 $fixtureSrc = Join-Path $Root 'Tests\TelemetryTestFixture.cs'
 $srcDir = Join-Path $Root 'Telemetry\Legacy\src'
 $testDir = Join-Path $Root 'logs\si1-tests'
@@ -20,7 +20,7 @@ $script:skips = 0
 function Check([string]$name, [bool]$ok) { $results.Add([pscustomobject]@{ Name = $name; Ok = $ok }); ("{0} {1}" -f $(if ($ok) { 'PASS' } else { 'FAIL' }), $name) }
 function Skip([string]$name) { $script:skips++; ('SKIP (not counted as a pass) ' + $name) }
 
-$dllCopy = Join-Path $testDir 'TSScoringPlugin.AtsExLegacy.Telemetry.dll'
+$dllCopy = Join-Path $testDir 'TScoring.TelemetryA.dll'
 Copy-Item $dllPath $dllCopy
 $fixtureDll = Join-Path $testDir 'TsScoringLegacyTelemetryTests.dll'
 Add-Type -TypeDefinition ([IO.File]::ReadAllText($fixtureSrc)) -ReferencedAssemblies @($dllCopy) -OutputAssembly $fixtureDll -OutputType Library
@@ -535,8 +535,8 @@ if ((Test-Path $ps32) -and (Test-Path $ps64)) {
     $d64 = Join-Path $testDir 'p64'; $d32 = Join-Path $testDir 'p32'
     New-Item -ItemType Directory -Force $d64, $d32 | Out-Null
     Copy-Item $dllCopy $d64; Copy-Item $dllCopy $d32
-    & $ps64 -NoProfile -ExecutionPolicy Bypass -File $probe -Dll (Join-Path $d64 'TSScoringPlugin.AtsExLegacy.Telemetry.dll') -Fixture $fixtureSrc -Out (Join-Path $d64 'out.txt') | Out-Null
-    & $ps32 -NoProfile -ExecutionPolicy Bypass -File $probe -Dll (Join-Path $d32 'TSScoringPlugin.AtsExLegacy.Telemetry.dll') -Fixture $fixtureSrc -Out (Join-Path $d32 'out.txt') | Out-Null
+    & $ps64 -NoProfile -ExecutionPolicy Bypass -File $probe -Dll (Join-Path $d64 'TScoring.TelemetryA.dll') -Fixture $fixtureSrc -Out (Join-Path $d64 'out.txt') | Out-Null
+    & $ps32 -NoProfile -ExecutionPolicy Bypass -File $probe -Dll (Join-Path $d32 'TScoring.TelemetryA.dll') -Fixture $fixtureSrc -Out (Join-Path $d32 'out.txt') | Out-Null
     $t64 = if (Test-Path (Join-Path $d64 'out.txt')) { [IO.File]::ReadAllText((Join-Path $d64 'out.txt')) } else { '' }
     $t32 = if (Test-Path (Join-Path $d32 'out.txt')) { [IO.File]::ReadAllText((Join-Path $d32 'out.txt')) } else { '' }
     Check ('M01 a 32-bit process (BVE5) loads the DLL and writes exactly the same bytes as the 64-bit one: the stream with TRAINLEN / MAPLIMITS / CLEARDIST and the ground diagnostic lines, for Ecb / Smee / Cl (' + $t64 + ' | ' + $t32 + ')') (($t64 -match '^ptr=8 ') -and ($t32 -match '^ptr=4 ') -and (($t64 -replace '^ptr=\d+ ', '') -ceq ($t32 -replace '^ptr=\d+ ', '')) -and ($t64 -match 'lines=\d{3,}'))

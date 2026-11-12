@@ -7,7 +7,7 @@ param([string]$Root = (Split-Path $PSScriptRoot -Parent))
 
 $repo = Split-Path (Split-Path $Root -Parent) -Parent
 $legacyHost = Join-Path $env:PUBLIC 'Documents\BveEx\Legacy'
-$dllPath = Join-Path $Root 'Telemetry\Legacy\out\TSScoringPlugin.AtsExLegacy.Telemetry.dll'
+$dllPath = Join-Path $Root 'Telemetry\Legacy\out\TScoring.TelemetryA.dll'
 $fixtureSrc = Join-Path $Root 'Tests\TelemetryTestFixture.cs'
 $testDir = Join-Path $Root 'logs\li0-tests'
 if (Test-Path $testDir) { Remove-Item $testDir -Recurse -Force }
@@ -16,7 +16,7 @@ New-Item -ItemType Directory -Force $testDir | Out-Null
 $results = New-Object System.Collections.Generic.List[object]
 function Check([string]$name, [bool]$ok) { $results.Add([pscustomobject]@{ Name = $name; Ok = $ok }); ("{0} {1}" -f $(if ($ok) { 'PASS' } else { 'FAIL' }), $name) }
 
-$dllCopy = Join-Path $testDir 'TSScoringPlugin.AtsExLegacy.Telemetry.dll'
+$dllCopy = Join-Path $testDir 'TScoring.TelemetryA.dll'
 Copy-Item $dllPath $dllCopy
 $fixtureDll = Join-Path $testDir 'TsScoringLegacyTelemetryTests.dll'
 Add-Type -TypeDefinition ([IO.File]::ReadAllText($fixtureSrc)) -ReferencedAssemblies @($dllCopy) -OutputAssembly $fixtureDll -OutputType Library

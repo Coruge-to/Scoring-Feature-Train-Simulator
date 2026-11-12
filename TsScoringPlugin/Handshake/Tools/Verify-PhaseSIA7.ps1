@@ -205,7 +205,7 @@ $dist = Join-Path $Root 'dist'
 $callerDll = Join-Path $dist 'TScoring.InputDevice.dll'
 $curDll = Join-Path $dist 'TScoring.BridgeB.dll'
 $curOut = Join-Path $Root 'Bridge\out\TScoring.BridgeB.dll'
-$legDll = Join-Path $Root 'Bridge\Legacy\out\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll'
+$legDll = Join-Path $Root 'Bridge\Legacy\out\TScoring.BridgeA.dll'
 foreach ($d in $callerDll, $curDll, $curOut, $legDll) { "{0}  {1}  {2} bytes" -f (Get-FileHash $d -Algorithm SHA256).Hash, $d.Substring($Root.Length + 1), (Get-Item $d).Length }
 Check 'dist holds exactly the Caller and the Current Bridge DLL; Bridge\out equals dist; the Legacy out folder holds exactly the Legacy DLL; no PDB anywhere' ((@(Get-ChildItem $dist -File | ForEach-Object { $_.Name } | Sort-Object) -join ',') -ceq 'TScoring.BridgeB.dll,TScoring.InputDevice.dll' -and ((Get-FileHash $curDll).Hash -eq (Get-FileHash $curOut).Hash) -and (@(Get-ChildItem (Split-Path $legDll -Parent) -File).Count -eq 1) -and (@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0))
 $vc = (Get-Item $callerDll).VersionInfo; $vb = (Get-Item $curDll).VersionInfo; $vl = (Get-Item $legDll).VersionInfo

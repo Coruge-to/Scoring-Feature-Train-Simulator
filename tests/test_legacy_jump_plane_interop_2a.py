@@ -14,7 +14,7 @@ and once the plane exists but the Python Reader is the old one the tests fail wi
 Environment (optional; they exist so that the S1 fixture check can run these tests against a synthetic reference outside the repository):
     LEGACYJUMP_2A_PYROOT       directory with current_jump_client.py / dataplane_contract.py / managed_app_directory.py
     LEGACYJUMP_2A_PRODUCT_DLL  the product Legacy telemetry DLL that holds the plane
-Unset: the repository root and Telemetry/Legacy/out/TSScoringPlugin.AtsExLegacy.Telemetry.dll are used.
+Unset: the repository root and Telemetry/Legacy/out/TScoring.TelemetryA.dll are used.
 """
 import json
 import os
@@ -36,7 +36,7 @@ import current_jump_client  # noqa: E402
 import dataplane_contract as contract  # noqa: E402
 import managed_app_directory  # noqa: E402
 
-DEFAULT_DLL = os.path.join(REPO, "TsScoringPlugin", "Handshake", "Telemetry", "Legacy", "out", "TSScoringPlugin.AtsExLegacy.Telemetry.dll")
+DEFAULT_DLL = os.path.join(REPO, "TsScoringPlugin", "Handshake", "Telemetry", "Legacy", "out", "TScoring.TelemetryA.dll")
 PRODUCT_DLL = os.environ.get("LEGACYJUMP_2A_PRODUCT_DLL") or DEFAULT_DLL
 SERVE = os.path.join(REPO, "TsScoringPlugin", "Handshake", "Tests", "Serve-LegacyJumpPlane2A.ps1")
 STA = "JUMP_STA_TIME:1:36000"

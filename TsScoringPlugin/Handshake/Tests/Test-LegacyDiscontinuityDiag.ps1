@@ -19,7 +19,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $legacyHost = Join-Path $env:PUBLIC 'Documents\BveEx\Legacy'
-if ([string]::IsNullOrEmpty($DllPath)) { $DllPath = Join-Path $Root 'Telemetry\Legacy\out\TSScoringPlugin.AtsExLegacy.Telemetry.dll' }
+if ([string]::IsNullOrEmpty($DllPath)) { $DllPath = Join-Path $Root 'Telemetry\Legacy\out\TScoring.TelemetryA.dll' }
 $fixtureSrc = Join-Path $Root 'Tests\TelemetryTestFixture.cs'
 $srcDir = Join-Path $Root 'Telemetry\Legacy\src'
 $testDir = Join-Path $env:TEMP ('tsscoring-discdiag-' + [guid]::NewGuid().ToString('N').Substring(0, 12))
@@ -31,7 +31,7 @@ function Check([string]$name, $ok) { $okb = ($ok -is [bool]) -and $ok; $results.
 function Skip([string]$name) { $script:skips++; ('SKIP (not counted as a pass) ' + $name) }
 
 try {
-    $dllCopy = Join-Path $testDir 'TSScoringPlugin.AtsExLegacy.Telemetry.dll'
+    $dllCopy = Join-Path $testDir 'TScoring.TelemetryA.dll'
     Copy-Item $DllPath $dllCopy
     $fixtureDll = Join-Path $testDir 'TsScoringLegacyTelemetryTests.dll'
     Add-Type -TypeDefinition ([IO.File]::ReadAllText($fixtureSrc)) -ReferencedAssemblies @($dllCopy) -OutputAssembly $fixtureDll -OutputType Library

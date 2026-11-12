@@ -19,7 +19,7 @@
     <ProjectGuid>{A41D7E92-6B35-4C08-9F2E-5D18B3C7E604}</ProjectGuid>
     <OutputType>Library</OutputType>
     <RootNamespace>TSScoringPlugin.Telemetry</RootNamespace>
-    <AssemblyName>TSScoringPlugin.AtsExLegacy.Telemetry</AssemblyName>
+    <AssemblyName>TScoring.TelemetryA</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>

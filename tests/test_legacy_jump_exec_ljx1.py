@@ -42,7 +42,7 @@ import telemetry_contract as tc  # noqa: E402
 import telemetry_dataplane_receiver as receiver_module  # noqa: E402
 
 SERVE = os.path.join(REPO, "TsScoringPlugin", "Handshake", "Tests", "Serve-LegacyJumpExecLJX1.ps1")
-DEFAULT_DLL = os.path.join(REPO, "TsScoringPlugin", "Handshake", "Telemetry", "Legacy", "out", "TSScoringPlugin.AtsExLegacy.Telemetry.dll")
+DEFAULT_DLL = os.path.join(REPO, "TsScoringPlugin", "Handshake", "Telemetry", "Legacy", "out", "TScoring.TelemetryA.dll")
 PRODUCT_DLL = os.environ.get("LEGACYJUMP_LJX1_PRODUCT_DLL") or DEFAULT_DLL
 FIXED_PORTS = (54321, 54322)
 

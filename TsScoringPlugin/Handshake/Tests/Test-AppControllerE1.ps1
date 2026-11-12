@@ -617,7 +617,7 @@ $mbNow = @(($hsNow -split "`n") | Where-Object { $_ -match $mbPattern }); $mbBas
 Check ('E15 every MessageBox line of the dependency notice (text, title, flags, P/Invoke, call) is identical to the baseline (' + $mbBase.Count + ' lines)') (($mbBase.Count -ge 8) -and (($mbNow -join "`n") -ceq ($mbBase -join "`n")))
 $curSha = (Get-FileHash (Join-Path $Root 'dist\TScoring.BridgeB.dll')).Hash
 $curOutSha = (Get-FileHash (Join-Path $Root 'Bridge\out\TScoring.BridgeB.dll')).Hash
-$legSha = (Get-FileHash (Join-Path $Root 'Bridge\Legacy\out\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll')).Hash
+$legSha = (Get-FileHash (Join-Path $Root 'Bridge\Legacy\out\TScoring.BridgeA.dll')).Hash
 # SI-R5.3 (PIN-X) - OLD contract: the Current / Legacy Bridge DLLs are the SI-A7 M1a formal build (A310AB03 / CC084CED). NEW contract: the SI-R5.3 formal build (A prime non-blocking observation log, C prime payload delivered outside the gate,
 # B prime tracker before observer): Current 068D4C34... , Legacy 5B7BCA7C... (deterministic Release build of the committed sources, 2 clone paths x 2 builds identical). Unchanged: dist equals out for the Current DLL; the other conditions of the row.
 Check 'E16 both Bridge DLLs are the formal ones (Phase SI-R5.3 build: Current 068D4C34..., Legacy 5B7BCA7C...; Phase SI-A7 M1a build was A310AB03... / CC084CED...; Phase SI-A6 build was 40376B11... / E4F3F556...; before SI-A6: 247F6724... / C2883E40...)' (($curSha -eq '068D4C34913920F2244C756A13E48D1C45D6DE3493B9366DE8ED3D8DB3E561EF') -and ($curOutSha -eq $curSha) -and ($legSha -eq '5B7BCA7CCE7AB338B9CE7A2521C13DC295ACE128ECD9B67B46F9BFC8B903DA14'))

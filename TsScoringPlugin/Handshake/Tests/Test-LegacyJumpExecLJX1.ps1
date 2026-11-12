@@ -29,7 +29,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 $repo = [string](Split-Path (Split-Path $Root -Parent) -Parent)
 $legacyHost = Join-Path $env:PUBLIC 'Documents\BveEx\Legacy'
-if ([string]::IsNullOrEmpty($DllPath)) { $DllPath = Join-Path $Root 'Telemetry\Legacy\out\TSScoringPlugin.AtsExLegacy.Telemetry.dll' }
+if ([string]::IsNullOrEmpty($DllPath)) { $DllPath = Join-Path $Root 'Telemetry\Legacy\out\TScoring.TelemetryA.dll' }
 if ([string]::IsNullOrEmpty($ProductSrcDir)) { $ProductSrcDir = Join-Path $Root 'Telemetry\Legacy\src' }
 if ([string]::IsNullOrEmpty($Tag)) { $Tag = (Get-Date -Format 'yyyyMMdd-HHmmss') }
 if ([string]::IsNullOrEmpty($LogDir)) { $LogDir = Join-Path $Root ('logs\jump-ljx1-tests\' + $Tag) }

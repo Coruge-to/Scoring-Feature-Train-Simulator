@@ -1,7 +1,7 @@
 # PHASE SI-B1 (B1-probe) - builds the OBSERVATION-ONLY probe DLL (version 0.4.1.1, product file name) OUTSIDE the repository tree and, with -AlsoProduct, rebuilds the product DLL
 # (src, 0.4.0.0) the same way so that the two can be compared. Nothing is deployed, copied into BVE / BveEX folders, started or committed.
 #   .\Build-B1Probe.ps1 -WorkDir <folder> [-AlsoProduct]
-# Output: <WorkDir>\probe-out\TSScoringPlugin.AtsExLegacy.Telemetry.dll  (and <WorkDir>\product-out\... with -AlsoProduct). The generated Extension copy is <WorkDir>\gen\.
+# Output: <WorkDir>\probe-out\TScoring.TelemetryA.dll  (and <WorkDir>\product-out\... with -AlsoProduct). The generated Extension copy is <WorkDir>\gen\.
 # This script is ASCII-only on purpose.
 param(
     [Parameter(Mandatory = $true)][string]$WorkDir,
@@ -30,14 +30,14 @@ if ($LASTEXITCODE -ne 0) { Write-Host 'FAILED: the probe Extension copy could no
 $proj = Join-Path $PSScriptRoot 'TSScoringPlugin.AtsExLegacy.Telemetry.B1Probe.csproj'
 & $msbuild $proj /t:Rebuild /p:Configuration=Release ('/p:OutputPath=' + (Join-Path $work 'probe-out') + '\') ('/p:IntermediateOutputPath=' + (Join-Path $work 'probe-obj') + '\') ('/p:GeneratedExtension=' + $gen) /v:minimal /nologo /nr:false /m:1 /p:UseSharedCompilation=false
 if ($LASTEXITCODE -ne 0) { Write-Host 'FAILED: the probe build failed.'; exit 1 }
-$dll = Join-Path $work 'probe-out\TSScoringPlugin.AtsExLegacy.Telemetry.dll'
+$dll = Join-Path $work 'probe-out\TScoring.TelemetryA.dll'
 Write-Host ('PROBE DLL: ' + $dll + ' ' + (Get-Item -LiteralPath $dll).VersionInfo.FileVersion + ' SHA256 ' + (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash)
 
 if ($AlsoProduct) {
     $pproj = Join-Path $Root 'Telemetry\Legacy\TSScoringPlugin.AtsExLegacy.Telemetry.csproj'
     & $msbuild $pproj /t:Rebuild /p:Configuration=Release ('/p:OutputPath=' + (Join-Path $work 'product-out') + '\') ('/p:IntermediateOutputPath=' + (Join-Path $work 'product-obj') + '\') /v:minimal /nologo /nr:false /m:1 /p:UseSharedCompilation=false
     if ($LASTEXITCODE -ne 0) { Write-Host 'FAILED: the product build failed.'; exit 1 }
-    $pdll = Join-Path $work 'product-out\TSScoringPlugin.AtsExLegacy.Telemetry.dll'
+    $pdll = Join-Path $work 'product-out\TScoring.TelemetryA.dll'
     Write-Host ('PRODUCT DLL: ' + $pdll + ' ' + (Get-Item -LiteralPath $pdll).VersionInfo.FileVersion + ' SHA256 ' + (Get-FileHash -LiteralPath $pdll -Algorithm SHA256).Hash)
 }
 exit 0
