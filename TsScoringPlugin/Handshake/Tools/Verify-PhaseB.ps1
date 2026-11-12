@@ -69,7 +69,7 @@ $callerAbsent = $common + @('BveEx.', 'BveEX.', 'BveTypes', 'PluginHost', 'Launc
 $bridgeAbsent = $common + @('Sleep', 'System.Threading.Timer', 'System.Timers', 'MessageBox', 'user32', 'DllImport', 'GetMethod', 'GetProperty', 'GetField', 'Activator', 'GetTypes', 'BindingFlags', 'System.Reflection.Emit', 'Class1', 'AtsLoggerPlugin')
 
 $dist = Join-Path $Root 'dist'
-Inspect (Join-Path $dist 'TSScoringPlugin.Caller.InputDevice.dll') $callerAbsent
+Inspect (Join-Path $dist 'TScoring.InputDevice.dll') $callerAbsent
 Inspect (Join-Path $dist 'TSScoringPlugin.BveEx.Bridge.Prototype.dll') $bridgeAbsent
 
 Write-Host '==== source checks ===='

@@ -37,7 +37,7 @@ public static class ResolveHelper
 "@
 [ResolveHelper]::Install(@((Join-Path $env:ProgramW6432 'mackoy\BveTs6'), (Join-Path $env:PUBLIC 'Documents\BveEx\2.0')))
 
-if (-not $CallerDll) { $CallerDll = Join-Path $Root 'dist\TSScoringPlugin.Caller.InputDevice.dll' }
+if (-not $CallerDll) { $CallerDll = Join-Path $Root 'dist\TScoring.InputDevice.dll' }
 $callerAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes($CallerDll))
 $NS = 'TSScoringPlugin.Handshake.'
 $launcherT = $callerAsm.GetType($NS + 'InitialDefaultsLauncher')

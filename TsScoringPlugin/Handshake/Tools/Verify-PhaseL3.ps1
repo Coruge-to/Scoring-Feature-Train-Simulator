@@ -189,7 +189,7 @@ if (-not $SkipDeployedCheck) {
     # Re-pinned in Phase SI-A7 M1a. What failed: the hashes. Old: the E4 Caller 0.11.0.0 (1B2F7C1F, deployed for L3-live) and the E4 Bridges 247F6724 / C2883E40 were the only accepted deployed files.
     # New: the deployed set is ONE accepted generation - Phase SI-A6 (Caller 0.12.0.0 0F64654F, Bridges 0.7.0.0 40376B11 / E4F3F556) or Phase SI-A7 M1a (Caller 0.13.0.0 8B677DCD, Bridges 0.8.0.0 A310AB03 / CC084CED);
     # both Callers (BVE6, BVE5) are the same file; Phase L3 itself changes no Caller and no Bridge.
-    $c6 = H8 (Join-Path $env:ProgramW6432 'mackoy\BveTs6\Input Devices\TSScoringPlugin.Caller.InputDevice.dll'); $c5 = H8 (Join-Path ${env:ProgramFiles(x86)} 'mackoy\BveTs5\Input Devices\TSScoringPlugin.Caller.InputDevice.dll')
+    $c6 = H8 (Join-Path $env:ProgramW6432 'mackoy\BveTs6\Input Devices\TScoring.InputDevice.dll'); $c5 = H8 (Join-Path ${env:ProgramFiles(x86)} 'mackoy\BveTs5\Input Devices\TScoring.InputDevice.dll')
     $bc = H8 (Join-Path $pub 'Documents\BveEx\2.0\Extensions\TSScoringPlugin.BveEx.Bridge.Prototype.dll'); $bl = H8 (Join-Path $pub 'Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll')
     $genA6 = (($c6 -eq '0F64654F') -and ($c5 -eq '0F64654F') -and ($bc -eq '40376B11') -and ($bl -eq 'E4F3F556'))
     $genM1a = (($c6 -eq '8B677DCD') -and ($c5 -eq '8B677DCD') -and ($bc -eq 'A310AB03') -and ($bl -eq 'CC084CED'))

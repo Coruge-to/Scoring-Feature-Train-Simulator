@@ -352,7 +352,7 @@ $hostDir = if ($isLegacy) { Join-Path $publicDocs 'Legacy' } else { Join-Path $p
 [SiaTestResolver]::Install(@((Join-Path $env:ProgramW6432 'mackoy\BveTs6'), $hostDir))
 if ($isLegacy) { [void][Reflection.Assembly]::LoadFrom((Join-Path $hostDir 'AtsEx.PluginHost.dll')) }
 
-$callerAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TSScoringPlugin.Caller.InputDevice.dll')))
+$callerAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TScoring.InputDevice.dll')))
 $curAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TSScoringPlugin.BveEx.Bridge.Prototype.dll')))
 $legAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'Bridge\Legacy\out\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll')))
 $brAsm = if ($isLegacy) { $legAsm } else { $curAsm }
@@ -867,7 +867,7 @@ try {
     Check 'J3 the request of the normal start says epochSupported=Y ready_epoch=1 tickSeenInEpoch=1; the pause re-ON requests say ready_epoch=2 / 3 with tickSeenInEpoch=0' (($epl[0][0] -match 'epochSupported=Y ready_epoch=1 tickSeenInEpoch=1') -and ($epl[1][0] -match 'epochSupported=Y ready_epoch=2 tickSeenInEpoch=0') -and ($epl[2][0] -match 'epochSupported=Y ready_epoch=3 tickSeenInEpoch=0'))
     Check 'J4 DrivingActive came on by the Caller''s own Tick in the pause re-ON cycles (the start gate is unchanged and needs no Extension Tick)' ((@($cyJ | Where-Object { $cy = $_; (@($lg | Where-Object { $_ -match ('cycle=' + $cy + ' ') -and $_ -match ' DRIVING_ACTIVE_ON ' })).Count -eq 1 }).Count) -eq 3)
     Check 'J5 no automatic P: the Caller sends no key at all (the Caller DLL has no SendInput / PostMessage / keybd_event; the only P/Invoke is the notice MessageBoxW)' (& {
-            $cb = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TSScoringPlugin.Caller.InputDevice.dll')))
+            $cb = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TScoring.InputDevice.dll')))
             (@('SendInput', 'keybd_event', 'PostMessage', 'SendMessage', 'GetAsyncKeyState', 'SetForegroundWindow' | Where-Object { $cb.Contains($_) }).Count -eq 0) })
     ADispose $b4
 
@@ -1169,7 +1169,7 @@ sys.exit(0)
 
     # =================================================================================================================================================
     Write-Host '--- M: REAL older DLLs (the last commit before SI-A7) against the new ones, both directions'
-    $oldCallerPath = if ($BaselineDir) { Join-Path $BaselineDir 'TSScoringPlugin.Caller.InputDevice.dll' } else { '' }
+    $oldCallerPath = if ($BaselineDir) { Join-Path $BaselineDir 'TScoring.InputDevice.dll' } else { '' }
     $oldBridgePath = if ($BaselineDir) { Join-Path $BaselineDir 'TSScoringPlugin.BveEx.Bridge.Prototype.dll' } else { '' }
     if ((-not $BaselineDir) -or (-not (Test-Path $oldCallerPath)) -or (-not (Test-Path $oldBridgePath))) {
         Skip 'M1-M8 no baseline DLL folder (-BaselineDir / SIA7_BASELINE_DLLS): the checks against REAL pre-SI-A7 Caller and Bridge DLLs were not run'

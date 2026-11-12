@@ -68,7 +68,7 @@ $handler = [ResolveEventHandler]{
 }
 [AppDomain]::CurrentDomain.add_AssemblyResolve($handler)
 
-$callerPath = Join-Path $Root 'dist\TSScoringPlugin.Caller.InputDevice.dll'
+$callerPath = Join-Path $Root 'dist\TScoring.InputDevice.dll'
 $callerBytes = [IO.File]::ReadAllBytes($callerPath)
 $callerAsm = [Reflection.Assembly]::Load($callerBytes)
 $NS = 'TSScoringPlugin.Handshake.'
@@ -617,8 +617,8 @@ Check 'D24 the only log file name in the DLL is still the shared C1 observation 
 
 # metadata
 $vi = (Get-Item $callerPath).VersionInfo
-Check 'D25 [45] provider Coruge-to (company, copyright, ProviderName constant); product TS Scoring; version 0.9.0.0 (Phase E1 build); description names Phase E1 and no observation / diagnostic / D1-OBS wording; DLL name unchanged' (($vi.CompanyName -eq 'Coruge-to') -and ($vi.LegalCopyright -match 'Coruge-to') -and ($vi.ProductName -eq 'TS Scoring') -and ([string]$sessT.GetField('ProviderName', $nps).GetRawConstantValue() -ceq 'Coruge-to') -and ((WorkText 'Caller\src\AssemblyInfo.cs') -match 'AssemblyVersion\("0\.9\.0\.0"\)') -and ((WorkText 'Caller\src\AssemblyInfo.cs') -match 'AssemblyDescription\("Phase E1') -and ((WorkText 'Caller\src\AssemblyInfo.cs') -notmatch '(?i)observation build|diagnostic build|D1-OBS') -and ($callerAsm.GetName().Name -ceq 'TSScoringPlugin.Caller.InputDevice') -and ((Split-Path $callerPath -Leaf) -ceq 'TSScoringPlugin.Caller.InputDevice.dll'))
-Check 'D26 no PDB anywhere in the tree and dist holds exactly the Caller and the Current Bridge DLL' ((@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0) -and ((@(Get-ChildItem (Join-Path $Root 'dist') -File | ForEach-Object { $_.Name } | Sort-Object) -join ',') -eq 'TSScoringPlugin.BveEx.Bridge.Prototype.dll,TSScoringPlugin.Caller.InputDevice.dll'))
+Check 'D25 [45] provider Coruge-to (company, copyright, ProviderName constant); product TS Scoring; version 0.9.0.0 (Phase E1 build); description names Phase E1 and no observation / diagnostic / D1-OBS wording; DLL name unchanged' (($vi.CompanyName -eq 'Coruge-to') -and ($vi.LegalCopyright -match 'Coruge-to') -and ($vi.ProductName -eq 'TS Scoring') -and ([string]$sessT.GetField('ProviderName', $nps).GetRawConstantValue() -ceq 'Coruge-to') -and ((WorkText 'Caller\src\AssemblyInfo.cs') -match 'AssemblyVersion\("0\.9\.0\.0"\)') -and ((WorkText 'Caller\src\AssemblyInfo.cs') -match 'AssemblyDescription\("Phase E1') -and ((WorkText 'Caller\src\AssemblyInfo.cs') -notmatch '(?i)observation build|diagnostic build|D1-OBS') -and ($callerAsm.GetName().Name -ceq 'TScoring.InputDevice') -and ((Split-Path $callerPath -Leaf) -ceq 'TScoring.InputDevice.dll'))
+Check 'D26 no PDB anywhere in the tree and dist holds exactly the Caller and the Current Bridge DLL' ((@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0) -and ((@(Get-ChildItem (Join-Path $Root 'dist') -File | ForEach-Object { $_.Name } | Sort-Object) -join ',') -eq 'TSScoringPlugin.BveEx.Bridge.Prototype.dll,TScoring.InputDevice.dll'))
 $refs = ($callerAsm.GetReferencedAssemblies() | ForEach-Object { $_.Name } | Sort-Object) -join ','
 Check ('D27 the Caller references only mscorlib, System, System.Core, System.Windows.Forms, Mackoy.IInputDevice (' + $refs + '); no third-party DLL') ($refs -eq 'Mackoy.IInputDevice,mscorlib,System,System.Core,System.Windows.Forms')
 

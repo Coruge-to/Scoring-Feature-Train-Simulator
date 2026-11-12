@@ -97,7 +97,7 @@ public static class L3Resolver
 [void][Reflection.Assembly]::LoadFrom($fixtureDll)
 
 # the real Caller (unchanged by Phase L3)
-$callerAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TSScoringPlugin.Caller.InputDevice.dll')))
+$callerAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TScoring.InputDevice.dll')))
 $NS = 'TSScoringPlugin.Handshake.'
 $sessT = $callerAsm.GetType($NS + 'HandshakeSession')
 $mgrT = $callerAsm.GetType($NS + 'AppProcessManager')
@@ -210,7 +210,7 @@ try {
     # path again and runs for real: the sender discovers the application's Directory endpoint of the stand-in BVE process (its Ready event / AppDirectory / Telemetry Directory
     # are the real ones the Caller code creates), sends Envelope v1 there, and sends NOTHING to the fixed legacy port.
     $legacyManagedChainApplicable = $true
-    if ($legacyManagedChainApplicable -and $qtOk -and (-not $udpBusy) -and (-not $mainRunning) -and (Test-Path $mainPy) -and (Test-Path $bveWinPy) -and (Test-Path (Join-Path $Root 'dist\TSScoringPlugin.Caller.InputDevice.dll'))) {
+    if ($legacyManagedChainApplicable -and $qtOk -and (-not $udpBusy) -and (-not $mainRunning) -and (Test-Path $mainPy) -and (Test-Path $bveWinPy) -and (Test-Path (Join-Path $Root 'dist\TScoring.InputDevice.dll'))) {
         $env:USERPROFILE = $sandbox
         $env:HOME = $sandbox
         $psi = New-Object Diagnostics.ProcessStartInfo

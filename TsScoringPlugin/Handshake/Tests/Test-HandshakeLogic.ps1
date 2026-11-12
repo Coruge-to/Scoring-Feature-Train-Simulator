@@ -34,7 +34,7 @@ $handler = [ResolveEventHandler]{
 }
 [AppDomain]::CurrentDomain.add_AssemblyResolve($handler)
 
-$callerAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TSScoringPlugin.Caller.InputDevice.dll')))
+$callerAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TScoring.InputDevice.dll')))
 $bridgeAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TSScoringPlugin.BveEx.Bridge.Prototype.dll')))
 $sessionType = $callerAsm.GetType('TSScoringPlugin.Handshake.HandshakeSession')
 $bridgeType = $bridgeAsm.GetType('TSScoringPlugin.Handshake.TsScoringBridgePrototype')

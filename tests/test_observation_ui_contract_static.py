@@ -392,7 +392,7 @@ class UiContractStatic(unittest.TestCase):
         carriers = (
             (r"C:\Users\Public\Documents\BveEx\2.0\Extensions\TSScoringPlugin.BveEx.Bridge.Prototype.dll", True),
             (r"C:\Users\Public\Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll", True),
-            (r"C:\Program Files\mackoy\BveTs6\Input Devices\TSScoringPlugin.Caller.InputDevice.dll", True),
+            (r"C:\Program Files\mackoy\BveTs6\Input Devices\TScoring.InputDevice.dll", True),
             (r"C:\Users\Public\Documents\BveEx\2.0\Extensions\TsScoringPlugin.dll", False),
             (r"C:\Users\Public\Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Telemetry.dll", False),
             (r"C:\Users\Public\Documents\BveEx\2.0\Extensions\TSScoring.FirstChanceDiagnostic.dll", False),

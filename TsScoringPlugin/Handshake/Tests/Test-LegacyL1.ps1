@@ -55,7 +55,7 @@ public static class TestResolver
 $legacyHost = Join-Path $env:PUBLIC 'Documents\BveEx\Legacy'
 [TestResolver]::Install(@((Join-Path $env:ProgramW6432 'mackoy\BveTs6'), $legacyHost))
 $hostAsm = [Reflection.Assembly]::LoadFrom((Join-Path $legacyHost 'AtsEx.PluginHost.dll'))
-$callerAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TSScoringPlugin.Caller.InputDevice.dll')))
+$callerAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TScoring.InputDevice.dll')))
 $curAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TSScoringPlugin.BveEx.Bridge.Prototype.dll')))
 $legAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'Bridge\Legacy\out\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll')))
 $NS = 'TSScoringPlugin.Handshake.'
