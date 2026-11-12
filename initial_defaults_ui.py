@@ -739,14 +739,20 @@ def collect(dialog):
 # OWNERSHIP (Owner 2026-11-12, Stage IO-1). The Caller starts this process from the BVE settings dialog (Properties) and passes three values through the environment (an internal Caller/Python contract, not a public one;
 # argv stays exactly `--initial-defaults`): the pid of that BVE, the HWND that was in front when Properties was pressed (the BVE settings dialog) and the HWND of the BVE main window.
 # The window becomes an OWNED window of the settings dialog (it never goes behind it, it is not global top-most, other applications can still be put in front of it). It keeps the STANDARD behaviour of an owned window (Owner ruling 2026-11-12): no taskbar button of its own and no Alt+Tab entry, like the BVE settings dialog and the HUD; no extended window style is added or removed. Recovery is the Properties re-press (the Caller restores / re-owns / raises the existing window), never the taskbar.
-# When the settings dialog is destroyed the owner moves to the main window of the SAME bve pid; when that bve process ends the window closes without saving (the x / Esc path), so no orphan is left.
+# LIFETIME (Owner ruling 2026-11-12, O2/O3): the window lives as long as it has a valid BVE window of the SAME bve pid, not only as long as the bve process lives. A timer (POLL_INTERVAL_MS = 100 ms, no blocking, no process listing) runs tick():
+#   state A: the owner (the settings dialog) is valid -> nothing to do;
+#   state B: the owner is gone but a main window of the same bve pid is valid -> the owner moves to it AT ONCE (a settings dialog that is destroyed never leaves the window unowned for longer than one poll);
+#            the main window is re-checked, and when it is gone it is searched again among the top-level windows of the same pid (exactly one visible unowned candidate, never a guess, never another pid);
+#   state C: owner and main window are both gone while the bve process is still alive (it is shutting down / writing a crash report): after GONE_CONFIRM_TICKS consecutive observations (about 200 ms) the window closes WITHOUT saving (reject, exit code 0);
+#   state D: the bve process ended -> the window closes without saving, as before.
 # Every value is checked here: it parses as a plain decimal / 0x number, the HWND exists and belongs to the announced pid, the pid is alive. An HWND of another pid is never used. Unusable information never starts an unowned window
 # (exit code 3, one short line on stderr); NO information at all (a development start from a console) keeps the plain unowned window.
 ENV_BVE_PID = "TSSCORING_INITDEF_BVE_PID"
 ENV_OWNER_HWND = "TSSCORING_INITDEF_OWNER_HWND"
 ENV_MAIN_HWND = "TSSCORING_INITDEF_BVE_MAIN_HWND"
 EXIT_OWNER_INVALID = 3
-POLL_INTERVAL_MS = 500                                            # the bve-alive / owner check; the end of BVE is noticed within one interval (measured in the Stage IO-1 CPU and latency check)
+POLL_INTERVAL_MS = 100                                            # the window-liveness / bve-alive check (see LIFETIME above); measured in the O2/O3 stage (CPU time, latency)
+GONE_CONFIRM_TICKS = 2                                            # state C needs this many consecutive observations (about 200 ms): one transient observation never closes the window
 _GWLP_HWNDPARENT = -8
 _GW_OWNER = 4
 
@@ -792,6 +798,8 @@ class Win32(object):
         self.u32 = ctypes.WinDLL("user32", use_last_error=True)
         self.k32 = ctypes.WinDLL("kernel32", use_last_error=True)
         self.u32.IsWindow.argtypes = [wt.HWND]
+        self.u32.IsWindowVisible.argtypes = [wt.HWND]
+        self.u32.EnumWindows.argtypes = [ctypes.c_void_p, wt.LPARAM]
         self.u32.GetWindowThreadProcessId.argtypes = [wt.HWND, ctypes.POINTER(wt.DWORD)]
         self.u32.GetWindowThreadProcessId.restype = wt.DWORD
         self.u32.GetWindowLongPtrW.argtypes = [wt.HWND, ctypes.c_int]
@@ -829,6 +837,20 @@ class Win32(object):
         value = self.u32.GetWindow(self._wt.HWND(hwnd), _GW_OWNER)
         return int(value) if value else 0
 
+    def find_main(self, pid, exclude=0):
+        """The main window of the process `pid`: the ONE visible top-level window without an owner that belongs to exactly that pid (the same rule as Process.MainWindowHandle). Windows of other pids and `exclude` are never
+        considered; with no candidate or with several candidates (never a guess) the answer is 0."""
+        found = []
+
+        def callback(hwnd, _):
+            h = int(hwnd) if hwnd else 0
+            if h and h != exclude and self.window_pid(h) == pid and self.u32.IsWindowVisible(self._wt.HWND(h)) and not self.get_owner(h):
+                found.append(h)
+            return True
+        proc = ctypes.WINFUNCTYPE(self._wt.BOOL, self._wt.HWND, self._wt.LPARAM)(callback)
+        self.u32.EnumWindows(proc, 0)
+        return found[0] if len(found) == 1 else 0
+
     def set_owner(self, hwnd, owner):
         self.u32.SetWindowLongPtrW(self._wt.HWND(hwnd), _GWLP_HWNDPARENT, owner)
         return self.get_owner(hwnd) == owner
@@ -853,6 +875,7 @@ class OwnerBinding(object):
         self.api = api
         self.owner = owner_hwnd
         self.dialog_hwnd = 0
+        self.gone_ticks = 0
         self.keepalive = []
 
     def attach(self, dialog):
@@ -863,22 +886,34 @@ class OwnerBinding(object):
         dialog.windowHandle().setTransientParent(foreign)
         self.keepalive.append(foreign)
 
+    def _valid(self, hwnd):
+        return bool(hwnd) and self.api.is_window(hwnd) and self.api.window_pid(hwnd) == self.request.bve_pid
+
     def tick(self):
-        if not self.api.process_alive(self.request.bve_pid):
+        """'bve-exited' (state D) / 'bve-windows-gone' (state C, confirmed) when the dialog must close without saving, else 'alive'. Never blocks."""
+        pid = self.request.bve_pid
+        if not self.api.process_alive(pid):
             return "bve-exited"
-        if not (self.owner and self.api.is_window(self.owner) and self.api.window_pid(self.owner) == self.request.bve_pid):
-            main = self.request.main_hwnd
-            self.owner = main if (main and self.api.is_window(main) and self.api.window_pid(main) == self.request.bve_pid) else 0
-        if self.owner and self.dialog_hwnd and self.api.get_owner(self.dialog_hwnd) != self.owner:
-            self.api.set_owner(self.dialog_hwnd, self.owner)               # the settings dialog was destroyed: the owner moves to the main window of the SAME bve
-        return "alive"
+        if self._valid(self.owner):                                        # state A: nothing to do (the counter is already 0: after state C the owner is 0, so state A can only be re-entered through state B)
+            return "alive"
+        main = self.request.main_hwnd if self._valid(self.request.main_hwnd) else self.api.find_main(pid, self.dialog_hwnd)
+        if main:                                                           # state B: the owner moves to the main window of the SAME bve at once
+            self.gone_ticks = 0
+            self.owner = main
+            self.request.main_hwnd = main
+            if self.dialog_hwnd and self.api.get_owner(self.dialog_hwnd) != main:
+                self.api.set_owner(self.dialog_hwnd, main)
+            return "alive"
+        self.owner = 0                                                     # state C: no window of this bve is left
+        self.gone_ticks += 1
+        return "bve-windows-gone" if self.gone_ticks >= GONE_CONFIRM_TICKS else "alive"
 
     def start_timer(self, dialog):
         timer = QTimer(dialog)
         timer.setInterval(POLL_INTERVAL_MS)
 
         def check():
-            if self.tick() == "bve-exited":
+            if self.tick() in ("bve-exited", "bve-windows-gone"):
                 timer.stop()
                 dialog.reject()                                             # the x / Esc path: nothing is saved, the event loop ends, the process ends with exit code 0
 

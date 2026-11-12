@@ -289,6 +289,101 @@ class OwnershipNative(unittest.TestCase):
         self.assertEqual([h for h in process_windows(p.proc.pid) if title_of(h) == TITLE], [w], "IO1-RED: R13-I the restored window is not the same single window")
         self.assertEqual(facts(w)["owner"], owner_before, "IO1-RED: R13-H the owner changed by restoring")
 
+    # L1-L12 (Owner ruling 2026-11-12, O2/O3: the window lives as long as it has a valid window of ITS bve) ----------------------------------------------------------------
+    def _record(self, name, value):
+        """Timings are written to TSS_TIMING_OUT (a json lines file) when it is set: the stage's measurements come from these tests, not from a separate model."""
+        path = os.environ.get("TSS_TIMING_OUT")
+        if path:
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"test": name, "value": value}) + "\n")
+
+    def test_L1_L2_L11_L12_the_owner_moves_to_the_main_window_within_one_poll_and_the_window_is_never_long_ownerless(self):
+        b = self.bve()
+        p = self.product(b)
+        w = p.window()
+        self.assertTrue(w, "IO1-HARNESS: the window did not appear")
+        self.assertEqual(facts(w)["owner"], b.settings, "IO1-RED: not owned by the settings dialog at the start")
+        b.command("destroy-settings")
+        t_invalid = t_main = None
+        bad_style = []
+        deadline = time.time() + 3.0
+        while time.time() < deadline:
+            now = time.time()
+            if t_invalid is None and not u32.IsWindow(wt.HWND(b.settings)):
+                t_invalid = now
+            f = facts(w)
+            if f["ex"] & (WS_EX_APPWINDOW | WS_EX_TOPMOST | WS_EX_TOOLWINDOW):
+                bad_style.append(hex(f["ex"]))
+            if t_invalid is not None and f["owner"] == b.main:
+                t_main = now
+                break
+            time.sleep(0.002)
+        self.assertIsNotNone(t_invalid, "IO1-HARNESS: the settings dialog was not destroyed")
+        self.assertIsNotNone(t_main, "IO1-RED: L1 the owner did not move to the main window of the same bve within 3 s")
+        ownerless = t_main - t_invalid
+        self._record("O3_ownerless_seconds", round(ownerless, 3))
+        self.assertLess(ownerless, 0.3, "IO1-RED: L2 the window was ownerless for %.3f s after the settings dialog was destroyed (target 0.2 s, hard limit 0.3 s here, Owner limit 0.5 s; shell rules make it taskbar / Alt+Tab eligible meanwhile)" % ownerless)
+        self.assertEqual(bad_style, [], "IO1-RED: L11/L12 the owner change added an extended style (APPWINDOW / TOPMOST / TOOLWINDOW): %r" % bad_style[:3])
+        self.assertIsNone(p.proc.poll(), "IO1-RED: the window must survive the settings dialog")
+
+    def test_L3_L9_L10_when_no_window_of_the_bve_is_left_the_window_closes_without_saving_although_the_bve_process_lives(self):
+        b = self.bve()
+        p = self.product(b)
+        w = p.window()
+        self.assertTrue(w, "IO1-HARNESS: the window did not appear")
+        b.command("destroy-main")                                                   # settings dialog and main window are gone; the fake bve PROCESS lives on (like BVE writing a crash report)
+        t_invalid = t_hidden = None
+        deadline = time.time() + 6.0
+        while time.time() < deadline:
+            now = time.time()
+            if t_invalid is None and not u32.IsWindow(wt.HWND(b.main)):
+                t_invalid = now
+            if t_invalid is not None and not (u32.IsWindow(wt.HWND(w)) and u32.IsWindowVisible(wt.HWND(w))):
+                t_hidden = now
+                break
+            time.sleep(0.002)
+        self.assertIsNone(b.proc.poll(), "IO1-HARNESS: the fake bve process must still be alive")
+        self.assertIsNotNone(t_invalid, "IO1-HARNESS: the main window was not destroyed")
+        self.assertIsNotNone(t_hidden, "IO1-RED: L3 the window stayed although every window of its bve is gone and the bve process lives (O2: it stayed until the bve process ended)")
+        gap = t_hidden - t_invalid
+        self._record("O2_window_gone_after_main_destroyed_seconds", round(gap, 3))
+        self.assertLess(gap, 0.5, "IO1-RED: L3 the window needed %.3f s to go after the last bve window was destroyed (limit 0.5 s)" % gap)
+        ended = wait_until(lambda: p.proc.poll() is not None, 2.0)
+        self._record("O2_python_exit_after_main_destroyed_seconds", round(time.time() - t_invalid, 3))
+        self.assertTrue(ended, "IO1-RED: L10 the python process did not end within 2 s")
+        self.assertEqual(p.proc.returncode, 0, "IO1-RED: L10 the automatic close must end with exit code 0 (got %r)" % p.proc.returncode)
+        self.assertFalse(p.saved_json(), "IO1-RED: L9 the automatic close must not create initial-defaults.json")
+
+    def test_L7_the_main_window_of_another_bve_never_keeps_the_window_open_nor_becomes_its_owner(self):
+        a = self.bve()
+        other = self.bve()
+        p = self.product(a)
+        w = p.window()
+        self.assertTrue(w, "IO1-HARNESS: the window did not appear")
+        a.command("destroy-main")
+        seen_other = []
+        deadline = time.time() + 4.0
+        while time.time() < deadline and u32.IsWindow(wt.HWND(w)) and u32.IsWindowVisible(wt.HWND(w)):
+            if facts(w)["owner"] in (other.main, other.settings):
+                seen_other.append(facts(w)["owner"])
+            time.sleep(0.005)
+        self.assertEqual(seen_other, [], "IO1-RED: L7 the window was owned by a window of ANOTHER bve")
+        self.assertFalse(u32.IsWindow(wt.HWND(w)) and u32.IsWindowVisible(wt.HWND(w)), "IO1-RED: L7 another bve's windows kept the window open")
+        self.assertIsNone(other.proc.poll(), "IO1-HARNESS: the other fake bve must still be alive")
+
+    def test_L6_a_main_window_that_comes_back_becomes_the_new_owner_and_the_window_stays_open(self):
+        b = self.bve()
+        p = self.product(b)
+        w = p.window()
+        self.assertTrue(w, "IO1-HARNESS: the window did not appear")
+        b.command("destroy-main")
+        b.command("new-main")                                                        # a re-created main window with a NEW hwnd, a few milliseconds later
+        new_main = json.loads(b.proc.stdout.readline().decode("utf-8"))["main"]
+        self.assertTrue(wait_until(lambda: facts(w)["owner"] == new_main, 3.0), "IO1-RED: L6 the owner did not move to the re-created main window of the same bve (owner=%s new main=%s)" % (facts(w)["owner"], new_main))
+        time.sleep(0.6)
+        self.assertIsNone(p.proc.poll(), "IO1-RED: L6 the window closed although the main window of its bve came back")
+        self.assertTrue(u32.IsWindowVisible(wt.HWND(w)), "IO1-RED: L6 the window disappeared although the main window of its bve came back")
+
     # R5 ------------------------------------------------------------------------------------------------------------------------------------
     def test_R5_a_second_start_while_the_window_lives_opens_nothing_and_exits_at_once(self):
         b = self.bve()
@@ -481,16 +576,15 @@ class OwnerLogic(unittest.TestCase):
         self.assertIsNone(ui.choose_owner(req, Api({11: 100}, alive=False))[0], "IO1-RED: a BVE that is gone has no owner")
         self.assertEqual(ui.choose_owner(req, Api({11: 999, 12: 100}))[0], 12, "the owner of another pid is skipped, the main window of the right pid is used")
 
-    def test_binding_tick_follows_the_owner_rules(self):
-        ui = self.module()
-        self.assertTrue(hasattr(ui, "OwnerBinding"), "IO1-RED: no OwnerBinding")
-
+    def _fake_api(self):
         class Api(object):
             def __init__(self):
-                self.windows = {11: 100, 12: 100, 21: 200}
+                self.windows = {11: 100, 12: 100, 21: 200, 22: 200}          # 11 settings dialog + 12 main of bve 100; 21 settings + 22 main of ANOTHER bve 200
+                self.top_level_unowned_visible = {12: 100, 22: 200}            # what find_main may answer from
                 self.alive = {100: True, 200: True}
                 self.owner_of = {5: 11}
                 self.set_calls = []
+                self.find_calls = 0
 
             def process_alive(self, pid):
                 return self.alive.get(pid, False)
@@ -509,28 +603,85 @@ class OwnerLogic(unittest.TestCase):
                 self.owner_of[h] = o
                 return True
 
-        api = Api()
+            def find_main(self, pid, exclude=0):
+                self.find_calls += 1
+                found = [h for h, p in self.top_level_unowned_visible.items() if p == pid and h in self.windows and h != exclude]
+                return found[0] if len(found) == 1 else 0
+
+            def destroy(self, h):
+                self.windows.pop(h, None)
+                self.top_level_unowned_visible.pop(h, None)
+        return Api()
+
+    def test_binding_tick_follows_the_owner_rules(self):
+        ui = self.module()
+        self.assertTrue(hasattr(ui, "OwnerBinding"), "IO1-RED: no OwnerBinding")
+        api = self._fake_api()
         binding = ui.OwnerBinding(ui.OwnerRequest(100, 11, 12), api, 11)
         binding.dialog_hwnd = 5
         self.assertEqual(binding.tick(), "alive")
-        self.assertEqual(api.set_calls, [], "nothing changes while the owner is fine")
-        del api.windows[11]
+        self.assertEqual((api.set_calls, api.find_calls), ([], 0), "IO1-RED: state A (the owner is valid) must change nothing and search nothing")
+        api.destroy(11)
         api.owner_of[5] = 0                                                       # what Windows does when the owner is destroyed
         self.assertEqual(binding.tick(), "alive")
-        self.assertEqual(api.set_calls, [(5, 12)], "IO1-RED: the owner must move to the main window of the same bve")
-        del api.windows[12]
+        self.assertEqual(api.set_calls, [(5, 12)], "IO1-RED: L1 state B: the owner must move to the main window of the same bve IN THE SAME TICK")
+        api.destroy(12)
         api.owner_of[5] = 0
-        self.assertEqual(binding.tick(), "alive")
-        self.assertNotIn((5, 21), api.set_calls, "IO1-RED: a window of ANOTHER bve was used as the owner")
+        self.assertEqual(binding.tick(), "alive", "IO1-RED: L4 one observation of 'no window left' must not close the window")
+        self.assertNotIn((5, 21), api.set_calls, "IO1-RED: L7 a window of ANOTHER bve was used as the owner")
+        self.assertNotIn((5, 22), api.set_calls, "IO1-RED: L7 the main window of ANOTHER bve was used as the owner")
+        self.assertEqual(binding.tick(), "bve-windows-gone", "IO1-RED: L5 two consecutive observations of 'no window left' must close the window (bve still alive)")
         api.alive[100] = False
-        self.assertEqual(binding.tick(), "bve-exited", "IO1-RED: the end of the bve must be reported")
+        self.assertEqual(binding.tick(), "bve-exited", "IO1-RED: L8 the end of the bve process must still be reported")
+
+    def test_L6_a_main_window_that_comes_back_resets_the_confirmation_and_becomes_the_owner(self):
+        ui = self.module()
+        api = self._fake_api()
+        binding = ui.OwnerBinding(ui.OwnerRequest(100, 11, 12), api, 11)
+        binding.dialog_hwnd = 5
+        api.destroy(11)
+        api.destroy(12)
+        api.owner_of[5] = 0
+        self.assertEqual(binding.tick(), "alive")                                  # first observation: nothing left
+        api.windows[13] = 100                                                      # a re-created main window of the same bve
+        api.top_level_unowned_visible[13] = 100
+        self.assertEqual(binding.tick(), "alive", "IO1-RED: L6 the main window came back: the window must stay open")
+        self.assertEqual(api.set_calls[-1:], [(5, 13)], "IO1-RED: L6 the owner must move to the re-created main window of the same bve")
+        api.destroy(13)
+        api.owner_of[5] = 0
+        self.assertEqual(binding.tick(), "alive", "IO1-RED: L6 the confirmation counter must have been reset by the valid main window")
+        self.assertEqual(binding.tick(), "bve-windows-gone")
+
+    def test_L7_the_main_window_search_never_picks_another_pid_nor_guesses(self):
+        ui = self.module()
+        api = self._fake_api()
+        api.top_level_unowned_visible = {22: 200}                                  # only ANOTHER bve has a candidate
+        binding = ui.OwnerBinding(ui.OwnerRequest(100, 11, 12), api, 11)
+        binding.dialog_hwnd = 5
+        api.destroy(11)
+        api.destroy(12)
+        api.owner_of[5] = 0
+        binding.tick()
+        self.assertEqual(binding.tick(), "bve-windows-gone", "IO1-RED: L7 another bve's main window must never keep this window open")
+        self.assertEqual(api.set_calls, [], "IO1-RED: L7 the owner must never be set to a window of another bve")
+        api2 = self._fake_api()
+        api2.windows[14] = 100
+        api2.top_level_unowned_visible = {12: 100, 14: 100}                        # two candidates of the right pid: no guess
+        binding2 = ui.OwnerBinding(ui.OwnerRequest(100, 11, 99), api2, 11)         # the announced main HWND 99 does not exist
+        binding2.dialog_hwnd = 5
+        api2.destroy(11)
+        api2.owner_of[5] = 0
+        binding2.tick()
+        self.assertEqual(api2.set_calls, [], "IO1-RED: L7 with several candidates no window may be guessed")
     def test_the_python_side_never_uses_a_global_topmost_hint_and_polls_gently(self):
         src = open(os.path.join(ROOT, "initial_defaults_ui.py"), encoding="utf-8").read()
         self.assertNotIn("WindowStaysOnTopHint", src, "IO1-RED: a global top-most hint would keep the window above Chrome, Copilot and the task manager")
         self.assertNotIn("HWND_TOPMOST", src)
         ui = self.module()
         self.assertTrue(hasattr(ui, "POLL_INTERVAL_MS"), "IO1-RED: no poll interval")
-        self.assertTrue(250 <= ui.POLL_INTERVAL_MS <= 1000, "IO1-RED: the owner poll interval %r is outside 250..1000 ms" % ui.POLL_INTERVAL_MS)
+        self.assertTrue(50 <= ui.POLL_INTERVAL_MS <= 100, "IO1-RED: L2 the window-liveness poll interval %r ms is outside 50..100 ms (an ownerless window must not last 500 ms)" % ui.POLL_INTERVAL_MS)
+        self.assertTrue(hasattr(ui, "GONE_CONFIRM_TICKS") and ui.GONE_CONFIRM_TICKS >= 2, "IO1-RED: L4 one single observation of 'no BVE window left' must never close the window (GONE_CONFIRM_TICKS >= 2)")
+        self.assertLess(ui.POLL_INTERVAL_MS * ui.GONE_CONFIRM_TICKS, 500, "IO1-RED: L3 the confirmation time of 'no BVE window left' must stay below 500 ms")
         for bad in ("os._exit", "TerminateProcess", "time.sleep(", "WaitForSingleObject(handle, 0xFFFFFFFF"):
             self.assertNotIn(bad, src, "IO1-RED: the Python side must not contain %r (no blocking wait, no forced exit)" % bad)
 
