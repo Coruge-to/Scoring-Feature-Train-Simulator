@@ -56,7 +56,7 @@ $legacyHost = Join-Path $env:PUBLIC 'Documents\BveEx\Legacy'
 [TestResolver]::Install(@((Join-Path $env:ProgramW6432 'mackoy\BveTs6'), $legacyHost))
 $hostAsm = [Reflection.Assembly]::LoadFrom((Join-Path $legacyHost 'AtsEx.PluginHost.dll'))
 $callerAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TScoring.InputDevice.dll')))
-$curAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TSScoringPlugin.BveEx.Bridge.Prototype.dll')))
+$curAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TScoring.BridgeB.dll')))
 $legAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'Bridge\Legacy\out\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll')))
 $NS = 'TSScoringPlugin.Handshake.'
 $NPS = [Reflection.BindingFlags]'NonPublic,Public,Static'
@@ -231,7 +231,7 @@ try {
     $curRefs = @($curAsm.GetReferencedAssemblies() | ForEach-Object { $_.Name } | Sort-Object)
     Check 'A4 Legacy DLL references AtsEx.PluginHost (and no BveEx assembly); Current DLL references BveEx.PluginHost (and no AtsEx assembly)' (($legRefs -contains 'AtsEx.PluginHost') -and (@($legRefs | Where-Object { $_ -like 'BveEx*' }).Count -eq 0) -and ($curRefs -contains 'BveEx.PluginHost') -and (@($curRefs | Where-Object { $_ -like 'AtsEx*' }).Count -eq 0))
     Check 'A5 Legacy DLL references only mscorlib, System, System.Core, AtsEx.PluginHost, BveTypes' (@($legRefs | Where-Object { $_ -notin 'mscorlib', 'System', 'System.Core', 'AtsEx.PluginHost', 'BveTypes' }).Count -eq 0)
-    $curBytesText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TSScoringPlugin.BveEx.Bridge.Prototype.dll')))
+    $curBytesText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TScoring.BridgeB.dll')))
     Check 'A6 Legacy adapter type name differs from the Current adapter (the Current adapter cannot be loaded without the BveEX host, so its name is checked in the metadata); same namespace for the shared core' (($adType.FullName -eq 'TSScoringPlugin.Handshake.TsScoringLegacyBridgePrototype') -and ($legAsm.GetType($NS + 'TsScoringBridgePrototype') -eq $null) -and $curBytesText.Contains('TsScoringBridgePrototype') -and (-not $curBytesText.Contains('TsScoringLegacyBridgePrototype')))
     Check 'A7 timings are the shared ones and unchanged: BridgeMissingTimeoutMs 500, TargetBridgeAvailableMs 500, CallerPollMs 20, BridgePollMs 100' ((($timingType.GetField('BridgeMissingTimeoutMs').GetValue($null)) -eq 500) -and (($timingType.GetField('TargetBridgeAvailableMs').GetValue($null)) -eq 500) -and (($timingType.GetField('CallerPollMs').GetValue($null)) -eq 20) -and (($timingType.GetField('BridgePollMs').GetValue($null)) -eq 100))
 

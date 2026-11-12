@@ -599,8 +599,8 @@ $bridgeNow = @(Get-ChildItem (Join-Path $Root 'Bridge') -Recurse -File -Include 
 $bridgeBaseList = @((RunGit @('ls-tree', '-r', '--name-only', '--full-name', $Baseline, '--', 'Bridge')) -split "`n" | Where-Object { $_ -match '\.(cs|csproj)$' -and $_ -notmatch 'Bridge/Legacy/src/HandshakeControlPlane\.cs$' })
 $bridgeDiff = @()
 foreach ($bf in $bridgeBaseList) { $rel = $bf.Substring($prefix.Length).Replace('/', '\'); if ((-not (Test-Path (Join-Path $Root $rel))) -or ((BaseText $rel) -cne (WorkText $rel))) { $bridgeDiff += $rel } }
-$curSha = (Get-FileHash (Join-Path $Root 'dist\TSScoringPlugin.BveEx.Bridge.Prototype.dll')).Hash
-$curOutSha = (Get-FileHash (Join-Path $Root 'Bridge\out\TSScoringPlugin.BveEx.Bridge.Prototype.dll')).Hash
+$curSha = (Get-FileHash (Join-Path $Root 'dist\TScoring.BridgeB.dll')).Hash
+$curOutSha = (Get-FileHash (Join-Path $Root 'Bridge\out\TScoring.BridgeB.dll')).Hash
 $legSha = (Get-FileHash (Join-Path $Root 'Bridge\Legacy\out\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll')).Hash
 # (This guard compares the baseline with the Phase E1 COMMIT, not with the working tree: the Phase SI-A6 sources are pinned by Test-PauseRecoverySIA6.ps1 and the re-pinned M1-21 / M1-22; here only the built DLLs are the new formal ones.)
 # SI-R5.3 (PIN-X) - OLD contract: the Current / Legacy Bridge DLLs are the SI-A7 M1a formal build (A310AB03 / CC084CED). NEW contract: the SI-R5.3 formal build (A prime non-blocking observation log, C prime payload delivered outside the gate,
@@ -618,7 +618,7 @@ Check 'D24 the only log file name in the DLL is still the shared C1 observation 
 # metadata
 $vi = (Get-Item $callerPath).VersionInfo
 Check 'D25 [45] provider Coruge-to (company, copyright, ProviderName constant); product TS Scoring; version 0.9.0.0 (Phase E1 build); description names Phase E1 and no observation / diagnostic / D1-OBS wording; DLL name unchanged' (($vi.CompanyName -eq 'Coruge-to') -and ($vi.LegalCopyright -match 'Coruge-to') -and ($vi.ProductName -eq 'TS Scoring') -and ([string]$sessT.GetField('ProviderName', $nps).GetRawConstantValue() -ceq 'Coruge-to') -and ((WorkText 'Caller\src\AssemblyInfo.cs') -match 'AssemblyVersion\("0\.9\.0\.0"\)') -and ((WorkText 'Caller\src\AssemblyInfo.cs') -match 'AssemblyDescription\("Phase E1') -and ((WorkText 'Caller\src\AssemblyInfo.cs') -notmatch '(?i)observation build|diagnostic build|D1-OBS') -and ($callerAsm.GetName().Name -ceq 'TScoring.InputDevice') -and ((Split-Path $callerPath -Leaf) -ceq 'TScoring.InputDevice.dll'))
-Check 'D26 no PDB anywhere in the tree and dist holds exactly the Caller and the Current Bridge DLL' ((@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0) -and ((@(Get-ChildItem (Join-Path $Root 'dist') -File | ForEach-Object { $_.Name } | Sort-Object) -join ',') -eq 'TSScoringPlugin.BveEx.Bridge.Prototype.dll,TScoring.InputDevice.dll'))
+Check 'D26 no PDB anywhere in the tree and dist holds exactly the Caller and the Current Bridge DLL' ((@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0) -and ((@(Get-ChildItem (Join-Path $Root 'dist') -File | ForEach-Object { $_.Name } | Sort-Object) -join ',') -eq 'TScoring.BridgeB.dll,TScoring.InputDevice.dll'))
 $refs = ($callerAsm.GetReferencedAssemblies() | ForEach-Object { $_.Name } | Sort-Object) -join ','
 Check ('D27 the Caller references only mscorlib, System, System.Core, System.Windows.Forms, Mackoy.IInputDevice (' + $refs + '); no third-party DLL') ($refs -eq 'Mackoy.IInputDevice,mscorlib,System,System.Core,System.Windows.Forms')
 

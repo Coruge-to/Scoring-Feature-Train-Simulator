@@ -91,7 +91,7 @@ Write-Host '==== Legacy distribution hygiene ===='
 $outDir = Split-Path $LegacyDll -Parent
 $outFiles = @(Get-ChildItem $outDir -File)
 Check 'Legacy out holds exactly the one Legacy DLL (no PDB, no third-party DLL, no other file)' (($outFiles.Count -eq 1) -and ($outFiles[0].Name -eq 'TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll') -and (@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0))
-Check 'DLL name is TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll (the Current name TSScoringPlugin.BveEx.Bridge.Prototype.dll is unchanged and different)' (($item.Name -eq 'TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll') -and ($item.Name -ne 'TSScoringPlugin.BveEx.Bridge.Prototype.dll'))
+Check 'DLL name is TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll (the Current name TScoring.BridgeB.dll is unchanged and different)' (($item.Name -eq 'TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll') -and ($item.Name -ne 'TScoring.BridgeB.dll'))
 Check 'Version 0.8.0.0 (the shared core version; Phase SI-A7 M1a) in the version resource and assembly version' (($v.FileVersion -eq '0.8.0.0') -and ($asm.GetName().Version.ToString() -eq '0.8.0.0'))
 Check 'Provider Coruge-to, product TS Scoring' (($v.CompanyName -eq 'Coruge-to') -and ($v.ProductName -eq 'TS Scoring') -and ($v.LegalCopyright -match 'Coruge-to'))
 Check 'Target .NET Framework 4.8, AnyCPU (ILOnly, no Required32Bit / Preferred32Bit), managed code only' (($targetFw -match 'v4\.8') -and ($kind.ToString() -eq 'ILOnly') -and ($machine.ToString() -eq 'I386'))

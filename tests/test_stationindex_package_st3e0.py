@@ -814,8 +814,8 @@ def build_cases():
         Case("N12-85", "an entry names a file that does not exist", lambda c: (c.manifest["files"].append({"set": "python", "path": "ghost.py", "blob_sha256": "0" * 64, "blob_size": 1, "blob_eol": "lf"}), setattr(c, "refinger", True)),
              ["source-missing:ghost.py"]),
         Case("N12-86", "the launcher contract differs", mf("launcher_contract", {"file_name": "launcher.json", "schema_version": 1, "mode": "release"}), ["launcher-contract-mismatch"]),
-        Case("N12-87", "a manifest field names a DLL", mutate_manifest(lambda m: m["files"].append({"set": "current", "path": "bin/Release/TsScoringPlugin.dll", "blob_sha256": "0" * 64, "blob_size": 1, "blob_eol": "none"})),
-             ["source-missing:bin/Release/TsScoringPlugin.dll"]),
+        Case("N12-87", "a manifest field names a DLL", mutate_manifest(lambda m: m["files"].append({"set": "current", "path": "bin/Release/TScoring.TelemetryB.dll", "blob_sha256": "0" * 64, "blob_size": 1, "blob_eol": "none"})),
+             ["source-missing:bin/Release/TScoring.TelemetryB.dll"]),
         # --- the commit mode: the work tree must be what is committed ---
         Case("N12-88", "commit mode: a work tree source differs from the committed blob", lambda c: setattr(c, "committed", dict(c.files, **{"utils.py": c.files["utils.py"] + b"# drift\n"})),
              ["working-tree-drift:utils.py"], mode="commit"),
@@ -1054,6 +1054,9 @@ class F_NonRegression(unittest.TestCase):
             stripped = re.sub(r'[ \t]*<Compile Include="[^"]*(?:PackageContract|PseudoTurnbackQualifier|PseudoTurnbackPairCodec|SwayStateReader)\.cs"><Link>[^<]*</Link></Compile>[ \t]*\n', "", stripped)
             # Legacy sway source lookup (an intended change, not a drift): the Legacy-only finder compile item is stripped too
             stripped = re.sub(r'[ \t]*<Compile Include="src\\LegacySwaySource\.cs" />[ \t]*\n', "", stripped)
+            # Public naming migration N3 / N4 (an intended change, not a drift; on purpose): the two projects carry the new AssemblyName; the one line is neutralised back to the 0b8e511 value
+            stripped = stripped.replace("<AssemblyName>TScoring.TelemetryB</AssemblyName>", "<AssemblyName>TsScoringPlugin</AssemblyName>")
+            stripped = stripped.replace("<AssemblyName>TScoring.TelemetryA</AssemblyName>", "<AssemblyName>TSScoringPlugin.AtsExLegacy.Telemetry</AssemblyName>")
             self.assertEqual(blob_id(stripped.encode("utf-8")), want, proj + " differs from 0b8e511 by the contract and the pseudo-turnback compile items only")
         self.assertEqual(len(re.findall(r"^import (?!package_contract)", main.decode("utf-8"), re.M)) >= 1, True)
 

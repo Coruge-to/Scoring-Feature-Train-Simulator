@@ -174,7 +174,7 @@ function Run-Static {
         foreach ($k in $pins.Keys) { if ((Sha (Join-Path $repo $k)) -ne $pins[$k]) { $bad += $k } }
         $c1 = Sha (Join-Path $repo 'TsScoringPlugin\TsScoringPlugin\Class1.cs')
         $c1Head = (& git -C $repo diff --name-only HEAD -- 'TsScoringPlugin/TsScoringPlugin/Class1.cs' | Where-Object { $st1aCurrent -cnotcontains $_ })
-        $curDll = Join-Path $env:PUBLIC 'Documents\BveEx\2.0\Extensions\TsScoringPlugin.dll'
+        $curDll = Join-Path $env:PUBLIC 'Documents\BveEx\2.0\Extensions\TScoring.TelemetryB.dll'
         $curSha = Sha $curDll
         $diffVal = @(@($diff) + @($bad) | Where-Object { $_ }).Count
         # this check is a GUARD of existing files: it must be PASS in the RED stage too (it reports as NEW, so the RED stage accepts RED or PASS here)

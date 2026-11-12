@@ -44,7 +44,7 @@ public static class TestResolver
 "@
 [TestResolver]::Install(@((Join-Path $env:ProgramW6432 'mackoy\BveTs6'), (Join-Path $env:PUBLIC 'Documents\BveEx\2.0')))
 $callerAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TScoring.InputDevice.dll')))
-$bridgeAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TSScoringPlugin.BveEx.Bridge.Prototype.dll')))
+$bridgeAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TScoring.BridgeB.dll')))
 $legacyAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'Bridge\Legacy\out\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll')))
 $NS = 'TSScoringPlugin.Handshake.'
 $NPS = [Reflection.BindingFlags]'NonPublic,Public,Static'
@@ -365,7 +365,7 @@ src.close()
     $layout = $apLayoutType
     Check 'G1 the application block keeps magic / version / size and every earlier offset; the marker sits in 48..55' (([uint32]$layout.GetField('Magic').GetRawConstantValue() -eq 0x53415354) -and ([uint32]$layout.GetField('Version').GetRawConstantValue() -eq 1) -and ([int]$layout.GetField('Size').GetRawConstantValue() -eq 64) -and ([int]$layout.GetField('OffTail').GetRawConstantValue() -eq 60) -and ([int]$layout.GetField('OffLoadInfo').GetRawConstantValue() -eq 48) -and ([int]$layout.GetField('OffLoadMagic').GetRawConstantValue() -eq 52))
     $vi = (Get-Item (Join-Path $Root 'dist\TScoring.InputDevice.dll')).VersionInfo
-    $vb = (Get-Item (Join-Path $Root 'dist\TSScoringPlugin.BveEx.Bridge.Prototype.dll')).VersionInfo
+    $vb = (Get-Item (Join-Path $Root 'dist\TScoring.BridgeB.dll')).VersionInfo
     $vl = (Get-Item (Join-Path $Root 'Bridge\Legacy\out\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll')).VersionInfo
     Check 'G2 versions: Caller 0.13.0.0, Current Bridge 0.8.0.0, Legacy Bridge 0.8.0.0 (Phase SI-A7 M1a; the shared core is the same in both Bridges)' (($vi.FileVersion -eq '0.13.0.0') -and ($vb.FileVersion -eq '0.8.0.0') -and ($vl.FileVersion -eq '0.8.0.0'))
     # (only the lines this phase ADDED are judged: the files hold older text that names BVE types in comments)

@@ -116,7 +116,7 @@ else {
 Write-Host '--- F: invariants'
 $currentPin = '7D4B97A97A5739C095B3518ED75587805F727A4631EF48AD096EE65E53953856'      # the PID-D6 historical baseline: F02 only (it is never replaced)
 $deployedCurrentPin = '1F504B45E4EE0DD23098BCA74DA0EEFF6AC81362BE730C4B3BCBC9507A19EB02'      # the Current DLL that is DEPLOYED on this machine now (Phase ST-1B build): F01 audits the machine state, not a historical baseline
-$deployedCurrent = Join-Path $env:PUBLIC 'Documents\BveEx\2.0\Extensions\TsScoringPlugin.dll'
+$deployedCurrent = Join-Path $env:PUBLIC 'Documents\BveEx\2.0\Extensions\TScoring.TelemetryB.dll'
 $handoff = 'C:\Users\tsuru\Documents\TS-Scoring-Claude-Handoff\pre-claude-v6-20261014_191918\live-d6\package\TsScoringPlugin.dll'
 Check 'F01 the CURRENTLY deployed Current DLL (an audit of the deployed state of this machine, not a historical baseline) is byte-identical to the Phase ST-1B Current build (1F504B45...EB02)' ((Sha $deployedCurrent) -eq $deployedCurrentPin)
 if (Test-Path -LiteralPath $handoff) { Check 'F02 the packaged Current DLL of PID-D6 is byte-identical (7D4B97A9...3856)' ((Sha $handoff) -eq $currentPin) } else { Skip 'F02 the packaged Current DLL is not at the recorded path' }

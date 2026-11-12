@@ -57,7 +57,7 @@ THREAD_SNAPSHOT = {"HandshakeControlPlane.cs": 1, "AppProcessManager.cs": 1, "Bv
 
 PROTECTED_DLLS = (
     # (path, sha256 prefix, why)
-    (r"C:\Users\Public\Documents\BveEx\2.0\Extensions\TsScoringPlugin.dll", "1C2D6896", "Current telemetry DLL: contains no ObservationLog"),
+    (r"C:\Users\Public\Documents\BveEx\2.0\Extensions\TScoring.TelemetryB.dll", "1C2D6896", "Current telemetry DLL: contains no ObservationLog"),
     (r"C:\Users\Public\Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Telemetry.dll", "B87C1AC9", "Legacy telemetry DLL: contains no ObservationLog"),
     (r"C:\Users\Public\Documents\BveEx\2.0\Extensions\TSScoring.FirstChanceDiagnostic.dll", "04378DDC", "First-Chance diagnostic DLL: separate responsibility"),
 )
@@ -390,10 +390,10 @@ class UiContractStatic(unittest.TestCase):
 
     def test_guard_only_the_three_dlls_carry_the_observation_log(self):
         carriers = (
-            (r"C:\Users\Public\Documents\BveEx\2.0\Extensions\TSScoringPlugin.BveEx.Bridge.Prototype.dll", True),
+            (r"C:\Users\Public\Documents\BveEx\2.0\Extensions\TScoring.BridgeB.dll", True),
             (r"C:\Users\Public\Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll", True),
             (r"C:\Program Files\mackoy\BveTs6\Input Devices\TScoring.InputDevice.dll", True),
-            (r"C:\Users\Public\Documents\BveEx\2.0\Extensions\TsScoringPlugin.dll", False),
+            (r"C:\Users\Public\Documents\BveEx\2.0\Extensions\TScoring.TelemetryB.dll", False),
             (r"C:\Users\Public\Documents\BveEx\Legacy\Extensions\TSScoringPlugin.AtsExLegacy.Telemetry.dll", False),
             (r"C:\Users\Public\Documents\BveEx\2.0\Extensions\TSScoring.FirstChanceDiagnostic.dll", False),
         )

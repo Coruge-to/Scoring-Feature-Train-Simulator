@@ -70,7 +70,7 @@ $bridgeAbsent = $common + @('Sleep', 'System.Threading.Timer', 'System.Timers', 
 
 $dist = Join-Path $Root 'dist'
 Inspect (Join-Path $dist 'TScoring.InputDevice.dll') $callerAbsent
-Inspect (Join-Path $dist 'TSScoringPlugin.BveEx.Bridge.Prototype.dll') $bridgeAbsent
+Inspect (Join-Path $dist 'TScoring.BridgeB.dll') $bridgeAbsent
 
 Write-Host '==== source checks ===='
 $src = Get-ChildItem $Root -Recurse -Include *.cs | Where-Object { $_.FullName -notlike '*\obj\*' }

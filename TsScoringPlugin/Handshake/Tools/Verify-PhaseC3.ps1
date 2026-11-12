@@ -102,13 +102,13 @@ $bridgeAbsent = $common + @('Sleep', 'System.Threading.Timer', 'System.Timers', 
 
 $dist = Join-Path $Root 'dist'
 $cDll = Join-Path $dist 'TScoring.InputDevice.dll'
-$bDll = Join-Path $dist 'TSScoringPlugin.BveEx.Bridge.Prototype.dll'
+$bDll = Join-Path $dist 'TScoring.BridgeB.dll'
 $outC = @(Inspect $cDll $callerAbsent); $outC[0..($outC.Count - 2)]; $ci = $outC[-1]
 $outB = @(Inspect $bDll $bridgeAbsent); $outB[0..($outB.Count - 2)]; $bi = $outB[-1]
 
 Write-Host '==== distribution hygiene ===='
 $distFiles = @(Get-ChildItem $dist -File)
-Check 'dist holds exactly the two DLLs (no PDB, no other file)' (($distFiles.Count -eq 2) -and (@($distFiles | Where-Object { $_.Name -in 'TScoring.InputDevice.dll', 'TSScoringPlugin.BveEx.Bridge.Prototype.dll' }).Count -eq 2) -and (@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0))
+Check 'dist holds exactly the two DLLs (no PDB, no other file)' (($distFiles.Count -eq 2) -and (@($distFiles | Where-Object { $_.Name -in 'TScoring.InputDevice.dll', 'TScoring.BridgeB.dll' }).Count -eq 2) -and (@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0))
 # (brought up to date in Phase SI-A7 M1a: this pin had been left at the E4 / C3 versions since Phase SI-A6)
 Check 'Version: Caller 0.13.0.0 (Phase SI-A7 M1a on the Phase E4 Caller) and Bridge 0.8.0.0 (Phase SI-A7 M1a) in the version resources and assembly versions' (($ci.Version.FileVersion -eq '0.13.0.0') -and ($bi.Version.FileVersion -eq '0.8.0.0') -and ($ci.Asm.GetName().Version.ToString() -eq '0.13.0.0') -and ($bi.Asm.GetName().Version.ToString() -eq '0.8.0.0'))
 Check 'Provider Coruge-to in both DLLs' (($ci.Version.CompanyName -eq 'Coruge-to') -and ($bi.Version.CompanyName -eq 'Coruge-to'))

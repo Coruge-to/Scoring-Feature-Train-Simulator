@@ -978,7 +978,7 @@ foreach ($rn in $runtimeNames) { $selfHits += ([regex]::Matches($selfText, [rege
 $logHits = 0
 foreach ($lf in @(Get-ChildItem $logDir -Filter *.log -ErrorAction SilentlyContinue)) { $lt2 = [IO.File]::ReadAllText($lf.FullName); foreach ($tok in $forbidden) { $logHits += ([regex]::Matches($lt2, [regex]::Escape($tok), 'IgnoreCase')).Count } }
 Check ('S24 no personal path, user name, machine name or e-mail in the Caller sources, project, DLL, document, template (' + $privFiles.Count + ' files, matches=' + $privHits + '), the produced test logs (matches=' + $logHits + ') or this test (matches=' + $selfHits + ')') (($privHits -eq 0) -and ($selfHits -eq 0) -and ($logHits -eq 0))
-Check 'S25 no PDB anywhere, dist holds exactly the Caller and the Current Bridge DLL, and no python / cmd process started by this test is left' ((@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0) -and ((@(Get-ChildItem (Join-Path $Root 'dist') -File | ForEach-Object { $_.Name } | Sort-Object) -join ',') -eq 'TSScoringPlugin.BveEx.Bridge.Prototype.dll,TScoring.InputDevice.dll') -and (@($started | Where-Object { PidAlive $_ }).Count -eq 0))
+Check 'S25 no PDB anywhere, dist holds exactly the Caller and the Current Bridge DLL, and no python / cmd process started by this test is left' ((@(Get-ChildItem $Root -Recurse -File -Include *.pdb).Count -eq 0) -and ((@(Get-ChildItem (Join-Path $Root 'dist') -File | ForEach-Object { $_.Name } | Sort-Object) -join ',') -eq 'TScoring.BridgeB.dll,TScoring.InputDevice.dll') -and (@($started | Where-Object { PidAlive $_ }).Count -eq 0))
 
 $failed = @($results | Where-Object { -not $_.Ok })
 "TOTAL {0}  FAILED {1}  SKIPPED {2}" -f $results.Count, $failed.Count, $script:skips

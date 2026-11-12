@@ -112,7 +112,7 @@
     {"set": "current", "path": "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs", "blob_sha256": "E0D5992E5B4D3EE088BCCC5B06F9A48465A59401899EC72018E1A042FCD6F68D", "blob_size": 20784, "blob_eol": "lf"},
     {"set": "current", "path": "TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs", "blob_sha256": "8C6C66B9456AE89FB5D30464D69DE5E7AB70771F613D904C001396A5C42196D9", "blob_size": 20697, "blob_eol": "lf"},
     {"set": "current", "path": "TsScoringPlugin/TsScoringPlugin/Properties/AssemblyInfo.cs", "blob_sha256": "EDD8C204130FCFEB48A76AC2851FF082192DC9F45A0373A20809E4C6422D184E", "blob_size": 1039, "blob_eol": "lf"},
-    {"set": "current", "path": "TsScoringPlugin/TsScoringPlugin/TsScoringPlugin.csproj", "blob_sha256": "4C23726D37E969011F637594B0DEE42CE54463B55C06C9AA2B7CB950547BCB6E", "blob_size": 4491, "blob_eol": "lf"},
+    {"set": "current", "path": "TsScoringPlugin/TsScoringPlugin/TsScoringPlugin.csproj", "blob_sha256": "22EAB1D72EDE6CFC51FFE06AA5BA3B43831C3D870FC044B89927EF74B02C17CF", "blob_size": 4495, "blob_eol": "lf"},
     {"set": "legacy", "path": "TsScoringPlugin/Handshake/Telemetry/Legacy/TSScoringPlugin.AtsExLegacy.Telemetry.csproj", "blob_sha256": "B507E5D1590921510F83B13C5AB7C97918FC11F327C1C3EA07C34A398B0C44C0", "blob_size": 7342, "blob_eol": "lf"},
     {"set": "legacy", "path": "TsScoringPlugin/Handshake/Telemetry/Legacy/src/AssemblyInfo.cs", "blob_sha256": "8F3F3825FCED90069A921C4B6445882EC85A9B3FB288A6A5251A5709352C7379", "blob_size": 1146, "blob_eol": "lf"},
     {"set": "legacy", "path": "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyApi.cs", "blob_sha256": "B64579DD8D139CEA257C2053BEF314CBBF23078CC074261FA73B2C63D5FF5B38", "blob_size": 7131, "blob_eol": "lf"},
@@ -139,5 +139,5 @@
     {"set": "shared", "path": "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryContract.cs", "blob_sha256": "D5E4AAB343C9BB6145CDFDE9226C1871BDDAD1D4EAE503D368C5841922D966D8", "blob_size": 9030, "blob_eol": "lf"},
     {"set": "shared", "path": "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs", "blob_sha256": "9D6C47493457FD840E8CA5186C8E16181F0B5CF85C10721087C9098DD6644680", "blob_size": 6615, "blob_eol": "lf"}
   ],
-  "fingerprint": "128C92599D0724EFE567629D1B260B8AD0748C6BECF5342112713A6BF6850C4B"
+  "fingerprint": "848968643D66A393C7D992BC187414DBB6E70AF7579A35767ADB71B8B3B50D3F"
 }

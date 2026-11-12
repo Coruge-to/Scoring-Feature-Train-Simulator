@@ -353,7 +353,7 @@ $hostDir = if ($isLegacy) { Join-Path $publicDocs 'Legacy' } else { Join-Path $p
 if ($isLegacy) { [void][Reflection.Assembly]::LoadFrom((Join-Path $hostDir 'AtsEx.PluginHost.dll')) }
 
 $callerAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TScoring.InputDevice.dll')))
-$curAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TSScoringPlugin.BveEx.Bridge.Prototype.dll')))
+$curAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'dist\TScoring.BridgeB.dll')))
 $legAsm = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes((Join-Path $Root 'Bridge\Legacy\out\TSScoringPlugin.AtsExLegacy.Bridge.Prototype.dll')))
 $brAsm = if ($isLegacy) { $legAsm } else { $curAsm }
 $NS = 'TSScoringPlugin.Handshake.'
@@ -1170,7 +1170,7 @@ sys.exit(0)
     # =================================================================================================================================================
     Write-Host '--- M: REAL older DLLs (the last commit before SI-A7) against the new ones, both directions'
     $oldCallerPath = if ($BaselineDir) { Join-Path $BaselineDir 'TScoring.InputDevice.dll' } else { '' }
-    $oldBridgePath = if ($BaselineDir) { Join-Path $BaselineDir 'TSScoringPlugin.BveEx.Bridge.Prototype.dll' } else { '' }
+    $oldBridgePath = if ($BaselineDir) { Join-Path $BaselineDir 'TScoring.BridgeB.dll' } else { '' }
     if ((-not $BaselineDir) -or (-not (Test-Path $oldCallerPath)) -or (-not (Test-Path $oldBridgePath))) {
         Skip 'M1-M8 no baseline DLL folder (-BaselineDir / SIA7_BASELINE_DLLS): the checks against REAL pre-SI-A7 Caller and Bridge DLLs were not run'
     } else {
