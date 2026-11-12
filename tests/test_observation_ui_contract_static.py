@@ -240,7 +240,8 @@ class UiContractStatic(unittest.TestCase):
 
     def test_guard_dllimport_allowlist(self):
         """Bridge/Shared product sources have no P/Invoke except the one limited helper (checked by test_red_p_pinvoke_helper_contract); the Caller keeps its existing ones."""
-        existing_caller = {"BveWindowMessageObserver.cs": 2, "HandshakeSession.cs": 1, "TsScoringCallerInputDevice.cs": 1}
+        # IO-1 (2026-11-12): InitialDefaultsWindow.cs is the ONE new Caller file with P/Invokes (window ownership of the initial-defaults window: PID check, window search, restore / owner / foreground / flash, mutex probe); its 19 declarations are all used.
+        existing_caller = {"BveWindowMessageObserver.cs": 2, "HandshakeSession.cs": 1, "TsScoringCallerInputDevice.cs": 1, "InitialDefaultsWindow.cs": 19}
         bridge_shared = []
         for base, _dirs, names in os.walk(HS):
             if re.search(r"[\\/](obj|out|Probes|Tests|dist|logs)([\\/]|$)", base):

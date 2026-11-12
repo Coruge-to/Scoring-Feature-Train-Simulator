@@ -86,7 +86,9 @@ namespace TSScoringPlugin.Handshake
                 string notice = null;
                 try
                 {
-                    InitialDefaultsLaunchResult launch = InitialDefaultsLauncher.TryLaunch();
+                    // the BVE settings dialog that holds this Properties button is the first owner candidate (its pid must be this BVE); the Python side makes the window an owned window of it
+                    IntPtr ownerHandle = owner == null ? IntPtr.Zero : owner.Handle;
+                    InitialDefaultsLaunchResult launch = InitialDefaultsLauncher.TryLaunchOwned(InitialDefaultsLauncher.ResolveOwner(ownerHandle));
                     if (!launch.Started && !launch.AlreadyRunning)
                     {
                         notice = InitialDefaultsLauncher.FailureNotice(launch);

@@ -51,6 +51,7 @@
     <Compile Include="src\DrivingActivityState.cs" />
     <Compile Include="src\HandshakeSession.cs" />
     <Compile Include="src\InitialDefaultsLauncher.cs" />
+    <Compile Include="src\InitialDefaultsWindow.cs" />
     <Compile Include="src\LauncherConfig.cs" />
     <Compile Include="src\TsScoringCallerInputDevice.cs" />
     <Compile Include="..\Shared\AppProtocol.cs">

@@ -19,7 +19,9 @@ import idf1_red_support as X  # noqa: E402
 
 ROOT = X.ROOT
 FORBIDDEN_TITLE_CODE = ("DWMWA", "DwmSetWindowAttribute", "dwmapi", "HEADER_RGB", "set_header_colour", "F1F3F6", "0xF1, 0xF3, 0xF6", "Mica", "Acrylic", "SYSTEMBACKDROP", "WA_TranslucentBackground",
-                        "setGraphicsEffect", "QGraphicsBlurEffect", "grabWindow", "backdrop", "winId")
+                        "setGraphicsEffect", "QGraphicsBlurEffect", "grabWindow", "backdrop")
+# IO-1 (2026-11-12): "winId" used to be listed here because the title bar colour code needed the HWND. The window-ownership code needs the HWND too (Qt's transient parent / WS_EX_APPWINDOW), and the colour code is still caught by every
+# DWM / colour token above, so a bare winId is no longer a title-bar signal. The title bar stays the Windows standard one (no DWM attribute, no colour, no backdrop).
 
 
 def setUpModule():

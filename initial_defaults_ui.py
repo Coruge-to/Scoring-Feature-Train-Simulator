@@ -3,6 +3,7 @@
 One window (初期値設定) edits the saved_defaults (initial_defaults.py) and saves them with OK (atomic); x / Esc saves nothing. It is not the F1 screen and knows neither the Overlay nor the managed mode: the F1 settings are regenerated from the saved file at the next scenario load.
 The speed limit / advance dependency is the shared state function of initial_defaults (the same rule as F1). The safety intervention (保安装置介入) is an empty checkbox that cannot be turned ON in the beta.
 Single instance: a named mutex; a second start exits at once.
+Ownership (Stage IO-1): the window is an owned window of the BVE settings dialog that opened it (see the OWNERSHIP section below).
 """
 import ctypes
 import logging
@@ -734,11 +735,194 @@ def collect(dialog):
     return D.InitialDefaults(environment, bool(box("timing").isChecked()), penalties, int(box("a_rank").value()))
 
 
-def run(argv, defaults_path=None, instance=None, exec_fn=None):
-    """The process entry: 0 when the window was shown (or another one is already open), 2 for any arguments other than the flag alone."""
+# ----------------------------------------------------------------------------------------------------------------------------------------------------------------
+# OWNERSHIP (Owner 2026-11-12, Stage IO-1). The Caller starts this process from the BVE settings dialog (Properties) and passes three values through the environment (an internal Caller/Python contract, not a public one;
+# argv stays exactly `--initial-defaults`): the pid of that BVE, the HWND that was in front when Properties was pressed (the BVE settings dialog) and the HWND of the BVE main window.
+# The window becomes an OWNED window of the settings dialog (it never goes behind it, it is not global top-most, other applications can still be put in front of it); WS_EX_APPWINDOW keeps its taskbar button / Alt+Tab entry.
+# When the settings dialog is destroyed the owner moves to the main window of the SAME bve pid; when that bve process ends the window closes without saving (the x / Esc path), so no orphan is left.
+# Every value is checked here: it parses as a plain decimal / 0x number, the HWND exists and belongs to the announced pid, the pid is alive. An HWND of another pid is never used. Unusable information never starts an unowned window
+# (exit code 3, one short line on stderr); NO information at all (a development start from a console) keeps the plain unowned window.
+ENV_BVE_PID = "TSSCORING_INITDEF_BVE_PID"
+ENV_OWNER_HWND = "TSSCORING_INITDEF_OWNER_HWND"
+ENV_MAIN_HWND = "TSSCORING_INITDEF_BVE_MAIN_HWND"
+EXIT_OWNER_INVALID = 3
+POLL_INTERVAL_MS = 500                                            # the bve-alive / owner check; the end of BVE is noticed within one interval (measured in the Stage IO-1 CPU and latency check)
+WS_EX_APPWINDOW = 0x00040000
+WS_EX_TOOLWINDOW = 0x00000080
+_GWL_EXSTYLE = -20
+_GWLP_HWNDPARENT = -8
+_GW_OWNER = 4
+
+
+class OwnerRequest(object):
+    def __init__(self, bve_pid, owner_hwnd, main_hwnd):
+        self.bve_pid = bve_pid
+        self.owner_hwnd = owner_hwnd
+        self.main_hwnd = main_hwnd
+
+
+def _parse_number(text):
+    """A plain decimal or 0x hexadecimal number, nothing else (no sign, no space, no exponent); None when unusable."""
+    import re
+    if text is None or not re.fullmatch(r"(0[xX][0-9A-Fa-f]{1,16}|[0-9]{1,18})", text.strip() if isinstance(text, str) else ""):
+        return None
+    return int(text.strip(), 16) if text.strip()[:2].lower() == "0x" else int(text.strip(), 10)
+
+
+def read_owner_request(environ):
+    """(request, None) for usable information, (None, None) when the environment carries none at all, (None, 'reason') when it is present but unusable."""
+    names = (ENV_BVE_PID, ENV_OWNER_HWND, ENV_MAIN_HWND)
+    if all(environ.get(n) is None for n in names):
+        return None, None
+    pid = _parse_number(environ.get(ENV_BVE_PID))
+    owner = _parse_number(environ.get(ENV_OWNER_HWND))
+    main = _parse_number(environ.get(ENV_MAIN_HWND))
+    if pid is None or pid <= 0:
+        return None, "the bve pid is not a usable number"
+    if owner is None or main is None:
+        return None, "an HWND is not a usable number"
+    if owner == 0 and main == 0:
+        return None, "no owner HWND was given"
+    return OwnerRequest(pid, owner, main), None
+
+
+class Win32(object):
+    """The few Win32 calls of the ownership logic (replaceable by a fake in tests)."""
+
+    def __init__(self):
+        from ctypes import wintypes as wt
+        self._wt = wt
+        self.u32 = ctypes.WinDLL("user32", use_last_error=True)
+        self.k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        self.u32.IsWindow.argtypes = [wt.HWND]
+        self.u32.GetWindowThreadProcessId.argtypes = [wt.HWND, ctypes.POINTER(wt.DWORD)]
+        self.u32.GetWindowThreadProcessId.restype = wt.DWORD
+        self.u32.GetWindowLongPtrW.argtypes = [wt.HWND, ctypes.c_int]
+        self.u32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
+        self.u32.SetWindowLongPtrW.argtypes = [wt.HWND, ctypes.c_int, ctypes.c_ssize_t]
+        self.u32.SetWindowLongPtrW.restype = ctypes.c_ssize_t
+        self.u32.GetWindow.argtypes = [wt.HWND, wt.UINT]
+        self.u32.GetWindow.restype = wt.HWND
+        self.k32.OpenProcess.argtypes = [wt.DWORD, wt.BOOL, wt.DWORD]
+        self.k32.OpenProcess.restype = wt.HANDLE
+        self.k32.WaitForSingleObject.argtypes = [wt.HANDLE, wt.DWORD]
+        self.k32.WaitForSingleObject.restype = wt.DWORD
+        self.k32.CloseHandle.argtypes = [wt.HANDLE]
+
+    def is_window(self, hwnd):
+        return bool(hwnd) and bool(self.u32.IsWindow(self._wt.HWND(hwnd)))
+
+    def window_pid(self, hwnd):
+        pid = self._wt.DWORD(0)
+        if not self.is_window(hwnd):
+            return 0
+        self.u32.GetWindowThreadProcessId(self._wt.HWND(hwnd), ctypes.byref(pid))
+        return int(pid.value)
+
+    def process_alive(self, pid):
+        handle = self.k32.OpenProcess(0x00100000 | 0x1000, False, pid)           # SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        try:
+            return self.k32.WaitForSingleObject(handle, 0) == 0x102                # WAIT_TIMEOUT = still running
+        finally:
+            self.k32.CloseHandle(handle)
+
+    def get_owner(self, hwnd):
+        value = self.u32.GetWindow(self._wt.HWND(hwnd), _GW_OWNER)
+        return int(value) if value else 0
+
+    def set_owner(self, hwnd, owner):
+        self.u32.SetWindowLongPtrW(self._wt.HWND(hwnd), _GWLP_HWNDPARENT, owner)
+        return self.get_owner(hwnd) == owner
+
+    def get_exstyle(self, hwnd):
+        return int(self.u32.GetWindowLongPtrW(self._wt.HWND(hwnd), _GWL_EXSTYLE)) & 0xFFFFFFFF
+
+    def set_exstyle(self, hwnd, value):
+        self.u32.SetWindowLongPtrW(self._wt.HWND(hwnd), _GWL_EXSTYLE, value)
+
+
+def choose_owner(request, api):
+    """(hwnd, '') for the first usable HWND (the BVE settings dialog, then the BVE main window); (None, reason) otherwise. A window of another pid is never used; a bve that is gone has no owner."""
+    if not api.process_alive(request.bve_pid):
+        return None, "bve-not-running"
+    for hwnd in (request.owner_hwnd, request.main_hwnd):
+        if hwnd and api.is_window(hwnd) and api.window_pid(hwnd) == request.bve_pid:
+            return hwnd, ""
+    return None, "owner-invalid"
+
+
+class OwnerBinding(object):
+    """Keeps the dialog bound to the BVE it was opened from. tick() is called by a timer (never blocks): it reports 'bve-exited' (the dialog must close without saving) or 'alive', and keeps the owner valid."""
+
+    def __init__(self, request, api, owner_hwnd):
+        self.request = request
+        self.api = api
+        self.owner = owner_hwnd
+        self.dialog_hwnd = 0
+        self.keepalive = []
+
+    def attach(self, dialog):
+        from PyQt6.QtGui import QWindow
+        dialog.create()                                                     # the native window exists now, before it is shown (the owner must be set before the first show)
+        self.dialog_hwnd = int(dialog.winId())
+        foreign = QWindow.fromWinId(self.owner)                             # Qt's own way to make a window of another process the owner (native owner = transient parent)
+        dialog.windowHandle().setTransientParent(foreign)
+        self.keepalive.append(foreign)
+        ex = self.api.get_exstyle(self.dialog_hwnd)
+        self.api.set_exstyle(self.dialog_hwnd, (ex | WS_EX_APPWINDOW) & ~WS_EX_TOOLWINDOW)       # an owned window has no taskbar button / Alt+Tab entry without it
+
+    def tick(self):
+        if not self.api.process_alive(self.request.bve_pid):
+            return "bve-exited"
+        if not (self.owner and self.api.is_window(self.owner) and self.api.window_pid(self.owner) == self.request.bve_pid):
+            main = self.request.main_hwnd
+            self.owner = main if (main and self.api.is_window(main) and self.api.window_pid(main) == self.request.bve_pid) else 0
+        if self.owner and self.dialog_hwnd and self.api.get_owner(self.dialog_hwnd) != self.owner:
+            self.api.set_owner(self.dialog_hwnd, self.owner)               # the settings dialog was destroyed: the owner moves to the main window of the SAME bve
+        return "alive"
+
+    def start_timer(self, dialog):
+        timer = QTimer(dialog)
+        timer.setInterval(POLL_INTERVAL_MS)
+
+        def check():
+            if self.tick() == "bve-exited":
+                timer.stop()
+                dialog.reject()                                             # the x / Esc path: nothing is saved, the event loop ends, the process ends with exit code 0
+
+        timer.timeout.connect(check)
+        timer.start()
+        self.keepalive.append(timer)
+
+
+def prepare_owner(environ, win32=None):
+    """(request, api, owner_hwnd, exit_code): the owner information of the environment, validated. exit_code is None when the window may be shown (with or without an owner); 0 when the BVE it belongs to is gone
+    (nothing to show), 3 when owner information was given but is unusable (no unowned window is started then; one stderr line says why)."""
+    request, error = read_owner_request(environ)
+    if error:
+        sys.stderr.write("initial defaults: unusable owner information (%s)\n" % error)
+        return None, None, 0, EXIT_OWNER_INVALID
+    if request is None:
+        return None, None, 0, None
+    api = win32 if win32 is not None else Win32()
+    owner_hwnd, why = choose_owner(request, api)
+    if owner_hwnd is None:
+        sys.stderr.write("initial defaults: no window started (%s)\n" % why)
+        return None, None, 0, (0 if why == "bve-not-running" else EXIT_OWNER_INVALID)
+    return request, api, owner_hwnd, None
+
+
+def run(argv, defaults_path=None, instance=None, exec_fn=None, environ=None, win32=None):
+    """The process entry: 0 when the window was shown (or another one is already open), 2 for any arguments other than the flag alone, otherwise the exit code of prepare_owner."""
     if list(argv[1:]) != [FLAG]:
         sys.stderr.write("usage: main.py %s\n" % FLAG)
         return 2
+    import os
+    request, api, owner_hwnd, exit_code = prepare_owner(os.environ if environ is None else environ, win32)
+    if exit_code is not None:
+        return exit_code
     holder = instance if instance is not None else SingleInstance()
     if not holder.acquire():
         return 0
@@ -748,6 +932,11 @@ def run(argv, defaults_path=None, instance=None, exec_fn=None):
         result = D.load(path)
         app = QApplication.instance() or QApplication(list(argv[:1]))      # kept until run() returns: a dropped QApplication is destroyed at once (Qt fail-fast 0xC0000409 at the next widget)
         dialog = build_dialog(result.defaults, save=lambda value: D.save(value, path))
+        binding = None
+        if request is not None:
+            binding = OwnerBinding(request, api, owner_hwnd)
+            binding.attach(dialog)
+            binding.start_timer(dialog)
         (exec_fn or (lambda d: d.exec()))(dialog)
         return 0
     finally:
