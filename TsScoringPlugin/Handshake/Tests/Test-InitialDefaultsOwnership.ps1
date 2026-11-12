@@ -71,6 +71,7 @@ public static class TestWin
         }, IntPtr.Zero);
         return found;
     }
+    public static int PidOfWindow(IntPtr h) { uint p; GetWindowThreadProcessId(h, out p); return (int)p; }
     public static int WindowCountOf(int pid)
     {
         int n = 0;
@@ -81,6 +82,24 @@ public static class TestWin
             return true;
         }, IntPtr.Zero);
         return n;
+    }
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern IntPtr GetLongPtr(IntPtr h, int index);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowTextW(IntPtr h, System.Text.StringBuilder text, int max);
+    [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+    public static long ExStyle(IntPtr h) { return GetLongPtr(h, -20).ToInt64() & 0xFFFFFFFFL; }
+    public static long Style(IntPtr h) { return GetLongPtr(h, -16).ToInt64() & 0xFFFFFFFFL; }
+    public static string Title(IntPtr h) { System.Text.StringBuilder sb = new System.Text.StringBuilder(256); GetWindowTextW(h, sb, 256); return sb.ToString(); }
+    public static void Close(IntPtr h) { PostMessage(h, 0x0010, IntPtr.Zero, IntPtr.Zero); }
+    public static IntPtr FindTitledWindowOf(int pid, string title)
+    {
+        IntPtr found = IntPtr.Zero;
+        EnumWindows(delegate(IntPtr h, IntPtr l)
+        {
+            uint p; GetWindowThreadProcessId(h, out p);
+            if ((int)p == pid && Title(h) == title && found == IntPtr.Zero) { found = h; }
+            return true;
+        }, IntPtr.Zero);
+        return found;
     }
     // a test-side activation like a click on the window: AttachThreadInput to the foreground thread, never an ALT tap
     public static bool Activate(IntPtr target)
@@ -273,7 +292,7 @@ try {
     $act2 = [string](Field $r2 'Activation')
     Check 'R5: the second press starts nothing (already running) and no second child exists' ((-not [bool](Field $r2 'Started')) -and [bool](Field $r2 'AlreadyRunning') -and ((Records).Count -eq 1))
     Check 'R4/R7: the existing window (same HWND, same pid) is found and brought to the front (Reactivated: the system allowed the test thread, so it must allow the Caller thread)' (($act2 -eq 'Reactivated') -and ([TestWin]::FirstVisibleWindowOf($childPid) -ne [IntPtr]::Zero))
-    Check 'R4: the window is in front of the other application after the press' ([TestWin]::ZIndex($childHwnd) -lt [TestWin]::ZIndex($fakeApp.Main))
+    Check 'R4: the window is in front of the other application after the press' ([bool](WaitFor { [TestWin]::ZIndex($childHwnd) -lt [TestWin]::ZIndex($fakeApp.Main) } 1500))
     Check 'R10: the window was re-owned to the BVE settings dialog in front (a child window that had no owner)' ([TestWin]::GetWindow($childHwnd, 4) -eq $fakeA.Settings)
     Check 'the log has INITDEF_ALREADY_RUNNING, INITDEF_HWND_FOUND, INITDEF_OWNER_REBOUND and REACTIVATED or FLASHED' (((LogText) -match 'INITDEF_ALREADY_RUNNING') -and ((LogText) -match 'INITDEF_HWND_FOUND') -and ((LogText) -match 'INITDEF_OWNER_REBOUND') -and (((LogText) -match 'INITDEF_REACTIVATED') -or ((LogText) -match 'INITDEF_FLASHED')))
 
@@ -343,6 +362,44 @@ try {
     WaitFor { -not (PidAlive ([int]$rec3.pid)) } 10000 | Out-Null
     Rearm
 
+    # ---------------------------------------------------------------- R13 with the REAL product (real Qt dialog) started by the REAL Caller code (owner ruling 2026-11-12: standard owned-window behaviour, no taskbar button, minimise, re-press restores the SAME window)
+    $titleChars = [char[]](0x521D, 0x671F, 0x5024, 0x8A2D, 0x5B9A)
+    $dialogTitle = -join $titleChars
+    $realCfgPath = Join-Path $fix 'launcher-real.json'
+    $realCfg = [ordered]@{ schemaVersion = 1; mode = 'development'; pythonExecutable = $py; scriptPath = (Join-Path $repoRoot 'main.py'); workingDirectory = $repoRoot }
+    [IO.File]::WriteAllBytes($realCfgPath, (New-Object Text.UTF8Encoding($false)).GetBytes(($realCfg | ConvertTo-Json)))
+    $profileDir = Join-Path $fix 'profile'
+    New-Item -ItemType Directory -Force $profileDir | Out-Null
+    $ldrT.GetProperty('TestPath', $nps).SetValue($null, $realCfgPath)
+    $savedLocal = $env:LOCALAPPDATA
+    $env:LOCALAPPDATA = $profileDir
+    try { $rr1 = Press $ownerA } finally { $env:LOCALAPPDATA = $savedLocal }
+    $realChild = $runningField.GetValue($null)
+    $realPid = $(if ($null -ne $realChild) { [int]$realChild.Id } else { 0 })
+    $realWin = [IntPtr]::Zero
+    if ($realPid -ne 0) { [void](WaitFor { $script:realWin = [TestWin]::FindTitledWindowOf($realPid, $dialogTitle); $script:realWin -ne [IntPtr]::Zero } 25000) }
+    Check 'R13 real product: the Caller started the real initial-defaults dialog (one window with the dialog title)' (([bool](Field $rr1 'Started')) -and ($realWin -ne [IntPtr]::Zero))
+    function CountInitDefaultsProcesses { return @(Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { $_.CommandLine -like '*--initial-defaults*' -and $_.CommandLine -like ('*' + $repoRoot + '*') }).Count }
+    if ($realWin -ne [IntPtr]::Zero) {
+        $ex = [TestWin]::ExStyle($realWin); $st = [TestWin]::Style($realWin)
+        Check 'R13-D real product: owned by the BVE settings dialog of the announced BVE pid' ([TestWin]::GetWindow($realWin, 4) -eq $fakeA.Settings)
+        Check 'R13-A/B/C real product: no WS_EX_APPWINDOW, no WS_EX_TOOLWINDOW (owned window standard behaviour: no own taskbar button, no Alt+Tab entry)' ((($ex -band 0x40000) -eq 0) -and (($ex -band 0x80) -eq 0))
+        Check 'R13-E real product: not global top-most; the standard title bar and close button remain' ((($ex -band 0x8) -eq 0) -and (($st -band 0x00C00000) -eq 0x00C00000) -and (($st -band 0x00080000) -ne 0))
+        Check 'R13-I real product: exactly one initial-defaults python process' ((CountInitDefaultsProcesses) -eq 1)
+        [TestWin]::ShowWindow($realWin, 6) | Out-Null
+        [void](WaitFor { [TestWin]::IsIconic($realWin) } 3000)
+        Check 'R13-H real product: minimised - the process lives, the HWND is valid, still one process, still owned' ([TestWin]::IsIconic($realWin) -and (PidAlive $realPid) -and ([TestWin]::PidOfWindow($realWin) -eq $realPid) -and ((CountInitDefaultsProcesses) -eq 1) -and ([TestWin]::GetWindow($realWin, 4) -eq $fakeA.Settings))
+        [TestWin]::Activate($fakeApp.Main) | Out-Null
+        $rr2 = Press $ownerA
+        Check 'R13-G/H real product: Properties again restores the minimised window (SW_RESTORE) and brings it back - same HWND, same pid' (([string](Field $rr2 'Activation') -eq 'Reactivated') -and (-not [TestWin]::IsIconic($realWin)) -and ([TestWin]::PidOfWindow($realWin) -eq $realPid) -and ([TestWin]::FindTitledWindowOf($realPid, $dialogTitle) -eq $realWin))
+        Check 'R13-I real product: the second press started nothing (still exactly one python process, no new dialog)' ((-not [bool](Field $rr2 'Started')) -and [bool](Field $rr2 'AlreadyRunning') -and ((CountInitDefaultsProcesses) -eq 1))
+        Check 'R13-A real product: restoring did not add an extended style or change the owner' ((([TestWin]::ExStyle($realWin) -band 0x40000) -eq 0) -and ([TestWin]::GetWindow($realWin, 4) -eq $fakeA.Settings))
+        [TestWin]::Close($realWin)
+        Check 'R13 real product: closing the dialog ends the process (exit code 0) and leaves no process' ((WaitFor { -not (PidAlive $realPid) } 10000) -and ((CountInitDefaultsProcesses) -eq 0))
+    }
+    elseif ($realPid -ne 0) { Stop-Process -Id $realPid -Force -ErrorAction SilentlyContinue }
+    Check 'R13 real product: nothing was saved by the test (temporary profile only)' (-not (Test-Path (Join-Path $profileDir 'Coruge-to\TS Scoring\initial-defaults.json')))
+    $ldrT.GetProperty('TestPath', $nps).SetValue($null, $cfgPath)
     # ---------------------------------------------------------------- Configure never throws (the owner object is an IWin32Window with a handle of another pid)
     $showProp = $deviceT.GetProperty('ShowNotice', $nps)
     $noticeShown = New-Object System.Collections.Generic.List[string]

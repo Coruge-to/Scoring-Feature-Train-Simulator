@@ -738,7 +738,7 @@ def collect(dialog):
 # ----------------------------------------------------------------------------------------------------------------------------------------------------------------
 # OWNERSHIP (Owner 2026-11-12, Stage IO-1). The Caller starts this process from the BVE settings dialog (Properties) and passes three values through the environment (an internal Caller/Python contract, not a public one;
 # argv stays exactly `--initial-defaults`): the pid of that BVE, the HWND that was in front when Properties was pressed (the BVE settings dialog) and the HWND of the BVE main window.
-# The window becomes an OWNED window of the settings dialog (it never goes behind it, it is not global top-most, other applications can still be put in front of it); WS_EX_APPWINDOW keeps its taskbar button / Alt+Tab entry.
+# The window becomes an OWNED window of the settings dialog (it never goes behind it, it is not global top-most, other applications can still be put in front of it). It keeps the STANDARD behaviour of an owned window (Owner ruling 2026-11-12): no taskbar button of its own and no Alt+Tab entry, like the BVE settings dialog and the HUD; no extended window style is added or removed. Recovery is the Properties re-press (the Caller restores / re-owns / raises the existing window), never the taskbar.
 # When the settings dialog is destroyed the owner moves to the main window of the SAME bve pid; when that bve process ends the window closes without saving (the x / Esc path), so no orphan is left.
 # Every value is checked here: it parses as a plain decimal / 0x number, the HWND exists and belongs to the announced pid, the pid is alive. An HWND of another pid is never used. Unusable information never starts an unowned window
 # (exit code 3, one short line on stderr); NO information at all (a development start from a console) keeps the plain unowned window.
@@ -747,9 +747,6 @@ ENV_OWNER_HWND = "TSSCORING_INITDEF_OWNER_HWND"
 ENV_MAIN_HWND = "TSSCORING_INITDEF_BVE_MAIN_HWND"
 EXIT_OWNER_INVALID = 3
 POLL_INTERVAL_MS = 500                                            # the bve-alive / owner check; the end of BVE is noticed within one interval (measured in the Stage IO-1 CPU and latency check)
-WS_EX_APPWINDOW = 0x00040000
-WS_EX_TOOLWINDOW = 0x00000080
-_GWL_EXSTYLE = -20
 _GWLP_HWNDPARENT = -8
 _GW_OWNER = 4
 
@@ -836,11 +833,6 @@ class Win32(object):
         self.u32.SetWindowLongPtrW(self._wt.HWND(hwnd), _GWLP_HWNDPARENT, owner)
         return self.get_owner(hwnd) == owner
 
-    def get_exstyle(self, hwnd):
-        return int(self.u32.GetWindowLongPtrW(self._wt.HWND(hwnd), _GWL_EXSTYLE)) & 0xFFFFFFFF
-
-    def set_exstyle(self, hwnd, value):
-        self.u32.SetWindowLongPtrW(self._wt.HWND(hwnd), _GWL_EXSTYLE, value)
 
 
 def choose_owner(request, api):
@@ -870,8 +862,6 @@ class OwnerBinding(object):
         foreign = QWindow.fromWinId(self.owner)                             # Qt's own way to make a window of another process the owner (native owner = transient parent)
         dialog.windowHandle().setTransientParent(foreign)
         self.keepalive.append(foreign)
-        ex = self.api.get_exstyle(self.dialog_hwnd)
-        self.api.set_exstyle(self.dialog_hwnd, (ex | WS_EX_APPWINDOW) & ~WS_EX_TOOLWINDOW)       # an owned window has no taskbar button / Alt+Tab entry without it
 
     def tick(self):
         if not self.api.process_alive(self.request.bve_pid):

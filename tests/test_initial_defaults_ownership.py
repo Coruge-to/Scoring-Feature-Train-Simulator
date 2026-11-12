@@ -1,4 +1,4 @@
-"""INITIAL-DEFAULTS window ownership (Owner 2026-11-12, Stage IO-1): the 'initial defaults' window is an OWNED window of the BVE settings dialog that opened it (Properties), is recovered through the taskbar,
+"""INITIAL-DEFAULTS window ownership (Owner 2026-11-12, Stage IO-1): the 'initial defaults' window is an OWNED window of the BVE settings dialog that opened it (Properties) with the STANDARD owned-window behaviour (no own taskbar button, no Alt+Tab entry; Owner ruling 2026-11-12 - recovery is the Properties re-press, not the taskbar),
 never goes behind its owner, is not global top-most, follows the owner to the BVE main window when the settings dialog closes, and ends (without saving) when BVE ends.
 
 NATIVE-ONLY tests: they start the REAL product entry (`python main.py --initial-defaults`) in child processes together with a fake-BVE helper process that owns REAL top-level windows (tests/ownership_fake_bve.py);
@@ -25,7 +25,20 @@ WINDOWS = os.name == "nt"
 TITLE = "初期値設定"
 ENV_PID, ENV_OWNER, ENV_MAIN = "TSSCORING_INITDEF_BVE_PID", "TSSCORING_INITDEF_OWNER_HWND", "TSSCORING_INITDEF_BVE_MAIN_HWND"
 GWL_EXSTYLE, GWL_STYLE, GW_OWNER = -20, -16, 4
-WS_EX_TOPMOST, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW, WS_CAPTION = 0x8, 0x40000, 0x80, 0x00C00000
+WS_EX_TOPMOST, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW, WS_CAPTION, WS_SYSMENU = 0x8, 0x40000, 0x80, 0x00C00000, 0x00080000
+SW_MINIMIZE, SW_RESTORE = 6, 9
+
+
+def shell_lists_in_taskbar(f):
+    """The documented shell rule (Win32 'Window Features / Taskbar buttons'): a visible window gets a taskbar button when it is unowned and not a tool window, or when it has WS_EX_APPWINDOW; an owned window without WS_EX_APPWINDOW gets none."""
+    if f["ex"] & WS_EX_TOOLWINDOW and not f["ex"] & WS_EX_APPWINDOW:
+        return False
+    return bool(f["ex"] & WS_EX_APPWINDOW) or not f["owner"]
+
+
+def shell_lists_in_alt_tab(f):
+    """Alt+Tab lists the same windows as the taskbar rule (visible, not a tool window, unowned or WS_EX_APPWINDOW)."""
+    return shell_lists_in_taskbar(f) and not (f["ex"] & WS_EX_TOOLWINDOW and not f["ex"] & WS_EX_APPWINDOW)
 
 if WINDOWS:
     u32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -37,6 +50,8 @@ if WINDOWS:
     u32.GetWindow.restype = wt.HWND
     u32.GetWindow.argtypes = [wt.HWND, wt.UINT]
     u32.IsWindow.argtypes = [wt.HWND]
+    u32.IsIconic.argtypes = [wt.HWND]
+    u32.ShowWindow.argtypes = [wt.HWND, ctypes.c_int]
     u32.IsWindowVisible.argtypes = [wt.HWND]
     u32.GetWindowTextW.argtypes = [wt.HWND, wt.LPWSTR, ctypes.c_int]
     u32.PostMessageW.argtypes = [wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM]
@@ -240,16 +255,39 @@ class OwnershipNative(unittest.TestCase):
         self.assertTrue(f["owner"] == b.settings, "IO1-RED: the window is not owned (an unowned window is not part of the contract)")
 
     def test_R13_taskbar_and_alt_tab_contract(self):
+        """Owner ruling 2026-11-12 (taskbar contract): the window is an owned window with the STANDARD Win32/Qt behaviour: no WS_EX_APPWINDOW (R13-A), so no own taskbar button (R13-B) and no Alt+Tab entry (R13-C);
+        no WS_EX_TOOLWINDOW added to hide it, not global top-most (R13-E), the standard title bar stays, and the owner is the BVE settings dialog (R13-D)."""
         b = self.bve()
         p = self.product(b)
         w = p.window()
         self.assertTrue(w, "IO1-HARNESS: the window did not appear")
         f = facts(w)
-        self.assertEqual(f["owner"], b.settings, "IO1-RED: not owned by the BVE settings dialog")
-        self.assertTrue(f["ex"] & WS_EX_APPWINDOW, "IO1-RED: an owned window without WS_EX_APPWINDOW has no taskbar button / Alt+Tab entry")
-        self.assertFalse(f["ex"] & WS_EX_TOOLWINDOW, "IO1-RED: the window is a tool window (no taskbar button)")
-        self.assertFalse(f["ex"] & WS_EX_TOPMOST, "IO1-GUARD: the window is global top-most")
+        self.assertEqual(f["owner"], b.settings, "IO1-RED: R13-D not owned by the BVE settings dialog")
+        self.assertFalse(f["ex"] & WS_EX_APPWINDOW, "IO1-RED: R13-A the owned window carries WS_EX_APPWINDOW (ex=0x%X): it gets its own taskbar button 'Python 3.14 (64-bit)' and an Alt+Tab entry" % f["ex"])
+        self.assertFalse(f["ex"] & WS_EX_TOOLWINDOW, "IO1-RED: R13-A WS_EX_TOOLWINDOW must not be added to hide the window (the owned-window behaviour is the reference) (ex=0x%X)" % f["ex"])
+        self.assertFalse(shell_lists_in_taskbar(f), "IO1-RED: R13-B the shell would show an independent taskbar button for this window")
+        self.assertFalse(shell_lists_in_alt_tab(f), "IO1-RED: R13-C the shell would list this window in Alt+Tab as an independent entry")
+        self.assertFalse(f["ex"] & WS_EX_TOPMOST, "IO1-RED: R13-E the window is global top-most")
         self.assertEqual(f["style"] & WS_CAPTION, WS_CAPTION, "IO1-GUARD: the standard Windows title bar is gone")
+        self.assertTrue(f["style"] & WS_SYSMENU, "IO1-GUARD: the standard close button / system menu is gone")
+
+    def test_R13_minimized_window_stays_one_valid_window_and_restores_as_the_same_window(self):
+        """R13-H/I at the window level: a minimized owned window has no taskbar button (accepted), but the process stays ONE, the HWND stays valid and owned, and SW_RESTORE (what the Caller does on the next Properties press) brings back THE SAME window."""
+        b = self.bve()
+        p = self.product(b)
+        w = p.window()
+        self.assertTrue(w, "IO1-HARNESS: the window did not appear")
+        owner_before = facts(w)["owner"]
+        u32.ShowWindow(wt.HWND(w), SW_MINIMIZE)
+        self.assertTrue(wait_until(lambda: u32.IsIconic(wt.HWND(w)), 3), "IO1-GUARD: the harness could not minimize the window")
+        self.assertIsNone(p.proc.poll(), "IO1-RED: R13-H the process ended when the window was minimized")
+        self.assertTrue(u32.IsWindow(wt.HWND(w)), "IO1-RED: R13-H the HWND became invalid after minimizing")
+        self.assertEqual(facts(w)["owner"], owner_before, "IO1-RED: R13-H the owner changed by minimizing")
+        self.assertFalse(facts(w)["ex"] & WS_EX_APPWINDOW, "IO1-RED: R13-A a minimized owned window must not gain WS_EX_APPWINDOW")
+        u32.ShowWindow(wt.HWND(w), SW_RESTORE)
+        self.assertTrue(wait_until(lambda: not u32.IsIconic(wt.HWND(w)) and u32.IsWindowVisible(wt.HWND(w)), 3), "IO1-RED: R13-H SW_RESTORE did not restore the window")
+        self.assertEqual([h for h in process_windows(p.proc.pid) if title_of(h) == TITLE], [w], "IO1-RED: R13-I the restored window is not the same single window")
+        self.assertEqual(facts(w)["owner"], owner_before, "IO1-RED: R13-H the owner changed by restoring")
 
     # R5 ------------------------------------------------------------------------------------------------------------------------------------
     def test_R5_a_second_start_while_the_window_lives_opens_nothing_and_exits_at_once(self):
@@ -305,7 +343,8 @@ class OwnershipNative(unittest.TestCase):
         ok = wait_until(lambda: facts(w)["owner"] == b.main, 4)
         self.assertTrue(ok, "IO1-RED: the owner did not move to the BVE main window (owner=%s main=%s)" % (facts(w)["owner"], b.main))
         self.assertNotEqual(facts(w)["owner"], other.main, "IO1-RED: moved to the main window of ANOTHER bve")
-        self.assertTrue(facts(w)["ex"] & WS_EX_APPWINDOW, "IO1-RED: no taskbar button after the owner change")
+        self.assertFalse(facts(w)["ex"] & WS_EX_APPWINDOW, "IO1-RED: R13-A the owner change must not give the window its own taskbar button")
+        self.assertFalse(shell_lists_in_taskbar(facts(w)), "IO1-RED: R13-B after the owner change the shell would list the window in the taskbar")
         self.assertIsNone(p.proc.poll(), "IO1-RED: the window must survive the settings dialog (the process ended)")
 
     # R11 -----------------------------------------------------------------------------------------------------------------------------------
@@ -494,6 +533,12 @@ class OwnerLogic(unittest.TestCase):
         self.assertTrue(250 <= ui.POLL_INTERVAL_MS <= 1000, "IO1-RED: the owner poll interval %r is outside 250..1000 ms" % ui.POLL_INTERVAL_MS)
         for bad in ("os._exit", "TerminateProcess", "time.sleep(", "WaitForSingleObject(handle, 0xFFFFFFFF"):
             self.assertNotIn(bad, src, "IO1-RED: the Python side must not contain %r (no blocking wait, no forced exit)" % bad)
+
+    def test_R13A_the_source_adds_no_extended_window_style_at_all(self):
+        """R13-A (source level): no WS_EX_APPWINDOW, no WS_EX_TOOLWINDOW, no WS_EX_TOPMOST, no set/get of the extended style: the owned-window behaviour of Win32 / Qt is the reference, nothing is patched in to show or hide the window."""
+        src = open(os.path.join(ROOT, "initial_defaults_ui.py"), encoding="utf-8").read()
+        found = [bad for bad in ("WS_EX_APPWINDOW", "WS_EX_TOOLWINDOW", "WS_EX_TOPMOST", "set_exstyle", "get_exstyle", "GWL_EXSTYLE", "0x00040000", "WindowStaysOnTopHint", "HWND_TOPMOST", "Qt.WindowType.Tool", "WindowType.Tool") if bad in src]
+        self.assertEqual(found, [], "IO1-RED: R13-A initial_defaults_ui.py contains %r (owned-window standard behaviour is the reference; no taskbar patching)" % found)
 
     def test_main_py_keeps_the_exact_flag_contract(self):
         ui = self.module()
