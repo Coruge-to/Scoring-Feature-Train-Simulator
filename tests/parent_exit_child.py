@@ -85,6 +85,12 @@ class _FakeOverlay(object):
     def setGeometry(self, x, y, w, h):
         pass
 
+    def set_client_rect_physical(self, x, y, w, h):          # Phase OVS-1 (on purpose): the controller places the Overlay through this method (Win32 physical px)
+        self.applied_rect = (x, y, w, h)
+
+    def client_rect_applied(self, rect):
+        return getattr(self, "applied_rect", None) == rect
+
     def geometry(self):
         return None
 

@@ -10,6 +10,9 @@ from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QFont, QPainter, QFontDatabase, QColor, QFontMetrics, QPixmap, QCursor
 from PyQt6.QtNetwork import QUdpSocket, QHostAddress
 import keyboard
+# The Overlay's OWN window operations (Phase OVS-1). Bound by name on purpose: the tests of the BVE window operations replace the `win32gui` module attribute of this
+# module with a recording stand-in, and the Overlay's placement of itself must not appear in (or be swallowed by) that record.
+from win32gui import GetWindowRect as overlay_get_window_rect, SetWindowPos as overlay_set_window_pos
 
 from config import *
 from scoring_logic import (
@@ -64,6 +67,7 @@ import effective_station_state as ess
 import telemetry_receiver_directory
 import initial_defaults
 import initial_defaults_ui
+import overlay_transform
 import scoring_settings
 from scoring_settings import build as build_scoring_settings
 import utils
@@ -84,6 +88,7 @@ class Overlay(QWidget):
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowTransparentForInput | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setGeometry(0, 0, 1920, 1080)
+        self._client_phys = None     # (x, y, w, h) of the BVE client area in Win32 PHYSICAL px as last applied (Phase OVS-1); None until the first placement
 
         font_id = QFontDatabase.addApplicationFont(FONT_PATH)
         if font_id != -1:
@@ -2538,6 +2543,35 @@ class Overlay(QWidget):
                     # 既に動いているなら、Pを送る必要はないのでフラグだけ立てて終了
                     self.initial_kickstart_done = True
 
+    def set_client_rect_physical(self, x, y, w, h):
+        """Phase OVS-1: puts the Overlay exactly on the BVE client area. (x, y, w, h) are Win32 PHYSICAL pixels and are applied with SetWindowPos; they are never handed
+        to Qt's setGeometry (that takes logical pixels, Qt would multiply them by the display scale again). Qt's own geometry is first kept in step with the logical
+        equivalent, then the exact physical rectangle is applied."""
+        rect = (x, y, w, h)
+        self.setGeometry(*overlay_transform.logical_geometry(rect, self.devicePixelRatioF()))
+        try:
+            overlay_set_window_pos(int(self.winId()), 0, x, y, w, h, win32con.SWP_NOZORDER | win32con.SWP_NOACTIVATE)
+        except Exception:
+            pass                                          # no native window to place (the logical geometry above stays the approximate placement)
+        self._client_phys = rect
+
+    def client_rect_applied(self, rect):
+        """True when the Overlay window really sits on `rect` (physical px, 1 px tolerance). The real window is asked, so a change of the display scale or of the
+        monitor (Qt rescales the window by itself) is noticed and the rectangle is applied again."""
+        try:
+            left, top, right, bottom = overlay_get_window_rect(int(self.winId()))
+            current = (left, top, right - left, bottom - top)
+        except Exception:
+            current = self._client_phys
+        return overlay_transform.rects_match(current, rect)
+
+    def client_rect_physical(self):
+        """The BVE client area in physical px for hit testing: the last applied rectangle, or (before any placement) the widget's geometry scaled to physical."""
+        if self._client_phys is not None:
+            return self._client_phys
+        geom, dpr = self.geometry(), self.devicePixelRatioF()
+        return geom.x() * dpr, geom.y() * dpr, geom.width() * dpr, geom.height() * dpr
+
     def _follow_bve_window(self):
         """Normal mode only: own the overlay by the BVE window, put it on its client area, hide it while BVE is minimized."""
         if not self.is_linked:
@@ -2554,10 +2588,8 @@ class Overlay(QWidget):
                 if client_rect[2] > 0 and client_rect[3] > 0:
                     client_x, client_y = win32gui.ClientToScreen(self.bve_hwnd, (0, 0))
                     w, h = client_rect[2], client_rect[3]
-                    current_geom = self.geometry()
-                    if (current_geom.x() != client_x or current_geom.y() != client_y or 
-                        current_geom.width() != w or current_geom.height() != h):
-                        self.setGeometry(client_x, client_y, w, h)
+                    if not self.client_rect_applied((client_x, client_y, w, h)):
+                        self.set_client_rect_physical(client_x, client_y, w, h)
                 if not self.isVisible(): self.show()
         except Exception:
             self.bve_hwnd = None
@@ -2787,16 +2819,8 @@ class Overlay(QWidget):
         is_mouse_down = (win32api.GetAsyncKeyState(win32con.VK_LBUTTON) & 0x8000) != 0
 
         if self.menu_state == 10 and is_mouse_down and is_bve_active:
-            cursor_pos = win32gui.GetCursorPos()
-            geom = self.geometry()
-            scale_x = geom.width() / BASE_SCREEN_W
-            scale_y = geom.height() / BASE_SCREEN_H
-            menu_scale = min(scale_x, scale_y)
-            offset_x = (geom.width() - BASE_SCREEN_W * menu_scale) / 2
-            offset_y = (geom.height() - BASE_SCREEN_H * menu_scale) / 2
-            lx = (cursor_pos[0] - geom.x() - offset_x) / menu_scale
-            ly = (cursor_pos[1] - geom.y() - offset_y) / menu_scale
-            
+            lx, ly = overlay_transform.menu_local_point(win32gui.GetCursorPos(), self.client_rect_physical())
+
             # スライダーの当たり判定エリア (menu_ui.py の描画座標と一致させます)
             slider_y = 280
             slider_w = 1200
@@ -2811,16 +2835,8 @@ class Overlay(QWidget):
                 self.input_mode_active = False # 手入力をキャンセル
         if is_left_clicked and not self.last_left_click:
             if self.menu_state != 0 and is_bve_active:
-                cursor_pos = win32gui.GetCursorPos()
-                geom = self.geometry()
-                scale_x = geom.width() / BASE_SCREEN_W
-                scale_y = geom.height() / BASE_SCREEN_H
-                menu_scale = min(scale_x, scale_y)
-                offset_x = (geom.width() - BASE_SCREEN_W * menu_scale) / 2
-                offset_y = (geom.height() - BASE_SCREEN_H * menu_scale) / 2
-                lx = (cursor_pos[0] - geom.x() - offset_x) / menu_scale
-                ly = (cursor_pos[1] - geom.y() - offset_y) / menu_scale
-                
+                lx, ly = overlay_transform.menu_local_point(win32gui.GetCursorPos(), self.client_rect_physical())
+
                 clicked_zone = False
                 
                 for zone in self.menu_click_zones:

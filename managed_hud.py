@@ -493,8 +493,8 @@ class ManagedHudController(object):
                     linked = False
                 else:
                     rect = api.client_rect_on_screen(self._hwnd)
-                    if rect is not None and rect != self._geom:
-                        overlay.setGeometry(*rect)
+                    if rect is not None and (rect != self._geom or not overlay.client_rect_applied(rect)):
+                        overlay.set_client_rect_physical(*rect)            # Phase OVS-1: Win32 PHYSICAL px, placed with SetWindowPos (never a Qt logical setGeometry)
                         self._geom = rect
                     self._reconcile_shown()
                     shown_now = self._show()

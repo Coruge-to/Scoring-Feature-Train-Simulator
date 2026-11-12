@@ -565,6 +565,14 @@ class FakeOverlay(object):
     def setGeometry(self, x, y, w, h):
         self.geoms.append((x, y, w, h))
 
+    def set_client_rect_physical(self, x, y, w, h):
+        """Phase OVS-1 (on purpose): the controller places the Overlay through this method in Win32 PHYSICAL px (SetWindowPos), no longer through Qt's logical setGeometry; `geoms` records the same rectangles as before"""
+        self.geoms.append((x, y, w, h))
+        self.applied_rect = (x, y, w, h)
+
+    def client_rect_applied(self, rect):
+        return getattr(self, "applied_rect", None) == rect
+
     def update(self):
         self.updates += 1
 

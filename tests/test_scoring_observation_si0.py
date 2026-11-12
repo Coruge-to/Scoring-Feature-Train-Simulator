@@ -362,7 +362,7 @@ class E_TheSeamsOfUpdateLogic(unittest.TestCase):
             "if self.was_bve_found and self.bve_hwnd is None:",           # the BVE window disappeared (then QApplication.quit())
             "write_desktop_log(\"[MAIN] BVEの凍結を確認。キックスタートを実行します。\")",
             "win32gui.SetWindowLong(int(self.winId()), win32con.GWL_HWNDPARENT, self.bve_hwnd)",
-            "self.setGeometry(client_x, client_y, w, h)",
+            "self.set_client_rect_physical(client_x, client_y, w, h)",      # OVS-1 (on purpose): the BVE client area (Win32 physical px) is applied with SetWindowPos, no longer with Qt's logical setGeometry
             "real_now = time.time()",                                      # fast-forward detection
             "win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x77, 0) # F8",
             "is_bve_advancing = ('RUNNING' in self.bve_actual_state)",
@@ -405,7 +405,7 @@ class E_TheSeamsOfUpdateLogic(unittest.TestCase):
             loaded = {n.id for n in ast.walk(func) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
             external |= {n for n in loaded - local if not hasattr(builtins, n)}
         self.assertEqual(external, {"QApplication", "keyboard", "win32gui", "win32api", "win32con", "time", "write_desktop_log", "reset_transient_scoring_state",
-                                    "update_physics_and_scoring", "BASE_SCREEN_W", "BASE_SCREEN_H", "initial_defaults"})      # INITIAL-DEFAULTS Commit 3 (on purpose): initial_defaults (the shared F1 state functions and the one A boundary clamp, used by the menu key handlers of update_logic)
+                                    "update_physics_and_scoring", "BASE_SCREEN_W", "overlay_transform", "initial_defaults"})      # OVS-1 (on purpose): BASE_SCREEN_H -> overlay_transform (the click handler maps the physical cursor with overlay_transform.menu_local_point; the scale / offset lines moved into it). INITIAL-DEFAULTS Commit 3 (on purpose): initial_defaults (the shared F1 state functions and the one A boundary clamp, used by the menu key handlers of update_logic)
 
     def test_there_is_no_other_caller_of_update_logic_than_the_timer(self):
         t = ast.parse(read("main.py"))
