@@ -1,6 +1,7 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFontMetrics, QPainterPath, QPen, QLinearGradient, QFont
 from config import *
+from scoring_logic import rollback_message_visible
 from utils import draw_text_with_stroke, get_outline_color
 
 def hud_item_available(overlay, key):
@@ -75,7 +76,7 @@ def draw_hud(self, painter, logical_width):
         else ""
     )
     dbg_texts = []
-    if (self.bve_time_ms / 1000.0) < self.rollback_msg_timer and self.rollback_msg:
+    if rollback_message_visible(self):
         dbg_texts.append(f"★ {self.rollback_msg}")
     
     # =================================================================

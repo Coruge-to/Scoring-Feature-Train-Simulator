@@ -1797,10 +1797,13 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
         )
         # INITIAL-DEFAULTS Stage F2 (on purpose; Owner 2026-11-11): the label of the safety intervention row in the Desktop log breakdown is the user-visible name 保安装置介入 (the old name ATS信号無視 left this one log line; the internal key 'ats' stays)
         stage_f2_desktop_log_label = ('write_desktop_log(f"  ATS信号無視: {self.score_details.get(\'ats\', 0)}")',)
+        # F2 Rollback Message Lifetime (on purpose): execute_retry sets the F2 rollback message through set_rollback_message (a deadline of the monotonic clock, not BVE time): these are the 2 distinct lines (stripped) that the
+        # diff shows as removed; no score, no rule and no constant of the scoring is among them (tests/test_f2_rollback_message_lifetime.py).
+        f2_rollback_message_lifetime = ('self.rollback_msg = f">>> {cp.get(\'station_name\', \'駅\')} へロールバック完了 <<<"', 'self.rollback_msg_timer = self.bve_time_ms / 1000.0 + 5.0')
         self.assertEqual(removed, [l for l in removed if "from utils import" in l or l.strip("-").strip() in ("", ")", pid_d6_transport) + tbd_running_end_judgement + pseudo_turnback_a_seam + st2a_checkpoint_identity + st2b_retry_by_saved_index
                                    + st3d_request_by_the_one_builder + st2c_first_station_distance + timefix_b_departure_margins + timefix_b3_zero_speed_and_jump_boundary
                                    + close_range_shared_basic_braking_init + si_r5_2a_p03_target_index + si_r5_2b_arrival_target_index + si_r5_2c_departure_prev_target_index
-                                   + lc3b_same_time_history_replace + stage_tbh6_illegal_move_wording + formal_bveg_retired + initial_defaults_settings_reads + stage_f2_desktop_log_label], removed)
+                                   + lc3b_same_time_history_replace + stage_tbh6_illegal_move_wording + formal_bveg_retired + initial_defaults_settings_reads + stage_f2_desktop_log_label + f2_rollback_message_lifetime], removed)
 
     def test_the_scoring_function_bodies_are_ast_identical_to_the_baseline(self):
         old = git("show", BASELINE + ":scoring_logic.py")
@@ -1824,6 +1827,7 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
                                    "turnback_display_update", "create_turnback_b_checkpoint",
                                "build_scoring_section", "active_scoring_section", "section_start_index", "section_end_judge_index", "scoring_section_housekeeping",
                                "run_identity", "finished_run_retained", "finished_run_refusal", "discard_run_context",   # Phase PFR-R (on purpose): the finished Run keeps its frozen settings (run_identity, finished_run_retained, finished_run_refusal, discard_run_context: no score, no rule, no constant)
+                               "set_rollback_message", "clear_rollback_message", "rollback_message_visible",   # F2 Rollback Message Lifetime (on purpose): the F2 rollback message is shown for 5.0 real seconds of the monotonic clock (no score, no rule, no constant of the scoring)
                                "turnback_fix_section", "turnback_session_active", "turnback_lifecycle_guard", "turnback_diag", "turnback_stop_scoring", "official_jump_f1_hold", "note_jump_settlement", "turnback_jump_available", "turnback_request", "turnback_establish_b", "turnback_landing_step", "turnback_drive",
                                    # Stage TB-H (on purpose): pair B untimed by contract - one PURE helper of the section (turnback_crossed_pairs; turnback_fix_section itself is untouched), the set of the crossed B (turnback_b_indexes) and the reason (untimed_reason); the points, the rules and the constants of the scoring are not among them (tests/test_pt_tbh_pairb_contract.py)
                                    "turnback_crossed_pairs", "turnback_b_indexes", "untimed_reason",

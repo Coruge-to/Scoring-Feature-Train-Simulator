@@ -196,7 +196,7 @@ class RetryReds(RedMixin, F1.Base):
     def fingerprint(self):
         """Everything execute_retry changes before it sends (the JF-1 R15 - R21 list): a refusal must leave ALL of it as it was."""
         o = self.o
-        return (self.snap(), o.is_official_retry, o.is_first_station, o.total_retry_count, o.has_departed, o.is_first_udp, o.rollback_msg, o.rollback_msg_timer,
+        return (self.snap(), o.is_official_retry, o.is_first_station, o.total_retry_count, o.has_departed, o.is_first_udp, o.rollback_msg, o.rollback_msg_deadline_monotonic,
                 o.score, dict(o.score_details), [dict(c) for c in o.save_data], o.menu_state)
 
     def positive_control(self, stations):

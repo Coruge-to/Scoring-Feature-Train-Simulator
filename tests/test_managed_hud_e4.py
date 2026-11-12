@@ -1779,7 +1779,11 @@ class G_RealOverlayAndScoringLifecycle(unittest.TestCase):
                   # Stage TB-H 5b (on purpose): TURNBACK_SPECIAL_SECONDS (the 3.0 s exception of the arrival result popups) is gone (tests/test_pt_tbh_first_jump_10s.py JM-02)
                   "Assign(targets=[Name(id='TURNBACK_TOTAL_SECONDS', ctx=Store())], value=BinOp(left=Attribute(value=Name(id='pseudo_turnback_machine', ctx=Load()), attr='REQUEST_AFTER_MS', ctx=Load()), op=Div(), right=Constant(value=1000.0)))",
                   # INITIAL-DEFAULTS Commit 3 (on purpose): the import of scoring_settings and the HUD feature text of the scoring settings
-                  "scoring_feature_string", "Import(names=[alias(name='scoring_settings')])"}),
+                  "scoring_feature_string", "Import(names=[alias(name='scoring_settings')])",
+                  # F2 Rollback Message Lifetime (on purpose): the F2 rollback message is shown for 5.0 real seconds of the monotonic clock - three display helpers, the clock and the 5.0 constant, the time import (tests/test_f2_rollback_message_lifetime.py); no score, no rule, no history
+                  "set_rollback_message", "clear_rollback_message", "rollback_message_visible", "Import(names=[alias(name='time')])",
+                  "Assign(targets=[Name(id='ROLLBACK_MESSAGE_SECONDS', ctx=Store())], value=Constant(value=5.0))",
+                  "Assign(targets=[Name(id='rollback_clock', ctx=Store())], value=Attribute(value=Name(id='time', ctx=Load()), attr='monotonic', ctx=Load()))"}),
                 ("utils.py", old_utils, {"write_desktop_log"}, {"set_desktop_log_enabled", "desktop_log_enabled", "desktop_log_requested"}),
                 # Stage TB-H (on purpose): the timing screen of draw_menu is the ONLY member of menu_ui.py that changed since E3 (nothing removed, nothing added)
                 # Stage TB-I (brake chain, on purpose): the ONE new member is the pure helper _brake_rule_start (the effective start of a basic brake rule that the screens draw); draw_menu calls it at four places

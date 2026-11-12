@@ -1,4 +1,5 @@
 import os
+import time
 from typing import NamedTuple
 
 from PyQt6.QtNetwork import QHostAddress
@@ -168,6 +169,34 @@ def reset_result_display_state(self):
     self.saved_file_path = ""
     self.end_message_time = 0.0
     self.result_screen_time = 0.0
+
+
+# ---- F2 Rollback Message Lifetime: the F2 line "<station> へロールバック完了" is shown for 5.0 REAL seconds ----
+# The deadline is a value of the monotonic clock of this process (never BVE time: that goes back at a Jump, F5 and a new Run). The clock is a module attribute so that the tests inject it.
+ROLLBACK_MESSAGE_SECONDS = 5.0
+rollback_clock = time.monotonic
+
+
+def set_rollback_message(self, text):
+    """Show `text` on the F2 line from now on for ROLLBACK_MESSAGE_SECONDS; a message that is already there is replaced (only the latest is kept)."""
+    self.rollback_msg = text
+    self.rollback_msg_deadline_monotonic = rollback_clock() + ROLLBACK_MESSAGE_SECONDS
+
+
+def clear_rollback_message(self):
+    """Nothing is shown on the F2 line any more (the end of the display time or a boundary of the Run)."""
+    self.rollback_msg = ""
+    self.rollback_msg_deadline_monotonic = 0.0
+
+
+def rollback_message_visible(self):
+    """True while the message is within its display time; an expired message is cleared here and never comes back."""
+    if not self.rollback_msg:
+        return False
+    if rollback_clock() < self.rollback_msg_deadline_monotonic:
+        return True
+    clear_rollback_message(self)
+    return False
 
 
 def reset_speed_penalty_state(self):
@@ -808,8 +837,7 @@ def execute_retry(self, index, is_bve_advancing):
     #?self.bve_door = 0
     #?self.prev_door = 0
 
-    self.rollback_msg = f">>> {cp.get('station_name', '駅')} へロールバック完了 <<<"
-    self.rollback_msg_timer = self.bve_time_ms / 1000.0 + 5.0
+    set_rollback_message(self, f">>> {cp.get('station_name', '駅')} へロールバック完了 <<<")
 
     self.toggle_menu(is_bve_advancing)
 

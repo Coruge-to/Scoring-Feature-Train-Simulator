@@ -38,6 +38,7 @@ from scoring_logic import (
     turnback_held_a_target,
     discard_run_context,
     run_identity,
+    clear_rollback_message,
 )
 from menu_ui import draw_menu
 from hud_ui import draw_hud
@@ -250,7 +251,7 @@ class Overlay(QWidget):
         self.menu_items_on = ["運転を再開する", "採点を中断する", "選択した駅からやり直す", "環境設定"]
         
         self.rollback_msg = ""
-        self.rollback_msg_timer = 0.0
+        self.rollback_msg_deadline_monotonic = 0.0
         self.prev_frame_loc = 0.0
 
         # 採点終了・リザルト表示状態
@@ -637,6 +638,7 @@ class Overlay(QWidget):
         self.is_official_jumping = False
         self.jump_lock = True
         discard_run_context(self)                                   # Phase PFR-R: an unrecoverable Jump failure ended the scoring session: the Run is over
+        clear_rollback_message(self)                                # F2 Rollback Message Lifetime: and so is its message
 
     def _send_jump_datagram(self, data, port):
         return self.udp_socket.writeDatagram(data, QHostAddress.SpecialAddress.LocalHost, port)
@@ -1008,8 +1010,7 @@ class Overlay(QWidget):
                                 discard_run_context(self)                        # Phase PFR-R: the Run of the previous scenario is over: its frozen settings are not carried on
 
                                 # 前シナリオのロールバック通知を破棄
-                                self.rollback_msg = ""
-                                self.rollback_msg_timer = 0.0
+                                clear_rollback_message(self)
 
                                 # Phase ST-3d: the official jump of the previous scenario ends with it (nothing waits for its completion any more)
                                 self._jump_transaction_finish(jump_transaction.SETTLE_SCENARIO)
@@ -2144,6 +2145,7 @@ class Overlay(QWidget):
                 self._run_identity = run_identity(self)                  # Phase PFR-R: the identity of THIS Run (BVE PID, session, ScenarioGeneration, scenario scope): a Retry after the finish needs it to be equal
                 self.internal_abort_reason = ""
                 self.is_scoring_mode = True
+                clear_rollback_message(self)                             # F2 Rollback Message Lifetime: a new Run never shows the message of the previous one
                 reset_result_display_state(self)
                 reset_score_accumulation(self)
                 reset_speed_penalty_state(self)
@@ -2196,6 +2198,7 @@ class Overlay(QWidget):
             if self.menu_cursor == 0: # 「はい」を選択
                 self.is_scoring_mode = False
                 discard_run_context(self)                                # Phase PFR-R: the user gave the scoring up: the Run is over, its frozen settings are cleared
+                clear_rollback_message(self)                             # F2 Rollback Message Lifetime: the Run is over, so is its message
                 reset_result_display_state(self)
                 reset_speed_penalty_state(self)
                 reset_roll_state(self)

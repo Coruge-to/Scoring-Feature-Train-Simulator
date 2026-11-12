@@ -533,7 +533,7 @@ class R_ExecuteRetry(Base):
         o.bve_time_ms = 36123000
         self.retry(1, [cp(0.0, T0), cp(1000.0, T0 + 60000, details=ZERO, name="B")])
         self.assertEqual(o.rollback_msg, ">>> B へロールバック完了 <<<")
-        self.assertEqual(o.rollback_msg_timer, 36123.0 + 5.0)
+        self.assertGreater(o.rollback_msg_deadline_monotonic, 0.0)                    # F2 Rollback Message Lifetime: the deadline is a monotonic-clock value, never BVE time (tests/test_f2_rollback_message_lifetime.py)
         self.assertFalse(o.has_departed)
         self.assertTrue(o.is_first_udp)
 

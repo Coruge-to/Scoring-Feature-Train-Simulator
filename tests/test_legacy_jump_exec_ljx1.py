@@ -146,7 +146,7 @@ REGION_PINS = {
         "Overlay._finish_jump_transaction": ("whole", "19F2983456CB7EA8EF8A4C19463FEDC22EADF0EB2481C2FED4341B6DCE8F106C", 1),       # Stage TB-C (was B6E82E3A...): + note_jump_settlement (how the transaction ended, for the pseudo-turnback chain and the landing watch)
         "Overlay._jump_transaction_finish": ("whole", "3CFF60626FCE391D84E1A19483AE04BC144035FDCD3A4E16A9924B573003DF0E", 1),
         # Phase ST-3d (was D011C774...): also the one exit of every FAILED settlement (a verdict), closes the books of the transaction (jump-settled) and releases the pending retry
-        "Overlay._abort_unreleased_official_jump": ("whole", "4026FFC70D6C9897BE1D9CAB71A87DCAF7866D8DD95043EF42164027275526CC", 1),       # Stage TB-C (was 2FDDD061...): OD-TB-30 - no popup, a diagnostic and internal_abort_reason
+        "Overlay._abort_unreleased_official_jump": ("whole", "321BFEED3CDDAD59D1873AE5589987439F939593CE54604EB12C98736405E177", 1),       # Stage TB-C (was 2FDDD061...): OD-TB-30 - no popup, a diagnostic and internal_abort_reason
         "Overlay._send_jump_datagram": ("whole", "28F6535FFD17481537E586D5F61A5D0BB2824E6CB309EF9F2D1F7D63A4DFF281", 1),
         "Overlay._log_rejected_completion": ("whole", "C5B2E6C61374F8CD15019919490069ADF03F0C8137168CAF51DAD397C1D54C83", 1),
         # Phase ST-3d (was 1709CFC1...): the settlement itself - judge_completion, the cut of the history (the ONE call of resolve_retry_history), the release, then the unchanged success body
@@ -183,7 +183,7 @@ REGION_PINS = {
         # Phase ST-3d (was EA70319D..., 9 records): + jump_expectation: None
         "generation_defaults": ("slice", "30BDFEF6909510B1AEA0AF833832BBB61E72E30D484777E81BD2C3527D2B35A6", 10),
         # Phase ST-3d (was 35BF78F1..., 2 records): + overlay.jump_expectation reset
-        "discard_scoring_session": ("slice", "DD554AD16FC477C4B24A4AC8292E4F0980B33E341FAAD3649EBD41ED77189139", 3),  # 2026-11-08 (an intended change, formal LastStop BveG): the sway Shadow boundary call is gone from discard_scoring_session (was D8C47223...); the jump cancel is untouched
+        "discard_scoring_session": ("slice", "FCB20724D9E0B047455B99BCC61DC83A75E365091FC840A3DBE3A5AF63C729C9", 3),  # 2026-11-08 (an intended change, formal LastStop BveG): the sway Shadow boundary call is gone from discard_scoring_session (was D8C47223...); the jump cancel is untouched
         "discard_generation_state": ("slice", "2E51777AEEE6233FA907BBD73C25D0BD02D060A766149F6C2188CF5BA7133950", 2),
         "ManagedInputController._observe": ("slice", "D84735A078A800DE92834344F0FCA2D04B7AF879D8168AEAB9EDF2B8114B87D7", 1),       # Stage TB-C (was 8275B161...): the abort reason names internal_abort_reason (OD-TB-30: no warning popup of W2)
     },
@@ -202,7 +202,7 @@ ST3D_EXECUTE_RETRY_PIN = ("whole", "E5DB2D56A0FC1A4894DD4FBDA7D7CFF63BEB4EB78E74
 # Legacy scoring LC-4 / LC-4b (an INTENDED change of the jump contract): execute_retry refuses once the scoring has finished (LC-4, 'scoring-finished') and while the Jump group is unavailable (LC-4b, A14); both refusals
 # come BEFORE the request is built, so no request is made and none is sent (4 + 4 added lines, no deleted line). Its new canonical AST is pinned here (it was E5DB2D56...); begin_official_jump, the other WHOLE region and
 # every SLICE region are still compared with the blob of the formal LJX-1 commit (identical), except the pinned ones.
-LC4B_EXECUTE_RETRY_PIN = ("whole", "19FB28373113925F5BD87A1AAA585A586FFC9E8D56F7C81EF52CBD9EFAABF2C2", 1)
+LC4B_EXECUTE_RETRY_PIN = ("whole", "BA41B933856D9718CACF2A9587BD48E44AB4690516528483B03489AE549EF5A6", 1)
 INITIAL_DEFAULTS_SPEED_LIMIT_PIN = ("slice", "CBF75A39FB78D742853315F4A20A8047E1D0C97A1DF2B63E15D8FE62C86DF0F4", 1)      # INITIAL-DEFAULTS Commit 3 (on purpose): the speed limit penalty reads its setting through scoring_settings.value (the one condition line of the jump slice changed; no score, no rule, no constant)
 
 # Legacy scoring LC-3A (an INTENDED change of the stop jerk judgement, not of the jump contract): update_stop_jerk_penalty returns without judging while `is_official_jumping` is set (a sample taken while the world is about to be

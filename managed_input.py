@@ -45,7 +45,7 @@ def generation_defaults():
         "popups": [], "score": 0, "score_details": {key: 0 for key in ("time", "stop", "base_brake", "roll", "jerk", "init_brake", "rel_brake", "eb", "limit", "ats", "bonus")},
         "is_scoring_mode": False, "is_scoring_finished": False, "is_result_saved": False, "saved_file_path": "",
         "end_message_time": 0.0, "result_screen_time": 0.0, "theoretical_score": 0, "total_retry_count": 0, "save_data": [], "retry_pending": None, "jump_expectation": None,
-        "rollback_msg": "", "rollback_msg_timer": 0.0,
+        "rollback_msg": "", "rollback_msg_deadline_monotonic": 0.0,
         "is_speed_limit_exceeded": False, "last_speed_limit_penalty_time": 0.0, "accumulated_speed_penalty": 0,
         # emergency brake (manual EB and Smee virtual EB)
         "manual_eb_penalty_applied": False, "smee_virtual_eb_active": False, "manual_eb_accum_time": 0.0, "manual_eb_cooling_time": 0.0,
@@ -151,7 +151,7 @@ def discard_scoring_session(overlay):
     d = generation_defaults()
     for name in (
         "popups", "score", "score_details", "is_scoring_mode", "is_scoring_finished", "is_result_saved", "saved_file_path", "end_message_time", "result_screen_time",
-        "theoretical_score", "total_retry_count", "save_data", "rollback_msg", "rollback_msg_timer",
+        "theoretical_score", "total_retry_count", "save_data", "rollback_msg", "rollback_msg_deadline_monotonic",
         "manual_eb_penalty_applied", "smee_virtual_eb_active", "manual_eb_accum_time", "manual_eb_cooling_time",
         "bb_state", "bb_apply_count", "bb_release_count", "bb_is_in_zone", "bb_evaluated", "bb_current_notch", "bb_notch_change_time",
         "bb_prev_stable_notch", "bb_is_stable", "hb_prev_notch", "hb_cushion_entry_time", "hb_strong_entered",

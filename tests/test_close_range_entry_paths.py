@@ -529,12 +529,13 @@ class B_Protection(Base):
                     digests = []
                     for patched in (True, False):
                         f = Flow(self, formal=formal)
-                        if patched:
-                            with mock.patch.object(self.main, "close_range_fix_landing_stop", lambda *a, **k: None), \
-                                    mock.patch.object(self.S, "close_range_fix_landing_stop", lambda *a, **k: None):       # the settlement's supply and (Stage TB-C) the landing watch's re-supply
+                        with mock.patch.object(self.S, "rollback_clock", lambda: 1000.0):         # F2 Rollback Message Lifetime: the deadline of the rollback message is a value of the monotonic clock: fixed, so that the two runs compare
+                            if patched:
+                                with mock.patch.object(self.main, "close_range_fix_landing_stop", lambda *a, **k: None), \
+                                        mock.patch.object(self.S, "close_range_fix_landing_stop", lambda *a, **k: None):       # the settlement's supply and (Stage TB-C) the landing watch's re-supply
+                                    loc_a = getattr(f, path)()
+                            else:
                                 loc_a = getattr(f, path)()
-                        else:
-                            loc_a = getattr(f, path)()
                         o = f.o
                         keep = (int, float, str, bool, type(None), tuple, list, dict)
                         digests.append({k: repr(v) for k, v in vars(o).items() if isinstance(v, keep) and not re.search(r"0x[0-9a-f]+", repr(v))})
