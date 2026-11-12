@@ -61,13 +61,13 @@ UNTOUCHED = {
     # Phase ST-3e0 changes both projects on purpose (exactly one Compile item of Shared\PackageContract.cs each; the blobs moved from 61092229... / defbe148...): their rows are gone; the projects are held by
     # tests/test_stationindex_package_st3e0.py (E0-25: each differs from the blob of 0b8e511 by that one item only) and by the compile lists of this file and of test_jf1_current_csharp_source_pins.py
     "TsScoringPlugin/TsScoringPlugin/AtsLoggerPlugin.cs": "22209df3e50762dd17c68c9bb788af6f8faf98b7",
-    "TsScoringPlugin/TsScoringPlugin/Properties/AssemblyInfo.cs": "e704abd24867f658d3a0391e231395dff85ad5d2",
+    "TsScoringPlugin/TsScoringPlugin/Properties/AssemblyInfo.cs": "9ae1be9509ef29f08b41350ceab4975a5d9210c4",
     "TsScoringPlugin/Handshake/Telemetry/Shared/JumpWire.cs": "dff2a85a25ff22f76892b3d19209b1da9c089387",
     "TsScoringPlugin/Handshake/Telemetry/Shared/DataPlaneProtocol.cs": "bed2ed8585b502578d4d4e17f64307206d0920fc",
     # SI-R2.2-S2b (C3a) changed StationListIdentity.cs on purpose (the official next-station target: OfficialTargetReading / Station / Host / Reader / Wire, the shared reader core and wire helper of both senders; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from bfa15b21... (the commit before S2b)
     "TsScoringPlugin/Handshake/Telemetry/Shared/StationListIdentity.cs": "b670065e031b77fe2fa2c820548a04bdc020f1ea",
     "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs": "cde81d8f5411df680cb17b10288a3c8d9b01f561",
-    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/AssemblyInfo.cs": "d601dec6a3a0feff0e7e6ed54c610ecb0d53bd51",
+    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/AssemblyInfo.cs": "b5de69b3ea512c05374408d85d8872abcfba2d32",
     # SI-R2.2-S2b (C3a) changed LegacyTelemetryExtension.cs on purpose (the read only adapter ILegacyOfficialTargetApi.ReadOfficialTarget and the E-9 rule text of the header; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 12a0f84a... (the commit before S2b)
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "91b290939cf8dc5ac5ec48ccf3b8765c7590aa54",       # 2026-11-08 (the pin moved, an intended change: formal LastStop BveG, CalcG / sway retired; was 589e137f...)
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpCommandQueue.cs": "c9517db9074f45ef447991cd52280ef512047070",

@@ -564,7 +564,14 @@ class S_CSharp(unittest.TestCase):
             neutral = lambda text: re.sub(r"(MaxStderrLineChars = )\d+;", r"\g<1>N;", text.replace("\r\n", "\n"))
             self.assertEqual(neutral(read(self.APM)), neutral(base_apm), "the process manager may differ from LC-4b in the diagnostic cap number only")
             self.assertIn("MaxStderrLineChars = 192;", read(self.APM))
-        self.assertEqual([c for c in changed if c not in (self.SES, self.EXT, self.APM)], [])
+        # Public naming migration N1 (an intended change, not a drift; on purpose): the Caller's two human-facing strings (the MessageBox title and the first words of the notice) are TScoring now.
+        # Nothing else of HandshakeSession.cs may differ from LC-4b: after the two strings are neutralised back the text must be identical.
+        if self.CALLER in changed:
+            base_hs = subprocess.run(["git", "-C", ROOT, "show", "cbebfd3:" + self.CALLER], capture_output=True, timeout=60).stdout.decode("utf-8", "replace").replace("\r\n", "\n")
+            back = lambda text: text.replace("\r\n", "\n").replace('ProductDisplayName = "TScoring";', 'ProductDisplayName = "TS Scoring";').replace('"TScoringにはBveEXが必要です。', '"TS ScoringにはBveEXが必要です。')
+            self.assertEqual(back(read(self.CALLER)), base_hs, "HandshakeSession.cs may differ from LC-4b in the two TScoring display strings only")
+            self.assertIn('ProductDisplayName = "TScoring";', read(self.CALLER))
+        self.assertEqual([c for c in changed if c not in (self.SES, self.EXT, self.APM, self.CALLER)], [])
         if self.SES in changed or self.EXT in changed:
             import pt_tbe_c7_structure
             base = subprocess.run(["git", "-C", ROOT, "show", "cbebfd3:" + self.SES], capture_output=True, timeout=60).stdout.decode("utf-8", "replace")

@@ -1,33 +1,23 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-// アセンブリに関する一般情報は以下を通して制御されます
-// 制御されます。アセンブリに関連付けられている情報を変更するには、
-// これらの属性値を変更してください。
-[assembly: AssemblyTitle("TsScoringPlugin")]
-[assembly: AssemblyDescription("")]
+// Public metadata. Human-facing product name: TScoring. No personal information.
+// DLL suffix B = the current extension path.
+// The five public DLLs (Input Device, Bridge B, Telemetry B, Bridge A, Telemetry A) share one release version.
+[assembly: AssemblyTitle("TScoring Telemetry B")]
+[assembly: AssemblyDescription("TScoring telemetry sender for the current extension path (DLL suffix B): sends the vehicle and track telemetry to the TScoring application.")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("TsScoringPlugin")]
-[assembly: AssemblyCopyright("Copyright ©  2026")]
+[assembly: AssemblyCompany("Coruge-to")]
+[assembly: AssemblyProduct("TScoring")]
+[assembly: AssemblyCopyright("Copyright (c) 2026 Coruge-to")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 
-// ComVisible を false に設定すると、このアセンブリ内の型は COM コンポーネントから
-// 参照できなくなります。COM からこのアセンブリ内の型にアクセスする必要がある場合は、
-// その型の ComVisible 属性を true に設定してください。
 [assembly: ComVisible(false)]
 
-// このプロジェクトが COM に公開される場合、次の GUID が typelib の ID になります
+// The typelib id of the project; kept unchanged.
 [assembly: Guid("6170c7be-114e-4921-87d3-eae2fc09c073")]
 
-// アセンブリのバージョン情報は、以下の 4 つの値で構成されています:
-//
-//      メジャー バージョン
-//      マイナー バージョン
-//      ビルド番号
-//      リビジョン
-//
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("0.14.0.0")]
+[assembly: AssemblyFileVersion("0.14.0.0")]

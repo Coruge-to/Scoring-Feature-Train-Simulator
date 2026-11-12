@@ -101,11 +101,11 @@ namespace TSScoringPlugin.Handshake
         private static extern int MessageBoxW(IntPtr hWnd, string text, string caption, uint type);
 
         // Human-facing product name (the technical identifiers elsewhere keep "TSScoringPlugin").
-        internal const string ProductDisplayName = "TS Scoring";
+        internal const string ProductDisplayName = "TScoring";
         internal const string ProviderName = "Coruge-to";
 
         internal const string NoticeText =
-            "TS ScoringにはBveEXが必要です。\r\n" +
+            "TScoringにはBveEXが必要です。\r\n" +
             "設定 → 入力デバイス でBveEXを有効にし、BVEを再起動してください。";
 
         /// <summary>Diagnostic for the offline tests: monitor threads currently alive (must return to 0 after every cycle).</summary>

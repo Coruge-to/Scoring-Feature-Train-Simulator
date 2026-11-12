@@ -406,7 +406,7 @@ class E_Boundary(unittest.TestCase):
         # Stage P1 (an intended change, not a drift): hud_target_contract.py is NOT in this list any more: it gained select_time_kind (the SI-R2.3 arrival / departure selector as ONE function, official_time unchanged in behaviour)
         # and cursor_of (an alias of offtgt_of for the effective station state); tests/test_pt_effective_state.py (PS_04) and tests/test_hud_target_contract_r23.py pin its behaviour
         x_paths = ("station_identity.py", "official_target_contract.py", "station_index_contract.py",
-                   "TsScoringPlugin/Handshake/Shared/ObservationLog.cs", "TsScoringPlugin/Handshake/Telemetry/Shared/StationListIdentity.cs",
+                   "TsScoringPlugin/Handshake/Telemetry/Shared/StationListIdentity.cs",
                    "TsScoringPlugin/Handshake/Bridge/Legacy/src/TsScoringLegacyBridge.cs", "TsScoringPlugin/Handshake/Bridge/src/ScenarioObserver.cs",
                    "TsScoringPlugin/Handshake/Bridge/src/ScenarioReadyTracker.cs")
         try:
@@ -416,6 +416,12 @@ class E_Boundary(unittest.TestCase):
         if not known:
             self.skipTest("git or the base commit %s is not available" % base[:7])
         self.assertEqual(subprocess.run(["git", "diff", "--quiet", base, "--"] + list(x_paths), cwd=ROOT).returncode, 0, "a Season 2 file differs from %s" % base)
+        # Public naming migration N1 (an intended change, not a drift; on purpose): ObservationLog.cs differs from the base in ONE human-facing log header (TS Scoring -> TScoring) and nothing else.
+        obs = "TsScoringPlugin/Handshake/Shared/ObservationLog.cs"
+        base_obs = subprocess.run(["git", "show", base + ":" + obs], cwd=ROOT, capture_output=True).stdout.decode("utf-8", "replace").replace("\r\n", "\n")
+        with open(os.path.join(ROOT, obs), "rb") as fh:
+            now_obs = fh.read().decode("utf-8", "replace").replace("\r\n", "\n")
+        self.assertEqual(now_obs.replace("# TScoring Phase C1 observation log", "# TS Scoring Phase C1 observation log"), base_obs, "ObservationLog.cs may differ from the base in the TScoring log header only")
 
 
 if __name__ == "__main__":

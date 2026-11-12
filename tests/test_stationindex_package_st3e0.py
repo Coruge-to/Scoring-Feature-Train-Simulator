@@ -102,7 +102,7 @@ BASE_BLOBS = {
     "telemetry_gate.py": "2e0c8b70041a1e9339c2fdf116edb7e57fce8219",
     "telemetry_receiver_directory.py": "5219d2940ca8b714fb999cae51341fc3881067d1",
     "utils.py": "4605f16133442d0e5542281190ace8f32de67a9b",       # 2026-11-08 (the pin moved, an intended change: formal LastStop BveG, CalcG / sway retired; was 4605f161...)       # 2026-11-08 (the pin moved, an intended change: display change (--- and plain description); was de2ed725...)
-    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/AssemblyInfo.cs": "d601dec6a3a0feff0e7e6ed54c610ecb0d53bd51",
+    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/AssemblyInfo.cs": "b5de69b3ea512c05374408d85d8872abcfba2d32",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyApi.cs": "ad9e2548d2713a72e05ba1a52ffe2a696a0c3b77",       # 2026-11-08 (the pin moved, an intended change: formal LastStop BveG, CalcG / sway retired; was 0a9a9b33...)
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyDataPlaneSink.cs": "f5e11a9579ea5ba12544b9f00c0a48693f638819",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyGroundLimits.cs": "b6cf818399ca8ed83499f2cbf1f40669b40c487f",
@@ -143,7 +143,7 @@ BASE_BLOBS = {
     "TsScoringPlugin/TsScoringPlugin/CurrentDataPlane.cs": "71b0ebaa6f52871ceb2a59456a2b527041241c46",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs": "3e0d3bffbb74e4a2ecc6d10d378a8b6e2788ae6f",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs": "8a54d6a14100e0021ca248d28369c335f965fafe",
-    "TsScoringPlugin/TsScoringPlugin/Properties/AssemblyInfo.cs": "e704abd24867f658d3a0391e231395dff85ad5d2",
+    "TsScoringPlugin/TsScoringPlugin/Properties/AssemblyInfo.cs": "9ae1be9509ef29f08b41350ceab4975a5d9210c4",
 }
 # Time Fix B3 changed main.py on purpose (the F8 hook and the fast-forward release test speed != 0.0 instead of >= 0.1 km/h / abs >= 0.1; a new scenario in the plain mode leaves no operational stop record): the blob (without its contract import)
 # moved from f2031b37... (Time Fix B2; main.py had been unchanged since 0b8e511 apart from the contract import)

@@ -2,11 +2,12 @@ using System;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
-// Public metadata (Phase SI-A6 build: L1 + the load marker of the generation, ScenarioCreated / first Tick, published next to ScenarioReady). Human-facing product name: TS Scoring. No personal information.
-// The version is the version of the shared core (same as the Current Bridge): the core is byte-identical in both DLLs.
-[assembly: AssemblyTitle("TS Scoring AtsEX Legacy Bridge Prototype")]
-[assembly: AssemblyDescription("Phase SI-A7 (M1a): Ready handshake on the shared Tick independent control plane, Ready epoch, ScenarioReady life-cycle (AtsEX legacy mode) and scenario life-cycle logging.")]
-[assembly: AssemblyProduct("TS Scoring")]
+// Public metadata. Human-facing product name: TScoring. No personal information.
+// DLL suffix A = the legacy compatibility path.
+// The five public DLLs (Input Device, Bridge B, Telemetry B, Bridge A, Telemetry A) share one release version.
+[assembly: AssemblyTitle("TScoring Bridge A")]
+[assembly: AssemblyDescription("TScoring bridge for the legacy compatibility path (DLL suffix A): publishes the scenario life-cycle (ScenarioReady) and the Ready handshake to the TScoring application.")]
+[assembly: AssemblyProduct("TScoring")]
 [assembly: AssemblyCompany("Coruge-to")]
 [assembly: AssemblyCopyright("Copyright (c) 2026 Coruge-to")]
 [assembly: AssemblyConfiguration("")]
@@ -14,6 +15,6 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyCulture("")]
 [assembly: ComVisible(false)]
 
-[assembly: AssemblyVersion("0.8.0.0")]
-[assembly: AssemblyFileVersion("0.8.0.0")]
-[assembly: AssemblyInformationalVersion("0.8.0.0")]
+[assembly: AssemblyVersion("0.14.0.0")]
+[assembly: AssemblyFileVersion("0.14.0.0")]
+[assembly: AssemblyInformationalVersion("0.14.0.0")]

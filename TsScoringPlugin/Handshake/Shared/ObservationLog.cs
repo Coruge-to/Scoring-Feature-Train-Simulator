@@ -337,7 +337,7 @@ namespace TSScoringPlugin.Handshake
         private static void StartNewRun(DateTime now, long qpc)
         {
             StringBuilder sb = new StringBuilder(256);
-            sb.Append("# TS Scoring Phase C1 observation log (diagnostic build, not for production)\r\n");
+            sb.Append("# TScoring Phase C1 observation log (diagnostic build, not for production)\r\n");
             sb.Append("# run start ").Append(now.ToString("yyyy-MM-dd HH:mm:ss")).Append(" P=").Append(pid).Append(" initializedBy=").Append(Source).Append(" ver=").Append(Version).Append("\r\n");
             sb.Append("# line: HH:mm:ss.fff q=<QPC ms> P=<pid> S=<Caller|Bridge> T=<A scenario|B start-up|AB> th=<thread> EVENT key=value\r\n");
             try
