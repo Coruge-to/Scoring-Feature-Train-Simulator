@@ -325,7 +325,7 @@ class D_PureAndStructure(unittest.TestCase):
                 data = fh.read().replace(b"\r\n", b"\n")
             return hashlib.sha1(b"blob %d\x00" % len(data) + data).hexdigest()
         # INITIAL-DEFAULTS Stage F2 (on purpose; Owner 2026-11-11): the label of the safety intervention row in the Desktop log breakdown is 保安装置介入 (was ATS信号無視); the pin was 93130b87...
-        self.assertEqual(blob("scoring_logic.py"), "a20d5767fc97bdfc92e458d31c2bdd7cdfaa3e43")       # INITIAL-DEFAULTS Commit 3 (on purpose; INITIAL-DEFAULTS Commit 3): the scoring settings are read through scoring_settings (the running snapshot); 2026-11-08 (the pin moved, an intended change: formal LastStop BveG, CalcG / sway retired; was 1187e257...)
+        self.assertEqual(blob("scoring_logic.py"), "7bbebe8ff10c5ca618f33cb62f11d01ab13ddbc3")       # INITIAL-DEFAULTS Commit 3 (on purpose; INITIAL-DEFAULTS Commit 3): the scoring settings are read through scoring_settings (the running snapshot); 2026-11-08 (the pin moved, an intended change: formal LastStop BveG, CalcG / sway retired; was 1187e257...)
         self.assertEqual(blob("pseudo_turnback_machine.py"), PINNED_MACHINE_BLOB)
 
     def test_PS_07_hud_ui_reads_the_effective_state_for_the_time_row(self):

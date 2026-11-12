@@ -146,7 +146,7 @@ def discard_scoring_session(overlay):
     """The scoring SESSION is over (soft OFF, Session OFF, a generation boundary): scoring inactive, its state discarded. Nothing of the scenario
     itself (station list, the chosen stations and rules, the latest telemetry values, the user's settings) is touched, so the user can start again.
     The menu is closed WITHOUT pressing anything in BVE."""
-    from scoring_logic import reset_result_display_state, reset_roll_state, reset_speed_penalty_state, reset_station_evaluation_state
+    from scoring_logic import discard_run_context, reset_result_display_state, reset_roll_state, reset_speed_penalty_state, reset_station_evaluation_state
     _cancel_outstanding_jump(overlay, "session-ended")
     d = generation_defaults()
     for name in (
@@ -167,6 +167,7 @@ def discard_scoring_session(overlay):
     overlay.accel_z_history = d["accel_z_history"]              # the stop-jerk (BveG) buffer and its last value end with the session (kept out of the pinned tuple above)
     overlay.last_stop_g_bve = d["last_stop_g_bve"]
     overlay.prev_tgt_idx = d["prev_tgt_idx"]                    # Phase SI-R5.2-C: the departure station kept for evaluate_departure belongs to the session too
+    discard_run_context(overlay)                                # Phase PFR-R: the scoring session is over (Input Device OFF / state lost / the end of TS Scoring): the Run's frozen settings are cleared
     reset_result_display_state(overlay)
     reset_speed_penalty_state(overlay)
     reset_roll_state(overlay)
@@ -183,6 +184,8 @@ def discard_generation_state(overlay):
     kick start state - and the reference of the sender's JUMP counter is taken again from the FIRST accepted telemetry of the generation. The user's
     settings, the infrastructure and the window state are kept. The latest telemetry VALUES are reset by Overlay.reset_telemetry_state."""
     _cancel_outstanding_jump(overlay, "generation")
+    from scoring_logic import discard_run_context
+    discard_run_context(overlay)                                # Phase PFR-R: a new ScenarioGeneration: the Run's frozen settings are not carried on
     for name, value in generation_defaults().items():
         setattr(overlay, name, value)
     for name in GENERATION_DROP:
@@ -425,6 +428,7 @@ class ManagedInputController(object):
         self._lock_wanted_last = False
         self._lines = {}
         self._total = 0
+        self._session_serial = 0            # Phase PFR-R: counts the sessions that ended (the 'session' of the Run identity)
         self._important = 0                 # Phase PFR-D: the lines of the important events (their own budget)
         self._important_dropped = 0
         self._important_summary = False
@@ -437,6 +441,7 @@ class ManagedInputController(object):
         self._resync = False                # Phase SI-A4: the next step follows a pause (Driving OFF with the Session ON)
         overlay.scoring_start_gate = self.start_gate
         overlay.input_event_sink = self.note
+        overlay.run_identity_source = self.run_identity      # Phase PFR-R: (BVE PID, session, ScenarioGeneration) of the Run that is going on
         overlay.is_managed_input = True
 
     # -- diagnostics ----------------------------------------------------------------------------------------------------------------------
@@ -572,12 +577,18 @@ class ManagedInputController(object):
         o.is_fast_forwarding = False
         self.note("input-resume", clock="synced" if moved else "kept", n=self.pauses)
 
+    def run_identity(self):
+        """Phase PFR-R: (BVE PID, session serial, ScenarioGeneration) - the part of the identity of a Run that only this controller knows (the scenario scope is the Overlay's)."""
+        args = getattr(self._hud, '_args', None)
+        return (getattr(args, 'bve_pid', None), self._session_serial, self._generation)
+
     def on_inactive(self, reason):
         """The state left ACTIVE for good: 'session-off' (scenario ended), 'state-lost' (the state block is gone). Scoring inactive, its state discarded,
         the input released at once. The process and the settings stay. (Driving OFF alone is NOT this: see on_pause.)"""
         if self._scoring:
             self.note("scoring-abort", reason=reason)
             self.aborts += 1
+        self._session_serial += 1
         if reason == "session-off":
             self._o.reset_generation_state()
         else:

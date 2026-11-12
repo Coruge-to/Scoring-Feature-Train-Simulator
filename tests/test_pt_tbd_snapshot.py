@@ -208,7 +208,12 @@ class A_Snapshot(Base):
                     s.o.is_scoring_finished = True
                 self.assertIsNone(self.S.active_scoring_section(s.o))
                 s.step(1)
-                self.assertIsNone(self.snap(s))
+                if how == "finished":
+                    # Phase PFR-R (on purpose, Owner ruling 2026-11-12: the finish is NOT the end of a Run; was: dropped): kept for a Retry, never served to the scoring
+                    self.assertIsNotNone(self.snap(s), "the finished Run's section was dropped")
+                    self.assertIsNone(self.S.active_scoring_section(s.o))
+                else:
+                    self.assertIsNone(self.snap(s))
 
     def test_SN_8_a_new_start_makes_a_new_snapshot_from_the_new_selection(self):
         s = self.scene(start=0, end=4)
@@ -430,7 +435,11 @@ class C_LifecycleContract(Base):
                 end_it(s.o)
                 self.assertIsNone(self.S.active_scoring_section(s.o), "never used once the Run is over")
                 s.step(2)
-                self.assertIsNone(self.snap(s), "dropped, not carried on")
+                if name == "finished":
+                    # Phase PFR-R (on purpose, Owner ruling 2026-11-12): a finished scoring is not the end of its Run - the frozen section stays for a Retry (it is never served while finished)
+                    self.assertIsNotNone(self.snap(s), "the finished Run's section was dropped")
+                else:
+                    self.assertIsNone(self.snap(s), "dropped, not carried on")
                 self.assertEqual(len(self.made()), n, "and no new snapshot was made by the ticks")
 
     def test_LC_7_the_next_run_gets_a_new_snapshot_and_a_new_fixed_tuple(self):

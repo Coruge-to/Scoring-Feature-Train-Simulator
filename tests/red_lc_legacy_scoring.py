@@ -421,14 +421,14 @@ class C_RetryJump(ManagedBase):
         t = self.leg("legacy", t, 100.0, 1000.0, 1000.0, 1, 1, 1)
         return t
 
-    @lc("LC-A13", "GUARD", note="(fixed by LC-4) C-SIDX-4: after scoring-finish a Retry is refused (scoring-finished)")
-    def test_A13_no_retry_after_the_finish(self):
+    @lc("LC-A13", "GUARD", note="REVERSED by PFR-R (Owner ruling 2026-11-12: the LC-4 refusal was a requirement regression): after scoring-finish a Retry is ACCEPTED (the same Run is rewound to the chosen check point)")
+    def test_A13_a_retry_after_the_finish_is_accepted(self):
         self.o.setting_end_idx = 2
         mid, final, cmd = self.run_trajectory("legacy")
         self.assertTrue(final["finished"], final)
         res = self.main.execute_retry(self.o, 0, False)
-        self.assertFalse(res.accepted, "accepted after the finish: reason=%r" % (res.reason,))
-        self.assertEqual(res.reason, "scoring-finished")
+        self.assertTrue(res.accepted, "refused after the finish: reason=%r" % (res.reason,))
+        self.assertNotEqual(res.reason, "scoring-finished")
 
     @lc("LC-A14", "GUARD", note="(fixed by LC-4b) C-LJ-3(i): AVAIL without the jump group (breaker open): the Retry is refused JUMP_UNAVAILABLE and nothing is sent")
     def test_A14_no_retry_while_the_jump_is_unavailable(self):

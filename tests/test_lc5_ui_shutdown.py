@@ -389,10 +389,12 @@ class LegacyGuards(L4B.Managed):
     def setUp(self):
         super().setUp()
 
-    def test_R17_a_retry_after_the_finish_is_refused_and_still_after_the_end(self):
+    def test_R17_a_retry_after_the_finish_is_accepted_and_refused_after_the_end(self):
+        """Phase PFR-R (on purpose; was: a retry after the finish is refused and still after the end): the finish is no refusal; after the END of the session (shutdown) there is nothing to retry."""
         self.to_b()
         self.o.is_scoring_finished = True
-        self.assertEqual(self.main.execute_retry(self.o, 0, False).reason, "scoring-finished")
+        res = self.main.execute_retry(self.o, 0, False)
+        self.assertTrue(res.accepted, res.reason)
         self.r.hud.shutdown()
         self.assertFalse(self.main.execute_retry(self.o, 0, False).accepted)
 

@@ -257,9 +257,9 @@ class A14_RetryWhileUnavailable(Managed):
         self.breaker_open(t)
         res = self.main.execute_retry(o, 99, False)                   # a position that does not exist is judged by the checkpoint rule first
         self.assertEqual((res.accepted, res.reason), (False, "no-checkpoint"))
-        o.is_scoring_finished = True                                  # the finish is the first statement of all
+        o.is_scoring_finished = True                                  # Phase PFR-R (on purpose, was: the finish is the first statement of all -> scoring-finished): the finish is no refusal any more; the order is the checkpoint rule, the jump group, then the context of the finished Run
         res = self.main.execute_retry(o, 0, False)
-        self.assertEqual((res.accepted, res.reason), (False, "scoring-finished"))
+        self.assertEqual((res.accepted, res.reason), (False, "jump-unavailable"))
 
     def test_JS06_the_refusal_does_not_end_the_scoring(self):
         t = self.to_b()

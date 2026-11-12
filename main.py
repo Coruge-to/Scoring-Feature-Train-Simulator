@@ -36,6 +36,8 @@ from scoring_logic import (
     turnback_diag,
     add_score_popup,
     turnback_held_a_target,
+    discard_run_context,
+    run_identity,
 )
 from menu_ui import draw_menu
 from hud_ui import draw_hud
@@ -634,6 +636,7 @@ class Overlay(QWidget):
             turnback_diag(self, "jump-abort", reason=word)
         self.is_official_jumping = False
         self.jump_lock = True
+        discard_run_context(self)                                   # Phase PFR-R: an unrecoverable Jump failure ended the scoring session: the Run is over
 
     def _send_jump_datagram(self, data, port):
         return self.udp_socket.writeDatagram(data, QHostAddress.SpecialAddress.LocalHost, port)
@@ -1002,6 +1005,7 @@ class Overlay(QWidget):
 
                                 # 前シナリオの採点終了・リザルト表示状態を破棄
                                 reset_result_display_state(self)
+                                discard_run_context(self)                        # Phase PFR-R: the Run of the previous scenario is over: its frozen settings are not carried on
 
                                 # 前シナリオのロールバック通知を破棄
                                 self.rollback_msg = ""
@@ -2137,6 +2141,7 @@ class Overlay(QWidget):
                 turnback_fix_section(self)                 # OD-TB-26 / OD-TB-24: the section the scoring crosses is fixed HERE, once
                 self._scoring_section = build_scoring_section(self)      # Stage TB-D (OD-TD-4): start / end / section / generation / crossed pairs of THIS Run, immutable, the only running source
                 self._scoring_settings = build_scoring_settings(self)    # INITIAL-DEFAULTS: the scoring settings of THIS Run (the six penalties, the A boundary, the timing), immutable, the only running source
+                self._run_identity = run_identity(self)                  # Phase PFR-R: the identity of THIS Run (BVE PID, session, ScenarioGeneration, scenario scope): a Retry after the finish needs it to be equal
                 self.internal_abort_reason = ""
                 self.is_scoring_mode = True
                 reset_result_display_state(self)
@@ -2190,6 +2195,7 @@ class Overlay(QWidget):
         elif self.menu_state == 12:
             if self.menu_cursor == 0: # 「はい」を選択
                 self.is_scoring_mode = False
+                discard_run_context(self)                                # Phase PFR-R: the user gave the scoring up: the Run is over, its frozen settings are cleared
                 reset_result_display_state(self)
                 reset_speed_penalty_state(self)
                 reset_roll_state(self)

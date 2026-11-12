@@ -671,16 +671,61 @@ def begin_official_jump(self, target_loc, target_time):
     self.pending_jump_complete = None
 
 
+RUN_CONTEXT_MISSING = 'run-context-missing'
+RUN_CONTEXT_MISMATCH = 'run-context-mismatch'
+
+
+def run_identity(self):
+    """Phase PFR-R: the identity of the Run that is going on: (BVE PID, session, ScenarioGeneration) from the managed input controller (Overlay.run_identity_source; (None, None, None) without one) +
+    the scope (scenario id, station list id, station count). Recorded at the scoring start (_run_identity); a Retry after the finish needs it to be equal."""
+    source = getattr(self, 'run_identity_source', None)
+    try:
+        managed = tuple(source()) if source is not None else (None, None, None)
+    except Exception:
+        managed = (None, None, None)
+    station_list = getattr(self, 'station_list', None)
+    list_id = getattr(station_list, 'list_id', None) or getattr(self, 'bve_list_id', "")
+    scope = station_identity.scope_of(getattr(self, 'current_scenario_id', -1), list_id, station_list)
+    return managed + (tuple(scope) if scope is not None else (None, None, None))
+
+
+def finished_run_retained(self):
+    """Phase PFR-R: True while the scoring is FINISHED but its Run is not over: the frozen settings and the section (same generation) are kept, not dropped. active() / active_scoring_section() keep their meaning
+    (a finished Run is not served to the scoring); only the dropping is held back."""
+    if not (getattr(self, 'is_scoring_mode', False) and getattr(self, 'is_scoring_finished', False)):
+        return False
+    generation = getattr(self, 'current_scenario_id', -1)
+    kept = [self.__dict__.get('_scoring_settings'), self.__dict__.get('_scoring_section')]
+    return all(item is not None and item.generation == generation for item in kept)
+
+
+def finished_run_refusal(self):
+    """None when the kept frozen settings are the ones of THIS Run (identity equal), else the reason word that refuses the Retry. Changes nothing."""
+    settings, section, identity = self.__dict__.get('_scoring_settings'), self.__dict__.get('_scoring_section'), self.__dict__.get('_run_identity')
+    if settings is None or section is None or identity is None:
+        return RUN_CONTEXT_MISSING
+    generation = getattr(self, 'current_scenario_id', -1)
+    if settings.generation != generation or section.generation != generation or tuple(identity) != run_identity(self):
+        return RUN_CONTEXT_MISMATCH
+    return None
+
+
+def discard_run_context(self):
+    """The Run is over (the user gave the scoring up, F5 / a scenario change, a session or ScenarioGeneration change, an unrecoverable Jump failure, Input Device OFF, the end of TS Scoring): its frozen settings, its
+    section and its identity tag are cleared - never carried on. A new scoring start makes new ones."""
+    if self.__dict__.get('_scoring_settings') is not None:
+        self._scoring_settings = None
+    if self.__dict__.get('_scoring_section') is not None:
+        self._scoring_section = None
+    self.__dict__.pop('_run_identity', None)
+
+
 def execute_retry(self, index, is_bve_advancing):
     """Phase ST-2b: the retry to the checkpoint at position `index` of the history. Returns a station_identity.RetryResult.
 
     The station is the StationIndex stored in that checkpoint, verified against the scope of the application (station_identity.check_retry_checkpoint); it is never
     searched by a position. A checkpoint that does not verify is REFUSED: nothing is changed, nothing is sent (the caller counts nothing and shows nothing). An accepted
     retry sends the jump request, keeps the choice as self.retry_pending and does NOT cut the history (ST-3 cuts it when the jump completed as requested)."""
-    # Phase LC-4: after the formal scoring-finish nothing is retried. Refused before anything is read or changed (no request, no pending, no count, no score, no history, no screen).
-    # The reason is a word of this function on purpose: the ST-2 words (station_identity.RETRY_REASONS) stay as they are.
-    if getattr(self, 'is_scoring_finished', False):
-        return station_identity.RetryResult(False, 'scoring-finished', None, station_identity.NO_INDEX)
     history = getattr(self, 'save_data', None)
     station_list = getattr(self, 'station_list', None)
     try:
@@ -725,6 +770,14 @@ def execute_retry(self, index, is_bve_advancing):
                                                            station_identity.scope_of(getattr(self, 'current_scenario_id', -1), getattr(self, 'bve_list_id', ""), station_list), ideal_loc)
     if planned is None:
         return result._replace(accepted=False, reason=refusal)
+
+    # Phase PFR-R: a Retry after the scoring finished rewinds the SAME Run (a result may be shown and saved): the finish is not the end of a Run. The frozen settings and the section of the Run were KEPT through
+    # the finish (nothing is copied or restored, the live F1 values are never read again for it); they must be there and the identity of the Run must equal the current one, else the Retry is REFUSED
+    # with a reason before anything is changed. The ST-2 words (station_identity.RETRY_REASONS) stay as they are: these two are words of this module.
+    if getattr(self, 'is_scoring_finished', False):
+        context_refusal = finished_run_refusal(self)
+        if context_refusal is not None:
+            return result._replace(accepted=False, reason=context_refusal)
 
     self.is_official_retry = (index > 0)
     self.is_first_station = (index == 0)
@@ -1123,7 +1176,10 @@ def section_end_judge_index(self):
 
 
 def scoring_section_housekeeping(self):
-    """Once per scoring tick: a snapshot that is no longer the Run's (session off, scoring finished or aborted, another generation) is dropped, never carried on."""
+    """Once per scoring tick: a snapshot that is no longer the Run's (session off, scoring aborted, another generation) is dropped, never carried on. Phase PFR-R: a scoring that FINISHED is not the end of its
+    Run - its frozen settings and section are kept for a Retry (finished_run_retained) until the Run is over (discard_run_context)."""
+    if finished_run_retained(self):
+        return
     if self.__dict__.get('_scoring_section') is not None and active_scoring_section(self) is None:
         self._scoring_section = None
     scoring_settings.housekeeping(self)             # INITIAL-DEFAULTS: the running snapshot of the scoring settings follows the same lifetime

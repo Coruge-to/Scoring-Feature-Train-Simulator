@@ -146,7 +146,7 @@ REGION_PINS = {
         "Overlay._finish_jump_transaction": ("whole", "19F2983456CB7EA8EF8A4C19463FEDC22EADF0EB2481C2FED4341B6DCE8F106C", 1),       # Stage TB-C (was B6E82E3A...): + note_jump_settlement (how the transaction ended, for the pseudo-turnback chain and the landing watch)
         "Overlay._jump_transaction_finish": ("whole", "3CFF60626FCE391D84E1A19483AE04BC144035FDCD3A4E16A9924B573003DF0E", 1),
         # Phase ST-3d (was D011C774...): also the one exit of every FAILED settlement (a verdict), closes the books of the transaction (jump-settled) and releases the pending retry
-        "Overlay._abort_unreleased_official_jump": ("whole", "714C5BDA96B51CC7C412FEF934D180E873ED75BCF76D50A0620EDE1175342741", 1),       # Stage TB-C (was 2FDDD061...): OD-TB-30 - no popup, a diagnostic and internal_abort_reason
+        "Overlay._abort_unreleased_official_jump": ("whole", "4026FFC70D6C9897BE1D9CAB71A87DCAF7866D8DD95043EF42164027275526CC", 1),       # Stage TB-C (was 2FDDD061...): OD-TB-30 - no popup, a diagnostic and internal_abort_reason
         "Overlay._send_jump_datagram": ("whole", "28F6535FFD17481537E586D5F61A5D0BB2824E6CB309EF9F2D1F7D63A4DFF281", 1),
         "Overlay._log_rejected_completion": ("whole", "C5B2E6C61374F8CD15019919490069ADF03F0C8137168CAF51DAD397C1D54C83", 1),
         # Phase ST-3d (was 1709CFC1...): the settlement itself - judge_completion, the cut of the history (the ONE call of resolve_retry_history), the release, then the unchanged success body
@@ -202,7 +202,7 @@ ST3D_EXECUTE_RETRY_PIN = ("whole", "E5DB2D56A0FC1A4894DD4FBDA7D7CFF63BEB4EB78E74
 # Legacy scoring LC-4 / LC-4b (an INTENDED change of the jump contract): execute_retry refuses once the scoring has finished (LC-4, 'scoring-finished') and while the Jump group is unavailable (LC-4b, A14); both refusals
 # come BEFORE the request is built, so no request is made and none is sent (4 + 4 added lines, no deleted line). Its new canonical AST is pinned here (it was E5DB2D56...); begin_official_jump, the other WHOLE region and
 # every SLICE region are still compared with the blob of the formal LJX-1 commit (identical), except the pinned ones.
-LC4B_EXECUTE_RETRY_PIN = ("whole", "397F331F41D559CEF26F1683B9A66F5761C6AB47929C041CC38CCC032E903CA4", 1)
+LC4B_EXECUTE_RETRY_PIN = ("whole", "19FB28373113925F5BD87A1AAA585A586FFC9E8D56F7C81EF52CBD9EFAABF2C2", 1)
 INITIAL_DEFAULTS_SPEED_LIMIT_PIN = ("slice", "CBF75A39FB78D742853315F4A20A8047E1D0C97A1DF2B63E15D8FE62C86DF0F4", 1)      # INITIAL-DEFAULTS Commit 3 (on purpose): the speed limit penalty reads its setting through scoring_settings.value (the one condition line of the jump slice changed; no score, no rule, no constant)
 
 # Legacy scoring LC-3A (an INTENDED change of the stop jerk judgement, not of the jump contract): update_stop_jerk_penalty returns without judging while `is_official_jumping` is set (a sample taken while the world is about to be
