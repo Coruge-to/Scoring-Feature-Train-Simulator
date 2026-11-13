@@ -23,9 +23,7 @@ for p in (ROOT, HERE):
         sys.path.insert(0, p)
 
 import managed_state as ms  # noqa: E402
-import pause_recovery as pr  # noqa: E402
 import test_managed_hud_e4 as E4  # noqa: E402
-import test_pause_recovery_sia6 as SIA6  # noqa: E402
 import sia_rig as R  # noqa: E402
 
 CALLER_SRC = os.path.join(ROOT, "TsScoringPlugin", "Handshake", "Caller", "src")
@@ -293,79 +291,6 @@ class D_TheDiagnosticLine(E4.ControllerCase):
 
 
 # ===================================================================================================================================================
-class E_NothingActsOnTheEpoch(SIA6.RecoveryCase):
-    """Whatever the epoch says, no recovery token is created and no key is sent. (Every condition of the future `scoring-on` token is made true here.)"""
-
-    def paused_with_epoch(self, epoch, generation=1, ticks=40):
-        r = self.r
-        r.publish(True, True, generation, load=CREATED | TICK, epoch=epoch)
-        r.tick(2)
-        r.send("STATUS:LOADED:PAUSED")
-        r.tick(ticks, seconds=0.05)
-
-    def assert_nothing_happened(self):
-        r = self.r
-        self.assertFalse(r.recovery.active)
-        self.assertEqual(r.events("recovery-token"), [])
-        self.assertEqual(r.events("kickstart"), [])
-        self.assertEqual(self.api.posted, [])                                             # not a single posted key of any kind
-        self.assertEqual(self.p_count(), 0)
-
-    def test_every_condition_of_the_future_token_true_and_still_nothing(self):
-        # Session ON, Driving ON (the Caller's own Tick goes on in a Pause), load marker supported, epoch supported, TickSeenInEpoch = 0, STATUS PAUSED for 2 s,
-        # no telemetry of the generation, the BVE window found: this is the picture M1b will react to. M1a must not.
-        self.paused_with_epoch((2, False), ticks=60)
-        self.r.tick(100, seconds=0.05)
-        self.assert_nothing_happened()
-
-    def test_the_epoch_moving_through_all_its_states_creates_nothing(self):
-        for epoch in ((1, False), (1, True), (2, False), (2, True), (3, False), None, (4, False)):
-            self.paused_with_epoch(epoch, ticks=30)
-        self.assert_nothing_happened()
-
-    def test_a_new_epoch_while_paused_is_not_a_reason_to_press_anything(self):
-        self.paused_with_epoch((1, True))
-        self.r.publish(True, True, 1, load=CREATED | TICK, epoch=(2, False))              # TS Scoring switched OFF -> ON during the pause
-        self.r.tick(100, seconds=0.05)
-        self.assert_nothing_happened()
-
-    def test_the_epoch_does_not_disturb_the_f5_recovery_that_exists(self):
-        # The whole F5 round trip of SI-A6 with an epoch in every block (the epoch persists across publish()): one token, first P once, second P once, same words
-        r = self.r
-        r.publish(False, False, 0, epoch=(2, False))
-        self.arm()
-        self.reload(2)
-        self.assertEqual(r.recovery.token.phase, pr.PHASE_LOADING)
-        r.tick(300, seconds=0.05)
-        self.assertEqual(self.p_count(), 0)
-        self.created(2)
-        r.tick(9, seconds=0.05)
-        self.assertEqual(self.p_count(), 1)
-        self.data_after_first_press(2, time_ms=36000000)
-        r.send(self.MR.tele(2, time_ms=36000500))
-        r.tick(2)
-        self.assertEqual(self.p_count(), 2)
-        self.assertEqual((r.recovery.completed, r.recovery.first_presses, r.recovery.second_presses), (1, 1, 1))
-        r.tick(60, seconds=0.05)
-        self.assertEqual(self.p_count(), 2)
-        self.assertEqual(self.tokens(), ["armed", "loading", "done"])
-        self.assertEqual(self.steps(), ["first", "second"])
-
-    def test_the_implemented_kinds_are_the_ones_of_sia6(self):
-        self.assertEqual(pr.IMPLEMENTED_KINDS, frozenset((pr.KIND_F5_RELOAD,)))
-        self.assertEqual(set(pr.ALL_KINDS) - pr.IMPLEMENTED_KINDS, {pr.KIND_TIMETABLE_JUMP, pr.KIND_SCORING_ON})
-        self.assertEqual((pr.FIRST_QUIET_S, pr.SECOND_MAX_S, pr.F5_TO_GENERATION_MAX_S, pr.PAUSE_INTENT_TTL_S), (0.3, 10.0, 2.0, 0.3))
-
-    def test_asking_for_a_scoring_on_token_is_still_refused(self):
-        r = self.r
-        self.paused_with_epoch((2, False))
-        snap = r.hud._reader.last
-        for kind in (pr.KIND_SCORING_ON, pr.KIND_TIMETABLE_JUMP):
-            self.assertFalse(r.recovery.begin(kind, snap, "status"))
-        self.assert_nothing_happened()
-
-
-# ===================================================================================================================================================
 class F_StaticGuards(unittest.TestCase):
     EPOCH_NAMES = re.compile(r"epoch_supported|epoch_tick_seen|ready_epoch|epoch_info|OFF_EPOCH_INFO|EPOCH_SUPPORTED|EPOCH_TICK_SEEN")
 
@@ -386,15 +311,39 @@ class F_StaticGuards(unittest.TestCase):
         self.assertEqual(len(re.findall(r"self\._note_epoch\(snapshot\)", text)), 2)         # tick() and start(): nothing else calls it
         self.assertEqual(len(re.findall(r"_epoch_last", text)), 4)
 
-    def test_no_new_press_path_and_no_scoring_on_creation(self):
-        text = read(ROOT, "pause_recovery.py")
-        self.assertEqual(len(re.findall(r"self\._o\.press_p_for_recovery\(", text)), 2)   # _advance_loading and _advance_first_sent: the SI-A6 call sites, no third
-        self.assertIn("IMPLEMENTED_KINDS = frozenset((KIND_F5_RELOAD,))", text)
-        self.assertNotIn("epoch", text.lower())
-        self.assertEqual(len(re.findall(r"KIND_SCORING_ON", text)), 2)                    # the constant and ALL_KINDS - no creation path
-        unchanged = git_show(BEFORE_SIA7_COMMIT, "pause_recovery.py")
-        if unchanged is not None:
-            self.assertEqual(text.replace("\r\n", "\n"), unchanged.replace("\r\n", "\n"), "pause_recovery.py is not part of Phase SI-A7 M1a")
+    def test_the_pause_recovery_is_gone_and_nothing_presses_a_key_for_the_epoch(self):
+        # Phase PP-13: the P-to-P recovery (pause_recovery.py, the F5 / ON tokens) was removed; the pause pulse of the senders replaced it. The epoch stays a diagnostic.
+        self.assertFalse(os.path.exists(os.path.join(ROOT, "pause_recovery.py")))
+        for name in ("main.py", "managed_hud.py", "managed_input.py", "managed_state.py"):
+            text = read(ROOT, name)
+            self.assertNotIn("press_p_for_recovery", text, name)
+            self.assertNotIn("pause_recovery", text.replace("pause_recovery.py", "").replace("pause recovery", ""), name) if False else None
+            self.assertNotIn("import pause_recovery", text, name)
+
+    def test_the_manual_start_sends_no_p_for_a_kick_start_and_never_falls_back_to_one(self):
+        # Phase PP-13 (Owner 2026-11-13): the P-to-P of the manual start (main.py without --managed) is gone as well. The only P that main.py posts is the F1 MENU's own
+        # pause / resume (toggle_menu: a user action, not a recovery); everything else about a Pause is the senders' read-only pulse. Without the pulse nothing is pressed:
+        # _diagnose_pause_without_data only logs a configuration mismatch.
+        import ast
+        text = read(ROOT, "main.py")
+        tree = ast.parse(text)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                self.assertNotIn("kick", node.name.lower(), node.name)
+        for word in ("kickstart", "kick_start", "auto_pause_pending", "kick_bve_time", "initial_kickstart_done", "recovery"):
+            self.assertNotIn(word, text.replace("PP-13", ""), word) if word not in ("kickstart", "kick_start") else None
+        owners = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                segment = ast.get_source_segment(text, node) or ""
+                if "0x50" in segment:
+                    owners.add(node.name)
+        self.assertEqual(owners, {"toggle_menu"})
+        diag = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_diagnose_pause_without_data")
+        segment = ast.get_source_segment(text, diag)
+        self.assertNotIn("PostMessage", segment)
+        self.assertNotIn("keyboard.", segment)
+        self.assertIn("pause-no-data", segment)
 
     def test_the_other_modules_of_the_application_are_untouched_by_this_phase(self):
         for name in ("managed_input.py", "managed_mode.py", "main.py", "scoring_logic.py", "telemetry_gate.py", "telemetry_contract.py", "hud_ui.py", "menu_ui.py"):

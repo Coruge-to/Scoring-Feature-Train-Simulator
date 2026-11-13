@@ -7,8 +7,7 @@ the process (never rebuilt per ScenarioGeneration, per Pause or per soft OFF).
     mode ACTIVE   (Session ON and Driving ON)   the Overlay is linked to THIS BVE process's window, shown, kept on its client area and updated -
                                                 (Phase L3: only once real telemetry of the current ScenarioGeneration has been received; until then it stays hidden)
     mode WAITING  (Session ON, Driving OFF)     soft OFF / Pause: the Overlay is hidden, nothing is updated, nothing is destroyed; resumes by itself.
-                                                (Phase SI-A4: the scoring session is KEPT - only the input is released. Phase SI-A6: the pause recovery - pause_recovery.py -
-                                                only WATCHES the F5 key here and in the other modes; it presses P only for a pending token, never because of this mode)
+                                                (Phase SI-A4: the scoring session is KEPT - only the input is released.)
     mode HIDDEN   (Session OFF / Closed / no block)  hard OFF: the same, until the next Session ON
 
 What it deliberately does NOT do: end the process (Esc, the loss of the BVE window, a state change: the lifetime of the process belongs to the Stop
@@ -20,8 +19,9 @@ release everything at once and run the shared step of the Overlay for THAT windo
 physics bookkeeping the HUD depends on (update_physics_and_scoring) runs inert for scoring, because is_scoring_mode is never switched on.
 The HUD data itself keeps coming from the existing UDP telemetry of the Overlay.
 
-Phase SI-A6: an optional PauseDataRecovery (attach_recovery) is ticked after every state reading. The kick start (P to P) of phases SI-A / SI-A4 - "Session ON /
-Driving OFF / PAUSED / no data" is enough - is gone: it fired on ordinary scenario loads. P is pressed only for a token of a concrete operation (F5 while paused).
+No P is ever pressed for BVE (Phase PP-13). The kick start (P to P) of phases SI-A / SI-A4 fired on ordinary scenario loads, and the F5 / ON token that replaced it
+(phase SI-A6, two P presses) is gone too: the senders run a pause pulse on the host's UI thread while BVE is paused, so the data of a Pause-time operation (F5, a
+timetable jump, a position / time edit, TS Scoring ON) is produced without a Tick and without a key.
 
 Diagnostics: one `[MANAGED] ...` line per STATE CHANGE (fixed words and numbers; no path, no HUD text); identical readings are only counted.
 
@@ -201,7 +201,6 @@ class ManagedHudController(object):
         self._items_reported = None     # the HUD items the sender cannot provide, as last reported (None = not yet)
         self._failsafe = None           # the reason the state block was lost after AppReady (latched until the process ends)
         self._input = None              # Phase SI-A: the input / scoring controller (managed_input), attached by main._attach_managed_hud; None = HUD only
-        self._recovery = None           # Phase SI-A6: the pause data recovery (pause_recovery), attached by main._attach_managed_hud; None = none
         self._closed_seen = False       # the Caller withdrew the state (Closed flag): the NORMAL end
         self._epoch_last = (False, False, 0)   # Phase SI-A7 (M1a): the Ready epoch last reported (supported, tick seen, number); diagnostic only
         self._operation = False         # Phase UI-ALT-F4: the Overlay is in the operation-screen input mode (it owns the mouse / keyboard); False = HUD (click-through)
@@ -298,14 +297,6 @@ class ManagedHudController(object):
         self._input = controller
         self._update_step = controller.step
 
-    def attach_recovery(self, recovery):
-        """Phase SI-A6: the pause data recovery (F5 token) is ticked on every slot, after the state reading was applied."""
-        self._recovery = recovery
-
-    @property
-    def recovery(self):
-        return self._recovery
-
     @property
     def args(self):
         return self._args
@@ -396,9 +387,6 @@ class ManagedHudController(object):
                 self._on_change(change)
             self._settle_hide_grace()
             self._note_epoch(snapshot)
-            if self._recovery is not None:
-                self._recovery.tick(snapshot, self.gate.mode)
-                self._set_interval(IDLE_INTERVAL_MS if self.gate.mode == managed_state.MODE_HIDDEN and not self._recovery.active else ACTIVE_INTERVAL_MS)
             if self.gate.mode == managed_state.MODE_ACTIVE:
                 self._tick_active()
         except Exception as e:
@@ -504,8 +492,6 @@ class ManagedHudController(object):
         the Caller's Stop request. The gate is forced OFF so that nothing reads it as active."""
         self._failsafe = reason
         self.failsafes += 1
-        if self._recovery is not None:
-            self._recovery.close(action_reason)           # no P from a token once ownership or state is gone
         if self._input is not None:
             self._input.on_inactive(action_reason)
         was_active = self.gate.mode == managed_state.MODE_ACTIVE
@@ -882,11 +868,6 @@ class ManagedHudController(object):
         if self._shutdown:
             return
         self._shutdown = True
-        if self._recovery is not None:
-            try:
-                self._recovery.close("shutdown")
-            except Exception:
-                pass
         if self._input is not None:
             try:
                 self._input.on_shutdown()
@@ -921,8 +902,6 @@ class ManagedHudController(object):
             self.emit_event("telemetry-summary", **self._telemetry.summary_fields())     # a line of its own: hud-summary is already longer than the Caller transcribes
         if self._input is not None:
             self.emit_event("input-summary", **self._input.summary_fields())
-        if self._recovery is not None and (self._recovery.created or self._recovery.refused):
-            self.emit_event("recovery-summary", **self._recovery.summary_fields())     # only when a token was ever made: a line of its own (the line budget of the Caller)
 
 
 def create_controller(overlay, args, log, directory_monitor=None):

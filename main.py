@@ -51,7 +51,6 @@ import route_pairset
 import managed_input
 import managed_mode
 import managed_app_directory
-import pause_recovery
 import telemetry_contract
 import station_index_contract
 import station_identity
@@ -2177,7 +2176,8 @@ class Overlay(QWidget):
                 begin_official_jump(self, start_loc, target_time_ms)
 
                 self.is_bve_loaded = False
-                self.initial_kickstart_done = False
+                self._pause_no_data_since = None
+                self._pause_no_data_logged = False
                 
                 first_checkpoint = {
                     "loc": start_loc,
@@ -2524,7 +2524,8 @@ class Overlay(QWidget):
             
             # BVEウィンドウを取得できない場合は関連状態を初期化する
             self.is_bve_loaded = False
-            self.initial_kickstart_done = False
+            self._pause_no_data_since = None
+            self._pause_no_data_logged = False
             
             if self.was_bve_found and self.bve_hwnd is None:
                 QApplication.quit()
@@ -2533,7 +2534,7 @@ class Overlay(QWidget):
         if self.bve_hwnd:
             self.was_bve_found = True 
             is_bve_active = (win32gui.GetForegroundWindow() == self.bve_hwnd)
-            self._kick_start_first_press()
+            self._diagnose_pause_without_data()
             self._follow_bve_window()
         else:
             self.hide()
@@ -2541,25 +2542,21 @@ class Overlay(QWidget):
         self._run_input_and_scoring_step(is_bve_active)
 
     # -- the parts of the shared step (normal mode runs them from update_logic, managed mode from the managed input controller) ------------------
-    def _kick_start_first_press(self):
-        """P to P, first half: the BVE reports PAUSED at load and no station list came: press P once so that the time runs and the telemetry flows."""
-        # =================================================================
-        if getattr(self, 'is_bve_loaded', False):
-            # 駅リストが無く、未実行で、かつBVEが「PAUSED」と叫んでいる時だけ！
-            if not getattr(self, 'station_list', []) and not getattr(self, 'initial_kickstart_done', False):
-                if getattr(self, 'bve_actual_state', '') == 'PAUSED':
-                    self.auto_pause_pending = True
-                    self.initial_kickstart_done = True
-                    self.kick_bve_time = self.bve_time_ms
-                    write_desktop_log("[MAIN] BVEの凍結を確認。キックスタートを実行します。")
-                    win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
-                    win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
-                    self.bve_actual_state = 'RUNNING'
-                    self._emit_input_event("kickstart", step="first")
-                    
-                elif getattr(self, 'bve_actual_state', '') == 'RUNNING':
-                    # 既に動いているなら、Pを送る必要はないのでフラグだけ立てて終了
-                    self.initial_kickstart_done = True
+    def _diagnose_pause_without_data(self):
+        """Phase PP-13: the P-to-P kick start of the manual start is gone (no key is ever sent for a Pause). The data of a Pause is produced by the read-only pause
+        pulse of the sender DLLs. When BVE has reported PAUSED for a long time and still no station list arrived, say WHY once (a sender without the pulse: a
+        configuration mismatch). Diagnostic only: nothing is pressed, nothing is retried."""
+        if getattr(self, 'is_bve_loaded', False) and getattr(self, 'bve_actual_state', '') == 'PAUSED' and not getattr(self, 'station_list', []):
+            now = time.time()
+            since = getattr(self, '_pause_no_data_since', None)
+            if since is None:
+                self._pause_no_data_since = now
+            elif now - since >= 20.0 and not getattr(self, '_pause_no_data_logged', False):
+                self._pause_no_data_logged = True
+                write_desktop_log("[MAIN] pause-no-data: BVE reports PAUSED and no telemetry arrived. The sender DLLs must provide the read-only pause pulse (configuration mismatch). No key is sent.")
+                self._emit_input_event("pause-no-data", reason="no-pulse-data")
+        else:
+            self._pause_no_data_since = None
 
     def set_client_rect_physical(self, x, y, w, h):
         """Phase OVS-1: puts the Overlay exactly on the BVE client area. (x, y, w, h) are Win32 PHYSICAL pixels and are applied with SetWindowPos; they are never handed
@@ -2632,8 +2629,6 @@ class Overlay(QWidget):
 
         is_bve_advancing = self._resolve_bve_advancing()
 
-        self._kick_start_second_press(is_bve_advancing)
-
         self._sync_system_key_suppression(is_bve_active)
 
         self._sync_f8_suppression(is_bve_active)
@@ -2692,17 +2687,6 @@ class Overlay(QWidget):
                 self.last_time_change_real = time.time()
             is_bve_advancing = (time.time() - getattr(self, 'last_time_change_real', 0)) < 0.8
         return is_bve_advancing
-
-    def _kick_start_second_press(self, is_bve_advancing):
-        """P to P, second half: as soon as the BVE time advanced, press P once more (pause again). Runs when the station list is there."""
-        # BVE内部時間が進み始めた直後に自動停止する
-        if getattr(self, 'auto_pause_pending', False) and getattr(self, 'station_list', []):
-            if self.bve_time_ms > getattr(self, 'kick_bve_time', self.bve_time_ms):
-                if self.bve_hwnd and is_bve_advancing:
-                    win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x50, 0)
-                    win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYUP, 0x50, 0)
-                    self._emit_input_event("kickstart", step="second")
-                self.auto_pause_pending = False
 
     def _sync_system_key_suppression(self, is_bve_active):
         """F7 and P are not passed to BVE while a menu is open or a scoring run is on (BVE in front)."""
@@ -3107,18 +3091,10 @@ class Overlay(QWidget):
         self.is_linked = True
         self.was_bve_found = True
 
-    def press_p_for_recovery(self, hwnd):
-        """Phase SI-A6: the ONE place where managed mode presses P for the kick start (pause_recovery.PauseDataRecovery: the first and the second P of a token).
-        The same PostMessage the normal mode has always used, to the BVE window found by process id. Nothing else of the kick start exists in managed mode:
-        a Pause, a load, "Session ON / Driving OFF / PAUSED / no data" are NOT reasons to press P (phase SI-A4 did, and misfired on ordinary loads)."""
-        self.adopt_bve_window(hwnd)
-        win32api.PostMessage(hwnd, win32con.WM_KEYDOWN, 0x50, 0)
-        win32api.PostMessage(hwnd, win32con.WM_KEYUP, 0x50, 0)
-
     def managed_window_step(self, hwnd):
         """Managed mode: the part of update_logic that follows the window work, for the linked BVE window (Esc, the search by title and the quit when the
-        window disappears do not exist here: the lifetime of the process belongs to the Stop request). The kick start's first half is NOT part of it
-        (Phase SI-A6): managed mode presses P only for a recovery token (press_p_for_recovery)."""
+        window disappears do not exist here: the lifetime of the process belongs to the Stop request). The kick start is NOT part of it: managed mode never
+        presses a key in BVE (Phase PP-13: the extension's Pause pulse makes the data of a Pause-time operation available without a Tick, so no P-to-P exists)."""
         self.adopt_bve_window(hwnd)
         front = win32gui.GetForegroundWindow()
         # "in front" is BVE, or this window while an operation screen owns the input (set_input_ownership): the keys and the mouse of the step belong to the game side
@@ -3332,18 +3308,15 @@ class _ManagedShutdownBridge(QObject):
         QApplication.quit()
 
 
-def _attach_managed_hud(overlay, hud, recovery_keys=None):
+def _attach_managed_hud(overlay, hud):
     """Phase E4: the Overlay's ONE timer now runs the managed HUD controller instead of update_logic (which keeps the key hooks, the Esc quit,
-    the BVE-window quit, Kickstart and the key injection of normal mode). No second timer is created. The timer starts after AppReady.
+    the BVE-window quit and the key injection of normal mode). No second timer is created. The timer starts after AppReady.
     Returns False when the managed contract is not met (the Caller's state block is missing or invalid): AppReady must not be published."""
     attach_input = getattr(hud, "attach_input", None)
     if attach_input is not None and hasattr(overlay, "managed_window_step"):
         controller = managed_input.ManagedInputController(overlay, hud, keyboard, managed_input.GuiInputApi(win32gui, hud.args.bve_pid))
         managed_input.attach_result_dialog(overlay)
         attach_input(controller)
-    attach_recovery = getattr(hud, "attach_recovery", None)
-    if attach_recovery is not None and hasattr(overlay, "press_p_for_recovery"):
-        attach_recovery(pause_recovery.PauseDataRecovery(hud, overlay, recovery_keys if recovery_keys is not None else pause_recovery.Win32KeyApi(), hud.args))
     request_user_close = getattr(hud, "request_user_close", None)
     if request_user_close is not None and hasattr(overlay, "user_close_handler"):
         overlay.user_close_handler = request_user_close          # Phase UI-ALT-F4: a close that the user asks for asks BVE to end instead of closing the Overlay
@@ -3466,7 +3439,7 @@ def run_managed(argv, overlay_factory=None, sync=None, log=managed_mode.stderr_l
     """Managed mode (Phase E2 contract, Phase E4 HUD link). Returns the process exit code.
 
     E2: identity, AppReady, stop request, exit code. The Overlay's update_logic never runs here (no Esc quit, no key hooks, no BVE-window quit,
-    no Kickstart, no key injection, no scoring session).
+    no key injection, no scoring session).
     E4: the Overlay's single timer runs the managed HUD controller (managed_hud.py), which reads the Caller's Session / Driving state
     (managed_state.py) and shows, updates, hides and resumes the SAME Overlay. hud_factory(overlay, args, log) may return None (a test seam: no
     HUD link, the Overlay stays hidden and inert as in E2); the default builds the real controller, whose state block is REQUIRED (no valid

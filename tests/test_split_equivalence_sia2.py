@@ -295,14 +295,13 @@ class SiAScopeOfMain(unittest.TestCase):
     """Everything that Phase SI-A changed in main.py, member by member (the commit SI-A started from is the reference). A change that is not on this list fails."""
     NEW_MEMBERS = {
         # the split of update_logic (A2)
-        "_advance_scoring_clock_and_score", "_detect_and_release_fast_forward", "_follow_bve_window", "_handle_keys", "_handle_mouse", "_kick_start_first_press",
-        "_kick_start_second_press", "_resolve_bve_advancing", "_restore_standard_window", "_run_input_and_scoring_step", "_sync_f8_suppression",
+        "_advance_scoring_clock_and_score", "_detect_and_release_fast_forward", "_follow_bve_window", "_handle_keys", "_handle_mouse", "_diagnose_pause_without_data",
+        "_resolve_bve_advancing", "_restore_standard_window", "_run_input_and_scoring_step", "_sync_f8_suppression",
         "_sync_menu_key_suppression", "_sync_numeric_input", "_sync_system_key_suppression", "_sync_time_position_window_lock",
         # what the managed mode needs (A3)
         "_emit_input_event", "_take_pending_station_list", "adopt_bve_window", "apply_held_telemetry", "ask_result_save_path", "close_result_dialog",
         "drop_held_station_list", "forget_stale_bve_window", "managed_window_step", "reset_generation_state", "restore_bve_window",
-        # SI-A6: the ONE place where managed mode presses P (a recovery token). SI-A / SI-A4's kick_start_managed, kick_start_wanted and kick_start_managed_waiting are gone.
-        "press_p_for_recovery",
+        # Phase PP-13 (on purpose): no P is pressed for BVE any more (the kick start and press_p_for_recovery are gone); _diagnose_pause_without_data only says why a pause has no data
     }
     CHANGED_MEMBERS = {"update_logic", "apply_telemetry_text", "handle_menu_enter", "read_udp_data", "take_result_screenshot", "toggle_borderless_fullscreen"}
     REMOVED_LINES = {
@@ -321,7 +320,7 @@ class SiAScopeOfMain(unittest.TestCase):
         # Stage TB-H (on purpose): the timing toggle asks untimed_reason instead of comparing with the start index (the start and the crossed pair B are fixed untimed)
         # Stage ENV-1 (on purpose; Owner contract 2026-11-08): the Enter of the environment settings screen (menu_state 4) acts on the VALUE cell only and goes through Overlay.toggle_disp_setting (the one state function that keeps
         # 制限速度 / 制限速度予告 consistent): the three lines of the old whole-row toggle left (tests/test_env_settings_layout.py)
-        "handle_menu_enter": {"if not (50 <= val <= 90): val = 70", "self.rank_a_ratio = val / 100.0", "if self.menu_cursor == 1 and getattr(self, 'menu_cursor_x', 0) == 0:",   # INITIAL-DEFAULTS Commit 4 (on purpose; INITIAL-DEFAULTS Commit 4): the rolling Enter is the new first branch (the ATS branch became an elif)
+        "handle_menu_enter": {"self.initial_kickstart_done = False", "if not (50 <= val <= 90): val = 70", "self.rank_a_ratio = val / 100.0", "if self.menu_cursor == 1 and getattr(self, 'menu_cursor_x', 0) == 0:",   # INITIAL-DEFAULTS Commit 4 (on purpose; INITIAL-DEFAULTS Commit 4): the rolling Enter is the new first branch (the ATS branch became an elif)
                                  # INITIAL-DEFAULTS Commit 3 (on purpose; INITIAL-DEFAULTS Commit 3): the typed A boundary uses the shared validation (initial_defaults.a_rank_percent_valid)
                               "if self.menu_cursor <= 6:", "key = getattr(self, 'settings_keys', [])[self.menu_cursor]", "getattr(self, 'disp_settings', {})[key] = not getattr(self, 'disp_settings', {})[key]",
                               "if sta_idx != getattr(self, 'setting_start_idx', 0):", "actual_terminal_idx = self.get_actual_terminal_idx() if hasattr(self, 'get_actual_terminal_idx') else -1",

@@ -241,7 +241,7 @@ class A_Characterization(unittest.TestCase):
 
     def test_ch09_neither_the_off_path_nor_the_shutdown_sends_a_close_to_bve(self):
         """TS Scoring OFF (the Caller resets Enabled and stops this process) and every shutdown path end this process only: BVE keeps running."""
-        for name in ("managed_mode.py", "managed_input.py", "managed_state.py", "pause_recovery.py", "managed_app_directory.py"):
+        for name in ("managed_mode.py", "managed_input.py", "managed_state.py", "managed_app_directory.py"):
             self.assertNotIn("WM_CLOSE", code_only(read(name)), name)
         main_src = read("main.py")
         for cls, name in (("_ManagedShutdownBridge", "on_shutdown_requested"), ("_ManagedShutdownBridge", "on_f11_restore_requested")):

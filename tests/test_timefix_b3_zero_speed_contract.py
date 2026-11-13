@@ -659,7 +659,7 @@ class F_SourcePinsAndInventory(unittest.TestCase):
         excess (limit + 1.0) and the warning distance arguments. Any new one must be classified, not slipped in."""
         found = []
         pattern = re.compile(r"bve_speed\s*(?:>=|<=|>|<|==|!=)\s*(?:[1-9]|0\.\d*[1-9])|abs_speed\s*(?:>=|<=|>|<)\s*[^\s]+\s*\+|max\(\s*self\.bve_speed")
-        for name in ("main.py", "scoring_logic.py", "managed_input.py", "managed_hud.py", "hud_ui.py", "pause_recovery.py", "network.py", "utils.py", "telemetry_gate.py"):
+        for name in ("main.py", "scoring_logic.py", "managed_input.py", "managed_hud.py", "hud_ui.py", "network.py", "utils.py", "telemetry_gate.py"):
             for number, line in enumerate(read(name).replace("\r\n", "\n").split("\n"), 1):
                 if pattern.search(line):
                     found.append((name, line.strip()))

@@ -82,17 +82,16 @@
     {"set": "python", "path": "initial_defaults_ui.py", "blob_sha256": "709D77DF0F47588D55C57E0A04AD4757989D54671AC7E94352A7597BC7A9A752", "blob_size": 60768, "blob_eol": "lf"},
     {"set": "python", "path": "jump_transaction.py", "blob_sha256": "BC5DFAE3BA83BDD4E1606D70B1E4960FA939206709C4DAAE357C1EA081B6A954", "blob_size": 17222, "blob_eol": "lf"},
     {"set": "python", "path": "jump_wire.py", "blob_sha256": "3F24A9F733FDD8E2FD8A1BC0FE24DB594916671FE78608B76879538B9B35EA27", "blob_size": 20563, "blob_eol": "lf"},
-    {"set": "python", "path": "main.py", "blob_sha256": "1AE31C548491B5366EA342148B5AEEEEAEE7A34FEECD8CC8C8E56D9C5F096E0B", "blob_size": 211072, "blob_eol": "lf"},
+    {"set": "python", "path": "main.py", "blob_sha256": "BF5149FB8A570E5DB0DA0B1394E05FE548AE00986EED67AC175CB6A32F8A4E6F", "blob_size": 209169, "blob_eol": "lf"},
     {"set": "python", "path": "managed_app_directory.py", "blob_sha256": "7B77DA8C4D04B32603AE7BFFAA1A74FCE07253B1BE2084ECB11EBBE5B46DCA8A", "blob_size": 12303, "blob_eol": "lf"},
-    {"set": "python", "path": "managed_hud.py", "blob_sha256": "01EDCDD43EE53982A48D6E3F75BA6A5C9B718C0D458BA406BCDC53B9CF12B429", "blob_size": 54667, "blob_eol": "lf"},
-    {"set": "python", "path": "managed_input.py", "blob_sha256": "864AF85D629E1E30BF30342E5A1B06C11E48C460D2D462EB6BD207DB4F3767F8", "blob_size": 42495, "blob_eol": "lf"},
+    {"set": "python", "path": "managed_hud.py", "blob_sha256": "3FFC6F99794EDB1823E3189D91FDABB64AB3D8FAFE1D5B49EDDCFD6167206CD3", "blob_size": 53303, "blob_eol": "lf"},
+    {"set": "python", "path": "managed_input.py", "blob_sha256": "F24B1206DCFF60E2C5321F9DE3CD466E912973BF43B90AB1BDDAB50A45F396FC", "blob_size": 42438, "blob_eol": "lf"},
     {"set": "python", "path": "managed_mode.py", "blob_sha256": "8ACE27B1D4F3BF904E9666DFE2FF6BFD397F716A27823B2756D31D06CFD892E2", "blob_size": 30132, "blob_eol": "lf"},
-    {"set": "python", "path": "managed_state.py", "blob_sha256": "97E2FC6433E8E7C0B992049A84A34FCC90C0D98E8599965D63D19B840EAD3CA0", "blob_size": 20718, "blob_eol": "lf"},
+    {"set": "python", "path": "managed_state.py", "blob_sha256": "E3B85079B57B617ED58FE86FB634669A9EBC5B9C4C918F62E6380FC36798970E", "blob_size": 20728, "blob_eol": "lf"},
     {"set": "python", "path": "menu_ui.py", "blob_sha256": "4B61AE453C032846EB0FA400CF28E4BD566BDC3EE45CA141265C02137318F747", "blob_size": 116942, "blob_eol": "lf"},
     {"set": "python", "path": "official_target_contract.py", "blob_sha256": "033A6FFA1E29EF7249275CB691BE347BC0B7EE580F83EF6AA6F87808663C8F27", "blob_size": 8333, "blob_eol": "lf"},
     {"set": "python", "path": "overlay_transform.py", "blob_sha256": "74A341B9EAFCD79CBC955A4014E3EE0A3BFF3302EB4FCCD09645AB0DD166270E", "blob_size": 2967, "blob_eol": "lf"},
     {"set": "python", "path": "package_contract.py", "blob_sha256": "08F68356C43697E9FFBC70F312745ED3620906780E4395B3A835B9A611B6158A", "blob_size": 1735, "blob_eol": "lf"},
-    {"set": "python", "path": "pause_recovery.py", "blob_sha256": "C60EFBB89AC0337616931B8A967AAA4ABC5738D79FB7853B2B133DCBCD1F6B79", "blob_size": 26718, "blob_eol": "lf"},
     {"set": "python", "path": "pseudo_turnback_contract.py", "blob_sha256": "A85E49C4980818DC84FBE68EB73D51877781314C2616DDF1503268D8833E21E4", "blob_size": 4198, "blob_eol": "lf"},
     {"set": "python", "path": "pseudo_turnback_machine.py", "blob_sha256": "D3440A69BC83BA5FB27F4EB4029C2712796B66E8B4EECF3647E5748151EB8CC1", "blob_size": 24005, "blob_eol": "lf"},
     {"set": "python", "path": "route_pairset.py", "blob_sha256": "B3BDDEA71BDEA7850CE785DF13D42A8FABB29FE4B5B373A5089CA57547D8C695", "blob_size": 16462, "blob_eol": "lf"},
@@ -139,5 +138,5 @@
     {"set": "shared", "path": "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryContract.cs", "blob_sha256": "D5E4AAB343C9BB6145CDFDE9226C1871BDDAD1D4EAE503D368C5841922D966D8", "blob_size": 9030, "blob_eol": "lf"},
     {"set": "shared", "path": "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs", "blob_sha256": "9D6C47493457FD840E8CA5186C8E16181F0B5CF85C10721087C9098DD6644680", "blob_size": 6615, "blob_eol": "lf"}
   ],
-  "fingerprint": "B8F602C74CF7EE46FF0F6467EFD11126CB97FD94059D29F4CB74EC2585D5D440"
+  "fingerprint": "EA0473DE5D16DC0BD32E58E0D297F762B798F9EE9339AD6CBF27C7696EA41DBB"
 }

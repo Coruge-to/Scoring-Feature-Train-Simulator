@@ -332,8 +332,8 @@ class D_TheResultSaveDialogAndTheStopRequest(unittest.TestCase):
 class E_TheSeamsOfUpdateLogic(unittest.TestCase):
     # Phase SI-A2 cut update_logic into these methods, without changing a statement. They are listed in the order in which the original single function
     # executed its parts: every test below that was written for the single function now reads the concatenation of these bodies in that order.
-    PARTS = ["update_logic", "_kick_start_first_press", "_follow_bve_window", "_run_input_and_scoring_step", "_detect_and_release_fast_forward",
-             "_resolve_bve_advancing", "_kick_start_second_press", "_sync_system_key_suppression", "_sync_f8_suppression",
+    PARTS = ["update_logic", "_diagnose_pause_without_data", "_follow_bve_window", "_run_input_and_scoring_step", "_detect_and_release_fast_forward",
+             "_resolve_bve_advancing", "_sync_system_key_suppression", "_sync_f8_suppression",
              "_sync_time_position_window_lock", "_sync_menu_key_suppression", "_sync_numeric_input", "_handle_mouse", "_handle_keys",
              "_restore_standard_window", "_advance_scoring_clock_and_score"]
 
@@ -348,25 +348,24 @@ class E_TheSeamsOfUpdateLogic(unittest.TestCase):
     def test_the_step_calls_its_parts_in_the_order_of_the_original_function(self):
         step = self.funcs["_run_input_and_scoring_step"]
         called = [n.func.attr for n in sorted((n for n in ast.walk(step) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and isinstance(n.func.value, ast.Name) and n.func.value.id == "self"), key=lambda n: (n.lineno, n.col_offset))]
-        self.assertEqual(called, ["_detect_and_release_fast_forward", "_resolve_bve_advancing", "_kick_start_second_press", "_sync_system_key_suppression",
+        self.assertEqual(called, ["_detect_and_release_fast_forward", "_resolve_bve_advancing", "_sync_system_key_suppression",
                                   "_sync_f8_suppression", "_sync_time_position_window_lock", "_sync_menu_key_suppression", "_sync_numeric_input",
                                   "_handle_mouse", "_handle_keys", "_advance_scoring_clock_and_score"])
         head = self.funcs["update_logic"]
         called = [n.func.attr for n in sorted((n for n in ast.walk(head) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and isinstance(n.func.value, ast.Name) and n.func.value.id == "self"), key=lambda n: (n.lineno, n.col_offset))]
-        self.assertEqual([c for c in called if c.startswith("_")], ["_kick_start_first_press", "_follow_bve_window", "_run_input_and_scoring_step"])
+        self.assertEqual([c for c in called if c.startswith("_")], ["_diagnose_pause_without_data", "_follow_bve_window", "_run_input_and_scoring_step"])
 
     def test_the_parts_run_in_this_order(self):
         markers = [
             "if keyboard.is_pressed('esc'): QApplication.quit()",          # Esc quits (normal mode only)
             "self.bve_hwnd = self.find_bve_window()",                      # window search by title over all processes
             "if self.was_bve_found and self.bve_hwnd is None:",           # the BVE window disappeared (then QApplication.quit())
-            "write_desktop_log(\"[MAIN] BVEの凍結を確認。キックスタートを実行します。\")",
+            "self._emit_input_event(\"pause-no-data\", reason=\"no-pulse-data\")",           # Phase PP-13 (on purpose): the P-to-P kick start is gone; a pause without data is only diagnosed
             "win32gui.SetWindowLong(int(self.winId()), win32con.GWL_HWNDPARENT, self.bve_hwnd)",
             "self.set_client_rect_physical(client_x, client_y, w, h)",      # OVS-1 (on purpose): the BVE client area (Win32 physical px) is applied with SetWindowPos, no longer with Qt's logical setGeometry
             "real_now = time.time()",                                      # fast-forward detection
             "win32api.PostMessage(self.bve_hwnd, win32con.WM_KEYDOWN, 0x77, 0) # F8",
             "is_bve_advancing = ('RUNNING' in self.bve_actual_state)",
-            "if getattr(self, 'auto_pause_pending', False) and getattr(self, 'station_list', []):",
             "sys_block_keys = ['f7', 'p']",
             "should_block_f8 = ",
             'diag_hwnd = win32gui.FindWindow(None, "時刻と位置")',
@@ -653,49 +652,38 @@ class F_UpdateLogicCharacterization(unittest.TestCase):
         self.tick()
         self.assertEqual(FakeApp.quits, 0)
 
-    # -- P to P (the kick start) ---------------------------------------------------------------------------------------------------------
-    def test_pause_at_start_with_no_station_list_posts_P_once_and_the_second_P_when_time_runs(self):
+    # -- no P to P (Phase PP-13: the kick start of the manual start is gone) ---------------------------------------------------------------
+    def test_pause_at_start_with_no_station_list_posts_no_P(self):
         o = self.o
         o.is_bve_loaded = True
         o.station_list = []
         o.bve_actual_state = "PAUSED"
-        o.initial_kickstart_done = False
         o.bve_time_ms = 36000000
         self.tick()
-        P = 0x50
-        self.assertEqual(self.api.posted, [(self.HWND, self.main.win32con.WM_KEYDOWN, P, 0), (self.HWND, self.main.win32con.WM_KEYUP, P, 0)])
-        self.assertTrue(o.auto_pause_pending)
-        self.assertTrue(o.initial_kickstart_done)
-        self.assertEqual(o.bve_actual_state, "RUNNING")
-        self.assertIn("[MAIN] BVEの凍結を確認。キックスタートを実行します。", self.log)
-        self.api.posted.clear()
-        self.tick()
-        self.assertEqual(self.api.posted, [])                               # no station list yet: no second P
+        self.assertEqual(self.api.posted, [])
+        self.assertEqual(o.bve_actual_state, "PAUSED")                      # nothing pretends that BVE runs
         o.station_list = [self.station("S")]
-        o.bve_time_ms += 500                                                # the BVE time advanced
+        o.bve_time_ms += 500
         self.tick()
-        self.assertEqual(len(self.api.posted), 2)                           # the pausing P
-        self.assertFalse(o.auto_pause_pending)
+        self.assertEqual(self.api.posted, [])
 
-    def test_a_station_list_left_over_from_an_earlier_scenario_suppresses_the_kick_start(self):
+    def test_a_station_list_left_over_from_an_earlier_scenario_posts_nothing(self):
         o = self.o
         o.is_bve_loaded = True
         o.station_list = [self.station("left over")]
         o.bve_actual_state = "PAUSED"
-        o.initial_kickstart_done = False
         self.tick()
         self.assertEqual(self.api.posted, [])
-        self.assertFalse(getattr(o, "auto_pause_pending", False))
 
-    def test_already_running_only_marks_the_kick_start_done(self):
+    def test_already_running_posts_nothing(self):
         o = self.o
         o.is_bve_loaded = True
         o.station_list = []
         o.bve_actual_state = "RUNNING"
-        o.initial_kickstart_done = False
         self.tick()
         self.assertEqual(self.api.posted, [])
-        self.assertTrue(o.initial_kickstart_done)
+        for name in ("initial_kickstart_done", "auto_pause_pending", "kick_bve_time"):
+            self.assertNotIn(name, vars(o))
 
     # -- F7 / P suppression ----------------------------------------------------------------------------------------------------------------
     def scoring(self, speed=0.0, finished=False):

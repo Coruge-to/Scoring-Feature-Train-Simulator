@@ -149,7 +149,6 @@ class A_ScoringState(Base):
         self.assertEqual(o.score, 0)
         self.assertEqual(o.total_retry_count, 0)
         self.assertFalse(o.is_bve_loaded)                                   # the STATUS must be seen again
-        self.assertFalse(o.initial_kickstart_done)
 
     def test_starting_the_scoring_sends_one_jump_command_to_port_54322(self):
         self.start_scoring_through_the_menu()
@@ -867,12 +866,11 @@ class D_Windows(Base):
         self.gui.titles = {11: "BVE Trainsim 5 (other process)", 12: "BVE Trainsim 6"}
         self.assertEqual(self.o.find_bve_window(), 12)
 
-    def test_an_invalid_handle_is_searched_again_and_the_link_state_and_the_kick_start_state_are_reset(self):
+    def test_an_invalid_handle_is_searched_again_and_the_link_state_and_the_loaded_state_are_reset(self):
         o = self.o
         self.gui.valid = {9001}
         self.gui.titles = {9001: "BVE Trainsim 6"}
         o.is_bve_loaded = True
-        o.initial_kickstart_done = True
         self.tick()
         self.assertEqual(o.bve_hwnd, 9001)
         self.assertIn(("SetWindowLong", None, None, None)[0], [c[0] for c in self.gui.calls])
@@ -880,7 +878,6 @@ class D_Windows(Base):
         self.assertEqual([c[3] for c in link], [9001])
         self.assertTrue(o.is_linked)
         self.assertFalse(o.is_bve_loaded)
-        self.assertFalse(o.initial_kickstart_done)
 
     def test_when_the_window_vanishes_after_it_was_found_the_application_quits(self):
         self.gui.valid = set()
@@ -1046,86 +1043,52 @@ class D_Windows(Base):
 
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------
-class E_PtoP(Base):
+class E_NoPtoP(Base):
+    """Phase PP-13: the P-to-P kick start of the manual start is gone. Whatever BVE reports, no P is ever posted and no kick start state exists; a pause that
+    never gets data is only DIAGNOSED (once), never answered with a key."""
+
     def prepare(self, state="PAUSED"):
         o = self.o
         o.is_bve_loaded = True
         o.station_list = []
         o.bve_actual_state = state
-        o.initial_kickstart_done = False
         o.bve_time_ms = 36000000
 
-    def test_the_first_P_needs_loaded_paused_and_no_station_list(self):
-        for loaded, state, stations in ((False, "PAUSED", []), (True, "RUNNING", []), (True, "PAUSED", [R.station("S")])):
+    def test_no_P_is_posted_whatever_the_state_is(self):
+        for loaded, state, stations in ((False, "PAUSED", []), (True, "RUNNING", []), (True, "PAUSED", []), (True, "PAUSED", [R.station("S")]), (True, "", [])):
             self.api.posted.clear()
             self.prepare(state)
             self.o.is_bve_loaded = loaded
             self.o.station_list = list(stations)
-            self.o.auto_pause_pending = False
-            self.tick()
+            self.tick(3)
             self.assertEqual(self.posted_p(), [], (loaded, state, len(stations)))
 
-    def test_the_first_P_is_posted_once_per_pause_even_when_the_state_stays_paused(self):
-        self.prepare()
-        self.tick()
-        self.assertEqual(len(self.posted_p()), 1)
-        self.o.bve_actual_state = "PAUSED"                                  # a stale heartbeat
-        self.tick(3)
-        self.assertEqual(len(self.posted_p()), 1)
-
-    def test_the_second_P_waits_for_the_station_list_the_advancing_time_and_the_running_state(self):
-        self.prepare()
-        self.tick()
-        self.api.posted.clear()
-        self.o.station_list = [R.station("S")]
-        self.tick()                                                         # the list is there but the time did not advance
-        self.assertEqual(self.posted_p(), [])
-        self.o.bve_time_ms += 1
-        self.tick()                                                         # advancing (the kick start set RUNNING) and the time moved: the pausing P
-        self.assertEqual(len(self.posted_p()), 1)
-        self.assertFalse(self.o.auto_pause_pending)
-
-    def test_CURRENT_the_pending_second_P_is_dropped_even_when_the_BVE_does_not_report_running(self):
-        """CURRENT: auto_pause_pending is cleared when the time moved even if no P was posted (the state was not RUNNING), so a BVE that stays
-        running afterwards is never paused again."""
-        self.prepare()
-        self.tick()
-        self.api.posted.clear()
-        self.o.station_list = [R.station("S")]
-        self.o.bve_time_ms += 1
-        self.o.bve_actual_state = "PAUSED"
-        self.tick()
-        self.assertEqual(self.posted_p(), [])
-        self.assertFalse(self.o.auto_pause_pending)
-
-    def test_the_second_P_is_posted_only_once(self):
+    def test_a_pause_with_data_arriving_later_posts_nothing_either(self):
         self.prepare()
         self.tick()
         self.o.station_list = [R.station("S")]
         self.o.bve_time_ms += 500
         self.api.posted.clear()
         self.tick(4)
-        self.assertEqual(len(self.posted_p()), 1)
+        self.assertEqual(self.posted_p(), [])
 
-    def test_CURRENT_a_station_list_of_an_earlier_scenario_blocks_the_kick_start_of_the_next_one(self):
-        """CURRENT: station_list is not discarded at a scenario change, and the kick start needs 'not station_list'. EXPECTED (SI-A3, managed): the
-        list is discarded at the generation boundary, so a reused process can kick the next scenario."""
-        self.prepare()
-        self.o.station_list = [R.station("old")]
-        self.tick()
-        self.assertEqual(self.posted_p(), [])
-        self.o.apply_telemetry_text("SCENARIO_ID:1,SPEED:0")
-        self.o.apply_telemetry_text("SCENARIO_ID:2,SPEED:0")
-        self.tick()
-        self.assertEqual(self.posted_p(), [])
-        self.assertEqual(len(self.o.station_list), 1)
+    def test_there_is_no_kick_start_state_and_no_kick_start_method(self):
+        o = self.o
+        for name in ("initial_kickstart_done", "auto_pause_pending", "kick_bve_time"):
+            self.assertNotIn(name, vars(o))
+        for name in ("_kick_start_first_press", "_kick_start_second_press"):
+            self.assertFalse(hasattr(type(o), name), name)
 
-    def test_the_kick_start_state_is_reset_by_a_lost_window_only(self):
+    def test_a_long_pause_without_data_is_diagnosed_once_and_no_key_is_sent(self):
         self.prepare()
-        self.o.initial_kickstart_done = True
         self.tick()
+        self.assertIsNotNone(getattr(self.o, "_pause_no_data_since", None))
+        self.assertFalse(getattr(self.o, "_pause_no_data_logged", False))
+        self.o._pause_no_data_since -= 30.0                                 # BVE has been paused with no data for 30 s
+        self.tick(3)
+        self.assertTrue(self.o._pause_no_data_logged)
         self.assertEqual(self.posted_p(), [])
-        self.assertTrue(self.o.initial_kickstart_done)
+        self.assertEqual(self.api.posted, [])
 
     def test_the_BVE_status_datagram_sets_the_state_and_the_loaded_flag(self):
         self.o.udp_socket.incoming = [b"STATUS:LOADED:PAUSED"]

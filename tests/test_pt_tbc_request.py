@@ -378,7 +378,7 @@ class E_TheEntries(Base):
         self.assertEqual(len(re.findall(r"_open_jump_transaction\(jump_transaction\.JUMP_RETRY,", sl_src)), 1)
         self.assertEqual(len(re.findall(r"_open_jump_transaction\(jump_transaction\.JUMP_TURNBACK,", sl_src)), 1)
         self.assertEqual(len(re.findall(r"\bsend_jump_command\(", sl_src)), 2, "execute_retry and turnback_request")
-        for other in ("managed_input.py", "managed_mode.py", "pause_recovery.py", "pseudo_turnback_machine.py"):
+        for other in ("managed_input.py", "managed_mode.py", "pseudo_turnback_machine.py"):
             self.assertNotIn("begin_official_jump", src(other), other)
 
     def test_the_turnback_entry_is_called_from_the_driver_only(self):

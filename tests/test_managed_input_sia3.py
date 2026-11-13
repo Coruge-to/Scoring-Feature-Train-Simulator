@@ -168,7 +168,7 @@ class A_StateContract(unittest.TestCase):
         o.menu_state, o.menu_cursor, o.dropdown_active, o.input_buffer = 5, 3, True, "12"
         o.pending_jump_complete, o.expected_target_loc = {"x": 1}, 500.0
         o.is_fast_forwarding, o.ff_check_real_time = True, 5.0
-        o.is_bve_loaded, o.initial_kickstart_done, o.auto_pause_pending, o.bve_actual_state = True, True, True, "PAUSED"
+        o.is_bve_loaded, o.bve_actual_state = True, "PAUSED"
         o.meta_title = "route"
         o.bve_bp_initial_received = True
         o.reset_telemetry_state()
@@ -188,7 +188,7 @@ class A_StateContract(unittest.TestCase):
         self.assertEqual((o.blink_active, o.blink_phase, o.disp_limit, o.current_base_limit, o.prev_base_limit), (False, 0.0, 1000.0, 1000.0, 1000.0))
         self.assertEqual((o.menu_state, o.menu_cursor, o.dropdown_active, o.input_buffer), (0, 0, False, ""))
         self.assertEqual((o.pending_jump_complete, o.expected_target_loc, o.is_fast_forwarding, o.ff_check_real_time), (None, -1.0, False, 0.0))
-        self.assertEqual((o.is_bve_loaded, o.initial_kickstart_done, o.auto_pause_pending, o.bve_actual_state), (False, False, False, ""))
+        self.assertEqual((o.is_bve_loaded, o.bve_actual_state), (False, ""))
         self.assertEqual((o.meta_title, o.bve_bp_initial_received), ("", False))
 
     def test_a_generation_keeps_the_users_settings_and_the_infrastructure(self):
@@ -857,12 +857,12 @@ class F_PtoPInManagedMode(ManagedCase):
         r, o = self.r, self.o
         self.paused_load()
         self.assertEqual(len(self.posted_keys(R.KEY_P)), 0)
-        self.assertFalse(o.initial_kickstart_done)
+        self.assertNotIn("initial_kickstart_done", vars(o))
         r.tick(5)
         r.send(self.MR.STALIST, self.MR.tele(1, time_ms=36000500))
         r.tick(2)
         self.assertEqual(len(self.posted_keys(R.KEY_P)), 0)
-        self.assertFalse(o.auto_pause_pending)
+        self.assertNotIn("auto_pause_pending", vars(o))
         r.tick(5)
         self.assertEqual(len(self.posted_keys(R.KEY_P)), 0)
         self.assertEqual(r.events("kickstart"), [])
@@ -924,7 +924,7 @@ class F_PtoPInManagedMode(ManagedCase):
         r.tick(2)
         r.publish(True, True, 2)
         r.tick(3)
-        self.assertEqual((o.bve_actual_state, o.is_bve_loaded, o.initial_kickstart_done), ("", False, False))
+        self.assertEqual((o.bve_actual_state, o.is_bve_loaded), ("", False))
         self.assertEqual(len(self.posted_keys(R.KEY_P)), 0)
 
 class G_StationListAndJumpReference(ManagedCase):

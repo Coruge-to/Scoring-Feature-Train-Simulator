@@ -482,7 +482,7 @@ class S_SourceOrder(unittest.TestCase):
 
     def test_S4_the_python_side_starts_no_subprocess_and_only_two_known_threads(self):
         for name in ("main.py", "managed_hud.py", "managed_input.py", "managed_mode.py", "managed_state.py", "managed_app_directory.py", "current_jump_client.py",
-                     "telemetry_dataplane_receiver.py", "telemetry_receiver_directory.py", "pause_recovery.py", "scoring_logic.py", "jump_transaction.py"):
+                     "telemetry_dataplane_receiver.py", "telemetry_receiver_directory.py", "scoring_logic.py", "jump_transaction.py"):
             src = read(name)
             for word in ("subprocess", "Popen", "os.system", "multiprocessing", "QProcess", "QThread"):
                 self.assertNotIn(word, src, "%s uses %s" % (name, word))

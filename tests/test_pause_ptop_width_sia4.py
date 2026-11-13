@@ -219,7 +219,7 @@ class A_PauseKeepsTheScoring(ManagedCase):
 class B_PtoPWhileDrivingIsOff(ManagedCase):
     """Phase SI-A6 re-pinned this class. Phase SI-A4 pressed P-to-P when "Session ON, Driving OFF, STATUS PAUSED, no station list" held, on the belief that a
     scenario loaded PAUSED never ticks. The SR session showed the cost: every ORDINARY load shows exactly that for a few hundred milliseconds (P fired in three
-    loads out of three). The situations below are kept and must now send NO P; the real recovery is token based (tests/test_pause_recovery_sia6.py)."""
+    loads out of three). The situations below are kept and must now send NO P; the data of a Pause comes from the read-only pause pulse of the senders (Phase PP-13)."""
 
     def paused_load(self, generation=1, driving=False):
         r = self.r
@@ -233,7 +233,8 @@ class B_PtoPWhileDrivingIsOff(ManagedCase):
         self.paused_load()
         self.assertEqual(r.hud.mode, "waiting")
         self.assertEqual(len(self.posted_keys(R.KEY_P)), 0)
-        self.assertEqual((o.initial_kickstart_done, o.auto_pause_pending), (False, False))
+        for name in ("initial_kickstart_done", "auto_pause_pending"):
+            self.assertNotIn(name, vars(o))
         self.assertEqual(r.events("kickstart"), [])
         self.assertFalse(r.hud.shown)
         r.tick(10)
@@ -245,7 +246,7 @@ class B_PtoPWhileDrivingIsOff(ManagedCase):
         r.send("STATUS:LOADED:RUNNING", self.MR.STALIST, self.MR.tele(1, time_ms=36000500))
         r.tick(3)
         self.assertEqual(len(self.posted_keys(R.KEY_P)), 0)
-        self.assertEqual((o.auto_pause_pending, len(o.station_list)), (False, 3))
+        self.assertEqual(len(o.station_list), 3)
         r.tick(10)
         r.send("STATUS:LOADED:PAUSED")
         r.tick(10)
@@ -273,8 +274,8 @@ class B_PtoPWhileDrivingIsOff(ManagedCase):
             self.assertEqual(len(self.posted_keys(R.KEY_P)), 0, generation)
             r.publish(True, False, generation + 1)                                # the next scenario instance
             r.tick(2)
-            self.assertEqual((o.station_list, o.initial_kickstart_done, o.auto_pause_pending, o.is_bve_loaded, o.bve_actual_state),
-                             ([], False, False, False, ""))                       # the station list, the STATUS and the kick start state of the previous one are gone
+            self.assertEqual((o.station_list, o.is_bve_loaded, o.bve_actual_state),
+                             ([], False, ""))                       # the station list and the STATUS of the previous one are gone
             self.assertNotIn("kick_bve_time", vars(o))
 
     def test_nothing_else_of_the_input_acts_while_driving_is_off(self):
@@ -421,7 +422,7 @@ class D_Scope(unittest.TestCase):
         self.assertIn('self._input.on_inactive("state-lost")', text)
 
     def test_the_waiting_branch_calls_nothing_of_the_kick_start_any_more(self):
-        """Phase SI-A6: `_tick_waiting_kickstart` is gone; the WAITING branch of the controller's tick does nothing but let the recovery watch (attach_recovery)."""
+        """Phase SI-A6: `_tick_waiting_kickstart` is gone; the WAITING branch of the controller's tick presses nothing (Phase PP-13: the recovery that watched there is gone too)."""
         import ast
         tree = ast.parse(self.read("managed_hud.py"))
         self.assertEqual([n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and "kick" in n.name], [])
@@ -436,6 +437,7 @@ class D_Scope(unittest.TestCase):
         names = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
         self.assertNotIn("kick_start_managed_waiting", names)
         self.assertNotIn("kick_start_wanted", names)
+        self.assertEqual([n for n in names if "kick_start" in n or "kickstart" in n], [])        # Phase PP-13: the manual start has none either
 
 if __name__ == "__main__":
     unittest.main()

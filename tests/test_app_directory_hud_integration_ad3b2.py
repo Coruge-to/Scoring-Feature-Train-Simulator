@@ -73,15 +73,6 @@ class FakeInput:
         return {}
 
 
-class FakeRecovery:
-    def __init__(self):
-        self.closed = []
-        self.created = 0
-        self.refused = 0
-    def close(self, reason):
-        self.closed.append(reason)
-    def summary_fields(self):
-        return {}
 
 
 class HudDirectoryIntegration(unittest.TestCase):
@@ -113,15 +104,12 @@ class HudDirectoryIntegration(unittest.TestCase):
         monitor = FakeMonitor([result])
         hud, overlay, _state, _timer = self.controller(monitor)
         inp = FakeInput()
-        recovery = FakeRecovery()
         hud.attach_input(inp)
-        hud.attach_recovery(recovery)
         hud._shown = True
         overlay.visible = True
         hud.tick()
         self.assertEqual(hud.failsafe, 'app-directory-ready-revoked')
         self.assertEqual(inp.inactive, ['app-directory-lost'])
-        self.assertEqual(recovery.closed, ['app-directory-lost'])
         self.assertFalse(overlay.visible)
         self.assertFalse(hud.input_allowed)
         hud.tick()

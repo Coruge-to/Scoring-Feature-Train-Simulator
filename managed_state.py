@@ -26,7 +26,7 @@ Phase SI-A7 (M1a) - the READY EPOCH (bytes 56..59, formerly reserved zero; Versi
                           TickSeenInEpoch (the extension's Tick ran at least once since that Ready appeared), bits 8..23 the low 16 bits of ReadyEpoch.
 `ScenarioReady on and TickSeenInEpoch = 0` can only be a held level that the Bridge published again WITHOUT a Tick (TS Scoring switched OFF -> ON during a pause).
 In M1a this is DIAGNOSTIC ONLY: it is parsed, exposed as `epoch_supported` / `epoch_tick_seen` / `ready_epoch` and logged when it changes. Nothing acts on it: no
-recovery token is created from it, no key is sent (pause_recovery.py ignores it; IMPLEMENTED_KINDS is unchanged). An EpochInfo that does not parse (an unknown bit,
+recovery token is created from it, no key is sent (Phase PP-13: the recovery itself is gone; the epoch stays a diagnostic). An EpochInfo that does not parse (an unknown bit,
 no Supported bit) is "no information" - never an error, never a loss of the block.
 
 HUD gate (HudGate, pure):

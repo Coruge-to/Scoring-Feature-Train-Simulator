@@ -66,8 +66,8 @@ def tele(sid, time_ms=36000000, speed=0.0, loc=0.0, avail=None, brk="N:0:8", bty
 
 
 class RigKeys(object):
-    """The physical keys and the foreground window as pause_recovery sees them (Phase SI-A6): a set of virtual-key codes held down and the process id of the
-    window in front. Not the `keyboard` module of the Overlay: a test presses F5 / P for the recovery without the Overlay's own key handling reacting."""
+    """The physical keys and the foreground window as a test sees them: a set of virtual-key codes held down and the process id of the
+    window in front. Not the `keyboard` module of the Overlay."""
 
     def __init__(self, foreground_pid):
         self.down = set()
@@ -104,8 +104,7 @@ class ManagedRig(object):
         self.keys = RigKeys(self.args.bve_pid)
         self.load = None                    # Phase SI-A6: None = a Bridge / Caller from before the load marker; otherwise the LoadInfo bits every publish() carries
         self.epoch = None                   # Phase SI-A7: None = a Bridge / Caller from before the Ready epoch; otherwise (ready_epoch, tick_seen_in_epoch) every publish() carries
-        self.attached = m._attach_managed_hud(self.o, self.hud, recovery_keys=self.keys)
-        self.recovery = self.hud.recovery
+        self.attached = m._attach_managed_hud(self.o, self.hud)
         self.input = self.hud._input
         self.count = 0
         self.generation = 0

@@ -211,7 +211,7 @@ class Pins(ShortCase):
         for name, text in (("Class1.cs", self.cur), ("LegacyStationTimeline.cs", self.ltl), ("LegacyTelemetrySession.cs", self.lses), ("LegacyTelemetryExtension.cs", self.lext)):
             self.assertNotRegex(text, r"\bDoorDir = 0\b", name)
             self.assertNotRegex(text, r"\bdoorDir = 0\b", name)
-        for name in ("main.py", "scoring_logic.py", "managed_input.py", "telemetry_contract.py", "pause_recovery.py"):
+        for name in ("main.py", "scoring_logic.py", "managed_input.py", "telemetry_contract.py"):
             code = re.sub(r"#.*", "", py_text(name))
             self.assertNotRegex(code, r"bve_doordir\s*=\s*0\b", name)
         for name in ("main.py", "scoring_logic.py"):

@@ -87,14 +87,14 @@ def generation_defaults():
         "ff_check_real_time": 0.0, "ff_check_bve_time": 0, "is_fast_forwarding": False,
         # the BVE time / position reference of the sender is the sender's, the bp_initial of the vehicle is received again for every generation
         "bve_bp_initial_received": False,
-        # the kick start (P to P) and the BVE status of the previous scenario
-        "is_bve_loaded": False, "initial_kickstart_done": False, "auto_pause_pending": False, "bve_actual_state": "",
+        # the BVE status of the previous scenario (Phase PP-13: the kick start flags are gone with the P-to-P)
+        "is_bve_loaded": False, "bve_actual_state": "",
     }
 
 
 # attributes that scoring_logic / the Overlay create later with getattr defaults: removing them returns them to "never set"
 GENERATION_DROP = frozenset({
-    "kick_bve_time", "was_advancing_before_menu", "current_menu_items", "limit_flash_counts", "strictest_flashed_key", "strictest_flashed_val",
+    "was_advancing_before_menu", "current_menu_items", "limit_flash_counts", "strictest_flashed_key", "strictest_flashed_val",
     "current_flashing_key", "active_features_str", "active_next_sta_name", "active_next_sta_timing", "active_rule_basic_apply",
     "active_rule_basic_release", "active_rule_init_apply", "active_rule_init_release", "bb_first_valid_stop_detected",
     "bb_moved_after_first_valid_stop", "has_evaluated_initial_brake", "idle_entered_while_stopped", "prev_stop_detection_speed", "dbg_active_reds",
@@ -513,7 +513,7 @@ class ManagedInputController(object):
 
     def tick_waiting(self):
         """Session ON, Driving ON but no telemetry of this generation yet: nothing is suppressed, nothing is pressed. (Phase SI-A6: the kick start (P to P) is
-        not done here - this state is also what an ordinary scenario load looks like for a moment; P is pressed only for a recovery token, see pause_recovery.)"""
+        not done here - this state is also what an ordinary scenario load looks like for a moment; no P is pressed for BVE at all, see Phase PP-13.)"""
         self.release("telemetry-wait")
 
     # -- the scoring start gate ------------------------------------------------------------------------------------------------------------

@@ -718,7 +718,7 @@ class D_Coverage(unittest.TestCase):
         self.assertEqual(len(re.findall(r"_open_jump_transaction\(jump_transaction\.JUMP_START,", main_src)), 1)
         self.assertEqual(len(re.findall(r"_open_jump_transaction\(jump_transaction\.JUMP_RETRY,", sl_src)), 1)
         self.assertEqual(len(re.findall(r"_open_jump_transaction\(jump_transaction\.JUMP_TURNBACK,", sl_src)), 1)
-        for other in ("managed_input.py", "managed_mode.py", "pause_recovery.py"):
+        for other in ("managed_input.py", "managed_mode.py"):
             self.assertNotIn("begin_official_jump", self.source(other), other)
             self.assertIsNone(re.search(r"\bis_scoring_mode\s*=\s*True\b", self.source(other)), other)
 
