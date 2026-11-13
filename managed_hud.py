@@ -49,7 +49,8 @@ IDLE_INTERVAL_MS = 100           # while nothing is shown: only the state block 
 WINDOW_SEARCH_INTERVAL_S = 0.5   # EnumWindows is not run more often than this while no BVE window is linked
 MAX_HUD_ERROR_LINES = 5
 MAX_ZORDER_LINES = 5             # hud-zorder-set / hud-zorder-error lines; further ones are only counted
-MAX_PROXY_WALK = 8               # Phase OFS-1: at most this many D3D proxy windows are passed when the HUD is placed in the topmost band
+MAX_ZORDER_WALK = 64             # Phase OFS-1: at most this many windows above the HUD are looked at when it is placed in the topmost band
+ZKEEP_RETRY_S = 1.0              # Phase OFS-1: pause before a failed topmost-band Z call is tried again
 FOREGROUND_TRIES = 30            # Phase UI-ALT-F4: ticks (about half a second) an operation screen tries to take the foreground; afterwards it only waits for the user's click
 HUD_FOREGROUND_RETRIES = 5       # Phase UI-ALT-F4: consecutive failures to hand the foreground back to BVE while the HUD is click-through
 MAX_RECONCILES_PER_GENERATION = 3   # Phase UI-ALT-F4: the shown flag is re-aligned with the real Overlay at most this often per ScenarioGeneration
@@ -190,6 +191,7 @@ class ManagedHudController(object):
         self._hwnd = None               # the BVE window the Overlay is linked to
         self._geom = None
         self._next_search = 0.0
+        self._zkeep_retry_at = 0.0      # Phase OFS-1: earliest time of the next topmost-band keep step after a failure
         self._wait_logged = False
         self._shutdown = False
         self._error_lines = 0
@@ -516,6 +518,8 @@ class ManagedHudController(object):
                     self._ensure_owner()
                     if shown_now:
                         self._ensure_z_order()
+                    elif api.is_topmost(self._hwnd):
+                        self._keep_in_topmost_band()          # Phase OFS-1: BVE re-creates its D3D proxy window on a display scale / mode change: over the HUD
             except Exception:
                 self._unlink("bve-window-error")
                 linked = False
@@ -682,23 +686,50 @@ class ManagedHudController(object):
             self._emit("hud-owner-set", n=self.owner_sets)
 
     def _place_hud_in_topmost_band(self, overlay_hwnd):
-        """Phase OFS-1: the BVE window is TOPMOST (BVE's official fullscreen). BVE's picture is then shown through topmost window(s) of its own (the
-        BVE window and the D3D proxy windows directly above it, OFS-0), and a HUD that stays in the normal band lies under all of them. The HUD joins the
-        TOPMOST band DIRECTLY ABOVE that group - the same rule as in the normal band: below every other window that lies over the group. Returns False
-        when the HUD already is there (nothing is set), True after the one Z operation. The walk up from the BVE window passes proxy windows only, at
-        most MAX_PROXY_WALK of them."""
+        """Phase OFS-1: the BVE window is TOPMOST (BVE's official fullscreen). BVE's picture is then shown through topmost windows of its own: the BVE
+        window and its D3D proxy windows (OFS-0), and a HUD that lies under any of them is hidden. BVE CREATES A NEW PROXY WINDOW whenever its Direct3D
+        device is reset (a change of the display scale or of the display mode, OFS-1 live check), and a new topmost window goes to the top of the topmost
+        band, over the HUD. So the rule is evaluated against the HUD's own place, not only once: walk up from the HUD; the highest member of BVE's group
+        (the BVE window or a proxy window of its process) is the one the HUD must lie over; the HUD is put DIRECTLY ABOVE it - below every other window that
+        lies over the group (the same rule as in the normal band). Returns False when no member of the group is above the HUD (nothing is set), True after
+        the one Z operation. The walk is at most MAX_ZORDER_WALK windows long."""
         api = self._api
-        top = self._hwnd
-        above = api.z_above(top)
+        pid = self._args.bve_pid
+        group_top = 0
+        above = api.z_above(overlay_hwnd)
         hops = 0
-        while above and above != overlay_hwnd and hops < MAX_PROXY_WALK and api.is_bve_proxy(above, self._args.bve_pid):
-            top = above
-            above = api.z_above(top)
+        while above and hops < MAX_ZORDER_WALK:
+            if above == self._hwnd or api.is_bve_proxy(above, pid):
+                group_top = above
+            above = api.z_above(above)
             hops += 1
-        if above == overlay_hwnd:
+        if not group_top:
             return False
-        api.place_below(overlay_hwnd, above, topmost=True)
+        api.place_below(overlay_hwnd, api.z_above(group_top), topmost=True)
         return True
+
+    def _sync_topmost_band(self, overlay_hwnd):
+        """The one Z step of the topmost band: places the HUD when needed, counts it and writes the capped log line."""
+        if self._place_hud_in_topmost_band(overlay_hwnd):
+            self.z_sets += 1
+            if self.z_sets <= MAX_ZORDER_LINES:
+                self._emit("hud-zorder-set", n=self.z_sets, band="topmost")
+
+    def _keep_in_topmost_band(self):
+        """Phase OFS-1: called by every active Tick while the BVE window is topmost (the official fullscreen only; window mode and F11 never come here and
+        keep the once-per-show rule of Phase E4). One GetWindow call when nothing is wrong. A failure is counted and logged, never hides the HUD."""
+        now = self._clock()
+        if now < self._zkeep_retry_at:
+            return
+        try:
+            overlay_hwnd = int(self._overlay.winId())
+            if overlay_hwnd:
+                self._sync_topmost_band(overlay_hwnd)
+        except Exception as e:
+            self.z_errors += 1
+            self._zkeep_retry_at = now + ZKEEP_RETRY_S                  # a failing Z call is tried again after a pause, not every Tick
+            if self.z_errors <= MAX_ZORDER_LINES:
+                self._emit("hud-zorder-error", error=describe_exception(e), n=self.z_errors)
 
     def _ensure_z_order(self):
         """The HUD belongs DIRECTLY ABOVE the BVE driving window: above the driving view, below every other window that is above it - the scenario
@@ -716,10 +747,7 @@ class ManagedHudController(object):
                 return                               # the native window does not exist (yet): nothing to order
             api = self._api
             if api.is_topmost(self._hwnd):
-                if self._place_hud_in_topmost_band(overlay_hwnd):          # Phase OFS-1: BVE's official fullscreen (its window is topmost)
-                    self.z_sets += 1
-                    if self.z_sets <= MAX_ZORDER_LINES:
-                        self._emit("hud-zorder-set", n=self.z_sets, band="topmost")
+                self._sync_topmost_band(overlay_hwnd)          # Phase OFS-1: BVE's official fullscreen (its window is topmost)
                 return
             above = api.z_above(self._hwnd)
             if above == overlay_hwnd:

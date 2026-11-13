@@ -209,9 +209,61 @@ class C_Controller(e4.ControllerCase):
         self.activate([BVE, PROXY], topmost={BVE, PROXY}, proxies={PROXY})
         self.assertEqual(self.api.z, [HUD, BVE, PROXY])
 
-    def test_the_proxy_class_of_a_window_that_is_not_adjacent_stops_the_walk(self):
+    def test_a_proxy_window_above_another_window_is_still_passed(self):
         self.activate([PROXY, OTHER, BVE], topmost={PROXY, OTHER, BVE}, proxies={PROXY})
-        self.assertEqual(self.api.z, [PROXY, OTHER, HUD, BVE])      # the walk goes up from BVE only through proxy windows: OTHER stops it
+        self.assertEqual(self.api.z, [HUD, PROXY, OTHER, BVE])      # the HUD lies over every window of BVE's group, wherever the proxy is
+
+    def test_a_foreign_topmost_window_over_the_group_does_not_move_the_hud(self):
+        self.activate([OTHER, PROXY, BVE], topmost={OTHER, PROXY, BVE}, proxies={PROXY})
+        self.assertEqual(self.api.z, [OTHER, HUD, PROXY, BVE])
+        self.api.z_calls.clear()
+        self.pump(50)
+        self.assertEqual(self.api.z_calls, [])
+
+    def new_proxy(self, hwnd=5600, at=0):
+        """BVE re-creates its D3D proxy window (a change of the display scale): a NEW topmost window, at the top of the topmost band, over the HUD."""
+        self.api.z.insert(at, hwnd)
+        self.api.topmost.add(hwnd)
+        self.api.proxies.add(hwnd)
+
+    def test_a_proxy_window_created_after_the_hud_is_brought_back_under_the_hud(self):
+        self.activate([PROXY, BVE], topmost={PROXY, BVE}, proxies={PROXY})
+        self.assertEqual(self.api.z, [HUD, PROXY, BVE])
+        self.new_proxy()                                               # the OFS-1 live observation: [new proxy, HUD, old proxy, BVE]
+        self.api.z_calls.clear()
+        sets = self.hud.z_sets
+        self.pump(1)
+        self.assertEqual(self.api.z, [HUD, 5600, PROXY, BVE])
+        self.assertEqual(self.api.z_calls, [(HUD, 0, True)])
+        self.assertEqual(self.hud.z_sets, sets + 1)
+        self.pump(100)
+        self.assertEqual(self.api.z_calls, [(HUD, 0, True)])           # once, not every Tick
+
+    def test_every_new_proxy_window_is_followed(self):
+        self.activate([PROXY, BVE], topmost={PROXY, BVE}, proxies={PROXY})
+        for hwnd in (5600, 5601, 5602):
+            self.new_proxy(hwnd)
+            self.pump(2)
+            self.assertEqual(self.api.z[0], HUD)
+
+    def test_the_hud_was_hidden_under_a_proxy_that_existed_before_the_tick_after_a_reshow_without_show_transition(self):
+        self.activate([PROXY, BVE], topmost={PROXY, BVE}, proxies={PROXY})
+        self.api.z = [PROXY, HUD, BVE]                                 # the state the Owner saw: the proxy over the HUD, the HUD still topmost
+        self.pump(1)
+        self.assertEqual(self.api.z, [HUD, PROXY, BVE])
+
+    def test_steady_state_costs_one_z_query_per_tick(self):
+        self.activate([PROXY, BVE], topmost={PROXY, BVE}, proxies={PROXY})
+        queries = self.api.z_queries
+        self.pump(100)
+        self.assertEqual(self.api.z_queries, queries + 100)
+
+    def test_window_mode_still_never_polls_the_z_order(self):
+        self.activate([SELECT, BVE])
+        queries = self.api.z_queries
+        self.api.z_calls.clear()
+        self.pump(1000)
+        self.assertEqual((self.api.z_queries, self.api.z_calls), (queries, []))
 
     def test_window_mode_is_unchanged_the_hud_never_becomes_topmost(self):
         self.activate([SELECT, BVE])
@@ -231,13 +283,6 @@ class C_Controller(e4.ControllerCase):
             self.hud._ensure_z_order()
         self.assertEqual(self.api.z_calls, [])
 
-    def test_active_ticks_still_never_poll_the_z_order(self):
-        self.activate([PROXY, BVE], topmost={PROXY, BVE}, proxies={PROXY})
-        queries = self.api.z_queries
-        self.api.z_calls.clear()
-        self.pump(1000)
-        self.assertEqual((self.api.z_queries, self.api.z_calls), (queries, []))
-
     def test_every_reshow_finalises_again(self):
         self.activate([PROXY, BVE], topmost={PROXY, BVE}, proxies={PROXY})
         self.publish(True, False, 1)
@@ -247,13 +292,15 @@ class C_Controller(e4.ControllerCase):
         self.assertEqual(self.api.z, [HUD, PROXY, BVE])
         self.assertIn(HUD, self.api.topmost)
 
-    def test_a_failing_order_is_contained_once(self):
+    def test_a_failing_order_is_contained_and_retried_at_most_once_a_second(self):
         self.api.z_fail = OSError("boom")
         self.activate([PROXY, BVE], topmost={PROXY, BVE}, proxies={PROXY})
         self.assertTrue(self.overlay.visible)
         self.assertEqual(self.hud.z_errors, 1)
-        self.pump(500)
-        self.assertEqual(self.hud.z_errors, 1)
+        self.pump(500)                                                 # 500 Ticks of 20 ms = 10 s of the fake clock
+        self.assertLessEqual(self.hud.z_errors, 12)
+        self.assertLessEqual(len(self.log.events("hud-zorder-error")), mh.MAX_ZORDER_LINES)
+        self.assertEqual(len(self.steps), 501)                         # the HUD went on updating
 
     def test_current_and_legacy_hosts_give_the_same_result(self):
         for pid, hwnd in ((6001, 5000), (5001, 8800)):
@@ -417,6 +464,10 @@ class F_RealWindowsZOrder(unittest.TestCase):
         self.assertEqual((result["in_place_sets"], result["in_place_sets_after_repeat"]), (1, 1), result)       # in place: nothing is done again
         self.assertEqual(result["reshow_without_dialog"], ["hud", "proxy", "bve"], result)
         self.assertTrue(result["hud_topmost_reshow"], result)
+        self.assertEqual(result["after_new_proxy"], ["proxy2", "hud", "proxy", "bve"], result)     # a re-created proxy window lies over the HUD (the live defect) ...
+        self.assertEqual(result["after_keep"], ["hud", "proxy2", "proxy", "bve"], result)          # ... and the keep step brings the HUD back over it
+        self.assertTrue(result["hud_topmost_after_keep"], result)
+        self.assertEqual((result["keep_sets"], result["keep_sets_after_repeat"]), (1, 1), result)
         self.assertIs(type(result["foreground_unchanged"]), bool, result)
 
 

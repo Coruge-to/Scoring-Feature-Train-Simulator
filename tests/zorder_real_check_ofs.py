@@ -133,12 +133,27 @@ def main():
     result["reshow_without_dialog"] = order()
     result["hud_topmost_reshow"] = topmost(int(hud.winId()))
 
+    # 3. BVE re-creates its D3D proxy window (a change of the display scale): a NEW topmost window over the HUD (the OFS-1 live observation)
+    proxy2_hwnd = make_proxy(bve_hwnd)
+    names[proxy2_hwnd] = "proxy2"
+    pump()
+    result["after_new_proxy"] = order()
+    sets_before = ctl.z_sets
+    ctl._keep_in_topmost_band()
+    pump()
+    result["after_keep"] = order()
+    result["hud_topmost_after_keep"] = topmost(int(hud.winId()))
+    result["keep_sets"] = ctl.z_sets - sets_before
+    ctl._keep_in_topmost_band()
+    result["keep_sets_after_repeat"] = ctl.z_sets - sets_before
+
     for w in (hud, dialog, bve):
         w.close()
-    try:
-        win32gui.DestroyWindow(proxy_hwnd)
-    except Exception:
-        pass
+    for hwnd in (proxy_hwnd, proxy2_hwnd):
+        try:
+            win32gui.DestroyWindow(hwnd)
+        except Exception:
+            pass
     pump(100)
     print(json.dumps(result))
     return 0
