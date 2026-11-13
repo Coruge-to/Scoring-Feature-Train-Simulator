@@ -181,7 +181,7 @@ def discard_scoring_session(overlay):
 def discard_generation_state(overlay):
     """A NEW scenario instance (ScenarioGeneration): everything that belongs to the previous scenario is discarded - the scoring session, the 42 variables
     of decision D-3 (tests/test_scoring_observation_si0.py D3_VARIABLES), the station list and the references into it, the guidance state, the
-    kick start state - and the reference of the sender's JUMP counter is taken again from the FIRST accepted telemetry of the generation. The user's
+    BVE status state (the kick start state is gone, Phase PP-13) - and the reference of the sender's JUMP counter is taken again from the FIRST accepted telemetry of the generation. The user's
     settings, the infrastructure and the window state are kept. The latest telemetry VALUES are reset by Overlay.reset_telemetry_state."""
     _cancel_outstanding_jump(overlay, "generation")
     from scoring_logic import discard_run_context
