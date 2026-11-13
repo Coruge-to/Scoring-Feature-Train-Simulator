@@ -2347,9 +2347,22 @@ class Overlay(QWidget):
         win32gui.EnumWindows(callback, None)
         return found_hwnd
 
+    def _bve_in_native_fullscreen(self):
+        """Phase OFS-1: True while BVE is in its own (native) fullscreen (its window is topmost and has no caption). F11 and F12 then do nothing: the HUD
+        already is on the screen (managed_hud places it in the topmost band) and the window styles of that state belong to BVE's D3D runtime."""
+        try:
+            style = win32gui.GetWindowLong(self.bve_hwnd, win32con.GWL_STYLE)
+            exstyle = win32gui.GetWindowLong(self.bve_hwnd, win32con.GWL_EXSTYLE)
+        except Exception:
+            return False
+        return overlay_transform.is_native_fullscreen(style, exstyle)
+
     # 非同期処理によりボーダーレス全画面表示を切り替える
     def toggle_borderless_fullscreen(self):
-        if not self.bve_hwnd or not win32gui.IsWindow(self.bve_hwnd): 
+        if not self.bve_hwnd or not win32gui.IsWindow(self.bve_hwnd):
+            return
+        if self._bve_in_native_fullscreen():
+            write_desktop_log("[WINDOW] BVEの公式フルスクリーン中のため F11 は無視します")
             return
 
         if not self.is_borderless_fullscreen:
@@ -3006,7 +3019,9 @@ class Overlay(QWidget):
     def _restore_standard_window(self):
         """F12: put the BVE window back into the standard window state (share is_borderless_fullscreen with F11)."""
         # BVEとオーバーレイを標準のウィンドウ状態へ復元する
-        if self.bve_hwnd:
+        if self.bve_hwnd and self._bve_in_native_fullscreen():
+            write_desktop_log("[WINDOW] BVEの公式フルスクリーン中のため F12 は無視します")
+        elif self.bve_hwnd:
             # WS_OVERLAPPEDWINDOW はタイトルバー、枠、システムメニュー、最小化・最大化ボタンのセット
             standard_style = win32con.WS_OVERLAPPEDWINDOW | win32con.WS_VISIBLE
             win32gui.SetWindowLong(self.bve_hwnd, win32con.GWL_STYLE, standard_style)

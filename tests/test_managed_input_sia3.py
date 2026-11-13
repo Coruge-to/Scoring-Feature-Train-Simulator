@@ -1549,8 +1549,8 @@ class I_DesktopLogAndStaticGuards(unittest.TestCase):
                                                                            or (isinstance(n.func, ast.Attribute) and n.func.attr == "write_desktop_log"))]
             if calls:
                 counts[name] = len(calls)
-        self.assertEqual(counts, {"main.py": 12, "scoring_logic.py": 24})            # 23: Stage TB-C turnback_diag (fixed words only); 25: Shadow sway diagnostics (on purpose) sway_shadow_log, the one writer of the sway lines, behind desktop_log_enabled()
-        self.assertEqual(sum(counts.values()), 36)            # 25 / 37 (Shadow sway diagnostics, on purpose); 24 / 36: Shadow comparison (Stage 1, on purpose) shadow_stop_jerk_record writes ONE diagnostic line per judged stop, behind desktop_log_enabled()
+        self.assertEqual(counts, {"main.py": 14, "scoring_logic.py": 24})            # OFS-1 (on purpose): main.py 12 -> 14, the two "ignored in BVE's native fullscreen" lines of F11 / F12 (fixed words only, behind the same switch); 23: Stage TB-C turnback_diag (fixed words only); 25: Shadow sway diagnostics (on purpose) sway_shadow_log, the one writer of the sway lines, behind desktop_log_enabled()
+        self.assertEqual(sum(counts.values()), 38)            # OFS-1 (on purpose): 36 -> 38; 25 / 37 (Shadow sway diagnostics, on purpose); 24 / 36: Shadow comparison (Stage 1, on purpose) shadow_stop_jerk_record writes ONE diagnostic line per judged stop, behind desktop_log_enabled()
         openers = {}
         for name in ("main.py", "scoring_logic.py", "hud_ui.py", "menu_ui.py", "utils.py", "managed_hud.py", "managed_input.py", "managed_mode.py",
                      "managed_state.py", "telemetry_contract.py", "telemetry_gate.py", "config.py"):

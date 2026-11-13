@@ -30,6 +30,17 @@ def menu_local_point(cursor_phys, rect_phys):
     return (cursor_phys[0] - x - offset_x) / scale, (cursor_phys[1] - y - offset_y) / scale
 
 
+WS_CAPTION = 0x00C00000
+WS_EX_TOPMOST = 0x00000008
+
+
+def is_native_fullscreen(style, exstyle):
+    """Phase OFS-1: True when the BVE window is in BVE's own (official) fullscreen: TOPMOST and without a caption. BVE makes its window topmost only there
+    (OFS-0 measurement: window mode ex 0x50100 with a caption, TScoring's F11 state ex 0x50000 without a caption but not topmost, official fullscreen
+    ex 0x50008 without a caption). The values may come from GetWindowLong as signed 32 bit numbers."""
+    return bool((exstyle & 0xFFFFFFFF) & WS_EX_TOPMOST) and not ((style & 0xFFFFFFFF) & WS_CAPTION)
+
+
 def rects_match(a, b, tolerance=1):
     """True when two (x, y, w, h) rectangles agree within `tolerance` physical pixels (rounding of the logical <-> physical conversion)."""
     return a is not None and b is not None and all(abs(p - q) <= tolerance for p, q in zip(a, b))

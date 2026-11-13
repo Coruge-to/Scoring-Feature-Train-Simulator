@@ -1899,7 +1899,9 @@ class H_StaticGuards(unittest.TestCase):
 
     def test_z_order_uses_no_global_topmost_no_activation_no_raise(self):
         hud = self.code_only(self.read("managed_hud.py"))
-        for token in ("HWND_TOPMOST", "WindowStaysOnTopHint", "raise_", "activateWindow", "SetForegroundWindow", "BringWindowToTop", "SWP_SHOWWINDOW",
+        # OFS-1 (on purpose): HWND_TOPMOST left this list. In BVE's official fullscreen the BVE window itself is topmost and the HUD must join the topmost band
+        # (place_below(..., topmost=True), the ONE use of the token, pinned in test_ofs_official_fullscreen); in window mode / F11 the HUD is still never topmost.
+        for token in ("WindowStaysOnTopHint", "raise_", "activateWindow", "SetForegroundWindow", "BringWindowToTop", "SWP_SHOWWINDOW",
                       "SWP_NOZORDER", "SetFocus", "SetActiveWindow"):
             self.assertNotIn(token, hud, token)
         main = self.code_only(self.read("main.py"))
@@ -1914,7 +1916,7 @@ class H_StaticGuards(unittest.TestCase):
         body = body[:body.index("def hud_update_step")]
         for flag in ("SWP_NOMOVE", "SWP_NOSIZE", "SWP_NOACTIVATE"):
             self.assertIn(flag, body)
-        self.assertEqual(hud.count("place_below("), 2)           # the definition and the controller's one call
+        self.assertEqual(hud.count("place_below("), 3)           # the definition and the controller's two calls (OFS-1 on purpose: + the topmost-band call of the official fullscreen)
 
     def test_the_selection_window_is_never_identified(self):
         hud = self.code_only(self.read("managed_hud.py"))
