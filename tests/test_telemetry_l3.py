@@ -585,7 +585,7 @@ class C_Controller(unittest.TestCase):
         self.feed(legacy_line(10))
         self.pump(3)
         self.publish(True, False, 1)
-        self.pump(3)
+        self.pump(40)  # OFS-1 (on purpose): a driving-off hides the HUD only after HIDE_GRACE_S (0.5 s); 40 Ticks of 20 ms = 0.8 s
         self.assertFalse(self.overlay.visible)
         self.publish(True, True, 1)
         self.pump(3)

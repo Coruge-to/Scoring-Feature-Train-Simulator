@@ -51,6 +51,7 @@ MAX_HUD_ERROR_LINES = 5
 MAX_ZORDER_LINES = 5             # hud-zorder-set / hud-zorder-error lines; further ones are only counted
 MAX_ZORDER_WALK = 64             # Phase OFS-1: at most this many windows above the HUD are looked at when it is placed in the topmost band
 ZKEEP_RETRY_S = 1.0              # Phase OFS-1: pause before a failed topmost-band Z call is tried again
+HIDE_GRACE_S = 0.5               # Phase OFS-1: how long a `driving-off` (Caller soft OFF) may last before the HUD is hidden
 FOREGROUND_TRIES = 30            # Phase UI-ALT-F4: ticks (about half a second) an operation screen tries to take the foreground; afterwards it only waits for the user's click
 HUD_FOREGROUND_RETRIES = 5       # Phase UI-ALT-F4: consecutive failures to hand the foreground back to BVE while the HUD is click-through
 MAX_RECONCILES_PER_GENERATION = 3   # Phase UI-ALT-F4: the shown flag is re-aligned with the real Overlay at most this often per ScenarioGeneration
@@ -192,6 +193,8 @@ class ManagedHudController(object):
         self._geom = None
         self._next_search = 0.0
         self._zkeep_retry_at = 0.0      # Phase OFS-1: earliest time of the next topmost-band keep step after a failure
+        self._hide_due = None           # Phase OFS-1: when a pending `driving-off` hide is carried out (None: no grace period running)
+        self.hide_graces = 0            # Phase OFS-1: driving-off periods that ended before the HUD had to be hidden
         self._wait_logged = False
         self._shutdown = False
         self._error_lines = 0
@@ -391,6 +394,7 @@ class ManagedHudController(object):
             change = self.gate.apply(snapshot)
             if change is not None:
                 self._on_change(change)
+            self._settle_hide_grace()
             self._note_epoch(snapshot)
             if self._recovery is not None:
                 self._recovery.tick(snapshot, self.gate.mode)
@@ -438,8 +442,30 @@ class ManagedHudController(object):
             if c.previous_mode == managed_state.MODE_ACTIVE:
                 self.update_waits += 1
                 self._emit("hud-update-wait", reason="driving-off" if c.session else "session-off")
+            if c.session and c.previous_mode == managed_state.MODE_ACTIVE and not c.generation_changed and self._shown:
+                # Phase OFS-1 (Owner: the HUD "blinks violently" for a moment when the display scale is changed): BVE stops its frames for about 2 s while it re-creates
+                # its Direct3D device, the Caller's soft OFF ("tick-stale", 2000 ms) comes at the very end of that stall and the Tick is back 30-80 ms later, so the HUD
+                # was hidden and shown again within a few frames. The HUD is NOT hidden at once: it stays (frozen) for HIDE_GRACE_S and is hidden only when the driving
+                # state has not come back by then. The pause of the scoring input above is not delayed.
+                self._hide_due = self._clock() + HIDE_GRACE_S
+            else:
+                self._set_interval(IDLE_INTERVAL_MS)
+                self._hide("driving-off" if c.session else "session-off")
+
+    def _settle_hide_grace(self):
+        """Phase OFS-1: the end of the grace period of a `driving-off` (see _on_change). Back to driving within the period: the HUD was never hidden (one capped
+        line says so). Still not driving when it ends: the HUD is hidden now, exactly as it was before, only HIDE_GRACE_S later."""
+        if self._hide_due is None:
+            return
+        if self.gate.mode == managed_state.MODE_ACTIVE:
+            self._hide_due = None
+            self.hide_graces += 1
+            self._emit_capped("hud-hide-grace", result="recovered", n=self.hide_graces)
+            return
+        if self._clock() >= self._hide_due:
+            self._hide_due = None
             self._set_interval(IDLE_INTERVAL_MS)
-            self._hide("driving-off" if c.session else "session-off")
+            self._hide("driving-off")
 
     def _note_epoch(self, snapshot):
         """Phase SI-A7 (M1a): the Ready epoch of the Bridge, DIAGNOSTIC ONLY. One `epoch-info` line whenever (supported, tick seen, epoch number) differs from the last one
@@ -517,6 +543,9 @@ class ManagedHudController(object):
                     shown_now = self._show()
                     self._ensure_owner()
                     if shown_now:
+                        if rect is not None and not overlay.client_rect_applied(rect):
+                            overlay.set_client_rect_physical(*rect)       # Phase OFS-1: a window that has just been shown may come up at another size (live: 1600x900 for ~60 ms)
+                            self._geom = rect
                         self._ensure_z_order()
                     elif api.is_topmost(self._hwnd):
                         self._keep_in_topmost_band()          # Phase OFS-1: BVE re-creates its D3D proxy window on a display scale / mode change: over the HUD
@@ -797,6 +826,7 @@ class ManagedHudController(object):
         return True
 
     def _hide(self, reason):
+        self._hide_due = None                            # a hide of any reason ends a pending grace period
         if not self._shown:
             return
         if self._operation:

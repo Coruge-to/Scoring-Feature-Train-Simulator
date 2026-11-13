@@ -305,7 +305,7 @@ class A_Controller(QtCase):
             self.show_state(RESULT)
             self.assert_arrow_override("before the HUD goes away")
             self.publish(session, driving, 1)                                          # Driving OFF (pause) / Session OFF (Input Device soft OFF, scenario end)
-            self.pump(5)
+            self.pump(40)  # OFS-1 (on purpose): a driving-off hides the HUD only after HIDE_GRACE_S (0.5 s); 40 Ticks of 20 ms = 0.8 s
             self.assertFalse(self.overlay.visible)
             self.assert_stack(1, 1, "session=%s driving=%s" % (session, driving))
             self.assert_no_override("session=%s driving=%s" % (session, driving))

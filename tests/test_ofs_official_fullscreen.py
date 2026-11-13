@@ -435,6 +435,51 @@ class D_F11AndF12(unittest.TestCase):
         self.assertFalse(self.o.is_borderless_fullscreen)
 
 
+class ShowResetsGeometryOverlay(e4.FakeOverlay):
+    """An Overlay whose native window comes up at another size when it is shown (OFS-1 live observation: (0,0,1600,900) for ~60 ms after a re-show)."""
+
+    def show(self):
+        super().show()
+        self.applied_rect = None
+
+
+class F2_ReShowGeometry(e4.ControllerCase):
+    def setUp(self):
+        super().setUp()
+        self.overlay = ShowResetsGeometryOverlay()
+        self.overlay.z_api = self.api
+        self.hud = mh.ManagedHudController(self.overlay, self.reader, self.api, self.args, self.log, update_step=lambda o: self.steps.append(1),
+                                           timer=self.timer, clock=self.clock)
+
+    def test_the_rectangle_is_applied_again_in_the_tick_that_shows_the_window(self):
+        self.hud.start()
+        self.publish(True, True, 1)
+        self.pump(1)
+        self.assertTrue(self.overlay.visible)
+        self.assertEqual(self.overlay.applied_rect, (100, 100, 800, 600))                 # the rectangle of the fake BVE window
+        self.assertEqual(self.overlay.geoms.count((100, 100, 800, 600)), 2)               # before the show and again right after it
+
+    def test_a_reshow_after_a_real_pause_is_corrected_in_the_same_tick(self):
+        self.hud.start()
+        self.publish(True, True, 1)
+        self.pump(2)
+        self.publish(True, False, 1)
+        self.pump(40)                                                                    # longer than HIDE_GRACE_S: really hidden
+        self.assertFalse(self.overlay.visible)
+        self.publish(True, True, 1)
+        self.pump(1)
+        self.assertTrue(self.overlay.visible)
+        self.assertEqual(self.overlay.applied_rect, (100, 100, 800, 600))
+
+    def test_no_second_application_while_the_window_is_already_in_place(self):
+        self.hud.start()
+        self.publish(True, True, 1)
+        self.pump(1)
+        count = len(self.overlay.geoms)
+        self.pump(100)
+        self.assertEqual(len(self.overlay.geoms), count)
+
+
 class G_SizesMatch(unittest.TestCase):
     def test_equal_sizes_match(self):
         self.assertTrue(ot.sizes_match((1536, 864), (1536, 864)))
@@ -555,6 +600,55 @@ class H_LiveScaleChangeInTheOfficialFullscreen(unittest.TestCase):
         finally:
             overlay.close()
             overlay.deleteLater()
+
+
+HINT_CHILD = os.path.join(ROOT, "tests", "ofs_hinting_child.py")
+
+
+class I_FontHinting(unittest.TestCase):
+    """OFS-1 (Owner: 'the HUD looks narrower at a display scale other than 100%'): clock 218 px at 100%, 214 px at 125-175% with the default hinting. The HUD fonts use
+    full hinting: the same advances at 125% / 150% (and at most 1 px less at 175%), and exactly the old pixels at 100%."""
+
+    # the digest of the pixels of the HUD (menu_state 0) and of the F1 menu (menu_state 1) at 100% BEFORE this change (default hinting, measured with the same child)
+    OLD_PIXELS_100 = {0: "c51aff63179f6124", 1: "1f9854ae520fa95d"}
+
+    def run_child(self, scale, menu_state=0):
+        if not HAS_QT or importlib.util.find_spec("win32gui") is None:
+            self.skipTest("PyQt6 / pywin32 not importable (INCONCLUSIVE)")
+        import json
+        import subprocess
+        env = dict(os.environ)
+        env.pop("QT_QPA_PLATFORM", None)                      # the real Windows platform: the font engine of the product
+        env["QT_SCALE_FACTOR"] = str(scale)
+        r = subprocess.run([sys.executable, "-B", HINT_CHILD, str(menu_state)], capture_output=True, timeout=120, cwd=ROOT, env=env, creationflags=0x08000000)
+        out = r.stdout.decode("utf-8", "replace")
+        self.assertEqual(r.returncode, 0, out + r.stderr.decode("utf-8", "replace"))
+        return json.loads(out.strip().splitlines()[-1])
+
+    def test_all_hud_fonts_use_full_hinting(self):
+        result = self.run_child(1)
+        self.assertEqual(result["hinting"], [3, 3, 3, 3, 3], result)          # QFont.HintingPreference.PreferFullHinting == 3 (Default 0, No 1, Vertical 2)
+
+    def test_the_pixels_at_100_percent_are_exactly_the_old_ones(self):
+        for state, digest in self.OLD_PIXELS_100.items():
+            with self.subTest(menu_state=state):
+                self.assertEqual(self.run_child(1, state)["digest"], digest)
+
+    def test_the_clock_is_as_wide_at_125_and_150_percent_as_at_100_percent(self):
+        widths = {scale: self.run_child(scale)["clock_w"] for scale in (1, 1.25, 1.5)}
+        self.assertEqual(widths[1.25], widths[1], widths)
+        self.assertEqual(widths[1.5], widths[1], widths)
+
+    def test_at_175_percent_the_clock_is_at_most_one_pixel_narrower(self):
+        w100, w175 = self.run_child(1)["clock_w"], self.run_child(1.75)["clock_w"]
+        self.assertLessEqual(w100 - w175, 1, (w100, w175))
+        self.assertGreaterEqual(w175, w100 - 1)
+
+    def test_the_hud_box_is_the_same_at_every_scale(self):
+        boxes = {scale: self.run_child(scale)["hud_bbox"] for scale in (1, 1.25, 1.5, 1.75)}
+        for scale in (1.25, 1.5, 1.75):
+            for a, b in zip(boxes[scale], boxes[1]):
+                self.assertLessEqual(abs(a - b), 1, boxes)
 
 
 REAL_CHECK = os.path.join(ROOT, "tests", "zorder_real_check_ofs.py")

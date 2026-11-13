@@ -100,6 +100,11 @@ class Overlay(QWidget):
             self.font_desc = QFont(family, 25, QFont.Weight.Bold)
         else:
             self.font_normal, self.font_big, self.font_ui, self.font_menu, self.font_desc = QFont("sans-serif", 35, QFont.Weight.Bold), QFont("sans-serif", 55, QFont.Weight.Bold), QFont("sans-serif", 40, QFont.Weight.Bold), QFont("sans-serif", 35, QFont.Weight.Bold), QFont("sans-serif", 25, QFont.Weight.Bold)
+        # Phase OFS-1 (Owner: the HUD looks narrower at a display scale other than 100%): the glyph advances of the default hinting are rounded differently once the painter
+        # and the device pixel ratio scale the text (clock 218 px at 100%, 214 px at 125-175%). Full hinting gives exactly the 100% pixels at 100% (checked pixel for pixel
+        # for the HUD and every menu screen) and the same advances at 125% / 150% (218 px; 217 px at 175%).
+        for _font in (self.font_normal, self.font_big, self.font_ui, self.font_menu, self.font_desc):
+            _font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
 
         self.popups = []
         self.score = 0

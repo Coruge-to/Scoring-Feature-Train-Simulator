@@ -664,7 +664,7 @@ class Layered(Base):
 # INITIAL-DEFAULTS Commit 4 (on purpose; INITIAL-DEFAULTS Commit 4): handle_menu_enter (the rolling Enter); Commit 3 (on purpose; INITIAL-DEFAULTS Commit 3): __init__ (the saved-defaults attributes), _handle_mouse and handle_menu_enter (the one A boundary clamp) changed; Stage ENV-1 (on purpose; Owner contract 2026-11-08): __init__ (the new disp_settings key / name) and handle_menu_enter (the state 4 Enter acts on the VALUE cell, through toggle_disp_setting) are the two members of this list that changed
 INPUT_PINS = {
     "main.py": {
-        "__init__": "7bad05ccc04ae304",   # on purpose (OVS-1: the new attribute _client_phys = None, the BVE client area in Win32 physical px; was c09dfa3be2a2fe6a); on purpose (INITIAL-DEFAULTS Stage F2, Owner 2026-11-11): the introduction default of rank_a_ratio is 0.6
+        "__init__": "d3639cfcf40d1f84",   # on purpose (OFS-1 font hinting: the five HUD fonts use QFont.PreferFullHinting so that the HUD is as wide at 125-150% as at 100%; was 7bad05ccc04ae304); on purpose (OVS-1: the new attribute _client_phys = None, the BVE client area in Win32 physical px; was c09dfa3be2a2fe6a); on purpose (INITIAL-DEFAULTS Stage F2, Owner 2026-11-11): the introduction default of rank_a_ratio is 0.6
         "_handle_keys": "2fdff247b333c919",
         "_handle_mouse": "f4e224dfb188b14d",  # on purpose (OVS-1: the click position is mapped with overlay_transform.menu_local_point on the PHYSICAL client rectangle; was d9706338016528d3); on purpose (8 x 1 cursor, 2026-11-09): only the menu_state 4 branch of the click handling (the selected row decides, no column); every other function of this table is unchanged
         "_sync_operation_cursor": "b50358a62b2ca451",

@@ -79,7 +79,7 @@ class A_Reconcile(uc.UserCase):
         for session, driving in ((True, False), (False, False)):
             self.setUp()
             self.publish(session, driving, 1)
-            self.pump(2)
+            self.pump(40)  # OFS-1 (on purpose): a driving-off hides the HUD only after HIDE_GRACE_S (0.5 s); 40 Ticks of 20 ms = 0.8 s
             self.assertFalse(self.hud.shown)
             shows = self.overlay.shows
             self.pump(20)

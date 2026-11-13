@@ -757,7 +757,7 @@ class E_Controller(ControllerCase):
         self.publish(True, True, 1)
         self.pump(2)
         self.publish(True, False, 1)
-        self.pump(2)
+        self.pump(2 + int(mh.HIDE_GRACE_S / 0.02) + 2)                           # OFS-1 (on purpose): a driving-off hides the HUD only after HIDE_GRACE_S
         self.assertIn("reason=driving-off", self.log.events("hud-hide")[0])
         self.publish(True, True, 1)
         self.pump(2)
@@ -810,13 +810,73 @@ class E_Controller(ControllerCase):
         self.hud.start()
         self.publish(True, True, 5)
         self.pump(2)
+        grace_ticks = int(mh.HIDE_GRACE_S / 0.02) + 2
         for _ in range(5):                                                       # tick-stale soft OFF / ON in the SAME generation, Session stays ON
             self.publish(True, False, 5)
-            self.pump(2)
+            self.pump(grace_ticks)                                               # OFS-1 (on purpose): longer than HIDE_GRACE_S, so the HUD really is hidden
             self.publish(True, True, 5)
             self.pump(2)
         self.assertEqual((self.overlay.shows, self.overlay.hides, FakeOverlay.created, self.hud.link_count), (6, 5, 1, 1))
         self.assertFalse(self.overlay.closed)
+
+    def test_ofs1_a_short_soft_off_never_hides_the_hud(self):
+        """OFS-1 (Owner: the HUD blinks when the display scale is changed): BVE stalls ~2 s, the soft OFF comes at the end of the stall and the Tick is back 30-80 ms
+        later. The HUD must not be hidden and shown again for that."""
+        self.hud.start()
+        self.publish(True, True, 5)
+        self.pump(2)
+        for _ in range(5):
+            self.publish(True, False, 5)
+            self.pump(3)                                                         # 60 ms of the fake clock
+            self.publish(True, True, 5)
+            self.pump(2)
+        self.assertEqual((self.overlay.shows, self.overlay.hides, FakeOverlay.created), (1, 0, 1))
+        self.assertTrue(self.overlay.visible)
+        self.assertEqual(self.hud.hide_graces, 5)
+        self.assertEqual(len(self.log.events("hud-hide")), 0)
+
+    def test_ofs1_the_hud_is_hidden_when_the_soft_off_outlasts_the_grace_period(self):
+        self.hud.start()
+        self.publish(True, True, 5)
+        self.pump(2)
+        self.publish(True, False, 5)
+        self.pump(int(mh.HIDE_GRACE_S / 0.02) - 3)
+        self.assertTrue(self.overlay.visible)                                    # still inside the grace period
+        self.pump(8)
+        self.assertFalse(self.overlay.visible)
+        self.assertEqual(self.overlay.hides, 1)
+        self.assertIn("reason=driving-off", self.log.events("hud-hide")[0])
+        self.assertEqual(self.timer.intervals[-1], mh.IDLE_INTERVAL_MS)          # and the slow idle polling resumes
+
+    def test_ofs1_the_scoring_pause_is_not_delayed_by_the_grace_period(self):
+        paused = []
+        self.hud.start()
+        self.publish(True, True, 5)
+        self.pump(2)
+        self.hud._input = type("In", (), {"on_pause": lambda s, r: paused.append(r), "on_inactive": lambda s, r: paused.append("inactive:" + r)})()
+        self.publish(True, False, 5)
+        self.pump(1)
+        self.assertEqual(paused, ["driving-off"])                                # at once, while the HUD is still visible
+        self.assertTrue(self.overlay.visible)
+
+    def test_ofs1_session_off_is_not_delayed(self):
+        self.hud.start()
+        self.publish(True, True, 5)
+        self.pump(2)
+        self.publish(False, False, 5)
+        self.pump(2)
+        self.assertFalse(self.overlay.visible)
+        self.assertIn("reason=session-off", self.log.events("hud-hide")[0])
+
+    def test_ofs1_a_generation_change_during_the_grace_period_is_not_a_soft_off(self):
+        self.hud.start()
+        self.publish(True, True, 5)
+        self.pump(2)
+        self.publish(True, False, 5)
+        self.pump(2)
+        self.publish(True, True, 6)                                              # a NEW generation: the usual path
+        self.pump(3)
+        self.assertEqual((self.hud.mode, self.overlay.visible), (ms.MODE_ACTIVE, True))
 
     def test_missed_notifications_converge_to_the_current_state(self):
         self.hud.start()
@@ -1143,7 +1203,7 @@ class I_ZOrder(ControllerCase):
     def test_soft_off_and_on_finalises_once_for_the_reshow(self):
         self.activate([SELECT, 5000])
         self.publish(True, False, 1)
-        self.pump(5)
+        self.pump(40)                                                          # OFS-1 (on purpose): longer than HIDE_GRACE_S, so the HUD is really hidden
         self.api.z_calls.clear()
         queries = self.api.z_queries
         self.publish(True, True, 1)
@@ -1180,7 +1240,7 @@ class I_ZOrder(ControllerCase):
     def test_reshow_releases_owner_before_show_then_restores_and_orders(self):
         self.activate([SELECT, 5000])
         self.publish(True, False, 1)
-        self.pump(3)
+        self.pump(40)                                                          # OFS-1 (on purpose): longer than HIDE_GRACE_S
         self.api.owner_calls.clear()
         self.publish(True, True, 1)
         self.pump(3)
