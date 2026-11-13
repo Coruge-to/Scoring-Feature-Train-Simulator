@@ -2,6 +2,8 @@
 
 提供者: **Coruge-to** / 対象: 管理起動の Python、Caller 0.12.0.0、Current Bridge 0.7.0.0、Legacy Bridge 0.7.0.0（コアのソースは両 Bridge で同一）/ 状態: **SI-A6.2 まで実機受入れ済み（2026-10-11、§13）**。
 
+> **【Phase PP-13 で撤回・置換（2026-11-13）】** 本書の P→P（first P／second P、F5／scoring-on トークン、`pause_recovery.py`）は **現行の製品契約ではない**。撤去済み。Pause 中の操作（F5 再読込、位置・時刻表の変更、TS Scoring OFF→ON）のデータは、拡張（Current／Legacy の Telemetry・Bridge）の **read-only pause pulse** が Tick なし・キーなしで生成する。現行契約は `Handshake-PhasePP13-PausePulse.md`。以下は旧暫定設計の履歴として残す（書き換えない）。
+
 ## 1. 問題と、実機で確定した事実
 
 BVE の内部状態を安全に取得・送信できるのは **Tick の上だけ**で、Tick は BVE が動いている間しか流れない。Pause 中に BVE の内部が変わっても、TS Scoring は新しいデータを受け取れない。回復は「P で Pause を一度解除して Tick を流し、データを取り、もう一度 P で元の Pause に戻す」。

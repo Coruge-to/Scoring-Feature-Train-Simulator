@@ -2,6 +2,7 @@
 # the Caller, copied into the Caller's state block for the managed application. No BVE, no BveEX runtime, no UDP, no hooks, no BVE process. The real built DLLs are loaded from
 # memory; the Python side of the contract (managed_state.py) reads the REAL block written by the REAL Caller publisher. Every observation log goes to a private file
 # under logs\sia6-tests. Fake process ids only.
+# Phase PP-13: the P-to-P token of Phase SI-A6 (pause_recovery.py) is gone; this script keeps ONLY the general state-block contract (the load marker). The file name is the history.
 # This script is ASCII-only on purpose.
 param([string]$Root = (Split-Path $PSScriptRoot -Parent))
 
@@ -293,7 +294,7 @@ try {
     Check 'E3 ScenarioCreated arrives, still no Tick at all: the Caller sees Created WITHOUT ScenarioReady and WITHOUT TickSeen (the monitor thread reads it; BveEX ticked nothing)' (((SProp $c 'ScenarioGenerationSeen') -eq 2) -and (-not [bool](SProp $c 'ScenarioReadyLevel')) -and ((SField $c 'scenarioLoadInfo') -eq 1))
     Pump @($b) 50
     $ms2 = PumpUntil @($b) { [bool](SProp $c 'ScenarioReadyLevel') } 800
-    Check 'E4 the Tick (the first P): ScenarioReady on and the marker Created + TickSeen' (($ms2 -ge 0) -and ((SField $c 'scenarioLoadInfo') -eq 3))
+    Check 'E4 the Tick (a running BVE; in a pause the Bridge pulse establishes it instead, see Test-ExtensionControlPlaneSIA7 E5-E10): ScenarioReady on and the marker Created + TickSeen' (($ms2 -ge 0) -and ((SField $c 'scenarioLoadInfo') -eq 3))
     $sessionType.GetMethod('End').Invoke($c, @()) | Out-Null
     Pump @($b) 200
     Check 'E5 TS Scoring OFF: the Caller ended, nothing of the marker is left on its side' (-not [bool](SProp $c 'ScenarioReadyLevel'))
@@ -342,7 +343,7 @@ src.close()
         $out = (& $pyCmd.Source -I $script) -join ' '
         Check 'F7 managed_state.py reads the real bytes of the real publisher: Session ON, Driving ON, generation 4, marker supported with Created only' ($out -eq 'None True True 4 True 1 True False')
     } else {
-        Check 'F7 (python not found: the cross-language read is covered by tests\test_pause_recovery_sia6.py)' $true
+        Check 'F7 (python not found: the cross-language read is covered by tests\test_epoch_info_sia7.py and tests\test_managed_hud_e4.py)' $true
     }
     $mgr = $mgrType.GetConstructors($NPI)[0].Invoke(@($pid2, ([Action[string, string]] { param($e, $d) }), $null, $null))
     $mgrType.GetField('statePublisher', $NPI).SetValue($mgr, $apub)
@@ -408,7 +409,7 @@ src.close()
     $allText = $added
     Check 'G3 the lines added for the marker read nothing from BVE: no BveTypes / BveEx member, no reflection, no thread, no file' ($siaChainOk -and $laterQuiet -and ($added.Length -gt 1000) -and ($added -notmatch 'BveTypes|BveEx\.PluginHost|GetType\(\)|Activator|new Thread|ThreadPool|\bFile\.(WriteAll|Open|Append|Create)'))
     $trkText = [IO.File]::ReadAllText((Join-Path $Root 'Bridge\src\ScenarioReadyTracker.cs'))
-    Check 'G4 the tracker still does not take isReload (OnScenarioOpened has no parameter): F5 is told by the application watching the key, not by the Bridge' (@($trkType.GetMethod('OnScenarioOpened').GetParameters()).Count -eq 0)
+    Check 'G4 the tracker still does not take isReload (OnScenarioOpened has no parameter): F5 is not told to the tracker by a flag and no key is pressed for it (Phase PP-13: the Bridge pulse re-establishes ScenarioReady in a pause)' (@($trkType.GetMethod('OnScenarioOpened').GetParameters()).Count -eq 0)
     Check 'G5 TS Scoring official jump, timetable jump and TS Scoring ON have no signal in the Bridge or the Caller: no JUMP / timetable / ScoringOn member was added' (($allText -notmatch '(?i)jump|timetable|scoringon'))
 }
 finally {

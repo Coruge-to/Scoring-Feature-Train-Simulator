@@ -141,8 +141,8 @@ $allowedExact = @(
 $laterControl = @('Bridge/Legacy/src/AssemblyInfo.cs', 'Bridge/Legacy/src/HandshakeControlPlane.cs', 'Bridge/Legacy/src/TsScoringLegacyBridge.cs', 'Bridge/Legacy/TSScoringPlugin.AtsExLegacy.Bridge.Prototype.csproj',
     'Bridge/src/AssemblyInfo.cs', 'Bridge/src/HandshakeControlPlane.cs', 'Bridge/src/ScenarioReadyPublisher.cs', 'Bridge/src/ScenarioReadyTracker.cs', 'Bridge/src/TsScoringBridgePrototype.cs', 'Bridge/TSScoringPlugin.BveEx.Bridge.Prototype.csproj',
     'Caller/src/AppProcessManager.cs', 'Caller/src/AppStatePublisher.cs', 'Caller/src/AssemblyInfo.cs', 'Caller/src/HandshakeSession.cs', 'Shared/HandshakeProtocol.cs' | ForEach-Object { $prefix + $_ })
-$laterScoring = @('managed_input.py', 'managed_state.py', 'pause_recovery.py', 'scoring_logic.py', 'utils.py',
-    'tests/managed_epoch_probe.py', 'tests/sia_managed_rig.py', 'tests/sia_rig.py', 'tests/test_characterization_sia1.py', 'tests/test_epoch_info_sia7.py', 'tests/test_managed_input_sia3.py', 'tests/test_pause_ptop_width_sia4.py', 'tests/test_pause_recovery_sia6.py', 'tests/test_split_equivalence_sia2.py')
+$laterScoring = @('managed_input.py', 'managed_state.py', 'scoring_logic.py', 'utils.py',
+    'tests/managed_epoch_probe.py', 'tests/sia_managed_rig.py', 'tests/sia_rig.py', 'tests/test_characterization_sia1.py', 'tests/test_epoch_info_sia7.py', 'tests/test_managed_input_sia3.py', 'tests/test_pause_ptop_width_sia4.py', 'tests/test_split_equivalence_sia2.py')
 $laterTestsDocs = @('Docs/Handshake-PhaseSIA-ManagedScoring.md', 'Docs/Handshake-PhaseSIA6-PauseRecovery.md', 'Docs/Handshake-PhaseSIA7-ControlPlane.md',
     'Tests/Test-AppControllerE1.ps1', 'Tests/Test-DrivingActiveD1.ps1', 'Tests/Test-ExtensionControlPlaneSIA7.ps1', 'Tests/Test-LegacyL1.ps1', 'Tests/Test-ObservationC1.ps1', 'Tests/Test-PauseRecoverySIA6.ps1', 'Tests/Test-ScenarioReadyC3.ps1', 'Tools/Verify-PhaseSIA7.ps1',
     # Phase SI-B1 (B1-probe, observation only, NOT a product phase): its test, fixture and document; its sources and tools are the folder Tests/B1Probe/ (allowed below)

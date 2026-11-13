@@ -506,8 +506,8 @@ if (-not $BehaviorOnly) {
     Check 'S16 the M1a control plane, both Bridges, the Caller, the Handshake shared protocol and every Python file are unchanged' ($m1a.Count -eq 0)
     $cur = @((RunGit @('status', '--porcelain', '--untracked-files=all', '--', 'TsScoringPlugin', ':(exclude)TsScoringPlugin/Handshake')) -split "`n" | Where-Object { $_ })
     Check 'S17 the Current (BveEX) sender and everything else under TsScoringPlugin outside Handshake are unchanged' ($cur.Count -eq 0)
-    $pr = ReadText (Join-Path $top 'pause_recovery.py')
-    Check 'S18 the scoring gate / pause recovery constants are the accepted ones: FIRST_QUIET_S = 0.3 and exactly two automatic P call sites' (($pr -match '(?m)^FIRST_QUIET_S = 0\.3\b') -and ([regex]::Matches($pr, 'self\._o\.press_p_for_recovery\(').Count -eq 2))
+    $mainTxt = ReadText (Join-Path $top 'main.py')
+    Check 'S18 (Phase PP-13) the P-to-P recovery does not exist: pause_recovery.py is absent and no Python file names press_p_for_recovery or imports pause_recovery' ((-not (Test-Path (Join-Path $top 'pause_recovery.py'))) -and ($mainTxt -notmatch 'press_p_for_recovery|import pause_recovery'))
     $mi = ReadText (Join-Path $top 'managed_input.py')
     Check 'S19 the managed gate still requires "jump" and the probe adds no jump token: managed_input.py has the jump requirement, TelemetryContract.cs has no TokJump' (($mi -match 'jump') -and ((ReadText (Join-Path $Root 'Telemetry\Shared\TelemetryContract.cs')) -notmatch 'TokJump'))
 

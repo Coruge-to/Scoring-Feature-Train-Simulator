@@ -24,8 +24,8 @@ SI-A は、手動起動（`python main.py`）で成立していた採点・操�
 * `utils.py` / `scoring_logic.py` — Desktop `debug.log` のスイッチのみ（§6）。点数・規則・定数は不変（AST 比較で証明）。
 
 管理モードの 1 tick（ACTIVE 時）:
-1. テレメトリ未受信（当世代）→ HUD は出さず、入力を解放し、P→P の第 1 の P だけを許す。
-2. 受信済み → HUD コントローラーがリンクした BVE ウィンドウ（**BVE プロセスの PID 一致**。タイトル検索は使わない）を `Overlay.managed_window_step(hwnd)` へ渡し、手動起動と同じ共通ステップ（P→P、早送り検知と解除、F7/P/F8 抑止、「時刻と位置」窓、メニュー、F1/F2/F11/F12、採点クロックと採点）を実行する。
+1. テレメトリ未受信（当世代）→ HUD は出さず、入力を解放する（P→P の第 1 の P は SI-A6 で撤回、Phase PP-13 で P→P 自体を撤去した）。
+2. 受信済み → HUD コントローラーがリンクした BVE ウィンドウ（**BVE プロセスの PID 一致**。タイトル検索は使わない）を `Overlay.managed_window_step(hwnd)` へ渡し、手動起動と同じ共通ステップ（早送り検知と解除、F7/P/F8 抑止、「時刻と位置」窓、メニュー、F1/F2/F11/F12、採点クロックと採点）を実行する。
 
 管理モードに**無い**もの: Esc 終了、BVE ウィンドウ消失での終了、タイトル検索による窓探索（寿命は Stop のみ）。
 
@@ -72,13 +72,14 @@ HUD コントローラーの `shutdown()`（Stop／親消失）で、結果ダ�
 
 ### 10.1 Pause（Driving OFF）で採点を破棄しない
 
+* **〔Phase PP-13 の訂正注〕** 下の「Caller は 2 秒を超える Tick 停止を Driving OFF にする」は BVE6 Current／BVE5 Legacy の実機では起きない（Caller の Tick は Pause 中も継続: SI-A7 O4／O5。拡張の Tick が止まる Pause では、拡張の pause pulse が状態の再生成を担い、heartbeat は PAUSED のまま）。「Driving OFF は採点の終了ではない」という契約は維持する。また「時刻と位置」ウィンドウは、採点の実行中は Pause でも無効のまま（e485965 以降の契約。PP-0 で確認）で、下の「同じ tick で解除」はそのウィンドウには及ばない。
 * **原因**: BVE の Pause は Tick を止め、Caller は 2 秒を超える Tick 停止を Driving OFF（`tick-stale`、soft OFF）にする。SI-A の `ManagedHudController` は ACTIVE → Driving OFF で `ManagedInputController.on_inactive("driving-off")` を呼び、`discard_scoring_session` で採点を破棄していた。
 * **分離できないこと（契約の前提）**: 状態ブロックの Driving OFF には Pause・短い Tick 停止・シナリオ選択画面・利用者の操作による停止の区別が無い。Caller を変えずに Python が見分ける手段は無い。したがって **Driving OFF は採点の終了ではない**とし、Pause を含む全ての Driving OFF で採点を保持する（利用者の「採点を中断する」操作は従来どおり採点側の規則）。
 * **契約**: Driving OFF（Session ON）→ `on_pause`: プロセス・Overlay・採点セッション（得点・設定・駅リスト・時刻基準）を保持、入力抑止（F7／P／F8／メニューキー／「時刻と位置」ウィンドウ）は同じ tick で解除、HUD は待機で非表示、開いていたメニューは何も押さずに閉じる、`scoring-abort` は出さない。Driving ON → 次のステップで `_resync_clock`: BVE 時刻が進んでいれば採点クロック基準を現在時刻へ（そのステップの dt = 0。Pause 時間を 1 ステップとして数えない）、早送り測定を初期化（Pause 後の時刻差を早送りと誤認して F8 を送らない）。時刻が戻っていた場合・採点クロックが未開始（0.0）の場合は既存規則（`reset_transient_scoring_state`）に任せる。
-* **従来どおり破棄するもの**: Session OFF、新しい ScenarioGeneration、状態ブロックの喪失（fail-safe）、Stop／親 BVE 消失、利用者の中断・ジャンプ検知。新世代では前世代の採点・42 変数・駅リスト・P→P 状態を破棄し、Driving OFF 後の再 ON で旧採点を捨てた状態から再開することはない。
+* **従来どおり破棄するもの**: Session OFF、新しい ScenarioGeneration、状態ブロックの喪失（fail-safe）、Stop／親 BVE 消失、利用者の中断・ジャンプ検知。新世代では前世代の採点・42 変数・駅リストを破棄し、Driving OFF 後の再 ON で旧採点を捨てた状態から再開することはない。
 * **この契約の変更で書き換えた SI-A の試験**: `soft_off_discards_the_scoring_session…`、`soft_on_does_not_resume_the_old_scoring…`、`no_kick_start_in_soft_off`、C（四つの組合せ）、K（真理値表）の Driving OFF 行。旧契約を固定していた期待を新契約に置き換えたもの（削除・弱体化ではなく反転）。
 
-### 10.2 Pause 読込時の P→P 〔**SI-A6 で撤回・置換**: 下の WAITING の P→P は通常の読込でも誤発火したため削除した。現行の契約は `Handshake-PhaseSIA6-PauseRecovery.md`（具体的な操作ごとのトークン。いまの実装は「Pause 中の F5」だけ）〕
+### 10.2 Pause 読込時の P→P 〔**SI-A6 で撤回・置換、Phase PP-13 で全撤去**: 下の WAITING の P→P は通常の読込でも誤発火したため SI-A6 で削除し、その代わりのトークン制御（`Handshake-PhaseSIA6-PauseRecovery.md`）も PP-13 で撤去した。現行の契約は read-only pause pulse（`Handshake-PhasePP13-PausePulse.md`）。以下は旧設計の履歴〕
 
 * **原因**: P→P 本体（`Overlay._kick_start_first_press`／`_kick_start_second_press`）は存在したが、管理入口が ACTIVE の「テレメトリ待ち」だけだった。一時停止で読み込むと Tick が一度も来ないので Driving は OFF のまま（Session ON／Driving OFF = WAITING）で、第 1 段に到達できなかった（実機 SB: telemetry-first が先に起き kickstart 0 件）。
 * **修正**: WAITING でも `ManagedHudController._tick_waiting_kickstart` が `Overlay.kick_start_wanted()` が真のときだけ PID 一致の BVE ウィンドウを取得し、`Overlay.kick_start_managed_waiting(hwnd)` で P→P の第 1 段・第 2 段だけを実行する。HUD 表示・採点・通常メニュー・F7／F8 抑止・「時刻と位置」ウィンドウ・通常キー処理は行わない。BVE 内部 API は読まず、既存の `PostMessage` による P だけを使う。

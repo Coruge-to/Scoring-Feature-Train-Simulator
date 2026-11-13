@@ -3,6 +3,9 @@
 状態: **実機受入れ確定（2026-10-11、O1〜O5 実施済み）。M1b は未実装。** 実機に配置されているのは M1a の観測用 DLL（Caller 0.13.0.0／両 Bridge 0.8.0.0）のまま。この文書を含むコミットでも配置・push は行わない（no automatic deployment）。
 対象: Bridge（Current／Legacy）0.8.0.0、Caller 0.13.0.0、Python（`managed_state.py`／`managed_hud.py` の読取りと診断表示のみ）。
 
+> **【Phase PP-13 で撤回・置換（2026-11-13）】** 本書が前提にする P→P（first P／second P、F5／scoring-on トークン、`pause_recovery.py`、M1b の `scoring-on` token）は **現行の製品契約ではない**。撤去済み。Pause 中の操作（F5 再読込、位置・時刻表の変更、TS Scoring OFF→ON）のデータは、拡張（Current／Legacy の Telemetry・Bridge）の **read-only pause pulse** が Tick なし・キーなしで生成する。現行契約は `Handshake-PhasePP13-PausePulse.md`。以下は旧暫定設計の履歴として残す（書き換えない）。
+
+
 この文書は M1a の契約を固定する。M1b（Python の `scoring-on` token、自動 P-to-P、Pause 中再 ON の自動復旧）は**含まない**。
 
 ## 1. 位置づけ
@@ -161,7 +164,7 @@ O1〜O5 の目的・操作・目視項目・ログ監査項目・保存コマン
 
 ## 11. 文書矛盾の扱い（`Handshake-PhaseSIA-ManagedScoring.md` §10.1）
 
-§10.1 は「Pause で Caller の Tick が止まり、2 秒超で `tick-stale`」と書くが、BVE6 Current の SF 実機ログ（Extension の 5〜12 秒の無 Tick 区間に `DRIVING_ACTIVE_OFF reason=tick-stale` が 0 件）・D1 実機（Pause 15 秒で ON 維持）・`pause_recovery.py` 冒頭の記述とは矛盾する。**M1a では §10.1 を書き換えない。** 現時点の整理:
+**〔PP-13 で整理済み: `Handshake-PhaseSIA-ManagedScoring.md` §10.1 に訂正注を追記した。以下はその時点の記述〕** §10.1 は「Pause で Caller の Tick が止まり、2 秒超で `tick-stale`」と書くが、BVE6 Current の SF 実機ログ（Extension の 5〜12 秒の無 Tick 区間に `DRIVING_ACTIVE_OFF reason=tick-stale` が 0 件）・D1 実機（Pause 15 秒で ON 維持）・`pause_recovery.py` 冒頭の記述とは矛盾する。**M1a では §10.1 を書き換えない。** 現時点の整理:
 
 * **BVE6 Current**: O4 で明示的に再確認した（目印付き Pause 3 区間で Caller の Tick は継続）。
 * **BVE5 Legacy**: O5 で観測した（目印付き Pause 2 区間で Caller の Tick は継続）。
