@@ -95,10 +95,10 @@ FROZEN = {
     # Stage TB-E (an intended change, not a drift) changed LegacyStationTimeline.cs on purpose (the PtPairText member that carries the PTPAIR part; tests/test_pt_tbe_adapter_static.py): the blob moved from 83db89f9... (SI-R2.4)
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyStationTimeline.cs": "d26a444b73d478a7e9cb56558d16cdf49bc85956",
     # SI-R2.2-S2b (C3a) changed LegacyTelemetryExtension.cs on purpose (the read only adapter ILegacyOfficialTargetApi.ReadOfficialTarget and the E-9 rule text of the header; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 12a0f84a... (the commit before S2b)
-    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "91b290939cf8dc5ac5ec48ccf3b8765c7590aa54",       # 2026-11-08 (the pin moved, an intended change: formal LastStop BveG, CalcG / sway retired; was 589e137f...)
+    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "de3bc22a4fff630b04cb7d183159d7c25a28245c",       # 2026-11-08 (the pin moved, an intended change: formal LastStop BveG, CalcG / sway retired; was 589e137f...)
     # SI-R2.2-S2b (C3a) changed LegacyTelemetrySession.cs on purpose (the ILegacyOfficialTargetApi port, the official field, the ten-argument constructor and the OFFTGT key after STIDX; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 5dd33902... (the commit before S2b)
     # Stage TB-E (an intended change, not a drift) changed LegacyTelemetrySession.cs on purpose (the PTPAIR key directly after the STIDX group, before the OFFTGT key; tests/test_pt_tbe_adapter_static.py): the blob moved from c5bc298a... (S2b)
-    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetrySession.cs": "1e4e2dd387f447c23be862449979b3650c85feae",       # 2026-11-08 (the pin moved, an intended change: formal LastStop BveG, CalcG / sway retired; was 11f3193d...)
+    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetrySession.cs": "4c374bfd31075c911cd3d4eae52fcb0eafb71641",       # 2026-11-08 (the pin moved, an intended change: formal LastStop BveG, CalcG / sway retired; was 11f3193d...)
     "TsScoringPlugin/Handshake/Telemetry/Shared/DataPlaneProtocol.cs": "bed2ed8585b502578d4d4e17f64307206d0920fc",
     "TsScoringPlugin/Handshake/Telemetry/Shared/GenericHandleTextContract.cs": "94746abf0d4395b0ddbfa351df3adadb1aa70132",
     "TsScoringPlugin/Handshake/Telemetry/Shared/JumpWire.cs": "dff2a85a25ff22f76892b3d19209b1da9c089387",
@@ -114,7 +114,7 @@ FROZEN = {
     # SI-R2.2-S2b (C3b) changed Class1.cs on purpose (the OFFTGT part after STIDX in its own try / catch and the read only CreateOfficialTargetHost; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 4aa4aac5... (the commit before S2b)
     # SI-R2.4 (C5b) changed Class1.cs on purpose (a re-initialisation that carries no StationIndex leaves the target UNSET: SelectTargetByPosition became SelectUnsetTarget and its one call site, no position is searched; tests/test_stationindex_current_st3b.py / tests/test_jf1_current_csharp_source_pins.py / Handshake\Tests\Test-TimeFixB3.ps1): the blob moved from e3f55d15... (SI-R2.2-S2b C3b)
     # Stage TB-E (an intended change, not a drift) changed Class1.cs on purpose (the PTPAIR part between the STIDX part and the OFFTGT part; tests/test_pt_tbe_adapter_static.py): the blob moved from afc404e7... (SI-R2.4)
-    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "e048ea364f8c6e5884a1f299a453f3b61b3e9157",       # 2026-11-08 (the pin moved, an intended change: formal LastStop BveG, CalcG / sway retired; was 425b99b8...)
+    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "83a79afc2f958a6d020fae797b2e7f36fec40c9c",       # 2026-11-08 (the pin moved, an intended change: formal LastStop BveG, CalcG / sway retired; was 425b99b8...)
     "TsScoringPlugin/TsScoringPlugin/CurrentDataPlane.cs": "71b0ebaa6f52871ceb2a59456a2b527041241c46",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs": "3e0d3bffbb74e4a2ecc6d10d378a8b6e2788ae6f",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs": "8a54d6a14100e0021ca248d28369c335f965fafe",

@@ -670,13 +670,13 @@ INPUT_PINS = {
         "_sync_operation_cursor": "b50358a62b2ca451",
         "handle_dropdown_enter": "7df61f96a2374b59",
         "handle_menu_backspace": "f1342317d4d395d1",   # on purpose (INITIAL-DEFAULTS Stage F2): while the A boundary is typed the Backspace deletes the last character (the old misroute into the stop distance confirm is gone); the page is left only after the Enter
-        "handle_menu_enter": "02fe8ec9b2ac4af4",  # on purpose (Phase PFR-R: the explicit abort of the scoring clears the Run's frozen settings; was 3ce6a455cd71a911);   # on purpose (Phase PFR-D: the diagnostics of the Retry confirmation / request / exception; was ab471ad1f29017f4);   # on purpose (INITIAL-DEFAULTS Stage F2): the A boundary confirm uses the shared normalization (silent 60 for 00..49 / 91..99 / one digit / an empty input);   # on purpose (8 x 1 cursor, 2026-11-09): only the Enter of the environment settings (menu_state 4) lost its column condition
+        "handle_menu_enter": "c273c72ed6f8efc7",   # PP-13 (on purpose; Owner 2026-11-13): the P-to-P kick start flag reset is gone (the pause-no-data diagnostic state is reset instead); was 02fe8ec9b2ac4af4,  # on purpose (Phase PFR-R: the explicit abort of the scoring clears the Run's frozen settings; was 3ce6a455cd71a911);   # on purpose (Phase PFR-D: the diagnostics of the Retry confirmation / request / exception; was ab471ad1f29017f4);   # on purpose (INITIAL-DEFAULTS Stage F2): the A boundary confirm uses the shared normalization (silent 60 for 00..49 / 91..99 / one digit / an empty input);   # on purpose (8 x 1 cursor, 2026-11-09): only the Enter of the environment settings (menu_state 4) lost its column condition
         "set_input_ownership": "1c828c7be1ba3a8f",
         "toggle_menu": "7a8d5f39518d3d06"
     },
     "managed_input.py": {
         "discard_scoring_session": "2f4739f6513d3af4",
-        "generation_defaults": "4b5960d09922f50c",
+        "generation_defaults": "7af2af8b93a6d695",   # PP-13 (on purpose; Owner 2026-11-13): the P-to-P kick start flag reset is gone (the pause-no-data diagnostic state is reset instead); was 4b5960d09922f50c,
         "release": "81e8d68bb5e4324d"
     }
 }

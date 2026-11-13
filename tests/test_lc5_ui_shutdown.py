@@ -571,7 +571,9 @@ class S_CSharp(unittest.TestCase):
             back = lambda text: text.replace("\r\n", "\n").replace('ProductDisplayName = "TScoring";', 'ProductDisplayName = "TS Scoring";').replace('"TScoringにはBveEXが必要です。', '"TS ScoringにはBveEXが必要です。')
             self.assertEqual(back(read(self.CALLER)), base_hs, "HandshakeSession.cs may differ from LC-4b in the two TScoring display strings only")
             self.assertIn('ProductDisplayName = "TScoring";', read(self.CALLER))
-        self.assertEqual([c for c in changed if c not in (self.SES, self.EXT, self.APM, self.CALLER)], [])
+        # Phase PP-11 / PP-13 (an intended change, on purpose; Owner 2026-11-13): the Legacy Bridge gained the Pause pulse (a timer that posts to the host UI thread and calls tracker.OnPulse; its Dispose stops the timer); it
+        # carries no clean-up of the shutdown set (Test-ExtensionControlPlaneSIA7 E5-E10 and Tools/Verify-PausePulsePP13.ps1 pin it).
+        self.assertEqual([c for c in changed if c not in (self.SES, self.EXT, self.APM, self.CALLER, "TsScoringPlugin/Handshake/Bridge/Legacy/src/TsScoringLegacyBridge.cs")], [])
         if self.SES in changed or self.EXT in changed:
             import pt_tbe_c7_structure
             base = subprocess.run(["git", "-C", ROOT, "show", "cbebfd3:" + self.SES], capture_output=True, timeout=60).stdout.decode("utf-8", "replace")

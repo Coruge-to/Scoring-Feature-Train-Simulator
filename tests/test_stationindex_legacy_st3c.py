@@ -54,7 +54,7 @@ UNTOUCHED = {
     # SI-R2.2-S2b (C3b) changed Class1.cs on purpose (the OFFTGT part after STIDX in its own try / catch and the read only CreateOfficialTargetHost; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 4aa4aac5... (the commit before S2b)
     # SI-R2.4 (C5b) changed Class1.cs on purpose (a re-initialisation that carries no StationIndex leaves the target UNSET: SelectTargetByPosition became SelectUnsetTarget and its one call site, no position is searched; tests/test_stationindex_current_st3b.py / tests/test_jf1_current_csharp_source_pins.py / Handshake\Tests\Test-TimeFixB3.ps1): the blob moved from e3f55d15... (SI-R2.2-S2b C3b)
     # Stage TB-E (an intended change, not a drift) changed Class1.cs on purpose (the PTPAIR part between the STIDX part and the OFFTGT part; tests/test_pt_tbe_adapter_static.py): the blob moved from afc404e7... (SI-R2.4)
-    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "e048ea364f8c6e5884a1f299a453f3b61b3e9157",       # 2026-11-08 (the pin moved, an intended change: formal LastStop BveG, CalcG / sway retired; was 425b99b8...)
+    "TsScoringPlugin/TsScoringPlugin/Class1.cs": "83a79afc2f958a6d020fae797b2e7f36fec40c9c",       # 2026-11-08 (the pin moved, an intended change: formal LastStop BveG, CalcG / sway retired; was 425b99b8...)
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpEndpoint.cs": "3e0d3bffbb74e4a2ecc6d10d378a8b6e2788ae6f",
     "TsScoringPlugin/TsScoringPlugin/CurrentJumpExecution.cs": "8a54d6a14100e0021ca248d28369c335f965fafe",
     "TsScoringPlugin/TsScoringPlugin/CurrentDataPlane.cs": "71b0ebaa6f52871ceb2a59456a2b527041241c46",
@@ -69,7 +69,7 @@ UNTOUCHED = {
     "TsScoringPlugin/Handshake/Telemetry/Shared/TelemetryDirectoryReader.cs": "cde81d8f5411df680cb17b10288a3c8d9b01f561",
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/AssemblyInfo.cs": "b5de69b3ea512c05374408d85d8872abcfba2d32",
     # SI-R2.2-S2b (C3a) changed LegacyTelemetryExtension.cs on purpose (the read only adapter ILegacyOfficialTargetApi.ReadOfficialTarget and the E-9 rule text of the header; tests/test_official_target_wire_s2b.py / Handshake\Tests\Test-OfficialTargetWireS2B.ps1): the blob moved from 12a0f84a... (the commit before S2b)
-    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "91b290939cf8dc5ac5ec48ccf3b8765c7590aa54",       # 2026-11-08 (the pin moved, an intended change: formal LastStop BveG, CalcG / sway retired; was 589e137f...)
+    "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyTelemetryExtension.cs": "de3bc22a4fff630b04cb7d183159d7c25a28245c",       # 2026-11-08 (the pin moved, an intended change: formal LastStop BveG, CalcG / sway retired; was 589e137f...)
     "TsScoringPlugin/Handshake/Telemetry/Legacy/src/LegacyJumpCommandQueue.cs": "c9517db9074f45ef447991cd52280ef512047070",
     # SI-R5.2-A added the pure missing-index classifier, the run tracker and the managed diagnostic glue to station_identity.py on purpose (no wire, no codec, no Legacy product change; tests/test_si_r5_2a_stage_a.py): the blob moved from 93ce7abc... (ST-3b)
     "station_identity.py": "2c971098059a6b8948cd842ed84af8ece9a054b9",

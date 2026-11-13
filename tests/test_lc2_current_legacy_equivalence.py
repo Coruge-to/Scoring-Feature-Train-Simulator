@@ -407,8 +407,8 @@ class E_Boundary(unittest.TestCase):
         # and cursor_of (an alias of offtgt_of for the effective station state); tests/test_pt_effective_state.py (PS_04) and tests/test_hud_target_contract_r23.py pin its behaviour
         x_paths = ("station_identity.py", "official_target_contract.py", "station_index_contract.py",
                    "TsScoringPlugin/Handshake/Telemetry/Shared/StationListIdentity.cs",
-                   "TsScoringPlugin/Handshake/Bridge/Legacy/src/TsScoringLegacyBridge.cs", "TsScoringPlugin/Handshake/Bridge/src/ScenarioObserver.cs",
-                   "TsScoringPlugin/Handshake/Bridge/src/ScenarioReadyTracker.cs")
+                   "TsScoringPlugin/Handshake/Bridge/src/ScenarioObserver.cs")
+        # Phase PP-11 / PP-13 (an intended change, on purpose; Owner 2026-11-13): TsScoringLegacyBridge.cs and ScenarioReadyTracker.cs gained the Pause pulse (OnPulse / OnTickCore(pulse)); they are not byte-identical to the base any more
         try:
             known = subprocess.run(["git", "cat-file", "-e", base + "^{commit}"], cwd=ROOT, capture_output=True).returncode == 0
         except OSError:
