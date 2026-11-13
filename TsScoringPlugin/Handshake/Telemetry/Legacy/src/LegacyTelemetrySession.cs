@@ -573,6 +573,7 @@ namespace TSScoringPlugin.Telemetry
             try
             {
                 Interlocked.Exchange(ref lastTickMs, nowMs());
+                lastPulseLine = null;
                 TickCore(elapsed);
             }
             catch
@@ -582,12 +583,63 @@ namespace TSScoringPlugin.Telemetry
             }
         }
 
+        // Phase PP-11 (Pause pulse, Legacy): while BVE is PAUSED the host calls no Tick. The extension POSTS a pulse to the synchronization context captured on the host's UI thread (the Tick thread; live
+        // PP-5/PP-6 on Current: only Post is dispatched there), and the pulse runs the WHOLE Tick body with elapsed 0 - only while no Tick came for PausePulseGapMs. It is NOT a Tick: lastTickMs is not
+        // touched (the heartbeat keeps saying PAUSED), the Tick-order diagnostics and the input / scoring observation logs are not fed, and an UNCHANGED line is not sent again (except every
+        // PausePulseRefreshMs). Tick thread only.
+        internal const long PausePulseGapMs = 150;
+        private const long PausePulseRefreshMs = 1000;
+        private bool inPulse;
+        private string lastPulseLine;
+        private long lastPulseSendMs;
+        private long pulseCount, pulseTotalUs, pulseMaxUs;
+
+        internal void OnPulse()
+        {
+            if (disposed || inPulse)
+            {
+                return;
+            }
+
+            try
+            {
+                if (nowMs() - Interlocked.Read(ref lastTickMs) <= PausePulseGapMs)
+                {
+                    return;      // BVE ticks (or ticked a moment ago): nothing to do
+                }
+
+                inPulse = true;
+                long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+                TickCore(TimeSpan.Zero);
+                long us = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000000L / System.Diagnostics.Stopwatch.Frequency;
+                pulseCount++;
+                if (pulseCount > 1)
+                {
+                    pulseTotalUs += us;
+                    if (us > pulseMaxUs) { pulseMaxUs = us; }
+                }
+
+                if (pulseCount % 500 == 0)
+                {
+                    Log("TEL_PAUSE_PULSE", "n=" + TelemetryContract.I((int)pulseCount) + " avgUs=" + TelemetryContract.I((int)(pulseTotalUs / (pulseCount - 1))) + " maxUs=" + TelemetryContract.I((int)pulseMaxUs));
+                }
+            }
+            catch
+            {
+                LinesSkipped++;
+            }
+            finally
+            {
+                inPulse = false;
+            }
+        }
+
         private void TickCore(TimeSpan elapsed)
         {
             bool created;
             try { created = api.IsScenarioCreated(); }
             catch { created = false; }
-            NoteTickOrder(created);
+            if (!inPulse) { NoteTickOrder(created); }
             if (!created)
             {
                 EndEpoch("not-created");
@@ -621,7 +673,7 @@ namespace TSScoringPlugin.Telemetry
             try { if (inputCache != null) { inputCache.BeginTick(); } } catch { }
 
             // Phase LI0: observe the scoring-input candidates (handles, notch layout, pressures) into the diagnostic log; nothing of it enters the line below
-            ObserveInput();
+            if (!inPulse) { ObserveInput(); }
 
             // the core: without time, position and speed there is no telemetry line at all
             int timeMs;
@@ -631,7 +683,7 @@ namespace TSScoringPlugin.Telemetry
                 || !TelemetryContract.Finite(location) || !TelemetryContract.Finite(speedMps))
             {
                 LinesSkipped++;
-                ObserveScoring(false, 0.0, null);
+                if (!inPulse) { ObserveScoring(false, 0.0, null); }
                 return;
             }
 
@@ -984,7 +1036,13 @@ namespace TSScoringPlugin.Telemetry
                 }
             }
 
+            if (inPulse && lastPulseLine == line && nowMs() - lastPulseSendMs < PausePulseRefreshMs)
+            {
+                return;      // Phase PP-11: nothing changed in the Pause: nothing is sent (STALIST / META above keep their own cadence)
+            }
+
             sink.Send(line);
+            if (inPulse) { lastPulseLine = line; lastPulseSendMs = nowMs(); }
             LinesSent++;
             lastLineJumpCount = jumpInRow;
             epochLines++;
@@ -1000,7 +1058,7 @@ namespace TSScoringPlugin.Telemetry
             skippedAtLastSample = LinesSkipped;
 
             // Phase SI-0: the scoring-integration observation (diagnostic log only). It runs after the line was sent and changes nothing of it.
-            ObserveScoring(true, location, groundForProbe);
+            if (!inPulse) { ObserveScoring(true, location, groundForProbe); }
         }
 
         /// <summary>Phase SI-0 (order): the first Tick of the process, a Tick after a long silence (a resume from Pause), and the scenario-created flag as the Tick sees it.</summary>

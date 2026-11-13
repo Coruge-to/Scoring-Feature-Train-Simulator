@@ -64,6 +64,16 @@ namespace TSScoringPlugin.Handshake
         private bool firstTickSeen;
         private bool subscribedExtensions;
 
+        // Phase PP-8 (Pause pulse): while BVE is PAUSED the host calls no Tick, so a Pause-time reload could never establish ScenarioReady. A System.Threading.Timer POSTS to the synchronization context
+        // captured on the host's UI thread (live PP-5/PP-6: only Post is dispatched there; the pulse runs on the Tick thread) and calls tracker.OnPulse() - only while no Tick came for 150 ms.
+        private const int PulseIntervalMs = 50;        // the same period as the Legacy adapter (one contract, Current = Legacy)
+        private const int PulseGapMs = 150;
+        private long lastTickTicks;
+        private volatile bool pulseDisposed;
+        private bool pulseRunning;
+        private System.Threading.SynchronizationContext pulseContext;
+        private System.Threading.Timer pulseTimer;
+
         // Phase C3 ScenarioReady (the host independent core lives in ScenarioReadyTracker; this class is the Current BveEX adapter)
         private volatile ScenarioReadyTracker tracker;
 
@@ -91,11 +101,60 @@ namespace TSScoringPlugin.Handshake
             // The control thread starts last: the tracker (and its handshake callbacks' target) exists before Ready can appear.
             try { if (control != null) { control.Start(); } } catch { }
 
+            // Phase PP-8: the Pause pulse (the constructor runs on the host's UI thread; no context = no pulse = the application's P-to-P still works)
+            try
+            {
+                lastTickTicks = DateTime.UtcNow.Ticks;
+                pulseContext = System.Threading.SynchronizationContext.Current;
+                if (pulseContext != null)
+                {
+                    pulseTimer = new System.Threading.Timer(PulseTimerCallback, null, 1000, PulseIntervalMs);
+                }
+            }
+            catch
+            {
+            }
+
             Obs("AB", "BRIDGE_CTOR_END", "sinceCtorBeginMs=" + SinceLoadMs() + " availablePublished=" + AvailableFlag() + " observer=" + (observer != null ? "Y" : "N"));
+        }
+
+        private void PulseTimerCallback(object state)
+        {
+            try
+            {
+                System.Threading.SynchronizationContext ctx = pulseContext;
+                if (ctx == null || pulseDisposed) return;
+                if ((DateTime.UtcNow.Ticks - System.Threading.Interlocked.Read(ref lastTickTicks)) <= PulseGapMs * 10000L) return;
+                ctx.Post(delegate (object o) { Pulse(); }, null);
+            }
+            catch
+            {
+            }
+        }
+
+        /// <summary>Phase PP-8: on the host's UI thread. Never throws.</summary>
+        private void Pulse()
+        {
+            if (pulseDisposed || pulseRunning) return;
+            pulseRunning = true;
+            try
+            {
+                if ((DateTime.UtcNow.Ticks - System.Threading.Interlocked.Read(ref lastTickTicks)) <= PulseGapMs * 10000L) return;
+                ScenarioReadyTracker t = tracker;
+                if (t != null) { t.OnPulse(); }
+            }
+            catch
+            {
+            }
+            finally
+            {
+                pulseRunning = false;
+            }
         }
 
         public override void Tick(TimeSpan elapsed)
         {
+            System.Threading.Interlocked.Exchange(ref lastTickTicks, DateTime.UtcNow.Ticks);
             try
             {
                 if (!firstTickSeen)
@@ -136,6 +195,8 @@ namespace TSScoringPlugin.Handshake
         public override void Dispose()
         {
             Obs("AB", "BRIDGE_DISPOSE_BEGIN", "sinceCtorBeginMs=" + SinceLoadMs() + " ready=" + ReadyFlag() + " availablePublished=" + AvailableFlag());
+            pulseDisposed = true;
+            try { if (pulseTimer != null) { pulseTimer.Dispose(); pulseTimer = null; } } catch { }
             try { UnsubscribeObservers(); } catch { }
             try { if (observer != null) { observer.OnDispose(); } } catch { }
             try { ScenarioReadyTracker t = tracker; if (t != null) { t.OnDispose(); } } catch { } // ScenarioReady is cleared and withdrawn before Ready

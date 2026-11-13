@@ -335,6 +335,21 @@ namespace TSScoringPlugin.Handshake
         /// <summary>The extension's own Tick. The only place where establishment is decided.</summary>
         public void OnTick()
         {
+            OnTickCore(false);
+        }
+
+        /// <summary>
+        /// Phase PP-8 (Pause pulse): called on the host's UI thread (the Tick thread) by the adapter while BVE is PAUSED and no Tick runs. It does exactly what OnTick does to PUBLISH and to
+        /// ESTABLISH ScenarioReady (the references are read on the same thread that reads them in a Tick), but it is NOT a Tick: it does not count a Tick, does not raise TickSeenInEpoch and does
+        /// not raise the load marker's TickSeen bit (those facts say "the extension's Tick ran" and stay true to that meaning).
+        /// </summary>
+        public void OnPulse()
+        {
+            OnTickCore(true);
+        }
+
+        private void OnTickCore(bool pulse)
+        {
             Safe(delegate
             {
                 lock (gate)
@@ -344,12 +359,15 @@ namespace TSScoringPlugin.Handshake
                         return;
                     }
 
-                    ticksTotal++;
                     bool up = SafeHandshake();
+                    if (!pulse)
+                    {
+                        ticksTotal++;
 
-                    // Phase SI-A7: this Tick is recorded in the epoch FIRST - before anything below can publish or establish ScenarioReady - so that a block which
-                    // says "ScenarioReady 1" together with "no Tick in this epoch" can only be a held level that was published again without a Tick.
-                    NoteTickInEpochLocked(up);
+                        // Phase SI-A7: this Tick is recorded in the epoch FIRST - before anything below can publish or establish ScenarioReady - so that a block which
+                        // says "ScenarioReady 1" together with "no Tick in this epoch" can only be a held level that was published again without a Tick.
+                        NoteTickInEpochLocked(up);
+                    }
 
                     // The publication follows the handshake: it opens as soon as Ready is up (generation visible, level 0 or the kept level),
                     // is retried when a publish failed, and is withdrawn while the handshake is down.
@@ -362,7 +380,7 @@ namespace TSScoringPlugin.Handshake
                         WithdrawLocked("handshake-down");
                     }
 
-                    if (generationOpen && createdSeen && (loadInfo & ScenarioState.LoadTickSeen) == 0)
+                    if (!pulse && generationOpen && createdSeen && (loadInfo & ScenarioState.LoadTickSeen) == 0)
                     {
                         loadInfo |= ScenarioState.LoadTickSeen;  // Phase SI-A6: the first Tick of this generation after ScenarioCreated
                     }
@@ -390,7 +408,7 @@ namespace TSScoringPlugin.Handshake
                         return;
                     }
 
-                    waitingTicks++;
+                    if (!pulse) { waitingTicks++; }
                     BveSnapshot snapshot = ReadSafe();
                     string pending = snapshot.PendingReason();
                     if (pending == null)

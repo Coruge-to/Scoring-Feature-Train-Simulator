@@ -597,8 +597,10 @@ try {
     $lg = ReadLog $L1
     Check 'C6 SR_EPOCH_TICK is written once for the epoch, at the first Tick, and before the first SR_ESTABLISHED' (((EvtLines $lg 'SR_EPOCH_TICK').Count -eq 1) -and (InOrder $lg @('SR_EPOCH', 'SR_EPOCH_TICK', 'SR_ESTABLISHED')))
     $trkSrc = [IO.File]::ReadAllText((Join-Path $Root 'Bridge\src\ScenarioReadyTracker.cs')) -replace "`r`n", "`n"
-    $onTick = [regex]::Match($trkSrc, 'public void OnTick\(\)[\s\S]*?\n        \}\n').Value
-    Check 'C7 in the source of OnTick the epoch bookkeeping comes before the publication and before the establishment' (($onTick.IndexOf('NoteTickInEpochLocked(up)') -gt 0) -and ($onTick.IndexOf('NoteTickInEpochLocked(up)') -lt $onTick.IndexOf('PublishLocked(')) -and ($onTick.IndexOf('NoteTickInEpochLocked(up)') -lt $onTick.IndexOf('EstablishLocked(')))
+    # Phase PP-8: OnTick is now a wrapper of OnTickCore(false); OnPulse (Pause pulse) is OnTickCore(true). The ordering rule is checked in OnTickCore.
+    $onTick = [regex]::Match($trkSrc, 'private void OnTickCore\(bool pulse\)[\s\S]*?\n        \}\n').Value
+    Check 'C7 in the source of OnTick (OnTickCore) the epoch bookkeeping comes before the publication and before the establishment' (($onTick.IndexOf('NoteTickInEpochLocked(up)') -gt 0) -and ($onTick.IndexOf('NoteTickInEpochLocked(up)') -lt $onTick.IndexOf('PublishLocked(')) -and ($onTick.IndexOf('NoteTickInEpochLocked(up)') -lt $onTick.IndexOf('EstablishLocked(')))
+    Check 'C7b OnTick runs OnTickCore(false) and OnPulse runs OnTickCore(true); a pulse is NOT a Tick: the Tick count, the epoch Tick flag and the load marker Tick bit are raised only when pulse is false' (($trkSrc -match 'public void OnTick\(\)\s*\{\s*OnTickCore\(false\);') -and ($trkSrc -match 'public void OnPulse\(\)\s*\{\s*OnTickCore\(true\);') -and ($onTick -match 'if \(!pulse\)\s*\{\s*ticksTotal\+\+;') -and ($onTick -match 'if \(!pulse && generationOpen && createdSeen && \(loadInfo & ScenarioState\.LoadTickSeen\) == 0\)'))
 
     # =================================================================================================================================================
     Write-Host '--- D: TS Scoring OFF -> ON during a pause (no Tick): withdrawn and published again by the control thread, a new epoch, TickSeenInEpoch 0'
@@ -1285,6 +1287,34 @@ sys.exit(0)
     Check 'N4b the Tick saw Ready of epoch 5 BEFORE OnHandshakeUp(5) arrived: it adopted the epoch with the flag raised, and the late call kept the flag (epoch 5, Tick still 1) and published nothing new' (($stepsN | Where-Object { $_ -like 'OnTick=*:True:5:True|5:True:*' }).Count -ge 1 -and ($stepsN | Where-Object { $_ -like 'UPE:5=*:True:5:True|5:True:*' }).Count -eq 1 -and (($lines3 | Where-Object { $_ -like 'SR_EPOCH|*' -and $_ -match 'ready_epoch=5' -and $_ -match 'why=adopted-at-tick' }).Count -eq 1) -and (($lines3 | Where-Object { $_ -like 'SR_EPOCH|*' -and $_ -match 'ready_epoch=5' -and $_ -match 'why=handshake-up' }).Count -eq 0))
     Check 'N5 the last published state is cleared by Dispose (bridge-dispose) and nothing of ScenarioReady is left' (($stepsN[-1] -like 'OnDispose=none*') -and (OutsideNone $Pn1) -and (OutsideNone $Pn2))
     } # end of the Current-only sections K - N
+
+    # =================================================================================================================================================
+    Write-Host '--- E2 (Phase PP-8, Pause pulse): a pulse - not a Tick - establishes ScenarioReady during a pause and never raises TickSeenInEpoch (its own adapter: the numbers of the sections around it are untouched)'
+    $Pq = NextPid; $Lq = NewLogPath 'E2-pulse'; LogCfgBoth $Lq $Pq
+    $bq = FullAdapter $Pq
+    $cq = NewSession $Pq; StartSession $cq
+    [void](WaitFor { [bool](CtlProp $bq 'HandshakeUp') } 1500)
+    Opened $bq; Created $bq                                  # a Pause-time F5 / a load that finished in a pause: generation 1 at level 0, no Tick
+    [void](WaitFor { OutIs $Pq 1 0 1 0 } 1500)
+    $tickAtPulse = $script:TickCount
+    TCall $bq 'OnPulse'
+    Check 'E5 the pulse establishes the generation with NO Tick: level 1, generation 1, epoch 1, TickSeenInEpoch still 0, established once, the Tick count unchanged' ((Lvl $bq) -and ((Est $bq) -eq 1) -and (OutIs $Pq 1 1 1 0) -and ($script:TickCount -eq $tickAtPulse))
+    for ($i = 0; $i -lt 50; $i++) { TCall $bq 'OnPulse' }
+    Check 'E6 fifty more pulses change nothing: established once, the epoch flag stays 0 (a pulse is never counted as a Tick)' (((Est $bq) -eq 1) -and (OutIs $Pq 1 1 1 0) -and ($script:TickCount -eq $tickAtPulse))
+    $lgq = ReadLog $Lq
+    Check 'E7 the log has no SR_EPOCH_TICK for the epoch (the pulse is not noted as a Tick; the SR_ESTABLISHED line itself is not required: the Current observation log may drop it, the state is what E5 checks)' (@($lgq | Where-Object { $_ -match ' SR_EPOCH_TICK ' }).Count -eq 0)
+    Closed $bq; Opened $bq; Created $bq
+    TCall $bq 'OnPulse'
+    Check 'E8 the next generation (a second Pause-time reload) is established by a pulse too: generation 2, level 1, TickSeenInEpoch still 0' ((Lvl $bq) -and ((Est $bq) -eq 2) -and (OutIs $Pq 2 1 1 0) -and ($script:TickCount -eq $tickAtPulse))
+    [void](Tick $bq)
+    Check 'E9 the first real Tick afterwards raises TickSeenInEpoch (epoch 1, tick 1) and keeps the level and the Established count' ((Lvl $bq) -and (OutIs $Pq 2 1 1 1) -and ((Est $bq) -eq 2))
+    EndSession $cq
+    [void](WaitFor { OutsideNone $Pq } 1500)
+    Closed $bq; Opened $bq; Created $bq
+    $estNo = Est $bq
+    TCall $bq 'OnPulse'
+    Check 'E10 a pulse while the handshake is DOWN (TS Scoring OFF) establishes nothing (the same rule as a Tick)' ((-not (Lvl $bq)) -and ((Est $bq) -eq $estNo))
+    ADispose $bq
 
     # =================================================================================================================================================
     Write-Host '--- P: privacy of every log produced by these tests'

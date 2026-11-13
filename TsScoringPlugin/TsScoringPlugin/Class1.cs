@@ -41,6 +41,24 @@ namespace TsScoringPlugin
         private Timer heartbeatTimer;
         private DateTime lastTickTime = DateTime.MinValue;
 
+        // Phase PP-7 (Pause pulse): while BVE is PAUSED the host calls no Tick, so nothing about a Pause-time operation (F5 reload, timetable jump, position / time edit, TS Scoring ON) reaches the
+        // application. A System.Threading.Timer POSTS a pulse to the synchronization context captured on the host's UI thread (live PP-5/PP-6: only Post is dispatched by the host's message loop;
+        // WinForms timers and Application.Idle never fire). The pulse runs on the SAME thread as Tick, so reading the host there is exactly as safe as in Tick. It runs the Tick body with
+        // elapsed 0 (TickCore pulse=true) ONLY while no Tick came for PausePulseGapMs, and then only when time / position / scenario changed or PausePulseRefreshMs passed. It does not touch
+        // lastTickTime (the heartbeat keeps saying PAUSED), does not execute jump commands and does not note the first Tick. Every pulse runs the WHOLE body (anything may have changed in a Pause: handle
+        // notches, doors, ...); an UNCHANGED telemetry line is not sent again (except every PausePulseRefreshMs), so nothing flows while nothing is touched.
+        private const int PausePulseIntervalMs = 16;       // ~60 Hz (the OS timer resolution is ~15.6 ms); the Python HUD itself repaints every 16 ms
+        private const int PausePulseGapMs = 150;
+        private const int PausePulseRefreshMs = 1000;      // an unchanged line is still sent this often
+        private string lastPulseSent;                            // the telemetry line the last pulse sent (null after every real Tick)
+        private long pulseCount, pulseTotalUs, pulseMaxUs;      // diagnostics only
+        private System.Threading.SynchronizationContext pulseContext;
+        private System.Threading.Timer pulseTimer;
+        private bool pulseDisposed;
+        private bool pulseRunning;
+        private DateTime pulseLastSend = DateTime.MinValue;
+        private double lastLocationSample = double.NaN;
+
         private string lastUdpData = "";
         private string lastStaListPacket = "";
         private object currentScenario = null;
@@ -186,6 +204,20 @@ namespace TsScoringPlugin
                 if (log != null) log("event=heartbeat-init-failed error=" + ex.GetType().Name);
             }
 
+            // Phase PP-7: the Pause pulse. The constructor runs on the host's UI thread (live: same thread as Tick); no context = no pulse (the application's P-to-P still works).
+            try
+            {
+                pulseContext = System.Threading.SynchronizationContext.Current;
+                if (pulseContext != null)
+                {
+                    pulseTimer = new System.Threading.Timer(PulseTimerCallback, null, 1000, PausePulseIntervalMs);
+                }
+            }
+            catch (Exception ex)
+            {
+                if (log != null) log("event=pause-pulse-init-failed error=" + ex.GetType().Name);
+            }
+
             // The jump command receiver (fixed 54322, unchanged by PID-D3). A bind failure (for instance a second BVE) only disables jump commands.
             try
             {
@@ -237,6 +269,8 @@ namespace TsScoringPlugin
                 }
             }
             catch { }
+            pulseDisposed = true;
+            try { if (pulseTimer != null) { pulseTimer.Dispose(); pulseTimer = null; } } catch { }
             try { if (router != null) router.Close(); } catch { }
             transport.Client = null;
             try { if (udpClient != null) { udpClient.Close(); udpClient = null; } } catch { }
@@ -449,13 +483,55 @@ namespace TsScoringPlugin
 
         private bool firstTickNoted;
 
+        private void PulseTimerCallback(object state)
+        {
+            try
+            {
+                System.Threading.SynchronizationContext ctx = pulseContext;
+                if (ctx == null || pulseDisposed) return;
+                if ((DateTime.Now - lastTickTime).TotalMilliseconds <= PausePulseGapMs) return;      // BVE ticks: nothing to do (read on the timer thread: a plain DateTime)
+                ctx.Post(delegate (object o) { PausePulse(); }, null);
+            }
+            catch { }
+        }
+
+        /// <summary>Phase PP-7: on the host's UI thread (the Tick thread). Never throws.</summary>
+        private void PausePulse()
+        {
+            if (pulseDisposed || pulseRunning) return;
+            pulseRunning = true;
+            try
+            {
+                if ((DateTime.Now - lastTickTime).TotalMilliseconds <= PausePulseGapMs) return;  // a real Tick came meanwhile
+                long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+                TickCore(TimeSpan.Zero, true);
+                long us = (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000000L / System.Diagnostics.Stopwatch.Frequency;
+                pulseCount++; if (pulseCount > 1) { pulseTotalUs += us; if (us > pulseMaxUs) pulseMaxUs = us; }   // the first pulse (JIT) is not counted
+                if (pulseCount % 500 == 0)
+                {
+                    try { if (diagnostics != null) diagnostics.Write("event=pause-pulse-stats n=" + pulseCount + " avgUs=" + (pulseTotalUs / (pulseCount - 1)) + " maxUs=" + pulseMaxUs); } catch { }
+                }
+            }
+            catch { }
+            finally { pulseRunning = false; }
+        }
+
         public override void Tick(TimeSpan elapsed)
         {
-            lastTickTime = DateTime.Now;
-            if (!firstTickNoted)
+            TickCore(elapsed, false);
+        }
+
+        private void TickCore(TimeSpan elapsed, bool pulse)
+        {
+            if (!pulse)
             {
-                firstTickNoted = true;
-                try { if (router != null) router.NoteTick(); } catch { }
+                lastPulseSent = null;
+                lastTickTime = DateTime.Now;
+                if (!firstTickNoted)
+                {
+                    firstTickNoted = true;
+                    try { if (router != null) router.NoteTick(); } catch { }
+                }
             }
             if (!BveHacker.IsScenarioCreated)
             {
@@ -520,7 +596,7 @@ namespace TsScoringPlugin
 
                 var bindFlagsAll = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.FlattenHierarchy | System.Reflection.BindingFlags.Static;
 
-                if (udpReceiver != null || jumpEndpoint != null)
+                if (!pulse && (udpReceiver != null || jumpEndpoint != null))
                 {
                     try
                     {
@@ -1590,6 +1666,7 @@ namespace TsScoringPlugin
                 catch { }
 
                 lastTimeMs = timeMs;
+                lastLocationSample = location;
 
                 try
                 {
@@ -1608,8 +1685,12 @@ namespace TsScoringPlugin
                     }
                     if (!string.IsNullOrEmpty(lastUdpData))
                     {
-                        byte[] bytes = Encoding.UTF8.GetBytes(lastUdpData);
-                        batch.Send(TSScoringPlugin.DataPlane.DataPlaneMessageTypes.Telemetry, bytes);
+                        bool unchangedPulse = pulse && lastPulseSent == lastUdpData && (DateTime.Now - pulseLastSend).TotalMilliseconds < PausePulseRefreshMs;
+                        if (!unchangedPulse)
+                        {
+                            byte[] bytes = Encoding.UTF8.GetBytes(lastUdpData);
+                            if (batch.Send(TSScoringPlugin.DataPlane.DataPlaneMessageTypes.Telemetry, bytes) && pulse) { lastPulseSent = lastUdpData; pulseLastSend = DateTime.Now; }
+                        }
                     }
                     if (pendingJumpComplete && isInitialized)
                     {

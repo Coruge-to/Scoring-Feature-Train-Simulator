@@ -62,6 +62,15 @@ namespace TSScoringPlugin.Handshake
         private long handshakeUpQpc;
         private int handshakeUpPending;
 
+        // Phase PP-11 (Pause pulse, Legacy Bridge): see the Current adapter. ScenarioReady is established on the host's UI thread by tracker.OnPulse() while BVE is PAUSED.
+        private const int PulseIntervalMs = 50;
+        private const int PulseGapMs = 150;
+        private long lastTickTicks;
+        private volatile bool pulseDisposed;
+        private bool pulseRunning;
+        private System.Threading.SynchronizationContext pulseContext;
+        private System.Threading.Timer pulseTimer;
+
         public TsScoringLegacyBridgePrototype(PluginBuilder builder)
             : base(builder)
         {
@@ -79,11 +88,58 @@ namespace TSScoringPlugin.Handshake
             // The control thread starts last: the tracker (and its handshake-lost callback target) exists before Ready can appear.
             try { if (control != null) { control.Start(); } } catch { }
 
+            try
+            {
+                lastTickTicks = DateTime.UtcNow.Ticks;
+                pulseContext = System.Threading.SynchronizationContext.Current;
+                if (pulseContext != null)
+                {
+                    pulseTimer = new System.Threading.Timer(PulseTimerCallback, null, 1000, PulseIntervalMs);
+                }
+            }
+            catch
+            {
+            }
+
             Obs("AB", "BRIDGE_CTOR_END", "sinceCtorBeginMs=" + SinceLoadMs() + " availablePublished=" + AvailableFlag() + " observer=" + (observer != null ? "Y" : "N"));
+        }
+
+        private void PulseTimerCallback(object state)
+        {
+            try
+            {
+                System.Threading.SynchronizationContext ctx = pulseContext;
+                if (ctx == null || pulseDisposed) return;
+                if ((DateTime.UtcNow.Ticks - System.Threading.Interlocked.Read(ref lastTickTicks)) <= PulseGapMs * 10000L) return;
+                ctx.Post(delegate (object o) { Pulse(); }, null);
+            }
+            catch
+            {
+            }
+        }
+
+        private void Pulse()
+        {
+            if (pulseDisposed || pulseRunning) return;
+            pulseRunning = true;
+            try
+            {
+                if ((DateTime.UtcNow.Ticks - System.Threading.Interlocked.Read(ref lastTickTicks)) <= PulseGapMs * 10000L) return;
+                ScenarioReadyTracker t = tracker;
+                if (t != null) { t.OnPulse(); }
+            }
+            catch
+            {
+            }
+            finally
+            {
+                pulseRunning = false;
+            }
         }
 
         public override TickResult Tick(TimeSpan elapsed)
         {
+            System.Threading.Interlocked.Exchange(ref lastTickTicks, DateTime.UtcNow.Ticks);
             try
             {
                 if (!firstTickSeen)
@@ -126,6 +182,8 @@ namespace TSScoringPlugin.Handshake
         public override void Dispose()
         {
             Obs("AB", "BRIDGE_DISPOSE_BEGIN", "sinceCtorBeginMs=" + SinceLoadMs() + " ready=" + ReadyFlag() + " availablePublished=" + AvailableFlag());
+            pulseDisposed = true;
+            try { if (pulseTimer != null) { pulseTimer.Dispose(); pulseTimer = null; } } catch { }
             try { UnsubscribeObservers(); } catch { }
             try { if (observer != null) { observer.OnDispose(); } } catch { }
             try { ScenarioReadyTracker t = tracker; if (t != null) { t.OnDispose(); } } catch { } // ScenarioReady is cleared and withdrawn before Ready

@@ -83,6 +83,12 @@ namespace TSScoringPlugin.Telemetry
         private LegacyJumpControlPlane jump;
         private LegacyJumpTickRunner jumpRunner;
 
+        // Phase PP-11: the Pause pulse (see LegacyTelemetrySession.OnPulse). The constructor runs on the host's UI thread; no context = no pulse = the application's P-to-P still works.
+        private const int PulseIntervalMs = 16;
+        private System.Threading.SynchronizationContext pulseContext;
+        private System.Threading.Timer pulseTimer;
+        private bool pulseRunning;
+
         public TsScoringLegacyTelemetryExtension(PluginBuilder builder)
             : base(builder)
         {
@@ -174,9 +180,45 @@ namespace TSScoringPlugin.Telemetry
                 diag.Event("TEL_JUMP", "event=jump-runner-unavailable type=" + ex.GetType().Name);
             }
 
+            try
+            {
+                pulseContext = System.Threading.SynchronizationContext.Current;
+                if (pulseContext != null)
+                {
+                    pulseTimer = new System.Threading.Timer(PulseTimerCallback, null, 1000, PulseIntervalMs);
+                }
+            }
+            catch
+            {
+                pulseTimer = null;
+            }
+
             diag.Event("TEL_INIT", "ver=" + FileTelemetryDiag.Version + " bitness=" + (IntPtr.Size * 8) + " host=AtsExLegacy identity=" + LegacyScenarioIdentity.KindSourceObject
                 + " events=" + (subscribed ? "yes" : "no") + " heartbeat=" + (heartbeat != null ? "yes" : "no") + " sink=dataplane bvepid=" + bvePid);
             try { session.NoteInit("events=" + (subscribed ? "yes" : "no") + " heartbeat=" + (heartbeat != null ? "yes" : "no")); } catch { }
+        }
+
+        private void PulseTimerCallback(object state)
+        {
+            try
+            {
+                System.Threading.SynchronizationContext ctx = pulseContext;
+                if (ctx == null || disposedFlag) return;
+                ctx.Post(delegate (object o) { Pulse(); }, null);
+            }
+            catch
+            {
+            }
+        }
+
+        /// <summary>Phase PP-11: on the host's UI thread. Never throws.</summary>
+        private void Pulse()
+        {
+            if (disposedFlag || pulseRunning) return;
+            pulseRunning = true;
+            try { session.OnPulse(); }
+            catch { }
+            finally { pulseRunning = false; }
         }
 
         public override TickResult Tick(TimeSpan elapsed)
@@ -230,6 +272,7 @@ namespace TSScoringPlugin.Telemetry
         public override void Dispose()
         {
             disposedFlag = true;
+            try { if (pulseTimer != null) { pulseTimer.Dispose(); pulseTimer = null; } } catch { }
             try
             {
                 if (heartbeat != null)
