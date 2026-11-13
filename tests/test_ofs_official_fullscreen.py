@@ -435,6 +435,128 @@ class D_F11AndF12(unittest.TestCase):
         self.assertFalse(self.o.is_borderless_fullscreen)
 
 
+class G_SizesMatch(unittest.TestCase):
+    def test_equal_sizes_match(self):
+        self.assertTrue(ot.sizes_match((1536, 864), (1536, 864)))
+
+    def test_rounding_of_one_pixel_matches(self):
+        self.assertTrue(ot.sizes_match((1097, 617), (1098, 616)))
+
+    def test_two_pixels_or_more_do_not(self):
+        self.assertFalse(ot.sizes_match((1097, 617), (1099, 617)))
+        self.assertFalse(ot.sizes_match((1920, 1080), (1536, 864)))
+
+    def test_each_dimension_is_checked(self):
+        self.assertFalse(ot.sizes_match((1920, 1080), (1920, 864)))          # the height alone
+        self.assertFalse(ot.sizes_match((1920, 1080), (1536, 1080)))         # the width alone
+
+    def test_missing_values_do_not_match(self):
+        self.assertFalse(ot.sizes_match(None, (1, 1)))
+        self.assertFalse(ot.sizes_match((1, 1), None))
+
+
+@unittest.skipUnless(HAS_QT, "PyQt6 is not importable by this interpreter")
+class H_LiveScaleChangeInTheOfficialFullscreen(unittest.TestCase):
+    """OFS-1 live observation (Owner, Windows settings: 100 -> 125 -> 150 -> 175 -> 150 -> 100): in BVE's official fullscreen the PHYSICAL rectangle of the BVE window
+    does not change with the display scale, Qt's device pixel ratio does. client_rect_applied looked only at the physical window rectangle, so the logical geometry
+    stayed at the old scale and the HUD was drawn dpr times too big and displaced (HUD left edge at x=1862 of 1920 at 125%). It must notice the stale logical size."""
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PyQt6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication(["ofs1-live-scale"])
+        import main
+        cls.main = main
+
+    class FakeGeometry(object):
+        def __init__(self, w, h):
+            self._w, self._h = w, h
+
+        def width(self):
+            return self._w
+
+        def height(self):
+            return self._h
+
+    def fake_overlay(self, window_rect, qt_size, dpr):
+        test = self
+
+        class Fake(object):
+            _client_phys = window_rect
+
+            def winId(inner):
+                return 4711
+
+            def geometry(inner):
+                return test.FakeGeometry(*qt_size)
+
+            def devicePixelRatioF(inner):
+                return dpr
+        return Fake()
+
+    def applied(self, window_rect, qt_size, dpr, rect=(0, 0, 1920, 1080)):
+        main = self.main
+        saved = main.overlay_get_window_rect
+        main.overlay_get_window_rect = lambda hwnd: (window_rect[0], window_rect[1], window_rect[0] + window_rect[2], window_rect[1] + window_rect[3])
+        try:
+            return main.Overlay.client_rect_applied(self.fake_overlay(window_rect, qt_size, dpr), rect)
+        finally:
+            main.overlay_get_window_rect = saved
+
+    def test_at_100_percent_a_placed_overlay_is_applied(self):
+        self.assertTrue(self.applied((0, 0, 1920, 1080), (1920, 1080), 1.0))
+
+    def test_after_a_change_to_125_with_the_old_logical_size_it_is_not_applied(self):
+        self.assertFalse(self.applied((0, 0, 1920, 1080), (1920, 1080), 1.25))          # the live defect: physical rectangle right, logical size stale
+
+    def test_at_125_with_the_logical_size_of_the_rectangle_it_is_applied(self):
+        self.assertTrue(self.applied((0, 0, 1920, 1080), (1536, 864), 1.25))
+
+    def test_every_scale_of_the_settings_dialog_needs_its_own_logical_size(self):
+        for dpr, logical in ((1.25, (1536, 864)), (1.5, (1280, 720)), (1.75, (1097, 617))):
+            with self.subTest(dpr=dpr):
+                self.assertTrue(self.applied((0, 0, 1920, 1080), logical, dpr))
+                self.assertFalse(self.applied((0, 0, 1920, 1080), (1920, 1080), dpr))
+
+    def test_the_old_physical_check_still_applies(self):
+        self.assertFalse(self.applied((5, 5, 300, 200), (1920, 1080), 1.0))
+        self.assertFalse(self.applied((0, 0, 2400, 1350), (1920, 1080), 1.25))
+
+    def test_a_scale_back_to_100_is_noticed_too(self):
+        self.assertFalse(self.applied((0, 0, 1920, 1080), (1536, 864), 1.0))
+
+    def test_an_unreadable_geometry_does_not_force_a_reapply_loop(self):
+        main = self.main
+        saved = main.overlay_get_window_rect
+        main.overlay_get_window_rect = lambda hwnd: (0, 0, 1920, 1080)
+
+        class Broken(object):
+            _client_phys = (0, 0, 1920, 1080)
+
+            def winId(inner):
+                return 1
+
+            def geometry(inner):
+                raise RuntimeError("no geometry")
+        try:
+            self.assertTrue(main.Overlay.client_rect_applied(Broken(), (0, 0, 1920, 1080)))
+        finally:
+            main.overlay_get_window_rect = saved
+
+    def test_the_real_overlay_is_applied_after_the_product_placement(self):
+        main = self.main
+        overlay = main.Overlay(udp_port=0)
+        try:
+            overlay.timer.stop()
+            overlay.set_client_rect_physical(0, 0, 1920, 1080)
+            self.app.processEvents()
+            self.assertTrue(overlay.client_rect_applied((0, 0, 1920, 1080)))
+        finally:
+            overlay.close()
+            overlay.deleteLater()
+
+
 REAL_CHECK = os.path.join(ROOT, "tests", "zorder_real_check_ofs.py")
 
 

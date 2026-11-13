@@ -41,6 +41,11 @@ def is_native_fullscreen(style, exstyle):
     return bool((exstyle & 0xFFFFFFFF) & WS_EX_TOPMOST) and not ((style & 0xFFFFFFFF) & WS_CAPTION)
 
 
+def sizes_match(a, b, tolerance=1):
+    """True when two (w, h) sizes agree within `tolerance` px (Phase OFS-1: Qt's logical size against the logical size of the applied physical rectangle)."""
+    return a is not None and b is not None and all(abs(p - q) <= tolerance for p, q in zip(a, b))
+
+
 def rects_match(a, b, tolerance=1):
     """True when two (x, y, w, h) rectangles agree within `tolerance` physical pixels (rounding of the logical <-> physical conversion)."""
     return a is not None and b is not None and all(abs(p - q) <= tolerance for p, q in zip(a, b))

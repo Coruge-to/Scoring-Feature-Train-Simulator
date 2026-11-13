@@ -2569,14 +2569,24 @@ class Overlay(QWidget):
         self._client_phys = rect
 
     def client_rect_applied(self, rect):
-        """True when the Overlay window really sits on `rect` (physical px, 1 px tolerance). The real window is asked, so a change of the display scale or of the
-        monitor (Qt rescales the window by itself) is noticed and the rectangle is applied again."""
+        """True when the Overlay window really sits on `rect` (physical px, 1 px tolerance) AND Qt's logical size agrees with it at the current display scale.
+        The real window is asked, so a change of the display scale or of the monitor (Qt rescales the window by itself) is noticed and the rectangle is applied
+        again. Phase OFS-1: the logical size is asked too. In BVE's official fullscreen the physical rectangle does NOT change with the display scale, but Qt's
+        device pixel ratio does: the logical geometry then stays at the old scale, the HUD is drawn at dpr x the window size and lies far off the window (live
+        observation: 125% put the HUD's left edge at x=1862 of 1920). Only a logical size that is off by more than the rounding is a mismatch."""
         try:
             left, top, right, bottom = overlay_get_window_rect(int(self.winId()))
             current = (left, top, right - left, bottom - top)
         except Exception:
             current = self._client_phys
-        return overlay_transform.rects_match(current, rect)
+        if not overlay_transform.rects_match(current, rect):
+            return False
+        try:
+            geom = self.geometry()
+            logical = overlay_transform.logical_geometry(rect, self.devicePixelRatioF())
+            return overlay_transform.sizes_match((geom.width(), geom.height()), (logical[2], logical[3]))
+        except Exception:
+            return True
 
     def client_rect_physical(self):
         """The BVE client area in physical px for hit testing: the last applied rectangle, or (before any placement) the widget's geometry scaled to physical."""
