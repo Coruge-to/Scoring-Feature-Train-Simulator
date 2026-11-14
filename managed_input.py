@@ -265,6 +265,72 @@ class GuiInputApi(object):
         self._gui.EnableWindow(hwnd, True)
 
 
+# -- Phase PID-S1: the owner PID of the "time and position" window ------------------------------------------------------------------------------
+EXPECTED_BVE_IMAGE = "bvets.exe"
+
+
+def process_image_name(pid):
+    """Base name (lower case) of the executable of process `pid`, or None when it can not be read. Read-only (PROCESS_QUERY_LIMITED_INFORMATION)."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        handle = kernel.OpenProcess(0x1000, False, int(pid))
+        if not handle:
+            return None
+        try:
+            size = wintypes.DWORD(1024)
+            buffer = ctypes.create_unicode_buffer(1024)
+            if not kernel.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
+                return None
+            return buffer.value.replace("/", "\\").rsplit("\\", 1)[-1].lower()
+        finally:
+            kernel.CloseHandle(handle)
+    except Exception:
+        return None
+
+
+def window_owned_by(gui, hwnd, pid):
+    """True only when `hwnd` is a live window whose owner process id is `pid`. Any failure is False (fail closed)."""
+    try:
+        if not hwnd or pid is None or not gui.IsWindow(hwnd):
+            return False
+        return int(gui.GetWindowThreadProcessId(hwnd)[1]) == int(pid)
+    except Exception:
+        return False
+
+
+def owned_bve_pid(gui, owned_hwnd, expected_pid, image_of=None):
+    """The runtime PID of the linked BVE window, checked against the start contract: (pid, "ok") or (None, reason) with a fixed word.
+    reason: no-expected-pid / stale-hwnd / pid-unreadable / pid-mismatch / image-mismatch. Nothing is guessed: a mismatch never picks either PID."""
+    if expected_pid is None:
+        return None, "no-expected-pid"
+    try:
+        if not owned_hwnd or not gui.IsWindow(owned_hwnd):
+            return None, "stale-hwnd"
+    except Exception:
+        return None, "stale-hwnd"
+    try:
+        runtime_pid = int(gui.GetWindowThreadProcessId(owned_hwnd)[1])
+    except Exception:
+        return None, "pid-unreadable"
+    if runtime_pid <= 0:
+        return None, "pid-unreadable"
+    try:
+        if runtime_pid != int(expected_pid):
+            return None, "pid-mismatch"
+    except Exception:
+        return None, "pid-mismatch"
+    name = (image_of if image_of is not None else process_image_name)(runtime_pid)
+    if name != EXPECTED_BVE_IMAGE:
+        return None, "image-mismatch"
+    return runtime_pid, "ok"
+
+
 # the Qt translators that are installed in this process: a QTranslator that is garbage collected stops translating, so they are held here for the life of the process
 _HELD_QT_TRANSLATORS = []
 _INSTALLED_QT_TRANSLATORS = {}

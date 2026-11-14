@@ -2737,12 +2737,28 @@ class Overlay(QWidget):
             getattr(self, 'time_position_child_enabled', {}).items()
         ):
             try:
-                if was_enabled and win32gui.IsWindow(child_hwnd):
+                if was_enabled and win32gui.IsWindow(child_hwnd) and self._diag_child_is_ours(child_hwnd):
                     win32gui.EnableWindow(child_hwnd, True)
             except Exception:
                 pass
         self.time_position_child_enabled = {}
         self.time_position_lock_target = None
+
+    def _expected_bve_pid(self):
+        """Managed mode: the --bve-pid of this process (the start contract), or None."""
+        source = getattr(self, 'run_identity_source', None)
+        try:
+            return source()[0] if source is not None else None
+        except Exception:
+            return None
+
+    def _diag_child_is_ours(self, child_hwnd):
+        """PID-S1: a child control is only re-enabled when it still belongs to this Overlay's BVE (a stale handle reused by another process is left alone).
+        Normal mode (no managed input) has no such check."""
+        if not getattr(self, 'is_managed_input', False):
+            return True
+        expected = self._expected_bve_pid()
+        return expected is not None and managed_input.window_owned_by(win32gui, child_hwnd, expected)
 
     def _sync_time_position_window_lock(self):
         """Disable the time/position window's child controls while leaving its title bar and close button usable."""
@@ -2751,9 +2767,25 @@ class Overlay(QWidget):
             and not getattr(self, 'is_scoring_finished', False)
         )
         try:
-            diag_hwnd = win32gui.FindWindow(None, "時刻と位置")
+            owner_pid = None
+            if getattr(self, 'is_managed_input', False):
+                # Managed mode (PID-S1): only the window of the BVE process this Overlay is linked to. The runtime PID comes from the linked HWND and is checked
+                # against --bve-pid and the image name; any doubt = fail closed (no lookup, nothing of another process is touched).
+                owner_pid, refusal = managed_input.owned_bve_pid(win32gui, self.bve_hwnd, self._expected_bve_pid())
+                if owner_pid is None:
+                    if should_lock:
+                        self._emit_input_event("diag-window-refused", reason=refusal)
+                    self._release_time_position_window_lock()
+                    return
+                diag_hwnd = managed_input.GuiInputApi(win32gui, owner_pid).find_diag_window()
+            else:
+                diag_hwnd = win32gui.FindWindow(None, "時刻と位置")
             if not should_lock or not diag_hwnd or not win32gui.IsWindow(diag_hwnd):
                 self._release_time_position_window_lock()
+                return
+
+            if owner_pid is not None and not managed_input.window_owned_by(win32gui, diag_hwnd, owner_pid):
+                self._release_time_position_window_lock()          # checked again right before the operation: not (or no longer) this BVE's window
                 return
 
             if self.time_position_lock_target != diag_hwnd:

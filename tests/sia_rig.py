@@ -84,6 +84,8 @@ class FakeGui(object):
         self.client_origin = (0, 0)
         self.cursor = (0, 0)
         self.raise_on_client_rect = False
+        self.owner_pid = None                        # PID-S1 (on purpose): see GetWindowThreadProcessId
+        self.foreign_hwnds = {}                      # hwnd -> pid of ANOTHER process
 
     # -- windows -------------------------------------------------------------------------------------------------------------------------
     def IsWindow(self, h):
@@ -93,11 +95,22 @@ class FakeGui(object):
         return h in self.titles
 
     def GetWindowText(self, h):
+        if self._diag and h == self._diag:
+            return "時刻と位置"                      # PID-S1 (on purpose): the managed lookup reads the title of the windows it enumerates
         return self.titles.get(h, "")
 
+    def GetWindowThreadProcessId(self, h):
+        """PID-S1 (on purpose): None = not modelled (the recorder answer of before); otherwise every window of this fake belongs to `owner_pid`
+        (the managed rig sets it to the --bve-pid; another process's window is modelled by `foreign_hwnds`)."""
+        if self.owner_pid is None:
+            self.calls.append(("GetWindowThreadProcessId", h))
+            return None
+        return (1, self.foreign_hwnds.get(h, self.owner_pid))
+
     def EnumWindows(self, callback, extra):
-        for h in list(self.titles):
-            callback(h, extra)
+        for h in list(self.titles) + ([self._diag] if self._diag and self._diag not in self.titles else []):
+            if callback(h, extra) is False:
+                return
 
     def GetForegroundWindow(self):
         return self.foreground

@@ -89,6 +89,10 @@ class ManagedRig(object):
         self.o = self.rig.o
         self.kb, self.gui, self.api_win32, self.clock32 = self.rig.kb, self.rig.gui, self.rig.api, self.rig.clock
         self.args = E4.args_for()
+        import managed_input
+        self._saved_image_of = managed_input.process_image_name
+        managed_input.process_image_name = lambda pid: "bvets.exe"          # PID-S1 (on purpose): the linked window belongs to the --bve-pid process, BveTs.exe
+        self.gui.owner_pid = self.args.bve_pid
         self.log = E4.Log()
         self.source = E4.FakeSource(E4.make_block(self.args.bve_pid, self.args.instance))
         reader = ms.StateReader(self.args, self.source, self.log)
@@ -116,6 +120,8 @@ class ManagedRig(object):
         except Exception:
             pass
         self.rig.close()
+        import managed_input
+        managed_input.process_image_name = self._saved_image_of
 
     # -- the Caller's state block -------------------------------------------------------------------------------------------------------------
     @staticmethod

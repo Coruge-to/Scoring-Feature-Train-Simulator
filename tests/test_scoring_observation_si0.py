@@ -404,7 +404,7 @@ class E_TheSeamsOfUpdateLogic(unittest.TestCase):
             loaded = {n.id for n in ast.walk(func) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
             external |= {n for n in loaded - local if not hasattr(builtins, n)}
         self.assertEqual(external, {"QApplication", "keyboard", "win32gui", "win32api", "win32con", "time", "write_desktop_log", "reset_transient_scoring_state",
-                                    "update_physics_and_scoring", "BASE_SCREEN_W", "overlay_transform", "initial_defaults"})      # OVS-1 (on purpose): BASE_SCREEN_H -> overlay_transform (the click handler maps the physical cursor with overlay_transform.menu_local_point; the scale / offset lines moved into it). INITIAL-DEFAULTS Commit 3 (on purpose): initial_defaults (the shared F1 state functions and the one A boundary clamp, used by the menu key handlers of update_logic)
+                                    "update_physics_and_scoring", "BASE_SCREEN_W", "overlay_transform", "initial_defaults", "managed_input"})      # PID-S1 (on purpose): managed_input (the managed lookup of the "time and position" window by the owner PID). OVS-1 (on purpose): BASE_SCREEN_H -> overlay_transform (the click handler maps the physical cursor with overlay_transform.menu_local_point; the scale / offset lines moved into it). INITIAL-DEFAULTS Commit 3 (on purpose): initial_defaults (the shared F1 state functions and the one A boundary clamp, used by the menu key handlers of update_logic)
 
     def test_there_is_no_other_caller_of_update_logic_than_the_timer(self):
         t = ast.parse(read("main.py"))
