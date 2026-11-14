@@ -147,6 +147,14 @@ class PID_FIX_R5_R8(Base):
         self.gui.add(self.TARGET, TITLE, OWN_PID)
         self.assertEqual(self.mi.GuiInputApi(self.gui, OWN_PID, proc=broken).find_diag_window(), 0)
 
+    def test_r6_an_enumeration_error_is_fail_closed(self):
+        self.gui.add(self.TARGET, TITLE, OWN_PID)
+
+        def broken_enum(callback, extra):
+            raise OSError("EnumWindows failed")
+        self.gui.EnumWindows = broken_enum
+        self.assertEqual(self.mi.GuiInputApi(self.gui, OWN_PID, proc=self.proc).find_diag_window(), 0)
+
     def test_r7_a_stale_hwnd_operates_nothing(self):
         self.gui.windows[1000]["alive"] = False
         self.assertEqual(self.mi.owned_bve_pid(self.gui, 1000, OWN_PID, proc=self.proc), (None, "stale-hwnd"))
