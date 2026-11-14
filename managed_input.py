@@ -225,8 +225,9 @@ class GuiInputApi(object):
     """The two window operations of the input hold ("time and position" window). `gui` is the win32gui module (or a fake with the same functions)."""
     DIAG_TITLE = "時刻と位置"
 
-    def __init__(self, gui, bve_pid=None):
+    def __init__(self, gui, bve_pid=None, proc=None):
         self._gui = gui
+        self._proc = proc                            # the process API (win32process); None = the real module, fetched when needed
         self._bve_pid = int(bve_pid) if bve_pid is not None else None
 
     def find_diag_window(self):
@@ -244,7 +245,7 @@ class GuiInputApi(object):
             try:
                 if self._gui.GetWindowText(hwnd) != self.DIAG_TITLE:
                     return True
-                owner_pid = int(self._gui.GetWindowThreadProcessId(hwnd)[1])
+                owner_pid = window_process_id(hwnd, self._proc)
                 if owner_pid == self._bve_pid:
                     found.append(hwnd)
                     return False
@@ -294,17 +295,30 @@ def process_image_name(pid):
         return None
 
 
-def window_owned_by(gui, hwnd, pid):
+def process_api():
+    """The module that really has GetWindowThreadProcessId: win32process. (win32gui does NOT have it: PID-FIX, the defect of PID-S1.)"""
+    import win32process
+    return win32process
+
+
+def window_process_id(hwnd, proc=None):
+    """The OWNER PROCESS id of `hwnd`: win32process.GetWindowThreadProcessId returns (thread id, process id), the second item is used. Raises on an invalid
+    handle or an unreadable value (the callers turn that into a refusal)."""
+    api = proc if proc is not None else process_api()
+    return int(api.GetWindowThreadProcessId(hwnd)[1])
+
+
+def window_owned_by(gui, hwnd, pid, proc=None):
     """True only when `hwnd` is a live window whose owner process id is `pid`. Any failure is False (fail closed)."""
     try:
         if not hwnd or pid is None or not gui.IsWindow(hwnd):
             return False
-        return int(gui.GetWindowThreadProcessId(hwnd)[1]) == int(pid)
+        return window_process_id(hwnd, proc) == int(pid)
     except Exception:
         return False
 
 
-def owned_bve_pid(gui, owned_hwnd, expected_pid, image_of=None):
+def owned_bve_pid(gui, owned_hwnd, expected_pid, image_of=None, proc=None):
     """The runtime PID of the linked BVE window, checked against the start contract: (pid, "ok") or (None, reason) with a fixed word.
     reason: no-expected-pid / stale-hwnd / pid-unreadable / pid-mismatch / image-mismatch. Nothing is guessed: a mismatch never picks either PID."""
     if expected_pid is None:
@@ -315,7 +329,7 @@ def owned_bve_pid(gui, owned_hwnd, expected_pid, image_of=None):
     except Exception:
         return None, "stale-hwnd"
     try:
-        runtime_pid = int(gui.GetWindowThreadProcessId(owned_hwnd)[1])
+        runtime_pid = window_process_id(owned_hwnd, proc)
     except Exception:
         return None, "pid-unreadable"
     if runtime_pid <= 0:

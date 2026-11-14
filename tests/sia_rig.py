@@ -99,11 +99,11 @@ class FakeGui(object):
             return "時刻と位置"                      # PID-S1 (on purpose): the managed lookup reads the title of the windows it enumerates
         return self.titles.get(h, "")
 
-    def GetWindowThreadProcessId(self, h):
-        """PID-S1 (on purpose): None = not modelled (the recorder answer of before); otherwise every window of this fake belongs to `owner_pid`
+    def window_process_pair(self, h):
+        """PID-FIX: NOT a win32gui function (the real win32gui has none); the rig hands it to managed_input as the win32process fake. PID-S1 (on purpose): None = not modelled (the recorder answer of before); otherwise every window of this fake belongs to `owner_pid`
         (the managed rig sets it to the --bve-pid; another process's window is modelled by `foreign_hwnds`)."""
         if self.owner_pid is None:
-            self.calls.append(("GetWindowThreadProcessId", h))
+            self.calls.append(("window_process_pair", h))
             return None
         return (1, self.foreign_hwnds.get(h, self.owner_pid))
 
@@ -384,6 +384,9 @@ class Rig(object):
         self.saved = {n: getattr(m, n) for n in SEAMS if hasattr(m, n)}
         m.keyboard, m.win32gui, m.win32api, m.time, m.QApplication, m.QUdpSocket = self.kb, self.gui, self.api, self.clock, FakeApp, StubUdp
         m.QFileDialog = FakeFileDialog
+        import managed_input as _mi_for_pid
+        self._saved_process_api = _mi_for_pid.process_api
+        _mi_for_pid.process_api = lambda: types.SimpleNamespace(GetWindowThreadProcessId=self.gui.window_process_pair)     # PID-FIX: the process API is a separate module (win32process)
         import scoring_logic
         self.scoring_logic = scoring_logic
         self.saved_scoring = scoring_logic.write_desktop_log
@@ -403,6 +406,8 @@ class Rig(object):
     def close(self):
         m = self.m
         m._sia_rig_installed = False
+        import managed_input as _mi_for_pid
+        _mi_for_pid.process_api = self._saved_process_api
         for n, v in self.saved.items():
             setattr(m, n, v)
         if self.saved_scoring is not None:

@@ -36,7 +36,7 @@ class FakeGui(object):
     def IsWindow(self, hwnd):
         return hwnd in self.windows and self.windows[hwnd]["alive"]
 
-    def GetWindowThreadProcessId(self, hwnd):
+    def window_process_pair(self, hwnd):          # PID-FIX: NOT a win32gui function; handed to managed_input as the process API
         return (1, self.windows[hwnd]["pid"])
 
     def GetWindowText(self, hwnd):
@@ -72,8 +72,9 @@ class Harness(unittest.TestCase):
         import managed_input
         self.main, self.mi = main, managed_input
         self.gui = FakeGui()
-        self.saved = (main.win32gui, managed_input.process_image_name)
+        self.saved = (main.win32gui, managed_input.process_image_name, managed_input.process_api)
         main.win32gui = self.gui
+        managed_input.process_api = lambda: types.SimpleNamespace(GetWindowThreadProcessId=self.gui.window_process_pair)
         managed_input.process_image_name = lambda pid: "bvets.exe"
         self.events = []
         o = types.SimpleNamespace()
@@ -91,7 +92,7 @@ class Harness(unittest.TestCase):
         self.gui.add(1000, "BVE Trainsim", OWN_PID)
 
     def tearDown(self):
-        self.main.win32gui, self.mi.process_image_name = self.saved
+        self.main.win32gui, self.mi.process_image_name, self.mi.process_api = self.saved
 
 
 class PID_R1_R2_OwnedWindowOnly(Harness):
@@ -108,7 +109,7 @@ class PID_R1_R2_OwnedWindowOnly(Harness):
     def test_r1_find_diag_window_returns_the_owned_one_even_if_the_other_comes_first(self):
         self.gui.add(2000, TITLE, OTHER_PID)
         self.gui.add(3000, TITLE, OWN_PID)
-        self.assertEqual(self.mi.GuiInputApi(self.gui, OWN_PID).find_diag_window(), 3000)
+        self.assertEqual(self.mi.GuiInputApi(self.gui, OWN_PID, proc=types.SimpleNamespace(GetWindowThreadProcessId=self.gui.window_process_pair)).find_diag_window(), 3000)
 
     def test_r2_only_another_process_window_nothing_is_operated(self):
         self.gui.add(2000, TITLE, OTHER_PID, children=(2001, 2002))
