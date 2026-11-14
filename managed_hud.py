@@ -388,6 +388,10 @@ class ManagedHudController(object):
             self._settle_hide_grace()
             self._note_epoch(snapshot)
             if self.gate.mode == managed_state.MODE_ACTIVE:
+                # Phase HUD-TIMER: ACTIVE and the directory is ready (a waiting directory returned above and slowed the timer to IDLE_INTERVAL_MS): the HUD updates
+                # now, so the timer is the ACTIVE one. `_on_change` only does this on a state CHANGE, and the state was already ACTIVE at start(), so without this
+                # the timer stayed at 100 ms (about 9 Hz) for the life of the process. Idempotent; a real IDLE / the OFS-1 grace never reach this line.
+                self._set_interval(ACTIVE_INTERVAL_MS)
                 self._tick_active()
         except Exception as e:
             self._on_error(e)
