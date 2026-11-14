@@ -218,17 +218,8 @@ namespace TsScoringPlugin
                 if (log != null) log("event=pause-pulse-init-failed error=" + ex.GetType().Name);
             }
 
-            // The jump command receiver (fixed 54322, unchanged by PID-D3). A bind failure (for instance a second BVE) only disables jump commands.
-            try
-            {
-                udpReceiver = new UdpClient(54322);
-                udpReceiver.Client.Blocking = false;
-            }
-            catch (Exception ex)
-            {
-                if (udpReceiver != null) { try { udpReceiver.Close(); } catch { } udpReceiver = null; }
-                if (log != null) log("event=jump-receiver-bind-failed error=" + ex.GetType().Name);
-            }
+            // The plain jump receiver (fixed 54322) is NOT bound here any more (Phase PID-S2): a managed BVE never uses it (its jump commands come through the per-PID
+            // Current Jump endpoint below), so it is bound only once the router has decided on the plain (Normal) mode - see SyncJumpReceiver.
 
             // PID-D6: the Current Jump endpoint of the per-PID DataPlane (contract 15.3). A failure only disables managed jump commands.
             try
@@ -283,6 +274,42 @@ namespace TsScoringPlugin
         /// fixed port is drained and NOT executed (no plain fallback); only the validated commands of the Current Jump endpoint (Envelope v1 + RequestId)
         /// are returned.
         /// </summary>
+        private bool jumpReceiverBindTried;
+
+        /// <summary>
+        /// Phase PID-S2: the plain fixed jump port (54322) belongs to the plain (Normal) development mode only. Undetermined: not bound. Normal: bound once (a failure,
+        /// for instance a second plain BVE, only disables the plain jump commands). Managed (also when the Caller shows up later): the receiver is closed and never
+        /// bound again, so a managed BVE holds no fixed port and the per-PID Jump endpoint is the only jump path.
+        /// </summary>
+        private void SyncJumpReceiver()
+        {
+            try
+            {
+                var currentRouter = router;
+                if (currentRouter == null) return;
+                TSScoringPlugin.DataPlane.CurrentSenderMode mode = currentRouter.Mode;
+                if (mode == TSScoringPlugin.DataPlane.CurrentSenderMode.Managed)
+                {
+                    jumpReceiverBindTried = true;
+                    if (udpReceiver != null) { try { udpReceiver.Close(); } catch { } udpReceiver = null; }
+                    return;
+                }
+                if (mode != TSScoringPlugin.DataPlane.CurrentSenderMode.Normal || jumpReceiverBindTried || udpReceiver != null) return;
+                jumpReceiverBindTried = true;
+                try
+                {
+                    udpReceiver = new UdpClient(54322);
+                    udpReceiver.Client.Blocking = false;
+                }
+                catch (Exception ex)
+                {
+                    if (udpReceiver != null) { try { udpReceiver.Close(); } catch { } udpReceiver = null; }
+                    try { if (diagnostics != null) diagnostics.Write("event=jump-receiver-bind-failed error=" + ex.GetType().Name); } catch { }
+                }
+            }
+            catch { }
+        }
+
         private List<JumpInput> CollectJumpCommands()
         {
             List<JumpInput> commands = new List<JumpInput>();
@@ -596,6 +623,7 @@ namespace TsScoringPlugin
 
                 var bindFlagsAll = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.FlattenHierarchy | System.Reflection.BindingFlags.Static;
 
+                if (!pulse) SyncJumpReceiver();
                 if (!pulse && (udpReceiver != null || jumpEndpoint != null))
                 {
                     try

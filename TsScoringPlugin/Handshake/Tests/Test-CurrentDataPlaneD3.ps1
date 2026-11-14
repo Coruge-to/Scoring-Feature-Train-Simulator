@@ -62,7 +62,9 @@ $tryCount = ([regex]::Matches($ctor.Value, '\btry\b')).Count
 Check 'B10 the constructor is split into independent try blocks (diagnostics, sender, heartbeat, jump receiver)' ($tryCount -ge 4)
 $jumpIdx = $ctor.Value.IndexOf('new UdpClient(54322)')
 $hbIdx = $ctor.Value.IndexOf('new Timer(50)')
-Check 'B11 the heartbeat is started before, and independently of, the 54322 bind' (($jumpIdx -gt 0) -and ($hbIdx -gt 0) -and ($hbIdx -lt $jumpIdx))
+$syncBody = [regex]::Match($class1Code, '(?s)private void SyncJumpReceiver\(\).*?private List<JumpInput> CollectJumpCommands').Value
+# Phase PID-S2 (on purpose): B11 used to prove the heartbeat starts before the constructor's 54322 bind; the constructor no longer binds 54322 at all
+Check 'B11 the heartbeat is started in the constructor, 54322 is NOT bound there, and SyncJumpReceiver binds it only in the Normal mode (never Undetermined) and closes it in the Managed mode' (($jumpIdx -lt 0) -and ($hbIdx -gt 0) -and ($syncBody.Length -gt 0) -and ($syncBody -match 'mode == TSScoringPlugin\.DataPlane\.CurrentSenderMode\.Managed') -and ($syncBody -match 'mode != TSScoringPlugin\.DataPlane\.CurrentSenderMode\.Normal') -and ($syncBody -match 'new UdpClient\(54322\)') -and ($syncBody -match 'udpReceiver\.Close\(\)') -and ($class1Code -match 'if \(!pulse\) SyncJumpReceiver\(\);'))
 Check 'B12 the jump receiver port, protocol and command handling are unchanged (54322, JUMP_STA_TIME / JUMP_LOC_TIME)' (($class1Code -match 'new UdpClient\(54322\)') -and ($class1Code -match 'JUMP_STA_TIME:') -and ($class1Code -match 'JUMP_LOC_TIME:'))
 Check 'B13 the payload builders of the telemetry line are unchanged and the JUMP_COMPLETE text is written by the canonical formatter (Phase ST-3b: no interpolated string)' (($class1Code -match 'CurrentJumpExecution\.FormatCompletion\(') -and ($class1Code -notmatch '\$"JUMP_COMPLETE:') -and ($class1Code -match 'SCENARIO_ID:\{scenarioId\},SPEED:'))
 Check 'B14 no new mode marker object: only the existing Enabled / Ready events are probed' (([regex]::Matches($dpCode, 'Local\\\\TSScoringPlugin')).Count -eq 2)
