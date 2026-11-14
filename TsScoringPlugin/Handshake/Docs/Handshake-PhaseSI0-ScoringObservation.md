@@ -14,7 +14,7 @@ SI-0 は **観測だけ**を行う。採点への接続、管理モードの `up
 | O-D | Heartbeat／Ready／ScenarioReady／Telemetry の成立順序 | `SI0_ORDER seq= t= th= ev=`: `init`、`evt-opened/closed/created`、`tick-first-process`、`created-changed`、`epoch-begin/end`、`line-first`、`hb-idle`（有効な世代が無いのでハートビートは何も送らない）、`hb-first-running`、`hb-paused`、`hb-running-again`、`tick-resume`、`dispose` | ホストのイベント、Tick、ハートビートスレッド（自分のフィールドだけ） |
 | O-E | ジャンプ API のメタデータ | ログには出さない。**呼び出さない。**公開メタデータを試験と監査文書で固定 | `BveTypes` のメタデータ（読み取りのみ） |
 
-Ready／ScenarioReady は制御プレーン（Bridge／Caller）の観測ログ `TSScoring-Phase-C1-Observation.log` にあり、両方のログは同じ時計（`HH:mm:ss.fff`）を持つ。パッケージの `Merge-SI0Timeline.ps1` が 2 つのログを時刻順に 1 本へ並べる（読み取り専用）。
+Ready／ScenarioReady は制御プレーン（Bridge／Caller）の観測ログ `TSScoring-Phase-C1-Observation-P<pid>.log`（PID-S3 以降は BVE プロセスごと）にあり、両方のログは同じ時計（`HH:mm:ss.fff`）を持つ。パッケージの `Merge-SI0Timeline.ps1` が 2 つのログを時刻順に 1 本へ並べる（読み取り専用）。
 
 ## 2. 安全性
 

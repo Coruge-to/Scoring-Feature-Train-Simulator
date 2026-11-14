@@ -42,7 +42,10 @@ namespace TSScoringPlugin.Handshake
 
     internal static class ObservationLog
     {
-        internal const string FileName = "TSScoring-Phase-C1-Observation.log";
+        // Phase PID-S3: one file PER BVE PROCESS (the name carries the PID), so a later BVE can never truncate the evidence of an earlier one. The Caller and both
+        // Bridges of one process share that process's file. (No instance id: the DLLs do not know the application's instance GUID, and the PID is the process.)
+        internal const string FileNamePrefix = "TSScoring-Phase-C1-Observation-P";
+        internal const string FileNameSuffix = ".log";
         internal const string FolderName = "Downloads";
         internal const long DefaultMaxBytes = 4L * 1024 * 1024;
         internal const int LockWaitMs = 30;
@@ -63,6 +66,7 @@ namespace TSScoringPlugin.Handshake
 
         // Offline-test hooks only (null / 0 in production): a private log file, a fake PID, a small size cap.
         internal static string TestPath { get; set; }
+        internal static string TestFolder { get; set; }   // PID-S3: replaces <user profile>\Downloads (the per-PID NAME is still computed by DefaultPathFor)
         internal static int TestPid { get; set; }
         internal static long TestMaxBytes { get; set; }
 
@@ -128,15 +132,26 @@ namespace TSScoringPlugin.Handshake
         /// <summary>The path the production build writes to. Pure: creates nothing.</summary>
         internal static string DefaultPath()
         {
+            return DefaultPathFor(TestPid != 0 ? TestPid : HandshakeProtocol.CurrentProcessId());
+        }
+
+        /// <summary>The per-PID file of process <paramref name="processId"/>. Pure: creates nothing.</summary>
+        internal static string DefaultPathFor(int processId)
+        {
             try
             {
+                if (!string.IsNullOrEmpty(TestFolder))
+                {
+                    return Path.Combine(TestFolder, FileNamePrefix + processId + FileNameSuffix);
+                }
+
                 string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
                 if (string.IsNullOrEmpty(profile))
                 {
                     return null;
                 }
 
-                return Path.Combine(Path.Combine(profile, FolderName), FileName);
+                return Path.Combine(Path.Combine(profile, FolderName), FileNamePrefix + processId + FileNameSuffix);
             }
             catch
             {
@@ -212,8 +227,8 @@ namespace TSScoringPlugin.Handshake
         {
             if (!ready)
             {
-                path = TestPath ?? DefaultPath();
                 pid = TestPid != 0 ? TestPid : HandshakeProtocol.CurrentProcessId();
+                path = TestPath ?? DefaultPathFor(pid);
                 ready = true;
                 if (path != null)
                 {

@@ -198,6 +198,9 @@ $apBase = (BaseText 'Tools\Audit-Privacy.ps1') -split "`n"
 $apNow = (WorkText 'Tools\Audit-Privacy.ps1') -split "`n"
 $apRem = @(Compare-Object $apBase $apNow | Where-Object { $_.SideIndicator -eq '<=' } | ForEach-Object { $_.InputObject })
 $apAdd = @(Compare-Object $apBase $apNow | Where-Object { $_.SideIndicator -eq '=>' } | ForEach-Object { $_.InputObject })
+# Phase PID-S3 (on purpose, Owner 2026-11-14): the one line that names the log file constant moved to the per-PID prefix; it is not part of the L1 difference
+$apRem = @($apRem | Where-Object { $_ -notmatch 'TSScoring-Phase-C1-Observation\\\.log' })
+$apAdd = @($apAdd | Where-Object { $_ -notmatch 'TSScoring-Phase-C1-Observation-P' })
 Check 'Audit-Privacy.ps1 differs only by allowing the new DLL identifier TSScoringPlugin.AtsExLegacy in its allowed-identifier pattern (1 line replaced)' (($apRem.Count -eq 1) -and ($apAdd.Count -eq 1) -and ($apAdd[0] -match 'AtsExLegacy') -and ($apAdd[0].Replace('|AtsExLegacy', '') -ceq $apRem[0]))
 $c3Base = (BaseText 'Tools\Verify-PhaseC3.ps1') -split "`n"
 $c3Now = (WorkText 'Tools\Verify-PhaseC3.ps1') -split "`n"

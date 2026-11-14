@@ -247,10 +247,10 @@ try {
     Check 'L5 four threads across both DLLs: 400 intact lines, none interleaved, one header' (($ev5.Count -eq 400) -and (@($ev5 | Where-Object { $_ -notmatch '^\d\d:\d\d:\d\d\.\d{3} q=\d+\.\d P=930008 S=(Caller|Bridge) T=B th=\d+ L5_WRITE k=\d+$' }).Count -eq 0) -and (@($l5 | Where-Object { $_ -like '# TS Scoring*' }).Count -eq 1))
 
     # L6: default path is the fixed Downloads file (nothing is written here)
-    $expectedDefault = Join-Path (Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Downloads') 'TSScoring-Phase-C1-Observation.log'
+    $expectedDefault = Join-Path (Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Downloads') ('TSScoring-Phase-C1-Observation-P' + $PID + '.log')   # PID-S3 (on purpose): one file per BVE process; the reflected DefaultPath() uses this process id
     $defC = $cLog.GetMethod('DefaultPath', $NPS).Invoke($null, @())
     $defB = $bLog.GetMethod('DefaultPath', $NPS).Invoke($null, @())
-    Check 'L6 both DLLs resolve the fixed log path Downloads\TSScoring-Phase-C1-Observation.log' (($defC -eq $expectedDefault) -and ($defB -eq $expectedDefault) -and ($defC -like '*\Downloads\TSScoring-Phase-C1-Observation.log'))
+    Check 'L6 both DLLs resolve the per-PID log path Downloads\TSScoring-Phase-C1-Observation-P<pid>.log (PID-S3)' (($defC -eq $expectedDefault) -and ($defB -eq $expectedDefault) -and ($defC -like ('*\Downloads\TSScoring-Phase-C1-Observation-P' + $PID + '.log')))
 
     # =================================================================================================================
     Write-Host '--- O: scenario observer (Track A candidates)'

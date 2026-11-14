@@ -31,7 +31,7 @@ Phase B の挙動（Enabled / Stop / BridgeAvailable / Ready、500 ms の依存�
 
 ## 3. 観測ログ
 
-- 場所: `%USERPROFILE%\Downloads\TSScoring-Phase-C1-Observation.log`（固定。Caller と Bridge が同じファイルへ追記する）
+- 場所: `%USERPROFILE%\Downloads\TSScoring-Phase-C1-Observation-P<pid>.log`（PID-S3: BVE プロセスごとに1ファイル。同じプロセスの Caller と Bridge が同じファイルへ追記する。以前は固定1本で、後から起動した BVE が先に起動した BVE のログを上書きしていた）
 - **新しい BVE プロセスの最初の書き込みで初期化（上書き）**されるので、別の実行は混ざらない。同じ BVE の中での BveEX／TS Scoring の OFF→ON は同じ実行として続けて記録される。
 - 2 つの BVE を同時に動かすと互いのログを消し合うので、観測中は BVE を 1 つだけ起動する。
 - 4 MB を超えると各 DLL が `LOG_CAP_REACHED` を 1 行書いて以降は書かない。
@@ -133,7 +133,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "<作業フォルダ>\Tools\
 1. BVE を完全に終了する。
 2. `Input Devices` と BveEX の `Extensions` から、この 0.5.0.0 の 2 個の DLL を削除する。
 3. 手順 2 で退避した Phase B の DLL（SHA-256 は上の表）を同じ場所へ戻す。
-4. 観測ログ `TSScoring-Phase-C1-Observation.log` は不要なら削除してよい（次回は自動で初期化される）。
+4. 観測ログ `TSScoring-Phase-C1-Observation-P<pid>.log` は不要なら削除してよい（PID ごとのファイルが残るので、古いものは手動で整理する。自動削除はしない）。
 
 ## 8. 限界と注意
 
@@ -161,4 +161,4 @@ BVE5 と BVE6 は任意のフォルダーにインストールできる。最終
 
 ### 9.2 実機観測のあと
 
-観測ログ `%USERPROFILE%\Downloads\TSScoring-Phase-C1-Observation.log` は、**次の BVE プロセスの最初のログ書き込みで初期化（上書き）される**。残したいログは、**次に BVE を起動する前に**別名でコピーして退避する。
+観測ログ `%USERPROFILE%\Downloads\TSScoring-Phase-C1-Observation-P<pid>.log` は BVE プロセスごとのファイルで、**別の BVE プロセスが上書きすることはない**（同じ PID の新しい実行だけが先頭から初期化する）。回収は `Tools\Classify-Observation.ps1 -All`（全 PID）または `-BvePid <pid>`。

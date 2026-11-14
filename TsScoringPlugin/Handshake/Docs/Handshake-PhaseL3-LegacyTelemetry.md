@@ -220,7 +220,7 @@ L3-live（BVE5 Legacy）で、HUD が表示された約 37 ms 後に非表示へ
 
 ### 9.4 診断（専用ログ）
 
-共有観測ログ（`TSScoring-Phase-C1-Observation.log`）は Handshake の制御プレーンが名前付き Mutex と実行マーカーで排他する仕組みで、テレメトリ DLL は §1.1 のとおりそれらを一切リンクしない。統合すると分離が壊れるため、**専用ログ**を使う。
+共有観測ログ（`TSScoring-Phase-C1-Observation-P<pid>.log`、PID-S3 以降は BVE プロセスごと）は Handshake の制御プレーンが名前付き Mutex と実行マーカーで排他する仕組みで、テレメトリ DLL は §1.1 のとおりそれらを一切リンクしない。統合すると分離が壊れるため、**専用ログ**を使う。
 
 * ファイル: `<ユーザープロファイル>\Downloads\TSScoring-L3-Telemetry.log`（OS から実行時に決定。パスはバイナリに含まない）。プロセス内で最初に書く行がファイルを作り直す（新しい BVE プロセスは古い実行に追記しない）。1 MiB で打ち切り。
 * 形式: `HH:mm:ss.fff P=<pid> I=<拡張の連番> EVENT key=value …`。状態変化と最終集計だけ（毎 Tick は書かない）。パス・シナリオ名・路線名・車両名は書かない。

@@ -613,7 +613,7 @@ Check ('D22 HandshakeSession.cs vs the baseline commit: only additions plus the 
 
 # observation identifiers must not be in the product
 Check 'D23 [43] no Phase D1-OBS identifier in the sources or the DLL: no fixed D1-OBS log name, no D1OBS_ event, no DrivingObsLog / DrivingActivityObserver, no Phase M0 identifier' ((-not (Test-BytesContain $callerBytes 'D1OBS')) -and (-not (Test-BytesContain $callerBytes 'PhaseD1OBS')) -and (-not (Test-BytesContain $callerBytes 'DrivingObsLog')) -and (-not (Test-BytesContain $callerBytes 'DrivingActivityObserver')) -and (-not (Test-BytesContain $callerBytes 'PhaseM0')) -and (-not (Test-BytesContain $callerBytes 'M0Observ')) -and (@(Get-ChildItem $Root -Recurse -Include *.cs, *.csproj | Where-Object { $_.FullName -notmatch '\\(obj|out)\\' -and ((NoComments ([IO.File]::ReadAllText($_.FullName))) -match 'D1OBS|D1-OBS|DrivingObsLog|DrivingActivityObserver') }).Count -eq 0))
-Check 'D24 the only log file name in the DLL is still the shared C1 observation log; it carries the DRIVING_ events' ((Test-BytesContain $callerBytes 'TSScoring-Phase-C1-Observation.log') -and (Test-BytesContain $callerBytes 'DRIVING_ACTIVE_ON') -and (Test-BytesContain $callerBytes 'DRIVING_ACTIVE_OFF') -and (Test-BytesContain $callerBytes 'DRIVING_EXCEPTION'))
+Check 'D24 the only log file name in the DLL is still the C1 observation log (per PID since PID-S3, on purpose); it carries the DRIVING_ events' ((Test-BytesContain $callerBytes 'TSScoring-Phase-C1-Observation-P') -and (Test-BytesContain $callerBytes 'DRIVING_ACTIVE_ON') -and (Test-BytesContain $callerBytes 'DRIVING_ACTIVE_OFF') -and (Test-BytesContain $callerBytes 'DRIVING_EXCEPTION'))
 
 # metadata
 $vi = (Get-Item $callerPath).VersionInfo

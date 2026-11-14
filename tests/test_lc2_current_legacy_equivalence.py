@@ -36,6 +36,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 HAS_QT = importlib.util.find_spec("PyQt6") is not None
 
 import lc_legacy_feed as F  # noqa: E402
+import pid_s3_undo  # noqa: E402  (PID-S3, on purpose: ObservationLog.cs names one file per BVE process)
 
 SHAPES = ("current", "legacy")
 BASE_HEAD = "cab7dce265429ee43775ecbaa4c42f450058a653"
@@ -421,7 +422,7 @@ class E_Boundary(unittest.TestCase):
         base_obs = subprocess.run(["git", "show", base + ":" + obs], cwd=ROOT, capture_output=True).stdout.decode("utf-8", "replace").replace("\r\n", "\n")
         with open(os.path.join(ROOT, obs), "rb") as fh:
             now_obs = fh.read().decode("utf-8", "replace").replace("\r\n", "\n")
-        self.assertEqual(now_obs.replace("# TScoring Phase C1 observation log", "# TS Scoring Phase C1 observation log"), base_obs, "ObservationLog.cs may differ from the base in the TScoring log header only")
+        self.assertEqual(pid_s3_undo.undo_observation_log(now_obs).replace("# TScoring Phase C1 observation log", "# TS Scoring Phase C1 observation log"), base_obs, "ObservationLog.cs may differ from the base in the TScoring log header only")
 
 
 if __name__ == "__main__":

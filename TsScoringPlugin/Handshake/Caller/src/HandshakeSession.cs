@@ -1311,7 +1311,7 @@ namespace TSScoringPlugin.Handshake
                 sb.AppendLine("Product : " + ProductDisplayName);
                 sb.AppendLine("Provider: " + ProviderName);
                 sb.AppendLine("Phase   : C3 build " + ObservationLog.Version + " (Phase B handshake behaviour + ScenarioReady, Current BveEX mode)");
-                sb.AppendLine("Log     : " + ObservationLog.FolderName + "\\" + ObservationLog.FileName);
+                sb.AppendLine("Log     : " + ObservationLog.FolderName + "\\" + ObservationLog.FileNamePrefix + HandshakeProtocol.CurrentProcessId() + ObservationLog.FileNameSuffix);
                 sb.AppendLine("Assembly: " + Assembly.GetExecutingAssembly().GetName().Name + ".dll");
                 sb.AppendLine();
                 sb.AppendLine("Caller           : " + (isEnabled ? "Enabled" : "Disabled"));

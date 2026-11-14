@@ -52,7 +52,7 @@ Pause、Tick の停止や TICK_GAP、タイトル帰還の推測、IsScenarioCre
 
 ## 4. 診断ログ
 
-固定ログ `Downloads\TSScoring-Phase-C1-Observation.log`（C1 と同じ名前・同じ形式。観測契約を維持するため名前は変えていません）に、Track A の行が増えます。
+ログ `Downloads\TSScoring-Phase-C1-Observation-P<pid>.log`（C1 と同じ形式。PID-S3 で名前に PID が入りました）に、Track A の行が増えます。
 
 | 行 | 意味 |
 |---|---|

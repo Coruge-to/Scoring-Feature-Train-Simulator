@@ -1,10 +1,29 @@
 # PHASE C1 - offline classifier for the observation log. Read-only: it only READS the log file it is given and prints text.
-# Default log: <user profile>\Downloads\TSScoring-Phase-C1-Observation.log  (the fixed file written by the Caller and the Bridge)
-# Usage:  powershell -File Tools\Classify-Observation.ps1 [-LogPath <file>]
+# Logs (Phase PID-S3): ONE FILE PER BVE PROCESS, <user profile>\Downloads\TSScoring-Phase-C1-Observation-P<pid>.log (written by the Caller and the Bridge of that process).
+# Usage:  powershell -File Tools\Classify-Observation.ps1 [-LogPath <file>] [-BvePid <pid>] [-All] [-LogDir <folder>]
+#   -LogPath   one explicit file (as before)          -BvePid  the file of that BVE process
+#   -All       every per-PID file of the folder, one after the other (none is skipped)
+#   (nothing)  the most recently written per-PID file
 # This script is ASCII-only on purpose.
-param([string]$LogPath = (Join-Path (Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Downloads') 'TSScoring-Phase-C1-Observation.log'))
+param([string]$LogPath = '', [int]$BvePid = 0, [switch]$All, [string]$LogDir = (Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Downloads'))
+
+if ($LogPath -eq '') {
+    if ($BvePid -gt 0) {
+        $LogPath = Join-Path $LogDir ('TSScoring-Phase-C1-Observation-P' + $BvePid + '.log')
+    }
+    else {
+        $found = @(Get-ChildItem -LiteralPath $LogDir -Filter 'TSScoring-Phase-C1-Observation-P*.log' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime)
+        if ($All) {
+            if ($found.Count -eq 0) { Write-Output "No log file at the given path."; exit 2 }
+            foreach ($f in $found) { & $PSCommandPath -LogPath $f.FullName }
+            exit 0
+        }
+        if ($found.Count -gt 0) { $LogPath = $found[$found.Count - 1].FullName } else { $LogPath = Join-Path $LogDir 'TSScoring-Phase-C1-Observation-P0.log' }
+    }
+}
 
 if (-not (Test-Path -LiteralPath $LogPath)) { Write-Output "No log file at the given path."; exit 2 }
+"== log file: " + (Split-Path $LogPath -Leaf)
 
 $lineRx = '^(?<clock>\d\d:\d\d:\d\d\.\d{3}) q=(?<q>[\d.]+) P=(?<pid>\d+) S=(?<src>Caller|Bridge) T=(?<track>A|B|AB) th=(?<th>\d+) (?<evt>\S+)(?: (?<rest>.*))?$'
 $events = New-Object System.Collections.Generic.List[object]

@@ -115,7 +115,7 @@ foreach ($f in $logSources) {
 "lines that read exception messages, machine / user names, paths or scenario info: $risky"
 Write-Host '== per-PID log guard names and fixed log file name (counts) =='
 $ol = [IO.File]::ReadAllText((Join-Path $Root 'Shared\ObservationLog.cs'))
-"log file name constant present once: " + ([regex]::Matches($ol, 'TSScoring-Phase-C1-Observation\.log')).Count + "   literal drive/user path in the log source: " + ([regex]::Matches($ol, '[A-Za-z]:\\\\')).Count
+"log file name prefix constant present once (PID-S3, on purpose): " + ([regex]::Matches($ol, 'TSScoring-Phase-C1-Observation-P')).Count + "   literal drive/user path in the log source: " + ([regex]::Matches($ol, '[A-Za-z]:\\\\')).Count
 Write-Host '== old notice wording (must not remain in DLLs, sources, README, tools; counts) =='
 function FromCodes([string[]]$hex) { return -join ($hex | ForEach-Object { [char][Convert]::ToInt32($_, 16) }) }
 $oldFragments = @(

@@ -28,6 +28,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 HAS_QT = importlib.util.find_spec("PyQt6") is not None
 
 import lc_legacy_feed as F  # noqa: E402
+import pid_s3_undo  # noqa: E402  (PID-S3, on purpose: the observation log notice names the per-PID file)
 import test_lc4b_python_jump_state as L4B  # noqa: E402  (its Managed rig base only)
 
 WM_CLOSE = 0x0010
@@ -568,7 +569,7 @@ class S_CSharp(unittest.TestCase):
         # Nothing else of HandshakeSession.cs may differ from LC-4b: after the two strings are neutralised back the text must be identical.
         if self.CALLER in changed:
             base_hs = subprocess.run(["git", "-C", ROOT, "show", "cbebfd3:" + self.CALLER], capture_output=True, timeout=60).stdout.decode("utf-8", "replace").replace("\r\n", "\n")
-            back = lambda text: text.replace("\r\n", "\n").replace('ProductDisplayName = "TScoring";', 'ProductDisplayName = "TS Scoring";').replace('"TScoringにはBveEXが必要です。', '"TS ScoringにはBveEXが必要です。')
+            back = lambda text: pid_s3_undo.undo_caller_notice(text.replace("\r\n", "\n")).replace('ProductDisplayName = "TScoring";', 'ProductDisplayName = "TS Scoring";').replace('"TScoringにはBveEXが必要です。', '"TS ScoringにはBveEXが必要です。')
             self.assertEqual(back(read(self.CALLER)), base_hs, "HandshakeSession.cs may differ from LC-4b in the two TScoring display strings only")
             self.assertIn('ProductDisplayName = "TScoring";', read(self.CALLER))
         # Phase PP-11 / PP-13 (an intended change, on purpose; Owner 2026-11-13): the Legacy Bridge gained the Pause pulse (a timer that posts to the host UI thread and calls tracker.OnPulse; its Dispose stops the timer); it
